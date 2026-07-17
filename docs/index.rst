@@ -35,6 +35,7 @@ See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
 
    installation
    usage
+   performance
 
 .. toctree::
    :maxdepth: 2
