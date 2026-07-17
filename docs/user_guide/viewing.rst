@@ -35,6 +35,10 @@ At a glance
      - ``fig.show()``
      - **yes**
      - ``[gui]``
+   * - Qt window / widget
+     - ``fig.show_qt()`` or ``simpleplot.qt.SimplePlotWidget``
+     - **yes**
+     - ``[qt]``
    * - Embedded
      - drop ``fig.to_svg()`` / ``fig.to_html()`` into your own page
      - optional
@@ -115,6 +119,40 @@ the ``[gui]`` extra and blocks until the window is closed; without it,
    interactive ``.html`` file looks the same in a browser.
 
 See :doc:`output` for ``wait_for_extract`` and the extraction format.
+
+In a PyQt / PySide app
+----------------------
+
+For Qt-based desktop apps, ``simpleplot.qt`` renders the interactive figure
+in a ``QWebEngineView`` -- the *same* toolbar (span / zoom / point-pick /
+annotate / sliders / extract), reusing the HTML renderer rather than
+reimplementing it. It works with **PyQt6**, **PySide6**, or **PyQt5** and needs
+the ``[qt]`` extra (``pip install simpleplot[qt]``).
+
+Quick standalone window:
+
+.. code-block:: python
+
+   fig.show_qt()                 # or: import simpleplot.qt as spqt; spqt.view(fig)
+
+``SimplePlotWidget`` is a plain ``QWidget``, so it embeds into any layout of your
+own application like any other widget:
+
+.. code-block:: python
+
+   from simpleplot.qt import SimplePlotWidget
+
+   plot = SimplePlotWidget(fig)          # a QWidget
+   my_layout.addWidget(plot)             # drop it anywhere
+
+   plot.set_figure(other_fig)            # redraw with a different figure
+   plot.markers(lambda recs: print(recs))  # async: hand picked markers to Python
+
+The widget owns a ``QWebEngineView`` (exposed as ``plot.view`` for further
+customization) and loads the document from a temporary file, so even large,
+mesh-heavy figures render (``QWebEngineView.setHtml`` alone caps at ~2 MB). Pass
+``pick_precision=`` to shrink the embedded point-pick data for big figures, just
+as with :meth:`~simpleplot.Figure.to_html`.
 
 Embedded in your own page or app
 --------------------------------

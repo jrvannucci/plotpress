@@ -315,6 +315,19 @@ class Figure:
         webview.start()
         return api.markers
 
+    def show_qt(self, title="simpleplot", block=True, interactive=True,
+                pick_precision=6):
+        """Display in a native Qt window (PyQt/PySide), for Qt-based apps.
+
+        Thin wrapper around ``simpleplot.qt.view``. Needs a Qt binding with
+        WebEngine (``pip install simpleplot[qt]``). To embed the figure inside
+        your own Qt layout instead of a standalone window, use
+        ``simpleplot.qt.SimplePlotWidget`` directly.
+        """
+        from .qt import view
+        return view(self, title=title, block=block, interactive=interactive,
+                    pick_precision=pick_precision)
+
 
 class _MarkerApi:
     """pywebview bridge: the in-window Extract button pushes markers to Python."""

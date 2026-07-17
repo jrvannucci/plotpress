@@ -26,6 +26,9 @@ dependencies = [
 # standard install stays server/CI/notebook friendly; fig.show() otherwise
 # falls back to the browser.
 gui = ["pywebview>=4.0"]
+# Embed interactive figures in a PyQt/PySide app (simpleplot.qt). PySide6 or
+# PyQt5+PyQtWebEngine work too; this extra pulls the PyQt6 stack by default.
+qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
 dev = ["pytest>=7"]
 # Benchmarking against matplotlib (benchmarks/ and the comparative perf tests).
 bench = ["matplotlib>=3.5"]
