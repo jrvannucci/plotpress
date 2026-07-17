@@ -22,6 +22,35 @@ _PLASMA_ANCHORS = np.array([
     [219, 92, 104], [244, 136, 73], [254, 188, 43], [240, 249, 33],
 ], dtype=float)
 
+# Inferno / magma / cividis: the rest of the perceptually-uniform family.
+_INFERNO_ANCHORS = np.array([
+    [0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99],
+    [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164],
+], dtype=float)
+
+_MAGMA_ANCHORS = np.array([
+    [0, 0, 4], [28, 16, 68], [79, 18, 123], [129, 37, 129],
+    [181, 54, 122], [229, 80, 100], [251, 135, 97], [254, 194, 135],
+    [252, 253, 191],
+], dtype=float)
+
+_CIVIDIS_ANCHORS = np.array([
+    [0, 32, 76], [0, 42, 102], [45, 63, 108], [87, 86, 109],
+    [124, 109, 107], [165, 133, 93], [210, 160, 68], [255, 234, 70],
+], dtype=float)
+
+# Coolwarm: a blue-white-red diverging map (for signed data around a midpoint).
+_COOLWARM_ANCHORS = np.array([
+    [59, 76, 192], [124, 159, 249], [192, 212, 245], [221, 221, 221],
+    [246, 193, 169], [241, 133, 103], [180, 4, 38],
+], dtype=float)
+
+# RdBu: red-white-blue diverging (coolwarm's classic ColorBrewer cousin).
+_RDBU_ANCHORS = np.array([
+    [178, 24, 43], [214, 96, 77], [244, 165, 130], [247, 247, 247],
+    [146, 197, 222], [67, 147, 195], [33, 102, 172],
+], dtype=float)
+
 
 def _build_lut(anchors: np.ndarray, n: int = 256) -> np.ndarray:
     """Linearly interpolate anchor stops into an ``(n, 3)`` uint8 LUT."""
@@ -39,25 +68,66 @@ _GRAY_LUT = np.repeat(np.linspace(0, 255, 256, dtype=np.uint8)[:, None], 3, axis
 _COLORMAPS = {
     "viridis": _build_lut(_VIRIDIS_ANCHORS),
     "plasma": _build_lut(_PLASMA_ANCHORS),
+    "inferno": _build_lut(_INFERNO_ANCHORS),
+    "magma": _build_lut(_MAGMA_ANCHORS),
+    "cividis": _build_lut(_CIVIDIS_ANCHORS),
+    "coolwarm": _build_lut(_COOLWARM_ANCHORS),
+    "RdBu": _build_lut(_RDBU_ANCHORS),
     "gray": _GRAY_LUT,
     "grey": _GRAY_LUT,
 }
 
 
 def get_cmap(name) -> np.ndarray:
-    """Return a 256x3 uint8 LUT for ``name`` (or pass an LUT through)."""
+    """Return a 256x3 uint8 LUT for ``name`` (or pass an LUT through).
+
+    A trailing ``_r`` reverses any known map, e.g. ``"viridis_r"`` -- matching
+    matplotlib's reversed-colormap convention.
+    """
     if isinstance(name, np.ndarray):
         return name
+    key, reverse = name, False
+    if isinstance(name, str) and name.endswith("_r"):
+        key, reverse = name[:-2], True
     try:
-        return _COLORMAPS[name]
+        lut = _COLORMAPS[key]
     except KeyError:
         raise ValueError(
-            f"Unknown colormap {name!r}. Available: {sorted(_COLORMAPS)}"
+            f"Unknown colormap {name!r}. Available: {available_colormaps()}"
         )
+    return lut[::-1].copy() if reverse else lut
 
 
 def available_colormaps():
-    return sorted(_COLORMAPS)
+    """Named colormaps, including the ``_r`` reversed variants."""
+    base = sorted(_COLORMAPS)
+    return base + [n + "_r" for n in base]
+
+
+# Common named colors (CSS/X11 subset + matplotlib single-letter aliases), so
+# both the SVG and raster/PDF backends accept names like "red" or "k", not just
+# hex. SVG understands the long names natively; the raster backend needs this.
+NAMED_COLORS = {
+    "red": "#ff0000", "green": "#008000", "blue": "#0000ff",
+    "black": "#000000", "white": "#ffffff", "gray": "#808080",
+    "grey": "#808080", "orange": "#ffa500", "purple": "#800080",
+    "brown": "#a52a2a", "pink": "#ffc0cb", "cyan": "#00ffff",
+    "magenta": "#ff00ff", "yellow": "#ffff00", "lime": "#00ff00",
+    "navy": "#000080", "teal": "#008080", "olive": "#808000",
+    "maroon": "#800000", "silver": "#c0c0c0", "gold": "#ffd700",
+    # matplotlib single-letter base colors
+    "b": "#0000ff", "g": "#008000", "r": "#ff0000", "c": "#00bfbf",
+    "m": "#bf00bf", "y": "#bfbf00", "k": "#000000", "w": "#ffffff",
+}
+
+
+def to_hex(color: str) -> str:
+    """Resolve a color name to ``#rrggbb``; pass hex through unchanged."""
+    if not isinstance(color, str):
+        return color
+    if color.startswith("#"):
+        return color
+    return NAMED_COLORS.get(color.lower(), color)
 
 
 class Normalize:
@@ -84,6 +154,33 @@ class Normalize:
         if span == 0:
             span = 1.0
         return (A - self.vmin) / span
+
+
+class LogNorm(Normalize):
+    """Map data to [0, 1] on a **log10** scale between ``vmin`` and ``vmax``.
+
+    Non-positive values map to NaN (rendered transparent, like matplotlib's
+    masked handling). Unset limits are inferred from the positive data.
+    """
+
+    def autoscale_none(self, A):
+        A = np.asarray(A, dtype=float)
+        if self.vmin is None or self.vmax is None:
+            pos = A[np.isfinite(A) & (A > 0)]
+            if self.vmin is None:
+                self.vmin = float(pos.min()) if pos.size else 1e-10
+            if self.vmax is None:
+                self.vmax = float(pos.max()) if pos.size else 1.0
+
+    def __call__(self, A):
+        A = np.asarray(A, dtype=float)
+        self.autoscale_none(A)
+        vmin = max(self.vmin, 1e-300)
+        lmin, lmax = np.log10(vmin), np.log10(max(self.vmax, vmin * 10))
+        span = (lmax - lmin) or 1.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            logA = np.log10(np.where(A > 0, A, np.nan))
+        return (logA - lmin) / span
 
 
 def apply_colormap(A, lut, norm: Normalize) -> np.ndarray:

@@ -14,11 +14,11 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Line2D, Pie, QuadMesh, Quiver, ScatterCollection, Stem,
-    Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
+    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
 )
-from .colors import apply_colormap
-from .svg import _effective_rect, _pixel_rect
+from .colors import apply_colormap, to_hex
+from .svg import _effective_rect, _pixel_rect, _resolve_tick_labels
 from .ticker import format_ticks, log_ticks, nice_ticks
 from .transform import LinearTransform
 
@@ -29,7 +29,7 @@ _PIL_V = {"baseline": "s", "center": "m", "top": "a", "bottom": "d"}
 
 
 def _rgb(color):
-    c = color.lstrip("#")
+    c = to_hex(color).lstrip("#")
     if len(c) == 3:
         c = "".join(ch * 2 for ch in c)
     return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16))
@@ -37,6 +37,27 @@ def _rgb(color):
 
 def _rgba(color, alpha=1.0):
     return _rgb(color) + (int(round(alpha * 255)),)
+
+
+def _composite_polygon(canvas, pts, rgba, outline=None):
+    """Draw a filled polygon with correct alpha by compositing a bbox layer.
+
+    Drawing directly with an RGBA fill *replaces* pixels (alpha is then dropped
+    by the final RGB conversion), so translucent fills would render opaque.
+    Compositing a small transparent layer blends properly instead.
+    """
+    from PIL import Image as PILImage, ImageDraw
+
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    x0, y0 = int(math.floor(min(xs))), int(math.floor(min(ys)))
+    x1, y1 = int(math.ceil(max(xs))), int(math.ceil(max(ys)))
+    w, h = max(1, x1 - x0), max(1, y1 - y0)
+    layer = PILImage.new("RGBA", (w, h), (0, 0, 0, 0))
+    ldraw = ImageDraw.Draw(layer)
+    ldraw.polygon([(px - x0, py - y0) for px, py in pts], fill=rgba,
+                  outline=outline)
+    canvas.alpha_composite(layer, (x0, y0))
 
 
 def _font(size):
@@ -98,7 +119,9 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
     st = ax.style
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
     L, T, Wp, Hp = _effective_rect(ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
-    tr = LinearTransform((xmin, xmax), (ymin, ymax), (L, T, Wp, Hp),
+    xlim_t = (xmax, xmin) if ax._xinverted else (xmin, xmax)
+    ylim_t = (ymax, ymin) if ax._yinverted else (ymin, ymax)
+    tr = LinearTransform(xlim_t, ylim_t, (L, T, Wp, Hp),
                          xscale=ax._xscale, yscale=ax._yscale)
 
     if ax._is_colorbar:
@@ -134,7 +157,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
                        width=max(1, int(round(st.spine_width * S))))
     _raster_labels(ax, st, L, T, Wp, Hp, S, draw)
     if ax._show_legend:
-        _raster_legend(ax, st, L, T, Wp, S, draw)
+        _raster_legend(ax, st, L, T, Wp, Hp, S, draw)
 
 
 def _raster_artist(artist, tr, st, S, draw, canvas, clip):
@@ -156,6 +179,24 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
         _polyline(draw, np.array([[x, tr.px_top], [x, tr.px_top + tr.px_h]]),
                   _rgb(artist.color), max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
+    elif isinstance(artist, HLine):
+        y = float(tr.y(artist.y))
+        _polyline(draw, np.array([[tr.px_left, y], [tr.px_left + tr.px_w, y]]),
+                  _rgb(artist.color), max(1, int(round(artist.linewidth * S))),
+                  _DASH.get(artist.linestyle))
+    elif isinstance(artist, Span):
+        rl, rt = tr.px_left, tr.px_top
+        rr, rb = tr.px_left + tr.px_w, tr.px_top + tr.px_h
+        if artist.orientation == "vertical":
+            a, b = float(tr.x(artist.lo)), float(tr.x(artist.hi))
+            box = [max(min(a, b), rl), rt, min(max(a, b), rr), rb]
+        else:
+            a, b = float(tr.y(artist.lo)), float(tr.y(artist.hi))
+            box = [rl, max(min(a, b), rt), rr, min(max(a, b), rb)]
+        if box[2] > box[0] and box[3] > box[1]:
+            pts = [(box[0], box[1]), (box[2], box[1]),
+                   (box[2], box[3]), (box[0], box[3])]
+            _composite_polygon(canvas, pts, _rgba(artist.color, artist.alpha))
     elif isinstance(artist, Bars):
         _bars(artist, tr, S, draw)
     elif isinstance(artist, FillBetween):
@@ -163,7 +204,19 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
         bot = tr.xy(artist.x[::-1], artist.y2[::-1])
         poly = [tuple(p) for p in np.vstack([top, bot]) if np.isfinite(p).all()]
         if len(poly) >= 3:
-            draw.polygon(poly, fill=_rgba(artist.color, artist.alpha))
+            _composite_polygon(canvas, poly, _rgba(artist.color, artist.alpha))
+    elif isinstance(artist, Polygon):
+        pts = [tuple(p) for p in tr.xy(artist.x, artist.y) if np.isfinite(p).all()]
+        if len(pts) >= 3:
+            outline = _rgb(artist.edgecolor) if artist.edgecolor else None
+            _composite_polygon(canvas, pts, _rgba(artist.color, artist.alpha),
+                               outline=outline)
+    elif isinstance(artist, LineCollection):
+        w = max(1, int(round(artist.linewidth * S)))
+        dash = _DASH.get(artist.linestyle)
+        for x0, y0, x1, y1 in artist.segments:
+            seg = np.array([[tr.x(x0), tr.y(y0)], [tr.x(x1), tr.y(y1)]])
+            _polyline(draw, seg, _rgb(artist.color), w, dash)
     elif isinstance(artist, Stem):
         _stem(artist, tr, st, S, draw)
     elif isinstance(artist, ErrorBar):
@@ -421,11 +474,13 @@ def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
     fs = st.tick_label_size * S
     font = _font(fs)
     yb = T + Hp
-    for xt, lab in zip(xticks, format_ticks(xticks)):
+    xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
+    ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+    for xt, lab in zip(xticks, xlabels):
         x = float(tr.x(xt))
         draw.line([x, yb, x, yb + ts], fill=col, width=max(1, int(round(st.tick_width * S))))
         draw.text((x, yb + ts + 1), lab, fill=_rgb(st.text_color), font=font, anchor="ma")
-    for yt, lab in zip(yticks, format_ticks(yticks)):
+    for yt, lab in zip(yticks, ylabels):
         y = float(tr.y(yt))
         draw.line([L - ts, y, L, y], fill=col, width=max(1, int(round(st.tick_width * S))))
         draw.text((L - ts - 2, y), lab, fill=_rgb(st.text_color), font=font, anchor="rm")
@@ -458,7 +513,16 @@ def _vtext(draw, text, x, y, fill, font):
         tmp, (int(x - tmp.width / 2), int(y - tmp.height / 2)))
 
 
-def _raster_legend(ax, st, L, T, Wp, S, draw):
+_LEGEND_ANCHORS = {
+    "upper right": (1.0, 0.0), "upper left": (0.0, 0.0),
+    "lower left": (0.0, 1.0), "lower right": (1.0, 1.0),
+    "upper center": (0.5, 0.0), "lower center": (0.5, 1.0),
+    "center left": (0.0, 0.5), "center right": (1.0, 0.5),
+    "right": (1.0, 0.5), "center": (0.5, 0.5), "best": (1.0, 0.0),
+}
+
+
+def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     entries = [a for a in ax.artists if getattr(a, "label", None)]
     if not entries:
         return
@@ -467,20 +531,39 @@ def _raster_legend(ax, st, L, T, Wp, S, draw):
     line_h = fs + 6 * S
     sample = 22 * S
     pad = 6 * S
+    ncol = min(max(1, ax._legend_ncol), len(entries))
+    nrows = (len(entries) + ncol - 1) // ncol
     tw = max(draw.textlength(a.label, font=font) for a in entries)
-    box_w = sample + tw + pad * 3
-    box_h = line_h * len(entries) + pad
-    bx = L + Wp - box_w - 6 * S
-    by = T + 6 * S
+    col_w = sample + tw + pad * 2
+    title = ax._legend_title
+    title_h = line_h if title else 0
+    box_w = col_w * ncol + pad
+    if title:
+        box_w = max(box_w, draw.textlength(title, font=font) + pad * 2)
+    box_h = line_h * nrows + pad + title_h
+
+    fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
+    bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
+    by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
     draw.rectangle([bx, by, bx + box_w, by + box_h], fill=(255, 255, 255),
                    outline=(204, 204, 204))
+    if title:
+        draw.text((bx + box_w / 2, by + pad), title, fill=_rgb(st.text_color),
+                  font=font, anchor="ma")
     for i, a in enumerate(entries):
-        ry = by + pad + line_h * i + line_h / 2.0
-        sx = bx + pad
-        color = _rgb(getattr(a, "color", None) or "#333333")
+        r, c = divmod(i, ncol)
+        sx = bx + pad + c * col_w
+        ry = by + pad + title_h + line_h * r + line_h / 2.0
+        if isinstance(a, Bars):
+            color = _rgb(a.colors[0] if a.colors else "#333333")
+        else:
+            color = _rgb(getattr(a, "color", None)
+                         or getattr(a, "linecolor", None) or "#333333")
         if isinstance(a, ScatterCollection):
-            r = 4 * S
-            draw.ellipse([sx + sample / 2 - r, ry - r, sx + sample / 2 + r, ry + r], fill=color)
+            rr = 4 * S
+            draw.ellipse([sx + sample / 2 - rr, ry - rr, sx + sample / 2 + rr, ry + rr], fill=color)
+        elif isinstance(a, (Bars, FillBetween, Span, Polygon)):
+            draw.rectangle([sx, ry - 5 * S, sx + sample, ry + 5 * S], fill=color)
         else:
             draw.line([sx, ry, sx + sample, ry], fill=color, width=max(1, int(round(2 * S))))
         draw.text((sx + sample + pad, ry), a.label, fill=_rgb(st.text_color),

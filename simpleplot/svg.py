@@ -15,8 +15,8 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Line2D, Pie, QuadMesh, Quiver, ScatterCollection, Stem,
-    Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
+    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
 )
 from .fonts import text_width
 from .png import png_data_uri
@@ -321,7 +321,9 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     alloc = _pixel_rect(ax, W, H)
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
     px_left, px_top, px_w, px_h = _effective_rect(ax, *alloc, (xmin, xmax), (ymin, ymax))
-    tr = LinearTransform((xmin, xmax), (ymin, ymax), (px_left, px_top, px_w, px_h),
+    xlim_t = (xmax, xmin) if ax._xinverted else (xmin, xmax)
+    ylim_t = (ymax, ymin) if ax._yinverted else (ymin, ymax)
+    tr = LinearTransform(xlim_t, ylim_t, (px_left, px_top, px_w, px_h),
                          xscale=ax._xscale, yscale=ax._yscale)
 
     clip_id = f"clip{index}"
@@ -351,7 +353,10 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     if ax._grid and not ax._axis_off:
         _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body)
     if not ax._axis_off:
-        _render_ticks(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body)
+        xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
+        ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+        _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
+                      px_left, px_top, px_w, px_h, body)
     body.append("</g>")
 
     # Artists: fixed clip to the axes rect, then a transformable zoom group that
@@ -366,12 +371,20 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_mesh(artist, tr, body)
         elif isinstance(artist, VLine):
             _render_vline(artist, tr, body)
+        elif isinstance(artist, HLine):
+            _render_hline(artist, tr, body)
+        elif isinstance(artist, Span):
+            _render_span(artist, tr, body)
         elif isinstance(artist, FrameLine2D):
             _render_frameline(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
             _render_bars(artist, tr, index, k, body)
         elif isinstance(artist, FillBetween):
             _render_fill(artist, tr, index, k, body)
+        elif isinstance(artist, Polygon):
+            _render_polygon(artist, tr, index, k, body)
+        elif isinstance(artist, LineCollection):
+            _render_linecollection(artist, tr, body)
         elif isinstance(artist, Stem):
             _render_stem(artist, tr, st, fig, body)
         elif isinstance(artist, ErrorBar):
@@ -399,7 +412,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     _render_labels(ax, st, px_left, px_top, px_w, px_h, body)
 
     if ax._show_legend:
-        _render_legend(ax, st, px_left, px_top, px_w, body)
+        _render_legend(ax, st, px_left, px_top, px_w, px_h, body)
 
 
 # -- artists ---------------------------------------------------------------
@@ -557,6 +570,39 @@ def _render_vline(vl: VLine, tr, body):
     )
 
 
+def _render_hline(hl, tr, body):
+    y = float(tr.y(hl.y))
+    x1, x2 = tr.px_left, tr.px_left + tr.px_w
+    dash = _DASH.get(hl.linestyle)
+    attrs = f'stroke="{hl.color}" stroke-width="{hl.linewidth}"'
+    if dash:
+        attrs += f' stroke-dasharray="{dash}"'
+    if hl.alpha < 1:
+        attrs += f' stroke-opacity="{hl.alpha}"'
+    label = _esc(hl.label) if hl.label else ""
+    body.append(
+        f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x1)}" '
+        f'y1="{_fmt(y)}" x2="{_fmt(x2)}" y2="{_fmt(y)}" {attrs}/>'
+    )
+
+
+def _render_span(sp, tr, body):
+    if sp.orientation == "vertical":       # axvspan: x band, full height
+        a, b = float(tr.x(sp.lo)), float(tr.x(sp.hi))
+        x, w = min(a, b), abs(b - a)
+        y, h = tr.px_top, tr.px_h
+    else:                                  # axhspan: y band, full width
+        a, b = float(tr.y(sp.lo)), float(tr.y(sp.hi))
+        y, h = min(a, b), abs(b - a)
+        x, w = tr.px_left, tr.px_w
+    label = _esc(sp.label) if sp.label else ""
+    body.append(
+        f'<rect class="simpleplot-series" data-label="{label}" x="{_fmt(x)}" '
+        f'y="{_fmt(y)}" width="{_fmt(w)}" height="{_fmt(h)}" fill="{sp.color}" '
+        f'fill-opacity="{sp.alpha}"/>'
+    )
+
+
 def _render_mesh(mesh: QuadMesh, tr, body):
     uri = png_data_uri(mesh.rgba())
     xmin, xmax, ymin, ymax = mesh.extent()
@@ -606,6 +652,38 @@ def _render_fill(fb: FillBetween, tr, ai, k, body):
     body.append(
         f'<path class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
         f'd="{d}" fill="{fb.color}" fill-opacity="{fb.alpha}" stroke="none"/>'
+    )
+
+
+def _render_polygon(poly: Polygon, tr, ai, k, body):
+    pts = tr.xy(poly.x, poly.y)
+    coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts if np.isfinite([x, y]).all())
+    label = _esc(poly.label) if poly.label else ""
+    stroke = (f'stroke="{poly.edgecolor}" stroke-width="{poly.linewidth}"'
+              if poly.edgecolor else 'stroke="none"')
+    body.append(
+        f'<polygon class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
+        f'points="{coords}" fill="{poly.color}" fill-opacity="{poly.alpha}" {stroke}/>'
+    )
+
+
+def _render_linecollection(lc: LineCollection, tr, body):
+    dash = _DASH.get(lc.linestyle)
+    lines = []
+    for x0, y0, x1, y1 in lc.segments:
+        lines.append(
+            f'<line x1="{_fmt(tr.x(x0))}" y1="{_fmt(tr.y(y0))}" '
+            f'x2="{_fmt(tr.x(x1))}" y2="{_fmt(tr.y(y1))}"/>'
+        )
+    attrs = f'stroke="{lc.color}" stroke-width="{lc.linewidth}"'
+    if dash:
+        attrs += f' stroke-dasharray="{dash}"'
+    if lc.alpha < 1:
+        attrs += f' stroke-opacity="{lc.alpha}"'
+    label = _esc(lc.label) if lc.label else ""
+    body.append(
+        f'<g class="simpleplot-series" data-label="{label}" {attrs}>'
+        f'{"".join(lines)}</g>'
     )
 
 
@@ -846,20 +924,29 @@ def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
     )
 
 
-def _render_ticks(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
+def _resolve_tick_labels(custom, ticks):
+    """Explicit tick-label strings if set, else formatted tick values."""
+    if custom is None:
+        return format_ticks(ticks)
+    labs = list(custom)[:len(ticks)]
+    return labs + [""] * (len(ticks) - len(labs))
+
+
+def _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
+                  px_left, px_top, px_w, px_h, body):
     ts, tw = st.tick_size, st.tick_width
     fs = st.tick_label_size
     marks, labels = [], []
     y_axis = px_top + px_h
 
-    for xt, lab in zip(xticks, format_ticks(xticks)):
+    for xt, lab in zip(xticks, xlabels):
         x = tr.x(xt)
         marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(y_axis)}" x2="{_fmt(x)}" y2="{_fmt(y_axis + ts)}"/>')
         labels.append(
             f'<text x="{_fmt(x)}" y="{_fmt(y_axis + ts + fs)}" text-anchor="middle" '
             f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
         )
-    for yt, lab in zip(yticks, format_ticks(yticks)):
+    for yt, lab in zip(yticks, ylabels):
         y = tr.y(yt)
         marks.append(f'<line x1="{_fmt(px_left - ts)}" y1="{_fmt(y)}" x2="{_fmt(px_left)}" y2="{_fmt(y)}"/>')
         labels.append(
@@ -908,36 +995,81 @@ def _max_ytick_width(ax, st):
     return max((text_width(l, st.tick_label_size) for l in labels), default=0.0)
 
 
-def _render_legend(ax, st, px_left, px_top, px_w, body):
+# loc name -> (fx, fy) fractions of the free space inside the axes: 0 = left/top.
+_LEGEND_ANCHORS = {
+    "upper right": (1.0, 0.0), "upper left": (0.0, 0.0),
+    "lower left": (0.0, 1.0), "lower right": (1.0, 1.0),
+    "upper center": (0.5, 0.0), "lower center": (0.5, 1.0),
+    "center left": (0.0, 0.5), "center right": (1.0, 0.5),
+    "right": (1.0, 0.5), "center": (0.5, 0.5), "best": (1.0, 0.0),
+}
+
+
+def _legend_layout(ax, st):
+    """Compute legend geometry: entries, columns, cell size, box size."""
     entries = [a for a in ax.artists if getattr(a, "label", None)]
     if not entries:
-        return
+        return None
     fs = st.tick_label_size
     line_h = fs + 6
     sample_w = 22
     pad = 6
+    ncol = min(max(1, ax._legend_ncol), len(entries))
+    nrows = (len(entries) + ncol - 1) // ncol
     text_w = max(text_width(a.label, fs) for a in entries)
-    box_w = sample_w + text_w + pad * 3
-    box_h = line_h * len(entries) + pad
-    bx = px_left + px_w - box_w - 6
-    by = px_top + 6
+    col_w = sample_w + text_w + pad * 2
+    title = ax._legend_title
+    title_h = line_h if title else 0
+    box_w = col_w * ncol + pad
+    if title:
+        box_w = max(box_w, text_width(title, fs) + pad * 2)
+    box_h = line_h * nrows + pad + title_h
+    return {
+        "entries": entries, "fs": fs, "line_h": line_h, "sample_w": sample_w,
+        "pad": pad, "ncol": ncol, "col_w": col_w, "title": title,
+        "title_h": title_h, "box_w": box_w, "box_h": box_h,
+    }
+
+
+def _legend_origin(ax, lay, px_left, px_top, px_w, px_h):
+    fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
+    bx = px_left + 6 + fx * max(0.0, px_w - lay["box_w"] - 12)
+    by = px_top + 6 + fy * max(0.0, px_h - lay["box_h"] - 12)
+    return bx, by
+
+
+def _render_legend(ax, st, px_left, px_top, px_w, px_h, body):
+    lay = _legend_layout(ax, st)
+    if lay is None:
+        return
+    fs, line_h, sample_w, pad = lay["fs"], lay["line_h"], lay["sample_w"], lay["pad"]
+    ncol, col_w, title_h = lay["ncol"], lay["col_w"], lay["title_h"]
+    box_w, box_h = lay["box_w"], lay["box_h"]
+    bx, by = _legend_origin(ax, lay, px_left, px_top, px_w, px_h)
 
     body.append(
         f'<g class="simpleplot-legend"><rect x="{_fmt(bx)}" y="{_fmt(by)}" '
         f'width="{_fmt(box_w)}" height="{_fmt(box_h)}" rx="3" fill="#ffffff" '
         f'fill-opacity="0.85" stroke="#cccccc" stroke-width="0.8"/>'
     )
-    for i, a in enumerate(entries):
-        row_y = by + pad + line_h * i + line_h / 2.0
-        sx = bx + pad
+    if lay["title"]:
+        body.append(
+            f'<text x="{_fmt(bx + box_w / 2)}" y="{_fmt(by + pad + fs)}" '
+            f'text-anchor="middle" font-size="{fs}" font-weight="bold" '
+            f'fill="{st.text_color}">{_esc(lay["title"])}</text>'
+        )
+    for i, a in enumerate(lay["entries"]):
+        r, c = divmod(i, ncol)
+        sx = bx + pad + c * col_w
+        row_y = by + pad + title_h + line_h * r + line_h / 2.0
         if isinstance(a, Bars):
             color = a.colors[0] if a.colors else "#333333"
         else:
             color = getattr(a, "color", None) or getattr(a, "linecolor", None) or "#333333"
         if isinstance(a, ScatterCollection):
             body.append(f'<circle cx="{_fmt(sx + sample_w / 2)}" cy="{_fmt(row_y)}" r="4" fill="{color}"/>')
-        elif isinstance(a, (Bars, FillBetween)):
-            op = getattr(a, "alpha", 1.0) if isinstance(a, FillBetween) else 1.0
+        elif isinstance(a, (Bars, FillBetween, Span, Polygon)):
+            op = getattr(a, "alpha", 1.0) if isinstance(a, (FillBetween, Span, Polygon)) else 1.0
             body.append(
                 f'<rect x="{_fmt(sx)}" y="{_fmt(row_y - 5)}" width="{_fmt(sample_w)}" '
                 f'height="10" fill="{color}" fill-opacity="{op}"/>'

@@ -101,6 +101,44 @@ class VLine(Artist):
         return None
 
 
+class HLine(Artist):
+    """A horizontal reference line spanning the full axes width at data y.
+
+    Like matplotlib's ``axhline``; does not participate in autoscaling.
+    """
+
+    def __init__(self, y, color, linewidth, linestyle="--", label=None, alpha=1.0):
+        self.y = float(y)
+        self.color = color
+        self.linewidth = linewidth
+        self.linestyle = linestyle
+        self.label = label
+        self.alpha = alpha
+
+    def data_bounds(self):
+        return None
+
+
+class Span(Artist):
+    """A shaded band across the axes (``axhspan`` / ``axvspan``).
+
+    ``orientation`` is ``"horizontal"`` for ``axhspan`` (a band between two *y*
+    values spanning the full width) or ``"vertical"`` for ``axvspan`` (between
+    two *x* values spanning the full height). Does not drive autoscaling.
+    """
+
+    def __init__(self, lo, hi, orientation, color, alpha=0.3, label=None):
+        self.lo = float(lo)
+        self.hi = float(hi)
+        self.orientation = orientation
+        self.color = color
+        self.alpha = alpha
+        self.label = label
+
+    def data_bounds(self):
+        return None
+
+
 class ScatterCollection(Artist):
     def __init__(self, x, y, s, color, marker="o", label=None, alpha=1.0,
                  c=None, cmap="viridis", norm=None, values=None):
@@ -229,6 +267,49 @@ class FillBetween(Artist):
     def data_bounds(self):
         ys = np.concatenate([self.y1, self.y2])
         return (self.x.min(), self.x.max(), ys.min(), ys.max())
+
+
+class Polygon(Artist):
+    """A filled polygon in data coordinates (``fill`` / ``fill_betweenx``)."""
+
+    def __init__(self, x, y, color, alpha=1.0, edgecolor=None, linewidth=0.0,
+                 label=None):
+        self.x = np.asarray(x, float)
+        self.y = np.asarray(y, float)
+        self.color = color
+        self.alpha = alpha
+        self.edgecolor = edgecolor
+        self.linewidth = linewidth
+        self.label = label
+
+    def data_bounds(self):
+        if self.x.size == 0:
+            return None
+        return (self.x.min(), self.x.max(), self.y.min(), self.y.max())
+
+
+class LineCollection(Artist):
+    """A set of straight line segments (``hlines`` / ``vlines``).
+
+    ``segments`` is an ``(N, 4)`` array of ``(x0, y0, x1, y1)`` rows.
+    """
+
+    def __init__(self, segments, color, linewidth, linestyle="-", label=None,
+                 alpha=1.0):
+        self.segments = np.asarray(segments, float).reshape(-1, 4)
+        self.color = color
+        self.linewidth = linewidth
+        self.linestyle = linestyle
+        self.label = label
+        self.alpha = alpha
+
+    def data_bounds(self):
+        if self.segments.size == 0:
+            return None
+        s = self.segments
+        xs = np.concatenate([s[:, 0], s[:, 2]])
+        ys = np.concatenate([s[:, 1], s[:, 3]])
+        return (xs.min(), xs.max(), ys.min(), ys.max())
 
 
 class Stem(Artist):

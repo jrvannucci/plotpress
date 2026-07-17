@@ -23,7 +23,7 @@ Example
 >>> fig.save("out.svg")
 """
 
-from .colors import Normalize, available_colormaps, get_cmap
+from .colors import LogNorm, Normalize, available_colormaps, get_cmap
 from .figure import Figure, subplots
 from .style import Style
 
@@ -34,6 +34,7 @@ __all__ = [
     "subplots",
     "Style",
     "Normalize",
+    "LogNorm",
     "get_cmap",
     "available_colormaps",
     "__version__",

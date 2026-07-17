@@ -14,8 +14,8 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Line2D, Pie, QuadMesh, Quiver, ScatterCollection, Stem,
-    Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
+    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
 )
 from .colors import Normalize, get_cmap
 
@@ -44,6 +44,10 @@ class Axes:
         self._ylim = None
         self._xticks = None  # None => automatic "nice" ticks; [] => none
         self._yticks = None
+        self._xticklabels = None  # None => format tick values; else explicit text
+        self._yticklabels = None
+        self._xinverted = False
+        self._yinverted = False
         self._xlabel = ""
         self._ylabel = ""
         self._title = ""
@@ -227,6 +231,54 @@ class Axes:
                          alpha=alpha, label=label)
         self.artists.append(fb)
         return fb
+
+    def fill_betweenx(self, y, x1, x2=0.0, color=None, alpha=0.4, label=None):
+        """Fill the horizontal area between ``x1`` and ``x2`` across ``y``."""
+        y = np.asarray(y, float)
+        x1 = np.broadcast_to(np.asarray(x1, float), y.shape)
+        x2 = np.broadcast_to(np.asarray(x2, float), y.shape)
+        px = np.concatenate([x1, x2[::-1]])
+        py = np.concatenate([y, y[::-1]])
+        p = Polygon(px, py, color=color or self._next_color(), alpha=alpha,
+                    label=label)
+        self.artists.append(p)
+        return p
+
+    def fill(self, x, y, color=None, alpha=1.0, edgecolor=None, linewidth=0.0,
+             label=None):
+        """Fill an arbitrary polygon given by vertices ``x``/``y``."""
+        p = Polygon(x, y, color=color or self._next_color(), alpha=alpha,
+                    edgecolor=edgecolor, linewidth=linewidth, label=label)
+        self.artists.append(p)
+        return p
+
+    def hlines(self, y, xmin, xmax, color=None, linewidth=None, linestyle="-",
+               label=None, alpha=1.0):
+        """Draw horizontal line segments at each ``y`` from ``xmin`` to ``xmax``."""
+        y = np.atleast_1d(np.asarray(y, float))
+        xmin = np.broadcast_to(np.asarray(xmin, float), y.shape)
+        xmax = np.broadcast_to(np.asarray(xmax, float), y.shape)
+        segs = np.column_stack([xmin, y, xmax, y])
+        lc = LineCollection(
+            segs, color=color or self._next_color(),
+            linewidth=self.style.line_width if linewidth is None else linewidth,
+            linestyle=linestyle, label=label, alpha=alpha)
+        self.artists.append(lc)
+        return lc
+
+    def vlines(self, x, ymin, ymax, color=None, linewidth=None, linestyle="-",
+               label=None, alpha=1.0):
+        """Draw vertical line segments at each ``x`` from ``ymin`` to ``ymax``."""
+        x = np.atleast_1d(np.asarray(x, float))
+        ymin = np.broadcast_to(np.asarray(ymin, float), x.shape)
+        ymax = np.broadcast_to(np.asarray(ymax, float), x.shape)
+        segs = np.column_stack([x, ymin, x, ymax])
+        lc = LineCollection(
+            segs, color=color or self._next_color(),
+            linewidth=self.style.line_width if linewidth is None else linewidth,
+            linestyle=linestyle, label=label, alpha=alpha)
+        self.artists.append(lc)
+        return lc
 
     def stem(self, x, y=None, baseline=0.0, linecolor=None, markercolor=None,
              label=None):
@@ -470,6 +522,30 @@ class Axes:
         self.artists.append(vl)
         return vl
 
+    def axhline(self, y, color=None, linewidth=None, linestyle="--",
+                label=None, alpha=1.0):
+        """Draw a horizontal line at data coordinate ``y`` (like matplotlib)."""
+        hl = HLine(
+            y,
+            color=color or self._next_color(),
+            linewidth=self.style.line_width if linewidth is None else linewidth,
+            linestyle=linestyle, label=label, alpha=alpha,
+        )
+        self.artists.append(hl)
+        return hl
+
+    def axvspan(self, xmin, xmax, color="#1f77b4", alpha=0.3, label=None):
+        """Shade a vertical band between x=``xmin`` and x=``xmax``."""
+        sp = Span(xmin, xmax, "vertical", color=color, alpha=alpha, label=label)
+        self.artists.append(sp)
+        return sp
+
+    def axhspan(self, ymin, ymax, color="#1f77b4", alpha=0.3, label=None):
+        """Shade a horizontal band between y=``ymin`` and y=``ymax``."""
+        sp = Span(ymin, ymax, "horizontal", color=color, alpha=alpha, label=label)
+        self.artists.append(sp)
+        return sp
+
     # -- limits / labels ----------------------------------------------------
     def set_xlim(self, left, right=None):
         self._xlim = (left, right) if right is not None else tuple(left)
@@ -487,6 +563,22 @@ class Axes:
         """Set explicit y tick locations. Pass ``[]`` to hide ticks."""
         self._yticks = None if ticks is None else np.asarray(ticks, dtype=float)
 
+    def set_xticklabels(self, labels):
+        """Set explicit x tick label strings (pair with :meth:`set_xticks`)."""
+        self._xticklabels = None if labels is None else [str(s) for s in labels]
+
+    def set_yticklabels(self, labels):
+        """Set explicit y tick label strings (pair with :meth:`set_yticks`)."""
+        self._yticklabels = None if labels is None else [str(s) for s in labels]
+
+    def invert_xaxis(self):
+        """Reverse the x-axis direction (larger values to the left)."""
+        self._xinverted = not self._xinverted
+
+    def invert_yaxis(self):
+        """Reverse the y-axis direction (larger values at the bottom)."""
+        self._yinverted = not self._yinverted
+
     def set_xlabel(self, label):
         self._xlabel = label
 
@@ -499,11 +591,23 @@ class Axes:
     def grid(self, visible=True):
         self._grid = bool(visible)
 
-    def legend(self):
-        """Enable a legend (drawn from artists that have a ``label``)."""
+    def legend(self, loc="upper right", ncol=1, title=None):
+        """Enable a legend (drawn from artists that have a ``label``).
+
+        ``loc`` is a matplotlib-style corner/edge name (e.g. ``"upper left"``,
+        ``"lower center"``, ``"center"``; ``"best"`` maps to upper right).
+        ``ncol`` lays the entries out in that many columns; ``title`` adds a
+        heading row.
+        """
         self._show_legend = True
+        self._legend_loc = loc
+        self._legend_ncol = max(1, int(ncol))
+        self._legend_title = title
 
     _show_legend = False
+    _legend_loc = "upper right"
+    _legend_ncol = 1
+    _legend_title = None
 
     # -- autoscaling --------------------------------------------------------
     def get_xlim(self):
