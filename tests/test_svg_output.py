@@ -348,6 +348,36 @@ def test_pick_data_includes_z_c_and_extra_dims():
     assert pd[2]["series"][0]["vals"]["z"] == [5.0, 6.0]
 
 
+def test_round_list_matches_python_rounding():
+    # The vectorized _rl replaced a per-element round(float(v), nd) comprehension.
+    # It agrees with it to within one quantum -- the two can differ only on exact
+    # half-way ties at the last digit (numpy multiplies-then-rounds; Python rounds
+    # the decimal). That last-digit difference is irrelevant for a pick readout.
+    from simpleplot.svg import _rl
+
+    rng = np.random.default_rng(0)
+    a = rng.standard_normal(2000) * 50.0
+    for nd in (6, 4, 3):
+        got = np.asarray(_rl(a, nd))
+        ref = np.asarray([round(float(v), nd) for v in a])
+        assert got.shape == ref.shape
+        assert np.allclose(got, ref, atol=10.0 ** -nd)
+
+
+def test_pick_precision_rounds_and_shrinks_payload():
+    from simpleplot.svg import pick_data
+
+    fig, ax = simpleplot.subplots()
+    ax.pcolormesh(np.linspace(0, 1, 400).reshape(20, 20))
+    z6 = pick_data(fig, precision=6)[0]["meshes"][0]["z"]
+    z2 = pick_data(fig, precision=2)[0]["meshes"][0]["z"]
+
+    # Coarser precision actually rounds the embedded values...
+    assert z2 == [round(v, 2) for v in z6]
+    # ...and a lower-precision interactive HTML is no larger than the default.
+    assert len(fig.to_html(pick_precision=2)) <= len(fig.to_html(pick_precision=6))
+
+
 def test_plot_frames_registers_slider_and_embeds_frames():
     from simpleplot.svg import frame_data
 

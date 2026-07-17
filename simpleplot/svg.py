@@ -139,11 +139,20 @@ def style_payload(fig):
     }
 
 
+def _rl(a, nd=6):
+    """Flatten to a rounded Python-float list (vectorized: NumPy does the work).
+
+    Much faster than a per-element ``round(float(v), nd)`` comprehension on the
+    large arrays embedded for point picking (e.g. mesh z grids).
+    """
+    return np.round(np.asarray(a, dtype=float).ravel(), nd).tolist()
+
+
 def _round_list(a):
-    return [round(float(v), 6) for v in np.asarray(a, dtype=float).ravel()]
+    return _rl(a, 6)
 
 
-def pick_data(fig, max_points=20000, max_mesh_cells=60000):
+def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
     """Per-axes data payload for point picking (values incl. z and beyond).
 
     For point series (line/scatter) embeds x, y and any extra named dimensions
@@ -151,7 +160,16 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000):
     clicked cell reports its value. Series/meshes exceeding the size caps are
     omitted (picking falls back to a geometry-based x/y readout for those), so
     the HTML stays lean.
+
+    ``precision`` sets the decimal places the embedded arrays are rounded to.
+    Lower values shrink the payload (the mesh z grids dominate it); 6 keeps
+    full readout fidelity.
     """
+    # Local shadow so every _round_list(...) call below honors `precision`
+    # without threading it through ~20 call sites.
+    def _round_list(a):
+        return _rl(a, precision)
+
     data = {}
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar:

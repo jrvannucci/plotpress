@@ -187,7 +187,14 @@ class Figure:
         # Static inline SVG is the Jupyter default; use to_html for interactive.
         return figure_to_svg(self)
 
-    def to_html(self, interactive: bool = True, wait_extract: bool = False) -> str:
+    def to_html(self, interactive: bool = True, wait_extract: bool = False,
+                pick_precision: int = 6) -> str:
+        """Serialize to a self-contained HTML document.
+
+        ``pick_precision`` sets the decimal places of the embedded point-pick
+        arrays (the mesh z grids dominate the file size for mesh-heavy figures);
+        lower it to shrink the HTML at the cost of readout precision.
+        """
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
         svg = svg.replace("<svg ", '<svg id="simpleplot-svg" ', 1)
@@ -199,7 +206,7 @@ class Figure:
             from .svg import axes_metadata, frame_data, pick_data, style_payload
 
             meta = json.dumps(axes_metadata(self))
-            pick = json.dumps(pick_data(self))
+            pick = json.dumps(pick_data(self, precision=pick_precision))
             styl = json.dumps(style_payload(self))
             payloads = (
                 f'<script type="application/json" id="simpleplot-meta">{meta}</script>'
@@ -231,15 +238,18 @@ class Figure:
     # therefore fall back to the clean static SVG above; for an interactive
     # figure in a notebook, embed to_html() in an <iframe> (see the docs).
 
-    def save(self, path: str, interactive: bool = False, scale: int = 2):
+    def save(self, path: str, interactive: bool = False, scale: int = 2,
+             pick_precision: int = 6):
         """Save by extension: ``.svg``, ``.html``, ``.png``, or ``.pdf``.
 
         All formats work with the standard install (PNG is a supersampled
-        raster; PDF is vector).
+        raster; PDF is vector). ``pick_precision`` applies only to interactive
+        HTML (see :meth:`to_html`).
         """
         lower = path.lower()
         if lower.endswith(".html") or lower.endswith(".htm"):
-            content = self.to_html(interactive=interactive)
+            content = self.to_html(interactive=interactive,
+                                   pick_precision=pick_precision)
         elif lower.endswith(".svg"):
             content = self.to_svg()
         elif lower.endswith(".png"):
