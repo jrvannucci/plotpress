@@ -176,7 +176,7 @@ live ticks, point-picking + extraction, in-browser annotation, and sliders for
   many-axes case; would also unify the SVG and PNG renderers.
 - More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
   3-D axes.
-- Hover tooltips, curvilinear / Gouraud pcolormesh.
+- Hover tooltips; Gouraud (smooth-shaded) pcolormesh.
 
 ## Architecture notes
 

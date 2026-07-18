@@ -296,3 +296,29 @@ def test_small_and_nonmonotonic_lines_are_not_decimated():
     fig, ax = simpleplot.subplots()
     ax.plot(np.arange(100), np.arange(100))
     assert fig.to_svg().count("L") >= 99   # all ~100 vertices present
+
+
+# -- curvilinear pcolormesh -------------------------------------------------
+def test_curvilinear_pcolormesh_scan_converts():
+    n = 20
+    r = np.linspace(0.3, 1, n)
+    th = np.linspace(0, 1.5 * np.pi, n)
+    R, TH = np.meshgrid(r, th)
+    X, Y = R * np.cos(TH), R * np.sin(TH)      # 2-D warped node coords
+    C = np.sin(3 * TH) * R
+
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(X, Y, C, cmap="plasma")
+    assert m.curvilinear is True
+    img = m.rgba()
+    assert img.ndim == 3 and img.shape[2] == 4      # scan-converted RGBA image
+    assert (img[..., 3] > 0).any()                  # some cells filled
+    assert (img[..., 3] == 0).any()                 # background transparent (concave region)
+    assert fig.to_svg().count("<image") == 1
+
+
+def test_rectilinear_pcolormesh_uses_fast_path():
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(np.arange(5.0).reshape(5, 1) * np.ones(5))  # 1-arg -> 1-D path
+    assert m.curvilinear is False
+    assert m.rgba().shape == (5, 5, 4)              # no upsizing, direct colormap

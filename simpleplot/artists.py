@@ -203,18 +203,45 @@ class ScatterCollection(Artist):
             )
 
 
-class QuadMesh(Artist):
-    """Rectilinear color mesh, rasterized to a single embedded ``<image>``.
+def _in_tri(px, py, ax, ay, bx, by, cx, cy):
+    """Vectorized point-in-triangle (inclusive of edges) for pixel arrays."""
+    d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by)
+    d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy)
+    d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay)
+    has_neg = (d1 < 0) | (d2 < 0) | (d3 < 0)
+    has_pos = (d1 > 0) | (d2 > 0) | (d3 > 0)
+    return ~(has_neg & has_pos)
 
-    ``X``/``Y`` are treated as rectilinear (1-D) edge or center coordinates; the
-    data extent is taken from their min/max. Curvilinear grids and Gouraud
-    shading are a Phase 2 (Rust scan-conversion) feature.
+
+def _fill_quad(img, qx, qy, color):
+    """Fill a convex quad (as two triangles) with ``color`` into ``img``."""
+    H, W = img.shape[:2]
+    x0 = max(0, int(np.floor(min(qx)))); x1 = min(W - 1, int(np.ceil(max(qx))))
+    y0 = max(0, int(np.floor(min(qy)))); y1 = min(H - 1, int(np.ceil(max(qy))))
+    if x1 < x0 or y1 < y0:
+        return
+    yy, xx = np.mgrid[y0:y1 + 1, x0:x1 + 1]
+    px, py = xx + 0.5, yy + 0.5
+    inside = (_in_tri(px, py, qx[0], qy[0], qx[1], qy[1], qx[2], qy[2])
+              | _in_tri(px, py, qx[0], qy[0], qx[2], qy[2], qx[3], qy[3]))
+    img[y0:y1 + 1, x0:x1 + 1][inside] = color
+
+
+class QuadMesh(Artist):
+    """Color mesh, rasterized to a single embedded ``<image>``.
+
+    ``X``/``Y`` may be **1-D** rectilinear edge/center coordinates (uniform grid,
+    fast path) or **2-D** node coordinates for a *curvilinear* grid, which is
+    scan-converted to the image in pure NumPy (no Rust needed). The data extent
+    is taken from their min/max.
     """
 
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None):
         self.C = np.asarray(C, dtype=float)
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
+        self.curvilinear = (self.X is not None and self.Y is not None
+                            and self.X.ndim == 2 and self.Y.ndim == 2)
         self.lut = get_cmap(cmap)
         self.norm = norm if norm is not None else Normalize(vmin, vmax)
         self.norm.autoscale_none(self.C)
@@ -233,9 +260,42 @@ class QuadMesh(Artist):
 
     def rgba(self):
         """Return the mesh as an RGBA uint8 image (row 0 = top = max y)."""
+        if self.curvilinear:
+            return self._rgba_curvilinear()
         rgba = apply_colormap(self.C, self.lut, self.norm)
         # Image rows go top-down; data y increases upward -> flip vertically.
         return np.flipud(rgba)
+
+    def _rgba_curvilinear(self, max_side=512):
+        """Scan-convert a 2-D (curvilinear) quad mesh to an RGBA image."""
+        X, Y, C = self.X, self.Y, self.C
+        # Cell colors: X/Y are node coords with one more row/col than C, or the
+        # same shape (then the last row/col of C is unused, like matplotlib).
+        ny = min(C.shape[0], X.shape[0] - 1)
+        nx = min(C.shape[1], X.shape[1] - 1)
+        cell_rgba = apply_colormap(C[:ny, :nx], self.lut, self.norm)
+
+        xmin, xmax, ymin, ymax = self.extent()
+        aspect = (ymax - ymin) / ((xmax - xmin) or 1.0)
+        if aspect >= 1:
+            out_h, out_w = max_side, max(1, int(round(max_side / aspect)))
+        else:
+            out_w, out_h = max_side, max(1, int(round(max_side * aspect)))
+        img = np.zeros((out_h, out_w, 4), np.uint8)
+
+        sx = (out_w - 1) / ((xmax - xmin) or 1.0)
+        sy = (out_h - 1) / ((ymax - ymin) or 1.0)
+        PX = (X - xmin) * sx
+        PY = (ymax - Y) * sy                       # flip: row 0 = ymax (top)
+        for i in range(ny):
+            for j in range(nx):
+                col = cell_rgba[i, j]
+                if col[3] == 0:
+                    continue
+                qx = (PX[i, j], PX[i, j + 1], PX[i + 1, j + 1], PX[i + 1, j])
+                qy = (PY[i, j], PY[i, j + 1], PY[i + 1, j + 1], PY[i + 1, j])
+                _fill_quad(img, qx, qy, col)
+        return img
 
     def data_bounds(self):
         return self.extent()
