@@ -32,12 +32,12 @@ def test_simpleplot_render_under_threshold(name):
 
 
 @pytest.mark.skipif(not scenarios.has_matplotlib(), reason="matplotlib not installed")
-def test_simpleplot_faster_than_matplotlib_many_axes():
-    # The Phase 0 claim: for figures with many axes, avoiding matplotlib's
-    # per-Artist Python overhead makes simpleplot faster end-to-end. (A single huge
-    # polyline is *not* yet a win -- pure-Python float->string serialization is
-    # the Phase 2 Rust target -- so we do not assert that here.)
-    name = "many_axes_8x8_grid"
+@pytest.mark.parametrize("name", ["many_axes_8x8_grid", "line_100k_points"])
+def test_simpleplot_faster_than_matplotlib(name):
+    # For figures with many axes, avoiding matplotlib's per-Artist Python
+    # overhead makes simpleplot faster end-to-end. The single huge polyline --
+    # once a loss to matplotlib's C++ Agg backend -- is now also a win thanks to
+    # min/max path decimation (see simpleplot.svg._decimate_minmax).
     et = scenarios.timeit(scenarios.SCENARIOS[name]["simpleplot"], repeat=3)
     mt = scenarios.timeit(scenarios.SCENARIOS[name]["mpl"], repeat=3)
     assert et < mt, f"{name}: simpleplot {et:.3f}s not faster than matplotlib {mt:.3f}s"

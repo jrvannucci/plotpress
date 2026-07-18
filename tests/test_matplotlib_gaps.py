@@ -271,3 +271,28 @@ def test_broken_barh_and_stairs():
     line = ax.stairs([1, 3, 2], edges=[0, 1, 2, 3])
     # step outline: doubled vertices, spans the edges
     assert line.x.min() == 0 and line.x.max() == 3
+
+
+# -- huge-line decimation ---------------------------------------------------
+def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
+    from simpleplot.svg import _decimate_minmax
+
+    x = np.linspace(0, 10, 50000)
+    y = np.sin(x)
+    y[25000] = 99.0                    # a spike that must survive
+    dx, dy = _decimate_minmax(x, y, ncols=700)
+    assert dx.size < 4000              # massively reduced from 50k
+    assert dy.max() == 99.0            # min/max per column keeps the spike
+    assert dx[0] == x[0] and dx[-1] == x[-1]   # endpoints preserved
+
+
+def test_small_and_nonmonotonic_lines_are_not_decimated():
+    from simpleplot.svg import _decimate_minmax, _is_monotonic
+
+    # a parametric loop (non-monotonic x) must not be per-column collapsed
+    t = np.linspace(0, 2 * np.pi, 10000)
+    assert not _is_monotonic(np.cos(t))
+    # short line: below threshold, output vertices unchanged
+    fig, ax = simpleplot.subplots()
+    ax.plot(np.arange(100), np.arange(100))
+    assert fig.to_svg().count("L") >= 99   # all ~100 vertices present

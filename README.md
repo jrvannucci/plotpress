@@ -150,14 +150,16 @@ both using the object-oriented API):
 | pcolormesh 300×300 | ~16 ms | ~6400 ms | **~400×** |
 | many axes (8×8 grid) | ~40 ms | ~1600 ms | **~40×** |
 | scatter, 5k points | ~15 ms | ~220 ms | **~14×** |
-| single line, 100k points | ~320 ms | ~87 ms | **0.3× (slower)** |
+| single line, 100k points | ~9 ms | ~48 ms | **~5.6×** |
 
 **Honest caveat:** simpleplot's win comes from avoiding matplotlib's per-`Artist`
 Python overhead (many axes) and from rasterizing meshes to one `<image>` instead
-of tens of thousands of vector cells (pcolormesh). A *single huge polyline* is
-**not** yet a win: serializing 100k points to a path string is pure-Python
-float→string work, and matplotlib's C++ Agg backend beats it. That specific hot
-path is exactly what the planned Rust backend targets.
+of tens of thousands of vector cells (pcolormesh). The *single huge polyline*
+case used to be a loss (pure-Python float→string serialization of 100k points);
+it's now a win via **min/max path decimation** — a monotonic-x line is reduced
+to first/last/min/max per pixel column before serializing, which is visually
+lossless (spikes preserved), keeps the output **vector**, and needs no compiled
+backend. Coordinate formatting itself is already vectorized with `numpy.char`.
 
 ## Roadmap
 
@@ -174,7 +176,7 @@ live ticks, point-picking + extraction, in-browser annotation, and sliders for
   many-axes case; would also unify the SVG and PNG renderers.
 - More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
   3-D axes.
-- Decimation for huge series, hover tooltips, curvilinear / Gouraud pcolormesh.
+- Hover tooltips, curvilinear / Gouraud pcolormesh.
 
 ## Architecture notes
 

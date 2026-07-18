@@ -19,7 +19,10 @@ from .artists import (
     VLine,
 )
 from .colors import apply_colormap, to_hex
-from .svg import _effective_rect, _pixel_rect, _resolve_tick_labels
+from .svg import (
+    _DECIMATE_MIN_POINTS, _decimate_minmax, _effective_rect, _is_monotonic,
+    _pixel_rect, _resolve_tick_labels,
+)
 from .ticker import format_ticks, log_ticks, nice_ticks
 from .transform import LinearTransform
 
@@ -174,7 +177,10 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
             x0, y0 = artist.frame_xy(0)
             pts = tr.xy(x0, y0)
         else:
-            pts = tr.xy(artist.x, artist.y)
+            lx, ly = artist.x, artist.y
+            if lx.size > _DECIMATE_MIN_POINTS and _is_monotonic(lx):
+                lx, ly = _decimate_minmax(lx, ly, int(round(tr.px_w * S)))
+            pts = tr.xy(lx, ly)
         _polyline(draw, pts, _rgb(artist.color),
                   max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
