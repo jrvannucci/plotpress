@@ -14,8 +14,9 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
-    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
+    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
+    VLine,
 )
 from .colors import apply_colormap, to_hex
 from .svg import _effective_rect, _pixel_rect, _resolve_tick_labels
@@ -211,6 +212,14 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
             outline = _rgb(artist.edgecolor) if artist.edgecolor else None
             _composite_polygon(canvas, pts, _rgba(artist.color, artist.alpha),
                                outline=outline)
+    elif isinstance(artist, PolyCollection):
+        outline = _rgb(artist.edgecolor) if artist.edgecolor else None
+        a = int(round(artist.alpha * 255))
+        for verts, fc in zip(artist.verts, artist.facecolors):
+            pts = [tuple(p) for p in tr.xy(verts[:, 0], verts[:, 1])]
+            rgba = (_rgb(fc) if isinstance(fc, str)
+                    else (int(fc[0]), int(fc[1]), int(fc[2]))) + (a,)
+            _composite_polygon(canvas, pts, rgba, outline=outline)
     elif isinstance(artist, LineCollection):
         w = max(1, int(round(artist.linewidth * S)))
         dash = _DASH.get(artist.linestyle)

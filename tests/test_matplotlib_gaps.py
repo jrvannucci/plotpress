@@ -111,3 +111,62 @@ def test_legend_default_still_works():
     ax.plot([0, 1], [0, 1], label="line")
     ax.legend()
     assert "simpleplot-legend" in fig.to_svg()
+
+
+# -- shared colorbar --------------------------------------------------------
+def test_shared_colorbar_over_axes_list():
+    fig, axes = simpleplot.subplots(2, 2)
+    m = None
+    for ax in axes.ravel():
+        m = ax.pcolormesh(np.ones((4, 4)), vmin=0, vmax=1)
+    cax = fig.colorbar(m, ax=axes)
+    assert sum(1 for a in fig.axes if a._is_colorbar) == 1
+    # the squeezed grid ends to the left of the colorbar
+    right = max(a._rect[0] + a._rect[2] for a in axes.ravel())
+    assert right <= cax._rect[0] + 1e-9
+
+
+def test_single_axes_colorbar_still_works():
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(np.arange(9.0).reshape(3, 3))
+    fig.colorbar(m, ax=ax)
+    assert fig.to_svg().count("<image") == 2
+
+
+# -- contourf / hexbin ------------------------------------------------------
+def test_contourf_is_banded_image_and_mappable():
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    fig, ax = simpleplot.subplots()
+    cf = ax.contourf(g, g, np.exp(-(X ** 2 + Y ** 2)), levels=6, cmap="plasma")
+    fig.colorbar(cf, ax=ax)                 # returns a valid mappable
+    assert fig.to_svg().count("<image") == 2
+
+
+def test_hexbin_makes_hexagons_and_is_mappable():
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=2000)
+    y = rng.normal(size=2000)
+    fig, ax = simpleplot.subplots()
+    hb = ax.hexbin(x, y, gridsize=15)
+    assert len(hb.verts) > 10
+    assert all(v.shape == (6, 2) for v in hb.verts)   # hexagons
+    assert hb.lut is not None and hb.norm is not None  # colorbar-ready
+    assert fig.to_svg().count("<polygon") == len(hb.verts)
+
+
+# -- sharex / sharey --------------------------------------------------------
+def test_sharey_links_limits_and_hides_inner_labels():
+    fig, axes = simpleplot.subplots(1, 2, sharey=True)
+    axes[0].plot([0, 1], [0, 2])
+    axes[1].plot([0, 1], [0, 100])
+    assert axes[0].get_ylim() == axes[1].get_ylim()   # shared span
+    assert axes[0]._yticklabels is None               # left column shows labels
+    assert axes[1]._yticklabels == []                 # right column hidden
+
+
+def test_unshared_axes_stay_independent():
+    fig, axes = simpleplot.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [0, 100])
+    assert axes[0].get_ylim() != axes[1].get_ylim()

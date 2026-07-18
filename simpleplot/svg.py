@@ -15,8 +15,9 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
-    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
+    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
+    VLine,
 )
 from .fonts import text_width
 from .png import png_data_uri
@@ -383,6 +384,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_fill(artist, tr, index, k, body)
         elif isinstance(artist, Polygon):
             _render_polygon(artist, tr, index, k, body)
+        elif isinstance(artist, PolyCollection):
+            _render_polycollection(artist, tr, body)
         elif isinstance(artist, LineCollection):
             _render_linecollection(artist, tr, body)
         elif isinstance(artist, Stem):
@@ -665,6 +668,24 @@ def _render_polygon(poly: Polygon, tr, ai, k, body):
         f'<polygon class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
         f'points="{coords}" fill="{poly.color}" fill-opacity="{poly.alpha}" {stroke}/>'
     )
+
+
+def _to_hex_color(c):
+    if isinstance(c, str):
+        return c
+    return "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
+
+
+def _render_polycollection(pc: PolyCollection, tr, body):
+    edge = f'stroke="{pc.edgecolor}"' if pc.edgecolor else 'stroke="none"'
+    op = f' fill-opacity="{pc.alpha}"' if pc.alpha < 1 else ""
+    parts = [f'<g class="simpleplot-series" {edge} stroke-width="0.4">']
+    for verts, fc in zip(pc.verts, pc.facecolors):
+        pts = tr.xy(verts[:, 0], verts[:, 1])
+        coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts)
+        parts.append(f'<polygon points="{coords}" fill="{_to_hex_color(fc)}"{op}/>')
+    parts.append("</g>")
+    body.append("".join(parts))
 
 
 def _render_linecollection(lc: LineCollection, tr, body):

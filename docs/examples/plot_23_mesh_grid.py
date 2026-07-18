@@ -55,21 +55,10 @@ for ax, Z, (cx, cy) in zip(flat, fields, centers):
     ax.set_ylabel("y")
 fig.tight_layout()
 
-# One shared colorbar spanning the whole grid on the right. simpleplot has no
-# single-call figure-spanning colorbar, so reserve a right gutter and attach a
-# tall colorbar axes to any mesh (they all share cmap + vmin/vmax).
-rects = np.array([ax._rect for ax in flat])          # (left, bottom, w, h)
-gl, gb = rects[:, 0].min(), rects[:, 1].min()
-gr = (rects[:, 0] + rects[:, 2]).max()
-gt = (rects[:, 1] + rects[:, 3]).max()
-cbar_w, gap = 0.012, 0.012
-scale = (gr - gl - cbar_w - gap) / (gr - gl)
-for ax in flat:                                       # squeeze the grid leftward
-    left, bottom, w, h = ax._rect
-    ax._rect = (gl + (left - gl) * scale, bottom, w * scale, h)
-cax = fig.add_axes((gr - cbar_w, gb, cbar_w, gt - gb))
-cax._is_colorbar = True
-cax._cbar_source = mesh
+# One shared colorbar spanning the whole grid on the right. Because every mesh
+# uses the same vmin/vmax, a single bar describes all 500 plots; pass the list
+# of axes and simpleplot squeezes the grid and places one tall colorbar.
+fig.colorbar(mesh, ax=flat)
 
 build_ms = (time.perf_counter() - t0) * 1e3
 fig.suptitle(f"500 pcolormesh plots (40x40) + shared colorbar "

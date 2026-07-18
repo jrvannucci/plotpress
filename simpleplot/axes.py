@@ -14,10 +14,11 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, Polygon, QuadMesh,
-    Quiver, ScatterCollection, Span, Stem, Text, Violin, VLine,
+    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
+    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
+    VLine,
 )
-from .colors import Normalize, get_cmap
+from .colors import Normalize, apply_colormap, get_cmap
 
 
 def _gaussian_kde(data, grid):
@@ -48,6 +49,8 @@ class Axes:
         self._yticklabels = None
         self._xinverted = False
         self._yinverted = False
+        self._sharex_group = None   # list of axes sharing x limits, or None
+        self._sharey_group = None
         self._xlabel = ""
         self._ylabel = ""
         self._title = ""
@@ -423,6 +426,61 @@ class Axes:
         self.artists.append(c)
         return c
 
+    def contourf(self, *args, levels=8, cmap="viridis", vmin=None, vmax=None,
+                 alpha=1.0, label=None):
+        """Filled contours. ``contourf(Z)`` or ``contourf(x, y, Z)``.
+
+        Rendered as a single embedded image whose colormap is *banded* (one flat
+        color per level interval), so the returned value works with
+        ``fig.colorbar``. ``levels`` is a band count or explicit boundaries.
+        """
+        if len(args) == 1:
+            Z = np.asarray(args[0], float)
+            x = np.arange(Z.shape[1], dtype=float)
+            y = np.arange(Z.shape[0], dtype=float)
+        elif len(args) == 3:
+            x, y, Z = (np.asarray(a, float) for a in args)
+        else:
+            raise TypeError("contourf() takes Z or x, y, Z")
+
+        zmin = float(Z.min() if vmin is None else vmin)
+        zmax = float(Z.max() if vmax is None else vmax)
+        if np.ndim(levels) == 0:
+            boundaries = np.linspace(zmin, zmax, int(levels) + 1)
+        else:
+            boundaries = np.unique(np.asarray(levels, float))
+        nbands = max(len(boundaries) - 1, 1)
+
+        base = get_cmap(cmap)
+        centers = np.linspace(0, 255, nbands).astype(int)
+        band_colors = base[centers]                       # (nbands, 3)
+        banded = _banded_lut(band_colors, boundaries, zmin, zmax)
+
+        fine = _bilinear_upsample(Z)
+        img = Image(fine, cmap=banded, norm=Normalize(zmin, zmax),
+                    extent=(float(x.min()), float(x.max()),
+                            float(y.min()), float(y.max())),
+                    origin="lower", alpha=alpha, label=label)
+        self.artists.append(img)
+        return img
+
+    def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None):
+        """Hexagonal 2-D binning of points ``x``/``y`` (colormapped counts).
+
+        Returns a mappable collection of hexagons (works with ``fig.colorbar``).
+        """
+        x = np.asarray(x, float)
+        y = np.asarray(y, float)
+        verts, counts = _hexbin(x, y, gridsize, mincnt)
+        lut = get_cmap(cmap)
+        norm = Normalize()
+        norm.autoscale_none(counts) if len(counts) else None
+        facecolors = apply_colormap(counts, lut, norm)[:, :3] if len(counts) else []
+        pc = PolyCollection(verts, facecolors, label=label)
+        pc.lut, pc.norm = lut, norm      # make it a colorbar mappable
+        self.artists.append(pc)
+        return pc
+
     def hist2d(self, x, y, bins=20, range=None, cmap="viridis"):
         """2-D histogram rendered as an image. Returns ``(counts, image)``."""
         counts, xe, ye = np.histogram2d(np.asarray(x, float), np.asarray(y, float),
@@ -616,25 +674,110 @@ class Axes:
     def get_ylim(self):
         return self._resolved_limits()[1]
 
+    @staticmethod
+    def _group_bounds(axes_list, ix):
+        """Data (lo, hi) for dimension ``ix`` (0=x, 2=y) across a set of axes."""
+        lo, hi, has_mesh = np.inf, -np.inf, False
+        for ax in axes_list:
+            for a in ax.artists:
+                b = a.data_bounds()
+                if b is None:
+                    continue
+                if np.isfinite(b[ix]):
+                    lo = min(lo, b[ix])
+                if np.isfinite(b[ix + 1]):
+                    hi = max(hi, b[ix + 1])
+            has_mesh = has_mesh or any(isinstance(a, QuadMesh) for a in ax.artists)
+        if not np.isfinite(lo) or not np.isfinite(hi):
+            lo, hi = 0.0, 1.0
+        return lo, hi, has_mesh
+
     def _resolved_limits(self):
-        """Return ``((xmin, xmax), (ymin, ymax))``, autoscaling if unset."""
+        """Return ``((xmin, xmax), (ymin, ymax))``, autoscaling if unset.
+
+        With ``sharex``/``sharey`` the autoscale spans every axes in the share
+        group so linked plots line up.
+        """
         xlim, ylim = self._xlim, self._ylim
         if xlim is not None and ylim is not None:
             return xlim, ylim
 
-        bounds = [a.data_bounds() for a in self.artists]
-        bounds = [b for b in bounds if b is not None]
-        if not bounds:
-            axmin, axmax, aymin, aymax = 0.0, 1.0, 0.0, 1.0
-        else:
-            arr = np.array(bounds, dtype=float)
-            axmin, aymin = np.nanmin(arr[:, 0]), np.nanmin(arr[:, 2])
-            axmax, aymax = np.nanmax(arr[:, 1]), np.nanmax(arr[:, 3])
-
-        has_mesh = any(isinstance(a, QuadMesh) for a in self.artists)
-        px = _pad(axmin, axmax, self._xscale, tight=has_mesh)
-        py = _pad(aymin, aymax, self._yscale, tight=has_mesh)
+        xgroup = self._sharex_group or [self]
+        ygroup = self._sharey_group or [self]
+        axmin, axmax, mesh_x = self._group_bounds(xgroup, 0)
+        aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
+        px = _pad(axmin, axmax, self._xscale, tight=mesh_x)
+        py = _pad(aymin, aymax, self._yscale, tight=mesh_y)
         return (xlim or px), (ylim or py)
+
+
+def _bilinear_upsample(Z, max_side=480):
+    """Bilinearly upsample a 2-D grid so filled bands get smooth boundaries."""
+    ny, nx = Z.shape
+    f = max(1, min(8, max_side // max(ny, nx, 1)))
+    if f == 1:
+        return Z
+    yi = np.linspace(0, ny - 1, ny * f)
+    xi = np.linspace(0, nx - 1, nx * f)
+    y0 = np.floor(yi).astype(int); y1 = np.minimum(y0 + 1, ny - 1); ty = yi - y0
+    x0 = np.floor(xi).astype(int); x1 = np.minimum(x0 + 1, nx - 1); tx = xi - x0
+    top = Z[np.ix_(y0, x0)] * (1 - tx) + Z[np.ix_(y0, x1)] * tx
+    bot = Z[np.ix_(y1, x0)] * (1 - tx) + Z[np.ix_(y1, x1)] * tx
+    return top * (1 - ty)[:, None] + bot * ty[:, None]
+
+
+def _banded_lut(band_colors, boundaries, zmin, zmax):
+    """256-entry LUT that snaps each colormap slot to its level-band color."""
+    slot_vals = np.linspace(zmin, zmax, 256)
+    band = np.clip(np.searchsorted(boundaries, slot_vals, side="right") - 1,
+                   0, len(band_colors) - 1)
+    return band_colors[band].astype(np.uint8)
+
+
+def _hexbin(x, y, gridsize, mincnt):
+    """Assign points to a hexagonal lattice; return (hex_vertices, counts).
+
+    Uses the classic two-interleaved-grid method: each point goes to whichever
+    of the two candidate centers (rectangular grid, and the same grid shifted by
+    half a cell) is nearest -- which tiles the plane with hexagons.
+    """
+    xmin, xmax = float(x.min()), float(x.max())
+    ymin, ymax = float(y.min()), float(y.max())
+    nx = max(int(gridsize), 1)
+    dx = (xmax - xmin) / nx or 1.0
+    ny = max(int(nx * (ymax - ymin) / (xmax - xmin) / 1.732) if xmax > xmin else 1, 1)
+    dy = (ymax - ymin) / ny or 1.0
+
+    sx = (x - xmin) / dx
+    sy = (y - ymin) / dy
+    i1 = np.round(sx).astype(int); j1 = np.round(sy).astype(int)      # grid 1
+    i2 = np.floor(sx).astype(int); j2 = np.floor(sy).astype(int)      # grid 2 (+half)
+    d1 = (sx - i1) ** 2 + (sy - j1) ** 2
+    d2 = (sx - (i2 + 0.5)) ** 2 + (sy - (j2 + 0.5)) ** 2
+    use1 = d1 <= d2
+
+    from collections import Counter
+    cells = Counter()
+    for k in range(len(x)):
+        if use1[k]:
+            cells[(int(i1[k]), int(j1[k]), 0)] += 1
+        else:
+            cells[(int(i2[k]), int(j2[k]), 1)] += 1
+
+    # Hexagon vertex offsets (pointy-top), scaled to the cell size.
+    ang = np.pi / 180 * (60 * np.arange(6) + 30)
+    hx = (dx / 1.732) * np.cos(ang)
+    hy = (dy / 1.5) * np.sin(ang)
+
+    verts, counts = [], []
+    for (i, j, g), c in cells.items():
+        if c < mincnt:
+            continue
+        cx = xmin + i * dx + (dx / 2 if g else 0)
+        cy = ymin + j * dy + (dy / 2 if g else 0)
+        verts.append(np.column_stack([cx + hx, cy + hy]))
+        counts.append(c)
+    return verts, np.asarray(counts, float)
 
 
 def _pad(lo, hi, scale="linear", tight=False, frac=0.05):

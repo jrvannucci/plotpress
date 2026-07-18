@@ -92,16 +92,17 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 | `pcolormesh` | `pie` | `plot_frames` (slider) |
 | `boxplot` | `violinplot` (KDE) | `eventplot` |
 | `quiver` | `contour` (marching squares) | `hist2d` |
-| `stackplot` | | |
+| `stackplot` | `contourf` (filled) | `hexbin` |
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
 **log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
 **`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
-`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `grid`, `set_axis_off`.
-Plus **`fig.tight_layout()`** (auto-margins so labels never overflow), text
-(`ax.text`, `ax.annotate` with arrows), figure-level
-`suptitle`/`supxlabel`/`supylabel`, `fig.colorbar(...)`,
+`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `grid`, `set_axis_off`,
+and **`subplots(sharex=…, sharey=…)`**. Plus **`fig.tight_layout()`**
+(auto-margins so labels never overflow), text (`ax.text`, `ax.annotate` with
+arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
+`fig.colorbar(...)` (single **or shared across a list of axes**),
 `legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and
 colormaps `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `coolwarm`,
 `RdBu`, `gray` (+ any `_r` reversed variant) with linear or `LogNorm` scaling.
@@ -112,9 +113,9 @@ python examples/plot_types_2.py  # boxplot / violin / quiver / contour / hist2d 
 python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
-**Not yet implemented** (would need new primitives): `contourf` (filled bands),
-`streamplot`/`barbs`, `hexbin`, triangulation (`tri*`), and 3-D axes. These are
-the main remaining gaps vs matplotlib's full gallery.
+**Not yet implemented** (would need new primitives): `streamplot`/`barbs`,
+triangulation (`tri*`), polar, and 3-D axes. These are the main remaining gaps
+vs matplotlib's full gallery.
 
 ## Testing
 
@@ -166,10 +167,9 @@ live ticks, point-picking + extraction, in-browser annotation, and sliders for
 - **Rust backend** (PyO3/maturin) — vectorized transforms, fast float→string
   serialization, and **parallel per-axes fragment rendering (`rayon`)** for the
   many-axes case; would also unify the SVG and PNG renderers.
-- More plot types: `contourf`, `streamplot`/`barbs`, `hexbin`, triangulation
-  (`tri*`), and 3-D axes.
-- `sharex`/`sharey`, decimation for huge series, hover tooltips, curvilinear /
-  Gouraud pcolormesh.
+- More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
+  3-D axes.
+- Decimation for huge series, hover tooltips, curvilinear / Gouraud pcolormesh.
 
 ## Architecture notes
 

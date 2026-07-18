@@ -312,6 +312,31 @@ class LineCollection(Artist):
         return (xs.min(), xs.max(), ys.min(), ys.max())
 
 
+class PolyCollection(Artist):
+    """Many filled polygons with per-polygon face colors (e.g. ``hexbin``).
+
+    ``verts`` is a list of ``(k, 2)`` vertex arrays; ``facecolors`` is a matching
+    list of ``(r, g, b)`` uint8 triples (or ``#rrggbb`` strings). May carry
+    ``lut``/``norm`` so it can back a colorbar.
+    """
+
+    def __init__(self, verts, facecolors, edgecolor=None, alpha=1.0, label=None):
+        self.verts = [np.asarray(v, float) for v in verts]
+        self.facecolors = facecolors
+        self.edgecolor = edgecolor
+        self.alpha = alpha
+        self.label = label
+        self.lut = None
+        self.norm = None
+
+    def data_bounds(self):
+        if not self.verts:
+            return None
+        allv = np.vstack(self.verts)
+        return (allv[:, 0].min(), allv[:, 0].max(),
+                allv[:, 1].min(), allv[:, 1].max())
+
+
 class Stem(Artist):
     def __init__(self, x, y, baseline, linecolor, markercolor, label=None):
         self.x = np.asarray(x, float)

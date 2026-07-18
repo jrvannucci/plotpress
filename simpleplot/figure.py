@@ -84,8 +84,12 @@ class Figure:
         ax._subplotspec = (nrows, ncols, index)
         return ax
 
-    def subplots(self, nrows=1, ncols=1, squeeze=True):
-        """Create a grid of axes; return a single Axes or a NumPy array of them."""
+    def subplots(self, nrows=1, ncols=1, squeeze=True, sharex=False, sharey=False):
+        """Create a grid of axes; return a single Axes or a NumPy array of them.
+
+        ``sharex``/``sharey`` link the grid so autoscaling spans every subplot
+        (shared limits) and inner tick labels are hidden, like matplotlib.
+        """
         grid = np.empty((nrows, ncols), dtype=object)
         for r in range(nrows):
             for c in range(ncols):
@@ -93,6 +97,21 @@ class Figure:
                 ax = self.add_axes(_subplot_rect(nrows, ncols, index))
                 ax._subplotspec = (nrows, ncols, index)
                 grid[r, c] = ax
+
+        axlist = grid.ravel().tolist()
+        if sharex:
+            for r in range(nrows):
+                for c in range(ncols):
+                    grid[r, c]._sharex_group = axlist
+                    if r != nrows - 1:            # hide labels off the bottom row
+                        grid[r, c].set_xticklabels([])
+        if sharey:
+            for r in range(nrows):
+                for c in range(ncols):
+                    grid[r, c]._sharey_group = axlist
+                    if c != 0:                    # hide labels off the left column
+                        grid[r, c].set_yticklabels([])
+
         if not squeeze:
             return grid
         if nrows == 1 and ncols == 1:
@@ -169,12 +188,33 @@ class Figure:
         return self
 
     # -- colorbar -----------------------------------------------------------
-    def colorbar(self, mappable, ax: Axes, fraction=0.05, pad=0.02) -> Axes:
-        """Add a colorbar for ``mappable``, stealing space from ``ax``."""
-        left, bottom, w, h = ax._rect
-        cbar_w = w * fraction
-        ax._rect = (left, bottom, w * (1 - fraction - pad), h)
-        cax = self.add_axes((left + w * (1 - fraction), bottom, cbar_w, h))
+    def colorbar(self, mappable, ax, fraction=0.05, pad=0.02) -> Axes:
+        """Add a colorbar for ``mappable``.
+
+        ``ax`` may be a single :class:`~simpleplot.axes.Axes` (the colorbar
+        steals space from it) or a list / array of axes (one **shared** colorbar
+        spanning them all, placed on their right -- the grid is squeezed to make
+        room). All the axes should share the mappable's ``vmin``/``vmax`` for the
+        shared bar to describe them accurately.
+        """
+        axlist = _flatten_axes(ax)
+        if len(axlist) == 1:
+            left, bottom, w, h = axlist[0]._rect
+            cbar_w = w * fraction
+            axlist[0]._rect = (left, bottom, w * (1 - fraction - pad), h)
+            cax = self.add_axes((left + w * (1 - fraction), bottom, cbar_w, h))
+        else:
+            rects = np.array([a._rect for a in axlist])
+            gl, gb = rects[:, 0].min(), rects[:, 1].min()
+            gr = (rects[:, 0] + rects[:, 2]).max()
+            gt = (rects[:, 1] + rects[:, 3]).max()
+            span_w = gr - gl
+            cbar_w = span_w * fraction
+            scale = (span_w - span_w * (fraction + pad)) / span_w
+            for a in axlist:                       # squeeze the group leftward
+                left, bottom, w, h = a._rect
+                a._rect = (gl + (left - gl) * scale, bottom, w * scale, h)
+            cax = self.add_axes((gr - cbar_w, gb, cbar_w, gt - gb))
         cax._is_colorbar = True
         cax._cbar_source = mappable
         return cax
@@ -347,15 +387,23 @@ class _MarkerApi:
         return True
 
 
+def _flatten_axes(ax):
+    """Normalize a single Axes / list / ndarray of axes to a flat list."""
+    if isinstance(ax, Axes):
+        return [ax]
+    return [a for a in np.asarray(ax, dtype=object).ravel()]
+
+
 def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
-             facecolor=None, squeeze=True):
+             facecolor=None, squeeze=True, sharex=False, sharey=False):
     """Convenience constructor mirroring ``matplotlib.pyplot.subplots``.
 
     Unlike matplotlib, this creates and returns a fresh, fully independent
-    figure -- there is no global state touched.
+    figure -- there is no global state touched. ``sharex``/``sharey`` link the
+    grid's limits and hide inner tick labels.
     """
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
-    axes = fig.subplots(nrows, ncols, squeeze=squeeze)
+    axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex, sharey=sharey)
     return fig, axes
 
 
