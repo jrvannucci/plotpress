@@ -13,7 +13,7 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
     Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
     VLine,
@@ -191,6 +191,18 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
         y = float(tr.y(artist.y))
         _polyline(draw, np.array([[tr.px_left, y], [tr.px_left + tr.px_w, y]]),
                   _rgb(artist.color), max(1, int(round(artist.linewidth * S))),
+                  _DASH.get(artist.linestyle))
+    elif isinstance(artist, AxLine):
+        if not np.isfinite(artist.slope):
+            x = float(tr.x(artist.x1))
+            seg = np.array([[x, tr.px_top], [x, tr.px_top + tr.px_h]])
+        else:
+            xmin, xmax = tr.xmin, tr.xmax
+            y0 = artist.y1 + artist.slope * (xmin - artist.x1)
+            y1 = artist.y1 + artist.slope * (xmax - artist.x1)
+            seg = np.array([[tr.x(xmin), tr.y(y0)], [tr.x(xmax), tr.y(y1)]])
+        _polyline(draw, seg, _rgb(artist.color),
+                  max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
     elif isinstance(artist, Span):
         rl, rt = tr.px_left, tr.px_top

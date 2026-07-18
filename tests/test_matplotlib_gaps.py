@@ -243,3 +243,31 @@ def test_tick_params_styles_ticks():
     svg = fig.to_svg()
     assert 'font-size="14"' in svg
     assert 'stroke="red"' in svg and 'fill="blue"' in svg
+
+
+# -- axline / broken_barh / stairs ------------------------------------------
+def test_axline_spans_without_autoscaling():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 10], [0, 10])
+    ax.axline((0, 0), slope=0.5, color="r")
+    ax.axline((0, 2), (10, 8), color="g")
+    assert "simpleplot-series" in fig.to_svg()
+    _, (y0, y1) = ax._resolved_limits()
+    assert y1 < 20                     # axline endpoints don't drive autoscale
+
+
+def test_axline_requires_one_of_slope_or_point():
+    fig, ax = simpleplot.subplots()
+    with pytest.raises(TypeError):
+        ax.axline((0, 0))
+    with pytest.raises(TypeError):
+        ax.axline((0, 0), (1, 1), slope=2)
+
+
+def test_broken_barh_and_stairs():
+    fig, ax = simpleplot.subplots()
+    pc = ax.broken_barh([(1, 2), (5, 1)], (3, 1))
+    assert len(pc.verts) == 2 and all(v.shape == (4, 2) for v in pc.verts)
+    line = ax.stairs([1, 3, 2], edges=[0, 1, 2, 3])
+    # step outline: doubled vertices, spans the edges
+    assert line.x.min() == 0 and line.x.max() == 3

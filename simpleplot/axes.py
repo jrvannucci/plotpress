@@ -13,7 +13,7 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
     Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
     VLine,
@@ -607,6 +607,48 @@ class Axes:
         )
         self.artists.append(vl)
         return vl
+
+    def axline(self, xy1, xy2=None, slope=None, color=None, linewidth=None,
+               linestyle="-", label=None, alpha=1.0):
+        """Draw an infinite line through ``xy1`` (via ``slope`` or a second point).
+
+        Spans the whole axes and does not affect autoscaling, like matplotlib.
+        """
+        if (xy2 is None) == (slope is None):
+            raise TypeError("axline() needs exactly one of xy2 or slope")
+        x1, y1 = float(xy1[0]), float(xy1[1])
+        if slope is None:
+            x2, y2 = float(xy2[0]), float(xy2[1])
+            slope = np.inf if x2 == x1 else (y2 - y1) / (x2 - x1)
+        a = AxLine(x1, y1, slope, color=self._resolve_color(color),
+                   linewidth=self.style.line_width if linewidth is None else linewidth,
+                   linestyle=linestyle, label=label, alpha=alpha)
+        self.artists.append(a)
+        return a
+
+    def broken_barh(self, xranges, yrange, color=None, alpha=1.0, label=None):
+        """Draw a row of rectangles from ``(xstart, xwidth)`` spans at ``yrange``.
+
+        ``yrange`` is ``(ystart, yheight)``. Handy for Gantt / timeline charts.
+        """
+        y0, h = float(yrange[0]), float(yrange[1])
+        verts = [np.array([[x, y0], [x + w, y0], [x + w, y0 + h], [x, y0 + h]],
+                          dtype=float) for x, w in xranges]
+        col = self._resolve_color(color)
+        pc = PolyCollection(verts, [col] * len(verts), alpha=alpha, label=label)
+        self.artists.append(pc)
+        return pc
+
+    def stairs(self, values, edges=None, color=None, linewidth=None,
+               linestyle="-", label=None, alpha=1.0):
+        """Step outline from bin ``edges`` (len ``values`` + 1), like matplotlib."""
+        values = np.asarray(values, float)
+        edges = (np.arange(values.size + 1, dtype=float) if edges is None
+                 else np.asarray(edges, float))
+        x = np.repeat(edges, 2)[1:-1]
+        y = np.repeat(values, 2)
+        return self.plot(x, y, color=color, linewidth=linewidth,
+                         linestyle=linestyle, label=label, alpha=alpha)
 
     def axhline(self, y, color=None, linewidth=None, linestyle="--",
                 label=None, alpha=1.0):

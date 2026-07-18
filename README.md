@@ -93,7 +93,8 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 | `boxplot` | `violinplot` (KDE) | `eventplot` |
 | `quiver` | `contour` (marching squares) | `hist2d` |
 | `stackplot` | `contourf` (filled) | `hexbin` |
-| `matshow` | `spy` | |
+| `matshow` | `spy` | `broken_barh` |
+| `stairs` | `axline` | |
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:

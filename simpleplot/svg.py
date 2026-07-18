@@ -14,7 +14,7 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
     Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
     VLine,
@@ -381,6 +381,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_vline(artist, tr, body)
         elif isinstance(artist, HLine):
             _render_hline(artist, tr, body)
+        elif isinstance(artist, AxLine):
+            _render_axline(artist, tr, body)
         elif isinstance(artist, Span):
             _render_span(artist, tr, body)
         elif isinstance(artist, FrameLine2D):
@@ -594,6 +596,32 @@ def _render_hline(hl, tr, body):
     body.append(
         f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x1)}" '
         f'y1="{_fmt(y)}" x2="{_fmt(x2)}" y2="{_fmt(y)}" {attrs}/>'
+    )
+
+
+def _endpoints_axline(al, tr):
+    """Two pixel endpoints spanning the axes for an infinite line."""
+    if not np.isfinite(al.slope):                    # vertical
+        x = float(tr.x(al.x1))
+        return x, tr.px_top, x, tr.px_top + tr.px_h
+    xmin, xmax = tr.xmin, tr.xmax
+    y0 = al.y1 + al.slope * (xmin - al.x1)
+    y1 = al.y1 + al.slope * (xmax - al.x1)
+    return tr.x(xmin), tr.y(y0), tr.x(xmax), tr.y(y1)
+
+
+def _render_axline(al, tr, body):
+    x1, y1, x2, y2 = _endpoints_axline(al, tr)
+    dash = _DASH.get(al.linestyle)
+    attrs = f'stroke="{al.color}" stroke-width="{al.linewidth}"'
+    if dash:
+        attrs += f' stroke-dasharray="{dash}"'
+    if al.alpha < 1:
+        attrs += f' stroke-opacity="{al.alpha}"'
+    label = _esc(al.label) if al.label else ""
+    body.append(
+        f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x1)}" '
+        f'y1="{_fmt(y1)}" x2="{_fmt(x2)}" y2="{_fmt(y2)}" {attrs}/>'
     )
 
 

@@ -101,6 +101,27 @@ class VLine(Artist):
         return None
 
 
+class AxLine(Artist):
+    """An infinite line through ``(x1, y1)`` with a given ``slope`` (``axline``).
+
+    Spans the whole axes; ``slope = inf`` is a vertical line. Does not autoscale.
+    """
+
+    def __init__(self, x1, y1, slope, color, linewidth, linestyle="-",
+                 label=None, alpha=1.0):
+        self.x1 = float(x1)
+        self.y1 = float(y1)
+        self.slope = slope
+        self.color = color
+        self.linewidth = linewidth
+        self.linestyle = linestyle
+        self.label = label
+        self.alpha = alpha
+
+    def data_bounds(self):
+        return None
+
+
 class HLine(Artist):
     """A horizontal reference line spanning the full axes width at data y.
 
