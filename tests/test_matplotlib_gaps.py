@@ -322,3 +322,18 @@ def test_rectilinear_pcolormesh_uses_fast_path():
     m = ax.pcolormesh(np.arange(5.0).reshape(5, 1) * np.ones(5))  # 1-arg -> 1-D path
     assert m.curvilinear is False
     assert m.rgba().shape == (5, 5, 4)              # no upsizing, direct colormap
+
+
+def test_gouraud_shading_smoothly_interpolates():
+    g = np.linspace(0, 1, 12)
+    X, Y = np.meshgrid(g, g)
+    C = X + Y                                        # smooth ramp
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(X, Y, C, cmap="viridis", shading="gouraud")
+    assert m.shading == "gouraud"
+    img = m.rgba()
+    assert img.ndim == 3 and img.shape[:2] != C.shape   # upsampled raster
+    # A smooth ramp should produce many distinct colors (not 12x12 flat cells)
+    filled = img[img[..., 3] > 0][:, :3]
+    assert len({tuple(px) for px in filled[::37]}) > 50
+    assert fig.to_svg().count("<image") == 1

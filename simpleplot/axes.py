@@ -178,10 +178,13 @@ class Axes:
         )
         return art
 
-    def pcolormesh(self, *args, cmap="viridis", norm=None, vmin=None, vmax=None):
+    def pcolormesh(self, *args, cmap="viridis", norm=None, vmin=None, vmax=None,
+                   shading="flat"):
         """Pseudocolor plot of a 2-D array.
 
-        Signatures: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``.
+        Signatures: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``. ``X``/``Y`` may
+        be 2-D for a curvilinear grid. ``shading="gouraud"`` smoothly
+        interpolates the color between grid nodes instead of flat cells.
         """
         if len(args) == 1:
             X = Y = None
@@ -191,7 +194,8 @@ class Axes:
         else:
             raise TypeError("pcolormesh() takes C or X, Y, C")
 
-        mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax)
+        mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
+                        shading=shading)
         self.artists.append(mesh)
         return mesh
 

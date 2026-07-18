@@ -227,6 +227,29 @@ def _fill_quad(img, qx, qy, color):
     img[y0:y1 + 1, x0:x1 + 1][inside] = color
 
 
+def _fill_tri_gouraud(img, ax, ay, bx, by, cx, cy, ca, cb, cc):
+    """Fill triangle ABC, interpolating corner RGBA colors (barycentric)."""
+    H, W = img.shape[:2]
+    x0 = max(0, int(np.floor(min(ax, bx, cx)))); x1 = min(W - 1, int(np.ceil(max(ax, bx, cx))))
+    y0 = max(0, int(np.floor(min(ay, by, cy)))); y1 = min(H - 1, int(np.ceil(max(ay, by, cy))))
+    if x1 < x0 or y1 < y0:
+        return
+    denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if abs(denom) < 1e-12:
+        return
+    yy, xx = np.mgrid[y0:y1 + 1, x0:x1 + 1]
+    px, py = xx + 0.5, yy + 0.5
+    w0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom
+    w1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom
+    w2 = 1.0 - w0 - w1
+    inside = (w0 >= 0) & (w1 >= 0) & (w2 >= 0)
+    if not inside.any():
+        return
+    col = (w0[..., None] * ca + w1[..., None] * cb + w2[..., None] * cc)
+    sub = img[y0:y1 + 1, x0:x1 + 1]
+    sub[inside] = np.clip(col[inside], 0, 255).astype(np.uint8)
+
+
 class QuadMesh(Artist):
     """Color mesh, rasterized to a single embedded ``<image>``.
 
@@ -236,10 +259,21 @@ class QuadMesh(Artist):
     is taken from their min/max.
     """
 
-    def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None):
+    def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
+                 shading="flat"):
         self.C = np.asarray(C, dtype=float)
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
+        self.shading = shading
+        # Gouraud shades between node values, so it needs 2-D node coords; build
+        # them from 1-D edges (or default indices) if necessary.
+        if shading == "gouraud":
+            if self.X is None:
+                ny, nx = self.C.shape
+                self.X, self.Y = np.meshgrid(np.arange(nx, dtype=float),
+                                             np.arange(ny, dtype=float))
+            elif self.X.ndim == 1:
+                self.X, self.Y = np.meshgrid(self.X, self.Y)
         self.curvilinear = (self.X is not None and self.Y is not None
                             and self.X.ndim == 2 and self.Y.ndim == 2)
         self.lut = get_cmap(cmap)
@@ -260,21 +294,16 @@ class QuadMesh(Artist):
 
     def rgba(self):
         """Return the mesh as an RGBA uint8 image (row 0 = top = max y)."""
+        if self.shading == "gouraud":
+            return self._rgba_gouraud()
         if self.curvilinear:
             return self._rgba_curvilinear()
         rgba = apply_colormap(self.C, self.lut, self.norm)
         # Image rows go top-down; data y increases upward -> flip vertically.
         return np.flipud(rgba)
 
-    def _rgba_curvilinear(self, max_side=512):
-        """Scan-convert a 2-D (curvilinear) quad mesh to an RGBA image."""
-        X, Y, C = self.X, self.Y, self.C
-        # Cell colors: X/Y are node coords with one more row/col than C, or the
-        # same shape (then the last row/col of C is unused, like matplotlib).
-        ny = min(C.shape[0], X.shape[0] - 1)
-        nx = min(C.shape[1], X.shape[1] - 1)
-        cell_rgba = apply_colormap(C[:ny, :nx], self.lut, self.norm)
-
+    def _out_grid(self, max_side):
+        """Blank output image + node pixel coords (row 0 = ymax)."""
         xmin, xmax, ymin, ymax = self.extent()
         aspect = (ymax - ymin) / ((xmax - xmin) or 1.0)
         if aspect >= 1:
@@ -282,11 +311,19 @@ class QuadMesh(Artist):
         else:
             out_w, out_h = max_side, max(1, int(round(max_side * aspect)))
         img = np.zeros((out_h, out_w, 4), np.uint8)
-
         sx = (out_w - 1) / ((xmax - xmin) or 1.0)
         sy = (out_h - 1) / ((ymax - ymin) or 1.0)
-        PX = (X - xmin) * sx
-        PY = (ymax - Y) * sy                       # flip: row 0 = ymax (top)
+        PX = (self.X - xmin) * sx
+        PY = (ymax - self.Y) * sy                  # flip: row 0 = ymax (top)
+        return img, PX, PY
+
+    def _rgba_curvilinear(self, max_side=512):
+        """Scan-convert a 2-D quad mesh to an RGBA image (flat per-cell color)."""
+        X, C = self.X, self.C
+        ny = min(C.shape[0], X.shape[0] - 1)
+        nx = min(C.shape[1], X.shape[1] - 1)
+        cell_rgba = apply_colormap(C[:ny, :nx], self.lut, self.norm)
+        img, PX, PY = self._out_grid(max_side)
         for i in range(ny):
             for j in range(nx):
                 col = cell_rgba[i, j]
@@ -295,6 +332,20 @@ class QuadMesh(Artist):
                 qx = (PX[i, j], PX[i, j + 1], PX[i + 1, j + 1], PX[i + 1, j])
                 qy = (PY[i, j], PY[i, j + 1], PY[i + 1, j + 1], PY[i + 1, j])
                 _fill_quad(img, qx, qy, col)
+        return img
+
+    def _rgba_gouraud(self, max_side=512):
+        """Scan-convert with per-node colors smoothly interpolated across cells."""
+        node = apply_colormap(self.C, self.lut, self.norm).astype(np.float64)
+        img, PX, PY = self._out_grid(max_side)
+        ny, nx = self.C.shape
+        for i in range(ny - 1):
+            for j in range(nx - 1):
+                x = (PX[i, j], PX[i, j + 1], PX[i + 1, j + 1], PX[i + 1, j])
+                y = (PY[i, j], PY[i, j + 1], PY[i + 1, j + 1], PY[i + 1, j])
+                c = (node[i, j], node[i, j + 1], node[i + 1, j + 1], node[i + 1, j])
+                _fill_tri_gouraud(img, x[0], y[0], x[1], y[1], x[2], y[2], c[0], c[1], c[2])
+                _fill_tri_gouraud(img, x[0], y[0], x[2], y[2], x[3], y[3], c[0], c[2], c[3])
         return img
 
     def data_bounds(self):
