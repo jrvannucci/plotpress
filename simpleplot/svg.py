@@ -26,6 +26,7 @@ from .primitives import (
 )
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
+from .primitives import Markers as PMarkers
 from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
@@ -380,13 +381,11 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # per-axes data zoom remaps via one affine (old limits -> new limits).
     body.append(f'<g clip-path="url(#{clip_id})"><g id="zoom{index}" class="simpleplot-zoom">')
     for k, artist in enumerate(ax.artists):
-        prims = artist_to_prims(artist, tr, index, k)
+        prims = artist_to_prims(artist, tr, index, k, size_scale=st.dpi / 72.0)
         if prims is not None:
             body.extend(_emit_prim(p) for p in prims)
             continue
-        if isinstance(artist, ScatterCollection):
-            _render_scatter(artist, tr, st, fig, index, k, body)
-        elif isinstance(artist, FrameLine2D):
+        if isinstance(artist, FrameLine2D):
             _render_frameline(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
             _render_bars(artist, tr, index, k, body)
@@ -465,6 +464,38 @@ def _prim_color(c):
     return c if isinstance(c, str) else "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
 
 
+def _emit_markers(p) -> str:
+    """Markers as zero-length round-capped strokes -> constant-size dots.
+
+    With the zoom group's non-scaling stroke they stay circular and a constant
+    pixel size under per-axes zoom, unlike a scaled ``<circle>``.
+    """
+    pts, diam = p.points, p.diameters
+    finite = np.isfinite(pts).all(axis=1)
+    op = f' stroke-opacity="{p.alpha}"' if p.alpha < 1 else ""
+    idattr = f' id="{p.series_id}"' if p.series_id else ""
+
+    def dot(cx, cy):
+        return f"M{_fmt(cx)},{_fmt(cy)}L{_fmt(cx)},{_fmt(cy)}"
+
+    parts = []
+    same_size = diam.size and float(np.ptp(diam)) < 1e-9
+    if p.single_color and same_size:
+        d = "".join(dot(cx, cy) for (cx, cy), ok in zip(pts, finite) if ok)
+        parts.append(
+            f'<path d="{d}" fill="none" stroke="{p.colors[0]}" '
+            f'stroke-width="{_fmt(float(diam[0]) if diam.size else 0)}" '
+            f'stroke-linecap="round"/>')
+    else:
+        for (cx, cy), dm, col, ok in zip(pts, diam, p.colors, finite):
+            if ok:
+                parts.append(
+                    f'<path d="{dot(cx, cy)}" fill="none" stroke="{col}" '
+                    f'stroke-width="{_fmt(dm)}" stroke-linecap="round"/>')
+    return (f'<g class="simpleplot-series"{idattr} data-label="{_esc(p.label)}"{op}>'
+            f'{"".join(parts)}</g>')
+
+
 def _emit_prim(p) -> str:
     """Serialize one backend-agnostic primitive to an SVG element."""
     if isinstance(p, PImage):
@@ -472,6 +503,8 @@ def _emit_prim(p) -> str:
         return (f'<image x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
                 f'height="{_fmt(p.h)}" preserveAspectRatio="none" '
                 f'style="image-rendering:pixelated" href="{uri}"/>')
+    if isinstance(p, PMarkers):
+        return _emit_markers(p)
     lbl = _esc(p.label) if p.label else ""
     if isinstance(p, PLine):
         attrs = f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
@@ -577,46 +610,6 @@ def frame_data(fig):
         if entries:
             frames[i] = entries
     return frames
-
-
-def _render_scatter(coll: ScatterCollection, tr, st, fig, ai, k, body):
-    xp = tr.x(coll.x)
-    yp = tr.y(coll.y)
-    pt_to_px = st.dpi / 72.0
-    diam = np.broadcast_to(np.asarray(coll.s, dtype=float), xp.shape) * pt_to_px
-    colors = coll.face_colors()          # per-point when a `c` array is set
-    finite = np.isfinite(xp) & np.isfinite(yp)
-    op = f' stroke-opacity="{coll.alpha}"' if coll.alpha < 1 else ""
-    label = _esc(coll.label) if coll.label else ""
-
-    # Markers are zero-length, round-capped strokes: with non-scaling-stroke
-    # (applied inside the zoom group) they stay a constant pixel size -- and
-    # circular -- under per-axes zoom, unlike a scaled <circle>.
-    def dot(cx, cy):
-        return f"M{_fmt(cx)},{_fmt(cy)}L{_fmt(cx)},{_fmt(cy)}"
-
-    parts = []
-    same_size = diam.size and float(np.ptp(diam)) < 1e-9
-    if colors is None and same_size:
-        # One path for every point of the single color / size (fewest nodes).
-        d = "".join(dot(cx, cy) for cx, cy, ok in zip(xp, yp, finite) if ok)
-        parts.append(
-            f'<path d="{d}" fill="none" stroke="{coll.color}" '
-            f'stroke-width="{_fmt(float(diam[0]) if diam.size else 0)}" '
-            f'stroke-linecap="round"/>'
-        )
-    else:
-        cols = colors if colors is not None else [coll.color] * len(xp)
-        for cx, cy, dm, col, ok in zip(xp, yp, diam, cols, finite):
-            if ok:
-                parts.append(
-                    f'<path d="{dot(cx, cy)}" fill="none" stroke="{col}" '
-                    f'stroke-width="{_fmt(dm)}" stroke-linecap="round"/>'
-                )
-    body.append(
-        f'<g class="simpleplot-series" id="s{ai}_{k}" data-label="{label}"{op}>'
-        f'{"".join(parts)}</g>'
-    )
 
 
 def _render_bars(bars: Bars, tr, ai, k, body):

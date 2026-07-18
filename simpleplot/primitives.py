@@ -20,7 +20,7 @@ import numpy as np
 
 from .artists import (
     AxLine, FillBetween, HLine, Image, Line2D, LineCollection, Polygon,
-    PolyCollection, QuadMesh, Span, VLine,
+    PolyCollection, QuadMesh, ScatterCollection, Span, VLine,
 )
 
 # Lines longer than this are min/max-decimated per pixel column before drawing
@@ -151,11 +151,35 @@ class ImagePrim:
     h: float
 
 
+@dataclass
+class Markers:
+    """A batch of round point markers (scatter), constant-size in pixels."""
+    points: np.ndarray             # (N, 2) pixel centers (may contain NaN)
+    diameters: np.ndarray          # (N,) pixel diameters
+    colors: list                   # per-point color strings (len N)
+    single_color: bool = True      # all points share one color (fewer nodes)
+    alpha: float = 1.0
+    series_id: Optional[str] = None
+    label: str = ""
+
+
 # -- artist -> primitives ---------------------------------------------------
-def artist_to_prims(artist, tr, ai, k):
-    """Primitives for a migrated artist, or None to use its legacy renderer."""
+def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
+    """Primitives for a migrated artist, or None to use its legacy renderer.
+
+    ``size_scale`` converts marker sizes from points to this backend's pixels
+    (``dpi/72`` for SVG, ``dpi/72 * S`` for the supersampled raster).
+    """
     a = artist
     lbl = a.label or "" if getattr(a, "label", None) else ""
+
+    if isinstance(a, ScatterCollection):
+        pts = tr.xy(a.x, a.y)
+        diam = np.broadcast_to(np.asarray(a.s, float), a.x.shape).astype(float) * size_scale
+        fc = a.face_colors()
+        colors = fc if fc is not None else [a.color] * a.x.size
+        return [Markers(pts, diam, list(colors), single_color=(fc is None),
+                        alpha=a.alpha, series_id=f"s{ai}_{k}", label=lbl)]
 
     if isinstance(a, Line2D):
         x, y = a.x, a.y

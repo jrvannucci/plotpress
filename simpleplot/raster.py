@@ -21,6 +21,7 @@ from .colors import apply_colormap, to_hex
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
+from .primitives import Markers as PMarkers
 from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
@@ -184,6 +185,14 @@ def _draw_prim(p, S, draw, canvas):
             (max(1, int(round(p.w))), max(1, int(round(p.h)))), PILImage.NEAREST)
         canvas.alpha_composite(im, (int(round(p.x)), int(round(p.y))))
         return
+    if isinstance(p, PMarkers):
+        finite = np.isfinite(p.points).all(axis=1)
+        for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
+            if ok:
+                rad = dm / 2.0
+                draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
+                             fill=_rgba(col, p.alpha))
+        return
     if isinstance(p, PLine):
         _polyline(draw, np.array([p.p0, p.p1]), _rgb(p.stroke),
                   max(1, int(round(p.stroke_width * S))), _DASH.get(p.linestyle))
@@ -218,7 +227,7 @@ def _draw_prim(p, S, draw, canvas):
 
 
 def _raster_artist(artist, tr, st, S, draw, canvas, clip):
-    prims = artist_to_prims(artist, tr, 0, 0)
+    prims = artist_to_prims(artist, tr, 0, 0, size_scale=st.dpi / 72.0 * S)
     if prims is not None:
         for p in prims:
             _draw_prim(p, S, draw, canvas)
@@ -228,8 +237,6 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
         _polyline(draw, tr.xy(x0, y0), _rgb(artist.color),
                   max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
-    elif isinstance(artist, ScatterCollection):
-        _scatter(artist, tr, st, S, draw)
     elif isinstance(artist, Bars):
         _bars(artist, tr, S, draw)
     elif isinstance(artist, Stem):
@@ -309,16 +316,6 @@ def _dashed(draw, seg, color, width, dash):
                 di = (di + 1) % len(dash)
                 remaining = dash[di]
                 on = not on
-
-
-def _scatter(coll, tr, st, S, draw):
-    xp, yp = tr.x(coll.x), tr.y(coll.y)
-    r = np.broadcast_to(np.asarray(coll.s, float), xp.shape) / 2.0 * st.dpi / 72.0 * S
-    colors = coll.face_colors() or [coll.color] * len(xp)
-    for cx, cy, rad, col in zip(xp, yp, r, colors):
-        if np.isfinite(cx) and np.isfinite(cy):
-            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
-                         fill=_rgba(col, coll.alpha))
 
 
 def _bars(bars, tr, S, draw):
