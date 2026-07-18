@@ -54,5 +54,5 @@ examples/*.html
 examples/*.png
 examples/*.pdf
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code
+.claude/
