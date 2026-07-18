@@ -14,11 +14,12 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Pie, Polygon, QuadMesh, Quiver, ScatterCollection,
-    Span, Stem, Text, Violin,
+    FrameLine2D, Pie, Polygon, Quiver, ScatterCollection, Span, Stem, Text,
+    Violin,
 )
 from .colors import apply_colormap, to_hex
 from .primitives import artist_to_prims
+from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
@@ -175,6 +176,14 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
 
 def _draw_prim(p, S, draw, canvas):
     """Draw one backend-agnostic primitive onto the raster canvas."""
+    if isinstance(p, PImage):
+        if p.w <= 0 or p.h <= 0:
+            return
+        from PIL import Image as PILImage
+        im = PILImage.fromarray(p.rgba, "RGBA").resize(
+            (max(1, int(round(p.w))), max(1, int(round(p.h)))), PILImage.NEAREST)
+        canvas.alpha_composite(im, (int(round(p.x)), int(round(p.y))))
+        return
     if isinstance(p, PLine):
         _polyline(draw, np.array([p.p0, p.p1]), _rgb(p.stroke),
                   max(1, int(round(p.stroke_width * S))), _DASH.get(p.linestyle))
@@ -221,8 +230,6 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
                   _DASH.get(artist.linestyle))
     elif isinstance(artist, ScatterCollection):
         _scatter(artist, tr, st, S, draw)
-    elif isinstance(artist, (QuadMesh, Image)):
-        _mesh(artist, tr, canvas)
     elif isinstance(artist, Bars):
         _bars(artist, tr, S, draw)
     elif isinstance(artist, Stem):
@@ -312,21 +319,6 @@ def _scatter(coll, tr, st, S, draw):
         if np.isfinite(cx) and np.isfinite(cy):
             draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
                          fill=_rgba(col, coll.alpha))
-
-
-def _mesh(mesh, tr, canvas):
-    from PIL import Image as PILImage
-
-    rgba = mesh.rgba().astype(np.uint8)
-    xmin, xmax, ymin, ymax = mesh.extent()
-    ix, iy = float(tr.x(xmin)), float(tr.y(ymax))
-    iw = float(tr.x(xmax)) - ix
-    ih = float(tr.y(ymin)) - iy
-    if iw <= 0 or ih <= 0:
-        return
-    im = PILImage.fromarray(rgba, "RGBA").resize(
-        (max(1, int(round(iw))), max(1, int(round(ih)))), PILImage.NEAREST)
-    canvas.alpha_composite(im, (int(round(ix)), int(round(iy))))
 
 
 def _bars(bars, tr, S, draw):

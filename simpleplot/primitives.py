@@ -19,8 +19,8 @@ from typing import List, Optional
 import numpy as np
 
 from .artists import (
-    AxLine, FillBetween, HLine, Line2D, LineCollection, Polygon, PolyCollection,
-    Span, VLine,
+    AxLine, FillBetween, HLine, Image, Line2D, LineCollection, Polygon,
+    PolyCollection, QuadMesh, Span, VLine,
 )
 
 # Lines longer than this are min/max-decimated per pixel column before drawing
@@ -141,6 +141,16 @@ class PolygonBatch:
     label: str = ""
 
 
+@dataclass
+class ImagePrim:
+    """An RGBA raster placed at a pixel rect (pcolormesh / imshow / contourf)."""
+    rgba: np.ndarray               # (H, W, 4) uint8
+    x: float
+    y: float
+    w: float
+    h: float
+
+
 # -- artist -> primitives ---------------------------------------------------
 def artist_to_prims(artist, tr, ai, k):
     """Primitives for a migrated artist, or None to use its legacy renderer."""
@@ -214,5 +224,11 @@ def artist_to_prims(artist, tr, ai, k):
         polys = [tr.xy(v[:, 0], v[:, 1]) for v in a.verts]
         return [PolygonBatch(polys, list(a.facecolors), a.edgecolor,
                              0.4, a.alpha, lbl)]
+
+    if isinstance(a, (QuadMesh, Image)):
+        xmin, xmax, ymin, ymax = a.extent()
+        ix, iy = float(tr.x(xmin)), float(tr.y(ymax))
+        iw, ih = float(tr.x(xmax)) - ix, float(tr.y(ymin)) - iy
+        return [ImagePrim(a.rgba().astype(np.uint8), ix, iy, iw, ih)]
 
     return None

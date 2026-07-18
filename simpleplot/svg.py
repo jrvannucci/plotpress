@@ -24,6 +24,7 @@ from .png import png_data_uri
 from .primitives import (
     _DECIMATE_MIN_POINTS, _decimate_minmax, _is_monotonic, artist_to_prims,
 )
+from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
@@ -385,8 +386,6 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             continue
         if isinstance(artist, ScatterCollection):
             _render_scatter(artist, tr, st, fig, index, k, body)
-        elif isinstance(artist, (QuadMesh, Image)):
-            _render_mesh(artist, tr, body)
         elif isinstance(artist, FrameLine2D):
             _render_frameline(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
@@ -468,6 +467,11 @@ def _prim_color(c):
 
 def _emit_prim(p) -> str:
     """Serialize one backend-agnostic primitive to an SVG element."""
+    if isinstance(p, PImage):
+        uri = png_data_uri(p.rgba)
+        return (f'<image x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
+                f'height="{_fmt(p.h)}" preserveAspectRatio="none" '
+                f'style="image-rendering:pixelated" href="{uri}"/>')
     lbl = _esc(p.label) if p.label else ""
     if isinstance(p, PLine):
         attrs = f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
@@ -612,20 +616,6 @@ def _render_scatter(coll: ScatterCollection, tr, st, fig, ai, k, body):
     body.append(
         f'<g class="simpleplot-series" id="s{ai}_{k}" data-label="{label}"{op}>'
         f'{"".join(parts)}</g>'
-    )
-
-
-def _render_mesh(mesh: QuadMesh, tr, body):
-    uri = png_data_uri(mesh.rgba())
-    xmin, xmax, ymin, ymax = mesh.extent()
-    ix = tr.x(xmin)
-    iy = tr.y(ymax)
-    iw = tr.x(xmax) - ix
-    ih = tr.y(ymin) - iy
-    body.append(
-        f'<image x="{_fmt(ix)}" y="{_fmt(iy)}" width="{_fmt(iw)}" '
-        f'height="{_fmt(ih)}" preserveAspectRatio="none" '
-        f'style="image-rendering:pixelated" href="{uri}"/>'
     )
 
 
