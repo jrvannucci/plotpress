@@ -362,7 +362,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         else:
             xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
             ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
-            _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
+            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            _render_ticks(tst, tr, xticks, yticks, xlabels, ylabels,
                           px_left, px_top, px_w, px_h, body)
     body.append("</g>")
 

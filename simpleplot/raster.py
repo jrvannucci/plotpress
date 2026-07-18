@@ -158,7 +158,8 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
         if is_twin:
             _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
         else:
-            _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
+            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            _raster_ticks(ax, tst, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
             draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(st.spine_color),
                            width=max(1, int(round(st.spine_width * S))))
     if not is_twin:

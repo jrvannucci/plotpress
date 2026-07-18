@@ -93,6 +93,7 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 | `boxplot` | `violinplot` (KDE) | `eventplot` |
 | `quiver` | `contour` (marching squares) | `hist2d` |
 | `stackplot` | `contourf` (filled) | `hexbin` |
+| `matshow` | `spy` | |
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
@@ -100,7 +101,8 @@ Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 **`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
 `set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `margins`, `grid`,
 `set_axis_off`, **`subplots(sharex=…, sharey=…)`**, and **`twinx`/`twiny`**
-(overlaid axes with a second y/x axis). Plus **`fig.tight_layout()`**
+(overlaid axes with a second y/x axis), `tick_params` (per-axes tick styling),
+and matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
 (auto-margins so labels never overflow), text (`ax.text`, `ax.annotate` with
 arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
 `fig.colorbar(...)` (single **or shared across a list of axes**),
@@ -116,8 +118,8 @@ python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
 **Not yet implemented** (would need new primitives): `streamplot`/`barbs`,
-triangulation (`tri*`), polar, and 3-D axes. These are the main remaining gaps
-vs matplotlib's full gallery.
+triangulation (`tri*`), polar, and 3-D axes. These are the main remaining
+plot-type gaps vs matplotlib's full gallery.
 
 ## Testing
 

@@ -214,3 +214,32 @@ def test_margins_and_bounds():
     assert x0 < 0 and x1 > 10                       # padded outward
     ax.set_xbound(0, 100)
     assert ax.get_xlim() == (0, 100)
+
+
+# -- CN colors / matshow / spy / tick_params --------------------------------
+def test_cn_color_notation():
+    fig, ax = simpleplot.subplots()
+    cyc = ax.style.color_cycle
+    assert ax.plot([0, 1], [0, 1], color="C0").color == cyc[0]
+    assert ax.plot([0, 1], [1, 2], color="C3").color == cyc[3]
+    assert ax.plot([0, 1], [2, 3], color="r").color == "r"   # named still passes
+
+
+def test_matshow_and_spy():
+    fig, ax = simpleplot.subplots()
+    ax.matshow(np.arange(9.0).reshape(3, 3))
+    assert ax._aspect == 1.0 and "<image" in fig.to_svg()
+
+    A = np.eye(5)
+    fig2, ax2 = simpleplot.subplots()
+    ax2.spy(A)
+    assert "<image" in fig2.to_svg() and ax2._aspect == 1.0
+
+
+def test_tick_params_styles_ticks():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.tick_params(labelsize=14, color="red", labelcolor="blue")
+    svg = fig.to_svg()
+    assert 'font-size="14"' in svg
+    assert 'stroke="red"' in svg and 'fill="blue"' in svg

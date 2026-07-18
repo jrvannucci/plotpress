@@ -53,6 +53,7 @@ class Axes:
         self._sharey_group = None
         self._twin_of = None        # parent axes when this is a twinx/twiny overlay
         self._twin_shared = None    # 'x' (twinx) or 'y' (twiny)
+        self._tick_overrides = {}   # per-axes tick style (Style field -> value)
         self._xlabel = ""
         self._ylabel = ""
         self._title = ""
@@ -76,6 +77,16 @@ class Axes:
         self._color_idx += 1
         return color
 
+    def _resolve_color(self, color):
+        """None -> next cycle color; ``'C0'``..``'CN'`` -> that cycle entry."""
+        if color is None:
+            return self._next_color()
+        if (isinstance(color, str) and len(color) >= 2
+                and color[0] in "Cc" and color[1:].isdigit()):
+            cyc = self.style.color_cycle
+            return cyc[int(color[1:]) % len(cyc)]
+        return color
+
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle="-",
              label=None, alpha=1.0, values=None):
@@ -95,7 +106,7 @@ class Axes:
 
         line = Line2D(
             x, y,
-            color=color or self._next_color(),
+            color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha, values=values,
         )
@@ -116,7 +127,7 @@ class Axes:
         coll = ScatterCollection(
             x, y,
             s=self.style.marker_size if s is None else s,
-            color=(color or self._next_color()) if c is None else None,
+            color=self._resolve_color(color) if c is None else None,
             marker=marker, label=label, alpha=alpha,
             c=c, cmap=cmap, norm=norm, values=values,
         )
@@ -148,7 +159,7 @@ class Axes:
             raise ValueError("plot_frames() requires Y with shape (n_frames, n_points)")
         art = FrameLine2D(
             x, Y,
-            color=color or self._next_color(),
+            color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
         )
@@ -188,7 +199,7 @@ class Axes:
             linewidth=0.8, label=None, alpha=1.0):
         """Vertical bar chart."""
         b = Bars(x, height, width, bottom, "vertical",
-                 color=color or self._next_color(), edgecolor=edgecolor,
+                 color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
         self.artists.append(b)
         return b
@@ -197,7 +208,7 @@ class Axes:
              linewidth=0.8, label=None, alpha=1.0):
         """Horizontal bar chart."""
         b = Bars(y, width, height, left, "horizontal",
-                 color=color or self._next_color(), edgecolor=edgecolor,
+                 color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
         self.artists.append(b)
         return b
@@ -210,7 +221,7 @@ class Axes:
         centers = (edges[:-1] + edges[1:]) / 2.0
         widths = np.diff(edges)
         b = Bars(centers, counts, widths, 0.0, "vertical",
-                 color=color or self._next_color(), edgecolor=edgecolor,
+                 color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=0.6, label=label, alpha=alpha)
         self.artists.append(b)
         return counts, edges, b
@@ -227,12 +238,12 @@ class Axes:
             xs, ys = np.repeat(x, 2)[1:], np.repeat(y, 2)[:-1]
         else:  # 'pre'
             xs, ys = np.repeat(x, 2)[:-1], np.repeat(y, 2)[1:]
-        return self.plot(xs, ys, color=color or self._next_color(),
+        return self.plot(xs, ys, color=self._resolve_color(color),
                          linewidth=linewidth, label=label, alpha=alpha)
 
     def fill_between(self, x, y1, y2=0.0, color=None, alpha=0.4, label=None):
         """Fill the area between ``y1`` and ``y2``."""
-        fb = FillBetween(x, y1, y2, color=color or self._next_color(),
+        fb = FillBetween(x, y1, y2, color=self._resolve_color(color),
                          alpha=alpha, label=label)
         self.artists.append(fb)
         return fb
@@ -244,7 +255,7 @@ class Axes:
         x2 = np.broadcast_to(np.asarray(x2, float), y.shape)
         px = np.concatenate([x1, x2[::-1]])
         py = np.concatenate([y, y[::-1]])
-        p = Polygon(px, py, color=color or self._next_color(), alpha=alpha,
+        p = Polygon(px, py, color=self._resolve_color(color), alpha=alpha,
                     label=label)
         self.artists.append(p)
         return p
@@ -252,7 +263,7 @@ class Axes:
     def fill(self, x, y, color=None, alpha=1.0, edgecolor=None, linewidth=0.0,
              label=None):
         """Fill an arbitrary polygon given by vertices ``x``/``y``."""
-        p = Polygon(x, y, color=color or self._next_color(), alpha=alpha,
+        p = Polygon(x, y, color=self._resolve_color(color), alpha=alpha,
                     edgecolor=edgecolor, linewidth=linewidth, label=label)
         self.artists.append(p)
         return p
@@ -265,7 +276,7 @@ class Axes:
         xmax = np.broadcast_to(np.asarray(xmax, float), y.shape)
         segs = np.column_stack([xmin, y, xmax, y])
         lc = LineCollection(
-            segs, color=color or self._next_color(),
+            segs, color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha)
         self.artists.append(lc)
@@ -279,7 +290,7 @@ class Axes:
         ymax = np.broadcast_to(np.asarray(ymax, float), x.shape)
         segs = np.column_stack([x, ymin, x, ymax])
         lc = LineCollection(
-            segs, color=color or self._next_color(),
+            segs, color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha)
         self.artists.append(lc)
@@ -291,8 +302,9 @@ class Axes:
         if y is None:
             y = np.asarray(x, float)
             x = np.arange(y.size, dtype=float)
-        lc = linecolor or self._next_color()
-        s = Stem(x, y, baseline, linecolor=lc, markercolor=markercolor or lc,
+        lc = self._resolve_color(linecolor)
+        s = Stem(x, y, baseline, linecolor=lc,
+                 markercolor=self._resolve_color(markercolor) if markercolor else lc,
                  label=label)
         self.artists.append(s)
         return s
@@ -302,7 +314,7 @@ class Axes:
                  label=None, alpha=1.0):
         """Line/markers with error bars."""
         eb = ErrorBar(
-            x, y, yerr=yerr, xerr=xerr, color=color or self._next_color(),
+            x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
             marker=marker,
             markersize=self.style.marker_size if markersize is None else markersize,
             capsize=capsize, linestyle=linestyle,
@@ -317,6 +329,20 @@ class Axes:
         im = Image(A, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
                    origin=origin, alpha=alpha, label=label)
         self.artists.append(im)
+        return im
+
+    def matshow(self, A, cmap="viridis", norm=None, vmin=None, vmax=None):
+        """Display a matrix as an image (origin at top, square cells)."""
+        im = self.imshow(A, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
+                         origin="upper")
+        self.set_aspect("equal")
+        return im
+
+    def spy(self, A):
+        """Show the sparsity pattern of ``A`` -- nonzero entries drawn dark."""
+        nz = (np.asarray(A, float) != 0).astype(float)
+        im = self.imshow(nz, cmap="gray_r", origin="upper", vmin=0, vmax=1)
+        self.set_aspect("equal")
         return im
 
     def pie(self, values, labels=None, colors=None, startangle=90.0, radius=1.0,
@@ -353,7 +379,7 @@ class Axes:
             fliers = d[(d < lo) | (d > hi)]
             stats.append({"q1": q1, "med": med, "q3": q3, "lo": lo, "hi": hi,
                           "fliers": fliers})
-        b = BoxPlot(positions, stats, widths, color=color or self._next_color(),
+        b = BoxPlot(positions, stats, widths, color=self._resolve_color(color),
                     orientation=orientation, label=label)
         self.artists.append(b)
         return b
@@ -374,7 +400,7 @@ class Axes:
             grids.append(grid)
             halfwidths.append(dens / peak * (widths / 2.0))
         v = Violin(positions, grids, halfwidths,
-                   color=color or self._next_color(), orientation=orientation,
+                   color=self._resolve_color(color), orientation=orientation,
                    label=label)
         self.artists.append(v)
         return v
@@ -387,7 +413,7 @@ class Axes:
         rows = [np.asarray(r, float) for r in positions]
         if lineoffsets is None:
             lineoffsets = np.arange(1, len(rows) + 1)
-        e = EventPlot(rows, lineoffsets, linelengths, color=color or self._next_color(),
+        e = EventPlot(rows, lineoffsets, linelengths, color=self._resolve_color(color),
                       orientation=orientation, label=label)
         self.artists.append(e)
         return e
@@ -402,7 +428,7 @@ class Axes:
             span = max(X.max() - X.min(), Y.max() - Y.min()) or 1.0
             n = max(U.size, 1)
             scale = 0.9 * (span / np.sqrt(n)) / mmax
-        q = Quiver(X, Y, U, V, scale, color=color or self._next_color(), label=label)
+        q = Quiver(X, Y, U, V, scale, color=self._resolve_color(color), label=label)
         self.artists.append(q)
         return q
 
@@ -575,7 +601,7 @@ class Axes:
         """Draw a vertical line at data coordinate ``x`` (like matplotlib)."""
         vl = VLine(
             x,
-            color=color or self._next_color(),
+            color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
         )
@@ -587,7 +613,7 @@ class Axes:
         """Draw a horizontal line at data coordinate ``y`` (like matplotlib)."""
         hl = HLine(
             y,
-            color=color or self._next_color(),
+            color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
         )
@@ -614,6 +640,27 @@ class Axes:
     def set_ylim(self, bottom, top=None):
         self._ylim = (bottom, top) if top is not None else tuple(bottom)
         return self._ylim
+
+    def tick_params(self, axis="both", labelsize=None, length=None, width=None,
+                    color=None, labelcolor=None):
+        """Style this axes' tick marks and labels (a subset of matplotlib's).
+
+        ``labelsize`` (tick-label font), ``length``/``width`` (tick marks),
+        ``color`` (mark color), ``labelcolor`` (label color). The ``axis``
+        argument is accepted for compatibility but applies to both axes.
+        """
+        ov = self._tick_overrides
+        if labelsize is not None:
+            ov["tick_label_size"] = labelsize
+        if length is not None:
+            ov["tick_size"] = length
+        if width is not None:
+            ov["tick_width"] = width
+        if color is not None:
+            ov["spine_color"] = color        # tick-mark color (box spine unchanged)
+        if labelcolor is not None:
+            ov["text_color"] = labelcolor
+        return self
 
     def set_xbound(self, lower, upper):
         """Set the x data limits (alias of :meth:`set_xlim`)."""
