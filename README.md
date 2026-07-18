@@ -171,12 +171,21 @@ live ticks, point-picking + extraction, in-browser annotation, and sliders for
 3-D data.
 
 **Next:**
-- **Rust backend** (PyO3/maturin) — vectorized transforms, fast float→string
-  serialization, and **parallel per-axes fragment rendering (`rayon`)** for the
-  many-axes case; would also unify the SVG and PNG renderers.
+- Unify the SVG and raster renderers behind one shared primitive layer (pure
+  Python) so features aren't implemented twice.
 - More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
   3-D axes.
 - Hover tooltips; decimation for huge scatter collections.
+
+**Optional later — a compiled accelerator, *not* a requirement.** The
+performance cases that once motivated a Rust backend are now handled in pure
+NumPy: coordinate formatting is vectorized, huge lines are min/max-decimated
+(the 100k-point line went from 0.3× to ~5.6× vs matplotlib), and curvilinear /
+Gouraud meshes scan-convert in NumPy. The remaining native-only win —
+GIL-free parallel per-axes rendering — would only *extend* an existing ~40×
+lead, so it's a nice-to-have. If it's ever worth it, it slots in behind the
+isolated hot paths as an **optional** accelerator, keeping the pure-wheel
+"installs everywhere" install intact.
 
 ## Architecture notes
 

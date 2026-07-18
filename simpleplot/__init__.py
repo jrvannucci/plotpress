@@ -11,8 +11,10 @@ Distinct from matplotlib in three ways:
    existing code is easy to port. ``simpleplot.subplots(...)`` returns
    ``(fig, axes)`` just like ``plt.subplots(...)`` -- minus the globals.
 3. **SVG-first + fast.** Output is vector SVG (with embedded raster only for
-   mesh/image layers), optionally interactive, and the architecture is built so
-   the hot rendering paths can move to a Rust backend (Phase 2).
+   mesh/image layers), optionally interactive. The hot paths are vectorized in
+   NumPy (and huge lines are decimated), so it is fast in pure Python; the
+   architecture keeps those paths isolated should an optional compiled
+   accelerator ever be worthwhile.
 
 Example
 -------

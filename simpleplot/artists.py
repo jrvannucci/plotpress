@@ -2,9 +2,9 @@
 
 Artists are *data holders*, not renderers. ``ax.plot(...)`` just stashes arrays
 and style and returns immediately -- no drawing happens until the figure is
-serialized. This is what keeps construction cheap and lets a future Rust backend
-consume whole arrays across the FFI boundary in one call. All rendering logic
-lives in :mod:`simpleplot.svg`.
+serialized. This keeps construction cheap and keeps whole arrays intact, so an
+optional compiled accelerator could later consume them across an FFI boundary in
+one call. All rendering logic lives in :mod:`simpleplot.svg`.
 """
 
 from __future__ import annotations

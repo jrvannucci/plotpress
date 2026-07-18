@@ -1,10 +1,11 @@
 """SVG serialization: turn a Figure's scene into an SVG document string.
 
-This is the whole rendering pipeline for Phase 0, in pure Python + NumPy:
-transforms are vectorized, each series becomes a single ``<path>`` (not one node
-per point), and each ``pcolormesh`` becomes one embedded ``<image>``. The hot
-paths here (coordinate formatting, per-axes fragment assembly) are exactly what a
-Phase 2 Rust backend would take over.
+This is the whole rendering pipeline, in pure Python + NumPy: transforms are
+vectorized, each series becomes a single ``<path>`` (not one node per point),
+huge lines are min/max-decimated before serialization, and each ``pcolormesh``
+becomes one embedded ``<image>``. Coordinate formatting is vectorized with
+``numpy.char``. These hot paths are the natural boundary for an *optional*
+compiled accelerator later, but none of them require one today.
 """
 
 from __future__ import annotations
@@ -468,8 +469,9 @@ def _seg_to_path(seg: np.ndarray) -> str:
     """Serialize one contiguous run of points to ``M x,y L x,y ...``.
 
     Uses vectorized ``numpy.char`` formatting instead of per-point Python
-    f-strings -- this is the hot path for large series (and the boundary a
-    Rust backend would take over in Phase 2).
+    f-strings. Combined with min/max decimation of huge lines (see
+    :func:`_decimate_minmax`), this keeps large-series serialization fast in
+    pure NumPy.
     """
     xs = np.char.mod("%.2f", seg[:, 0])
     ys = np.char.mod("%.2f", seg[:, 1])
