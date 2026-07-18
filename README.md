@@ -30,8 +30,9 @@ fig.show()                                # native pop-up window
    `legend`, `colorbar`.
 3. **SVG-first + built for speed.** Output is vector SVG; only mesh/image layers
    are rasterized (as a single embedded `<image>`, not thousands of rects). Each
-   series is one `<path>`. The hot paths (coordinate formatting, per-axes
-   fragment assembly) are isolated so they can move to a **Rust backend** later.
+   series is one `<path>`. It's **pure Python + NumPy** — vectorized coordinate
+   formatting, min/max-decimated huge lines — with **no compiled extension**, so
+   it installs everywhere pip does.
 
 ## Install
 
@@ -170,22 +171,20 @@ annotations and figure-level titles; per-axes **data** zoom / pan / box-zoom wit
 live ticks, point-picking + extraction, in-browser annotation, and sliders for
 3-D data.
 
+**Pure Python, and staying that way.** simpleplot is deliberately pure Python +
+NumPy with no compiled extension — it installs everywhere pip does, no build
+toolchain, no per-platform wheels. Speed comes from NumPy, not native code:
+coordinate formatting is vectorized, huge lines are min/max-decimated (the
+100k-point line runs ~5.6× vs matplotlib), and curvilinear / Gouraud meshes
+scan-convert in NumPy. The "installs everywhere" promise is a first-class
+feature, not a trade-off.
+
 **Next:**
-- Unify the SVG and raster renderers behind one shared primitive layer (pure
-  Python) so features aren't implemented twice.
+- Finish unifying the SVG and raster renderers behind the shared primitive
+  layer (pure Python) so features aren't implemented twice.
 - More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
   3-D axes.
 - Hover tooltips; decimation for huge scatter collections.
-
-**Optional later — a compiled accelerator, *not* a requirement.** The
-performance cases that once motivated a Rust backend are now handled in pure
-NumPy: coordinate formatting is vectorized, huge lines are min/max-decimated
-(the 100k-point line went from 0.3× to ~5.6× vs matplotlib), and curvilinear /
-Gouraud meshes scan-convert in NumPy. The remaining native-only win —
-GIL-free parallel per-axes rendering — would only *extend* an existing ~40×
-lead, so it's a nice-to-have. If it's ever worth it, it slots in behind the
-isolated hot paths as an **optional** accelerator, keeping the pure-wheel
-"installs everywhere" install intact.
 
 ## Architecture notes
 
@@ -201,10 +200,13 @@ isolated hot paths as an **optional** accelerator, keeping the pure-wheel
 | `colors.py` | `Normalize`, colormap LUTs, colormap application |
 | `ticker.py` | "nice number" + log tick locations, label formatting |
 | `svg.py` | the renderer: scene → SVG string (+ per-axes metadata) |
+| `primitives.py` | backend-agnostic pixel-space primitives + one artist→primitive converter |
 | `png.py` | stdlib-only PNG encoder for mesh/image layers |
 | `raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
 | `fonts/` | bundled Helvetica metrics (layout only; no glyph rasterization) |
 | `_interactive.py` | inlined vanilla JS: toolbar, per-axes zoom, picking, annotate, sliders, export |
 
-Artists never render themselves — they just hold arrays. Rendering is a single
-pass in `svg.py`, which is exactly the boundary a Rust backend would slot into.
+Artists never render themselves — they just hold arrays. The geometry of each
+artist is computed once in `primitives.py`; `svg.py` and `raster.py` are thin
+emitters over that shared primitive vocabulary, so an artist is defined in one
+place, not per backend.

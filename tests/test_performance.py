@@ -35,9 +35,9 @@ def test_simpleplot_render_under_threshold(name):
 @pytest.mark.parametrize("name", ["many_axes_8x8_grid", "line_100k_points"])
 def test_simpleplot_faster_than_matplotlib(name):
     # For figures with many axes, avoiding matplotlib's per-Artist Python
-    # overhead makes simpleplot faster end-to-end. The single huge polyline --
-    # once a loss to matplotlib's C++ Agg backend -- is now also a win thanks to
-    # min/max path decimation (see simpleplot.svg._decimate_minmax).
+    # overhead makes simpleplot faster end-to-end. The single huge polyline is
+    # also a win thanks to min/max path decimation (see
+    # simpleplot.primitives._decimate_minmax) -- all in pure Python.
     et = scenarios.timeit(scenarios.SCENARIOS[name]["simpleplot"], repeat=3)
     mt = scenarios.timeit(scenarios.SCENARIOS[name]["mpl"], repeat=3)
     assert et < mt, f"{name}: simpleplot {et:.3f}s not faster than matplotlib {mt:.3f}s"

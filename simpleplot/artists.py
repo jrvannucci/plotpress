@@ -2,9 +2,9 @@
 
 Artists are *data holders*, not renderers. ``ax.plot(...)`` just stashes arrays
 and style and returns immediately -- no drawing happens until the figure is
-serialized. This keeps construction cheap and keeps whole arrays intact, so an
-optional compiled accelerator could later consume them across an FFI boundary in
-one call. All rendering logic lives in :mod:`simpleplot.svg`.
+serialized. This keeps construction cheap and keeps whole arrays intact for the
+vectorized NumPy rendering pass. All rendering logic lives in
+:mod:`simpleplot.svg` and :mod:`simpleplot.raster`.
 """
 
 from __future__ import annotations
@@ -255,7 +255,7 @@ class QuadMesh(Artist):
 
     ``X``/``Y`` may be **1-D** rectilinear edge/center coordinates (uniform grid,
     fast path) or **2-D** node coordinates for a *curvilinear* grid, which is
-    scan-converted to the image in pure NumPy (no Rust needed). The data extent
+    scan-converted to the image in pure NumPy. The data extent
     is taken from their min/max.
     """
 

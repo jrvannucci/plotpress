@@ -4,9 +4,9 @@ How it works
 Design in one sentence
 ----------------------
 
-Artists are data holders; a single pass in ``svg.py`` turns the scene into an
-SVG string (with embedded raster only for mesh/image layers). There is no global
-state, and the render boundary is where a future Rust backend slots in.
+Artists are data holders; their geometry is computed once into backend-agnostic
+primitives (``primitives.py``) that ``svg.py`` and ``raster.py`` emit. There is
+no global state, and no compiled extension -- it is pure Python + NumPy.
 
 No global state
 ---------------
@@ -39,7 +39,8 @@ Module                        Responsibility
 ``transform.py``              vectorized data->pixel transforms (linear + log)
 ``colors.py``                 ``Normalize``, colormap LUTs
 ``ticker.py``                 "nice number" + log tick locations
-``svg.py``                    the renderer: scene -> SVG string
+``primitives.py``             backend-agnostic primitives + artist converter
+``svg.py``                    SVG emitter over the shared primitives
 ``png.py``                    stdlib-only PNG encoder for image layers
 ``raster.py``                 Pillow PNG backend; svglib/reportlab PDF
 ``fonts/``                    bundled Helvetica metrics (layout only)
@@ -51,7 +52,8 @@ Performance
 
 Avoiding matplotlib's per-``Artist`` Python overhead makes simpleplot much
 faster for **many-axes** figures, and rasterizing meshes to one image makes
-``pcolormesh`` dramatically cheaper. A single huge polyline is *not* yet a win --
-serializing 100k points to a path string is pure-Python float->string work; that
-hot path is the target of the planned Rust backend. See the project ``README``
-for benchmark numbers.
+``pcolormesh`` dramatically cheaper. Even a single huge polyline is a win:
+coordinate formatting is vectorized with ``numpy.char`` and monotonic lines are
+min/max-decimated per pixel column before serialization (visually lossless), so
+a 100k-point line is several times faster than matplotlib -- all in pure Python.
+See the project ``README`` for benchmark numbers.

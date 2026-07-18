@@ -12,9 +12,8 @@ Distinct from matplotlib in three ways:
    ``(fig, axes)`` just like ``plt.subplots(...)`` -- minus the globals.
 3. **SVG-first + fast.** Output is vector SVG (with embedded raster only for
    mesh/image layers), optionally interactive. The hot paths are vectorized in
-   NumPy (and huge lines are decimated), so it is fast in pure Python; the
-   architecture keeps those paths isolated should an optional compiled
-   accelerator ever be worthwhile.
+   NumPy and huge lines are decimated, so it is fast in **pure Python** -- no
+   compiled extension, installs everywhere pip does.
 
 Example
 -------

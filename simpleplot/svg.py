@@ -4,8 +4,8 @@ This is the whole rendering pipeline, in pure Python + NumPy: transforms are
 vectorized, each series becomes a single ``<path>`` (not one node per point),
 huge lines are min/max-decimated before serialization, and each ``pcolormesh``
 becomes one embedded ``<image>``. Coordinate formatting is vectorized with
-``numpy.char``. These hot paths are the natural boundary for an *optional*
-compiled accelerator later, but none of them require one today.
+``numpy.char``. Pure Python and NumPy are the whole story -- no compiled
+extension; the library installs everywhere pip does.
 """
 
 from __future__ import annotations
