@@ -444,6 +444,37 @@ class LineCollection(Artist):
         return (xs.min(), xs.max(), ys.min(), ys.max())
 
 
+class Rug(Artist):
+    """Tick marks at each observation, anchored to one edge of the axes.
+
+    ``height`` is a fraction of the axes rectangle, applied at draw time in
+    pixel space (like :class:`VLine` spanning the full height). It therefore
+    does *not* depend on the data limits: repeated rugs share one baseline, and
+    a rug never drags the autoscale along the axis it is anchored to.
+    """
+
+    def __init__(self, x, height=0.03, side="bottom", color=None, linewidth=1.0,
+                 label=None, alpha=1.0):
+        self.x = np.asarray(x, dtype=float)
+        self.height = float(height)
+        self.side = side
+        self.color = color
+        self.linewidth = linewidth
+        self.label = label
+        self.alpha = alpha
+
+    def data_bounds(self):
+        if self.x.size == 0:
+            return None
+        with np.errstate(invalid="ignore"):
+            lo, hi = np.nanmin(self.x), np.nanmax(self.x)
+        # NaN opts out of the perpendicular axis -- the rug is positioned there
+        # as a fraction of the axes, so it must not influence autoscaling.
+        if self.side == "left":
+            return (np.nan, np.nan, lo, hi)
+        return (lo, hi, np.nan, np.nan)
+
+
 class PolyCollection(Artist):
     """Many filled polygons with per-polygon face colors (e.g. ``hexbin``).
 

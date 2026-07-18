@@ -20,7 +20,7 @@ import numpy as np
 
 from .artists import (
     AxLine, FillBetween, HLine, Image, Line2D, LineCollection, Polygon,
-    PolyCollection, QuadMesh, ScatterCollection, Span, VLine,
+    PolyCollection, QuadMesh, Rug, ScatterCollection, Span, VLine,
 )
 
 # Lines longer than this are min/max-decimated per pixel column before drawing
@@ -243,6 +243,22 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
             tr.x(a.segments[:, 2]), tr.y(a.segments[:, 3]),
         ])
         return [Segments(segs, a.color, a.linewidth, a.linestyle, a.alpha, lbl)]
+
+    if isinstance(a, Rug):
+        n = a.x.size
+        if n == 0:
+            return []
+        # Anchored in pixel space, so the tick length is a fraction of the axes
+        # rather than of the data range.
+        if a.side == "left":
+            y = tr.y(a.x)
+            x0 = np.full(n, tr.px_left)
+            segs = np.column_stack([x0, y, x0 + a.height * tr.px_w, y])
+        else:
+            x = tr.x(a.x)
+            y0 = np.full(n, tr.px_top + tr.px_h)
+            segs = np.column_stack([x, y0, x, y0 - a.height * tr.px_h])
+        return [Segments(segs, a.color, a.linewidth, "-", a.alpha, lbl)]
 
     if isinstance(a, PolyCollection):
         polys = [tr.xy(v[:, 0], v[:, 1]) for v in a.verts]

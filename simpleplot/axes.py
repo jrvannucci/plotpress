@@ -15,20 +15,24 @@ import numpy as np
 from .artists import (
     Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
-    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
+    Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span, Stem, Text, Violin,
     VLine,
 )
 from .colors import Normalize, apply_colormap, get_cmap
+
+
+def _kde_bandwidth(data):
+    """Silverman's rule-of-thumb bandwidth for a 1-D sample."""
+    n = data.size
+    std = data.std(ddof=1) if n > 1 else 1.0
+    return (1.06 * (std or 1.0) * n ** (-1 / 5)) or 1.0
 
 
 def _gaussian_kde(data, grid):
     """Simple Gaussian KDE (Silverman bandwidth) evaluated on ``grid``."""
     data = np.asarray(data, float)
     n = data.size
-    std = data.std(ddof=1) if n > 1 else 1.0
-    bw = 1.06 * (std or 1.0) * n ** (-1 / 5)
-    if bw == 0:
-        bw = 1.0
+    bw = _kde_bandwidth(data)
     u = (grid[:, None] - data[None, :]) / bw
     k = np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)
     return k.sum(axis=1) / (n * bw)
@@ -389,8 +393,17 @@ class Axes:
         return b
 
     def violinplot(self, data, positions=None, widths=0.5, color=None,
-                   orientation="vertical", label=None, points=100):
-        """Violin plot (kernel-density silhouettes)."""
+                   orientation="vertical", label=None, points=100, cut=0.0,
+                   inner=None):
+        """Violin plot (kernel-density silhouettes).
+
+        ``cut`` extends each density past its data extremes by that many
+        bandwidths (seaborn's default is 2; 0 clips at the observed range).
+        ``inner`` overlays a summary of the raw data inside each violin:
+        ``'box'`` (IQR bar + 1.5-IQR whiskers + median dot), ``'quartile'``
+        (lines across the density at Q1/median/Q3), ``'stick'`` (one line per
+        observation), or ``None``.
+        """
         if isinstance(data, np.ndarray) and data.ndim == 1:
             data = [data]
         data = [np.asarray(d, float) for d in data]
@@ -398,7 +411,8 @@ class Axes:
             positions = np.arange(1, len(data) + 1)
         grids, halfwidths = [], []
         for d in data:
-            grid = np.linspace(d.min(), d.max(), points)
+            pad = cut * _kde_bandwidth(d)
+            grid = np.linspace(d.min() - pad, d.max() + pad, points)
             dens = _gaussian_kde(d, grid)
             peak = dens.max() or 1.0
             grids.append(grid)
@@ -407,7 +421,89 @@ class Axes:
                    color=self._resolve_color(color), orientation=orientation,
                    label=label)
         self.artists.append(v)
+        if inner:
+            self._violin_inner(data, positions, grids, halfwidths, inner,
+                               orientation)
         return v
+
+    def _violin_inner(self, data, positions, grids, halfwidths, inner,
+                      orientation):
+        """Draw the inner summary marks for :meth:`violinplot`.
+
+        Composed from existing artists (``vlines``/``hlines``/``scatter``) so
+        neither backend needs to learn a new primitive.
+        """
+        vertical = orientation == "vertical"
+        along = self.vlines if vertical else self.hlines     # spans the value axis
+        across = self.hlines if vertical else self.vlines    # spans the density
+        for d, p, grid, hw in zip(data, positions, grids, halfwidths):
+            q1, med, q3 = np.percentile(d, [25, 50, 75])
+            if inner == "box":
+                iqr = q3 - q1
+                lo_in = d[d >= q1 - 1.5 * iqr]
+                hi_in = d[d <= q3 + 1.5 * iqr]
+                lo = lo_in.min() if lo_in.size else q1
+                hi = hi_in.max() if hi_in.size else q3
+                along(p, lo, hi, color="#333333", linewidth=1.0)
+                along(p, q1, q3, color="#333333", linewidth=5.0)
+                mx, my = ([p], [med]) if vertical else ([med], [p])
+                self.scatter(mx, my, s=5.0, color="#ffffff")
+            elif inner == "quartile":
+                for q, lw in ((q1, 0.9), (med, 1.4), (q3, 0.9)):
+                    half = float(np.interp(q, grid, hw))
+                    across(q, p - half, p + half, color="#ffffff",
+                           linewidth=lw, linestyle="--")
+            elif inner == "stick":
+                half = np.interp(d, grid, hw)
+                across(d, p - half, p + half, color="#ffffff", linewidth=0.6,
+                       alpha=0.7)
+
+    def kdeplot(self, data, color=None, linewidth=None, fill=False, alpha=0.3,
+                points=200, cut=3.0, label=None):
+        """Kernel-density estimate of a 1-D sample.
+
+        ``cut`` extends the evaluation grid past the data extremes by that many
+        bandwidths, so the tails decay to zero instead of being clipped.
+        """
+        d = np.asarray(data, float)
+        d = d[np.isfinite(d)]
+        pad = cut * _kde_bandwidth(d)
+        grid = np.linspace(d.min() - pad, d.max() + pad, points)
+        dens = _gaussian_kde(d, grid)
+        color = self._resolve_color(color)
+        if fill:
+            self.fill_between(grid, dens, 0.0, color=color, alpha=alpha)
+        return self.plot(grid, dens, color=color, linewidth=linewidth,
+                         label=label)
+
+    def ecdfplot(self, data, color=None, linewidth=None, complementary=False,
+                 label=None):
+        """Empirical cumulative distribution of a 1-D sample."""
+        d = np.asarray(data, float)
+        d = np.sort(d[np.isfinite(d)])
+        y = np.arange(1, d.size + 1) / d.size
+        if complementary:
+            y = 1.0 - y
+        # Repeat the first observation so the curve starts flat at 0 (or 1).
+        x = np.concatenate([d[:1], d])
+        y = np.concatenate([[1.0 if complementary else 0.0], y])
+        return self.step(x, y, where="post", color=color, linewidth=linewidth,
+                         label=label)
+
+    def rugplot(self, x, height=0.03, side="bottom", color=None, linewidth=1.0,
+                label=None, alpha=1.0):
+        """Tick marks at each observation along one edge of the axes.
+
+        ``height`` is a fraction of the axes rectangle, resolved at draw time,
+        so repeated rugs share a baseline and never shift the autoscale.
+        ``side='left'`` rugs the y axis instead of the x axis.
+        """
+        d = np.asarray(x, float)
+        d = d[np.isfinite(d)]
+        r = Rug(d, height=height, side=side, color=self._resolve_color(color),
+                linewidth=linewidth, label=label, alpha=alpha)
+        self.artists.append(r)
+        return r
 
     def eventplot(self, positions, lineoffsets=None, linelengths=0.8, color=None,
                   orientation="horizontal", label=None):
