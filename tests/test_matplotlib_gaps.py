@@ -135,6 +135,21 @@ def test_single_axes_colorbar_still_works():
     assert fig.to_svg().count("<image") == 2
 
 
+def test_colorbar_honors_nonlinear_norm():
+    from simpleplot.colors import LogNorm, colorbar_ticks
+
+    ln = LogNorm(vmin=1, vmax=1000)
+    vals, fracs, labels = colorbar_ticks(ln)
+    # decade tick values, positioned at log (not linear) fractions
+    assert set(np.round(vals).astype(int)) <= {1, 10, 100, 1000}
+    assert np.allclose(fracs, [0.0, 1 / 3, 2 / 3, 1.0], atol=1e-6)  # even in log space
+
+    lin = simpleplot.Normalize(0, 100)
+    _, lfracs, _ = colorbar_ticks(lin)
+    # linear norm -> evenly spaced fractions equal to value/100
+    assert np.allclose(np.diff(lfracs), lfracs[1] - lfracs[0])
+
+
 # -- contourf / hexbin ------------------------------------------------------
 def test_contourf_is_banded_image_and_mappable():
     g = np.linspace(-2, 2, 20)

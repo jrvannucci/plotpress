@@ -17,7 +17,7 @@ from .artists import (
     FrameLine2D, Pie, Polygon, Quiver, ScatterCollection, Span, Stem, Text,
     Violin,
 )
-from .colors import apply_colormap, to_hex
+from .colors import apply_colormap, colorbar_ticks, to_hex
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
@@ -628,12 +628,9 @@ def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):
     draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(ax.style.spine_color),
                    width=max(1, int(round(ax.style.spine_width * S))))
     st = ax.style
-    vmin, vmax = src.norm.vmin, src.norm.vmax
-    ticks = nice_ticks(vmin, vmax)
-    span = (vmax - vmin) or 1.0
+    _, fracs, tlabels = colorbar_ticks(src.norm)
     font = _font(st.tick_label_size * S)
-    for t, lab in zip(ticks, format_ticks(ticks)):
-        frac = (t - vmin) / span
+    for frac, lab in zip(fracs, tlabels):
         y = T + (1 - frac) * Hp
         draw.line([L + Wp, y, L + Wp + st.tick_size * S, y], fill=_rgb(st.spine_color), width=S)
         draw.text((L + Wp + st.tick_size * S + 2, y), lab, fill=_rgb(st.text_color),

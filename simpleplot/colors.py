@@ -226,6 +226,25 @@ class SymLogNorm(Normalize):
         return (self._symlog(A) - lo) / span
 
 
+def colorbar_ticks(norm):
+    """Tick ``(values, fractions, labels)`` for a colorbar honoring ``norm``.
+
+    The gradient strip is an even colormap ramp; ticks are positioned at
+    ``norm(value)`` (their fractional height), so a ``LogNorm``/``PowerNorm``/
+    ``SymLogNorm`` colorbar places its labels correctly instead of linearly.
+    """
+    from .ticker import format_ticks, log_ticks, nice_ticks
+
+    vmin, vmax = norm.vmin, norm.vmax
+    vals = log_ticks(vmin, vmax) if isinstance(norm, LogNorm) else nice_ticks(vmin, vmax)
+    vals = np.asarray(vals, dtype=float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        fracs = np.asarray(norm(vals), dtype=float)
+    keep = np.isfinite(fracs) & (fracs >= -1e-9) & (fracs <= 1 + 1e-9)
+    vals, fracs = vals[keep], np.clip(fracs[keep], 0.0, 1.0)
+    return vals, fracs, format_ticks(vals)
+
+
 def apply_colormap(A, lut, norm: Normalize) -> np.ndarray:
     """Map data array ``A`` to an RGBA uint8 array. NaNs become transparent."""
     normed = norm(A)

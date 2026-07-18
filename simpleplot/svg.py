@@ -19,6 +19,7 @@ from .artists import (
     FrameLine2D, Image, Line2D, Pie, Polygon, QuadMesh, Quiver,
     ScatterCollection, Span, Stem, Text, Violin,
 )
+from .colors import colorbar_ticks
 from .fonts import text_width
 from .png import png_data_uri
 from .primitives import (
@@ -1092,12 +1093,9 @@ def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body):
     _render_spines(ax.style, px_left, px_top, px_w, px_h, body)
 
     st = ax.style
-    vmin, vmax = norm.vmin, norm.vmax
-    ticks = nice_ticks(vmin, vmax)
-    span = (vmax - vmin) or 1.0
+    _, fracs, tlabels = colorbar_ticks(norm)
     marks, labels = [], []
-    for t, lab in zip(ticks, format_ticks(ticks)):
-        frac = (t - vmin) / span
+    for frac, lab in zip(fracs, tlabels):
         y = px_top + (1 - frac) * px_h
         marks.append(f'<line x1="{_fmt(px_left + px_w)}" y1="{_fmt(y)}" x2="{_fmt(px_left + px_w + st.tick_size)}" y2="{_fmt(y)}"/>')
         labels.append(
