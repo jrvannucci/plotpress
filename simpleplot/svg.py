@@ -15,13 +15,20 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
-    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
-    VLine,
+    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    FrameLine2D, Image, Line2D, Pie, Polygon, QuadMesh, Quiver,
+    ScatterCollection, Span, Stem, Text, Violin,
 )
 from .fonts import text_width
 from .png import png_data_uri
+from .primitives import (
+    _DECIMATE_MIN_POINTS, _decimate_minmax, _is_monotonic, artist_to_prims,
+)
+from .primitives import Line as PLine
+from .primitives import Path as PPath
+from .primitives import PolygonBatch as PPolyBatch
+from .primitives import Rect as PRect
+from .primitives import Segments as PSegments
 from .ticker import format_ticks, log_ticks, nice_ticks
 from .transform import LinearTransform
 
@@ -372,32 +379,18 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # per-axes data zoom remaps via one affine (old limits -> new limits).
     body.append(f'<g clip-path="url(#{clip_id})"><g id="zoom{index}" class="simpleplot-zoom">')
     for k, artist in enumerate(ax.artists):
-        if isinstance(artist, Line2D):
-            _render_line(artist, tr, index, k, body)
-        elif isinstance(artist, ScatterCollection):
+        prims = artist_to_prims(artist, tr, index, k)
+        if prims is not None:
+            body.extend(_emit_prim(p) for p in prims)
+            continue
+        if isinstance(artist, ScatterCollection):
             _render_scatter(artist, tr, st, fig, index, k, body)
         elif isinstance(artist, (QuadMesh, Image)):
             _render_mesh(artist, tr, body)
-        elif isinstance(artist, VLine):
-            _render_vline(artist, tr, body)
-        elif isinstance(artist, HLine):
-            _render_hline(artist, tr, body)
-        elif isinstance(artist, AxLine):
-            _render_axline(artist, tr, body)
-        elif isinstance(artist, Span):
-            _render_span(artist, tr, body)
         elif isinstance(artist, FrameLine2D):
             _render_frameline(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
             _render_bars(artist, tr, index, k, body)
-        elif isinstance(artist, FillBetween):
-            _render_fill(artist, tr, index, k, body)
-        elif isinstance(artist, Polygon):
-            _render_polygon(artist, tr, index, k, body)
-        elif isinstance(artist, PolyCollection):
-            _render_polycollection(artist, tr, body)
-        elif isinstance(artist, LineCollection):
-            _render_linecollection(artist, tr, body)
         elif isinstance(artist, Stem):
             _render_stem(artist, tr, st, fig, body)
         elif isinstance(artist, ErrorBar):
@@ -430,41 +423,6 @@ def _render_axes(ax, fig, W, H, index, defs, body):
 
 
 # -- artists ---------------------------------------------------------------
-# Lines longer than this get min/max-per-pixel-column decimation before
-# serialization (only when x is monotonic, so the path shape is preserved).
-# This is the pure-Python analogue of matplotlib's path simplification: it makes
-# a huge time-series line serialize ~7x faster and ~40x smaller with no visible
-# change, keeping the output vector (no rasterization).
-_DECIMATE_MIN_POINTS = 5000
-
-
-def _is_monotonic(x: np.ndarray) -> bool:
-    d = np.diff(x)
-    return bool(np.all(d >= 0) or np.all(d <= 0))
-
-
-def _decimate_minmax(x, y, ncols):
-    """Keep first/last/min-y/max-y per pixel column (monotonic x only)."""
-    n = x.size
-    if n <= 4 * ncols or ncols < 1:
-        return x, y
-    x0, x1 = float(x[0]), float(x[-1])
-    span = (x1 - x0) or 1.0
-    col = np.clip(((x - x0) / span * ncols).astype(np.intp), 0, ncols - 1)
-    keep = np.zeros(n, bool)
-    runstart = np.empty(n, bool); runstart[0] = True; runstart[1:] = col[1:] != col[:-1]
-    runend = np.empty(n, bool); runend[-1] = True; runend[:-1] = col[1:] != col[:-1]
-    keep |= runstart | runend                        # first & last of each column
-    order = np.lexsort((y, col))                     # sort by column, then y
-    sc = col[order]
-    lo = np.empty(n, bool); lo[0] = True; lo[1:] = sc[1:] != sc[:-1]
-    hi = np.empty(n, bool); hi[-1] = True; hi[:-1] = sc[1:] != sc[:-1]
-    keep[order[lo]] = True                           # min y in each column
-    keep[order[hi]] = True                           # max y in each column
-    idx = np.flatnonzero(keep)
-    return x[idx], y[idx]
-
-
 def _seg_to_path(seg: np.ndarray) -> str:
     """Serialize one contiguous run of points to ``M x,y L x,y ...``.
 
@@ -499,28 +457,78 @@ def _line_path_d(pts: np.ndarray) -> str:
     return "".join(out)
 
 
-def _render_line(line: Line2D, tr, ai, k, body):
-    x, y = line.x, line.y
-    if x.size > _DECIMATE_MIN_POINTS and _is_monotonic(x):
-        x, y = _decimate_minmax(x, y, int(round(tr.px_w)))
-    pts = tr.xy(x, y)
-    d = _line_path_d(pts)
-    if not d:
-        return
-    dash = _DASH.get(line.linestyle)
-    attrs = (
-        f'fill="none" stroke="{line.color}" stroke-width="{line.linewidth}" '
-        f'stroke-linejoin="round" stroke-linecap="round"'
-    )
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if line.alpha < 1:
-        attrs += f' stroke-opacity="{line.alpha}"'
-    label = _esc(line.label) if line.label else ""
-    body.append(
-        f'<path class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
-        f'd="{d}" {attrs}/>'
-    )
+def _path_d(subpaths, closed):
+    d = "".join(_seg_to_path(s) for s in subpaths if len(s))
+    return (d + "Z") if (closed and d) else d
+
+
+def _prim_color(c):
+    return c if isinstance(c, str) else "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
+
+
+def _emit_prim(p) -> str:
+    """Serialize one backend-agnostic primitive to an SVG element."""
+    lbl = _esc(p.label) if p.label else ""
+    if isinstance(p, PLine):
+        attrs = f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
+        dash = _DASH.get(p.linestyle)
+        if dash:
+            attrs += f' stroke-dasharray="{dash}"'
+        if p.stroke_opacity < 1:
+            attrs += f' stroke-opacity="{p.stroke_opacity}"'
+        return (f'<line class="simpleplot-series" data-label="{lbl}" '
+                f'x1="{_fmt(p.p0[0])}" y1="{_fmt(p.p0[1])}" x2="{_fmt(p.p1[0])}" '
+                f'y2="{_fmt(p.p1[1])}" {attrs}/>')
+    if isinstance(p, PRect):
+        return (f'<rect class="simpleplot-series" data-label="{lbl}" '
+                f'x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
+                f'height="{_fmt(p.h)}" fill="{p.fill}" fill-opacity="{p.fill_opacity}"/>')
+    if isinstance(p, PSegments):
+        dash = _DASH.get(p.linestyle)
+        lines = "".join(
+            f'<line x1="{_fmt(a)}" y1="{_fmt(b)}" x2="{_fmt(c)}" y2="{_fmt(d)}"/>'
+            for a, b, c, d in p.segs)
+        attrs = f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
+        if dash:
+            attrs += f' stroke-dasharray="{dash}"'
+        if p.stroke_opacity < 1:
+            attrs += f' stroke-opacity="{p.stroke_opacity}"'
+        return f'<g class="simpleplot-series" data-label="{lbl}" {attrs}>{lines}</g>'
+    if isinstance(p, PPolyBatch):
+        edge = f'stroke="{p.edge}"' if p.edge else 'stroke="none"'
+        op = f' fill-opacity="{p.alpha}"' if p.alpha < 1 else ""
+        out = [f'<g class="simpleplot-series" {edge} stroke-width="{p.edge_width}">']
+        for verts, fc in zip(p.polys, p.fills):
+            coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in verts)
+            out.append(f'<polygon points="{coords}" fill="{_prim_color(fc)}"{op}/>')
+        out.append("</g>")
+        return "".join(out)
+    if isinstance(p, PPath):
+        idattr = f' id="{p.series_id}"' if p.series_id else ""
+        if p.element == "polygon":
+            pts = p.subpaths[0]
+            coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts
+                              if np.isfinite([x, y]).all())
+            stroke = (f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
+                      if p.stroke else 'stroke="none"')
+            return (f'<polygon class="simpleplot-series"{idattr} data-label="{lbl}" '
+                    f'points="{coords}" fill="{p.fill}" '
+                    f'fill-opacity="{p.fill_opacity}" {stroke}/>')
+        d = _path_d(p.subpaths, p.closed)
+        if p.fill and not p.stroke:
+            return (f'<path class="simpleplot-series"{idattr} data-label="{lbl}" '
+                    f'd="{d}" fill="{p.fill}" fill-opacity="{p.fill_opacity}" '
+                    f'stroke="none"/>')
+        attrs = (f'fill="none" stroke="{p.stroke}" stroke-width="{p.stroke_width}" '
+                 f'stroke-linejoin="round" stroke-linecap="round"')
+        dash = _DASH.get(p.linestyle)
+        if dash:
+            attrs += f' stroke-dasharray="{dash}"'
+        if p.stroke_opacity < 1:
+            attrs += f' stroke-opacity="{p.stroke_opacity}"'
+        return (f'<path class="simpleplot-series"{idattr} data-label="{lbl}" '
+                f'd="{d}" {attrs}/>')
+    raise TypeError(f"unknown primitive {type(p).__name__}")
 
 
 def _render_frameline(art: FrameLine2D, tr, ai, k, body):
@@ -607,81 +615,6 @@ def _render_scatter(coll: ScatterCollection, tr, st, fig, ai, k, body):
     )
 
 
-def _render_vline(vl: VLine, tr, body):
-    x = float(tr.x(vl.x))
-    y1, y2 = tr.px_top, tr.px_top + tr.px_h
-    dash = _DASH.get(vl.linestyle)
-    attrs = f'stroke="{vl.color}" stroke-width="{vl.linewidth}"'
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if vl.alpha < 1:
-        attrs += f' stroke-opacity="{vl.alpha}"'
-    label = _esc(vl.label) if vl.label else ""
-    body.append(
-        f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x)}" '
-        f'y1="{_fmt(y1)}" x2="{_fmt(x)}" y2="{_fmt(y2)}" {attrs}/>'
-    )
-
-
-def _render_hline(hl, tr, body):
-    y = float(tr.y(hl.y))
-    x1, x2 = tr.px_left, tr.px_left + tr.px_w
-    dash = _DASH.get(hl.linestyle)
-    attrs = f'stroke="{hl.color}" stroke-width="{hl.linewidth}"'
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if hl.alpha < 1:
-        attrs += f' stroke-opacity="{hl.alpha}"'
-    label = _esc(hl.label) if hl.label else ""
-    body.append(
-        f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x1)}" '
-        f'y1="{_fmt(y)}" x2="{_fmt(x2)}" y2="{_fmt(y)}" {attrs}/>'
-    )
-
-
-def _endpoints_axline(al, tr):
-    """Two pixel endpoints spanning the axes for an infinite line."""
-    if not np.isfinite(al.slope):                    # vertical
-        x = float(tr.x(al.x1))
-        return x, tr.px_top, x, tr.px_top + tr.px_h
-    xmin, xmax = tr.xmin, tr.xmax
-    y0 = al.y1 + al.slope * (xmin - al.x1)
-    y1 = al.y1 + al.slope * (xmax - al.x1)
-    return tr.x(xmin), tr.y(y0), tr.x(xmax), tr.y(y1)
-
-
-def _render_axline(al, tr, body):
-    x1, y1, x2, y2 = _endpoints_axline(al, tr)
-    dash = _DASH.get(al.linestyle)
-    attrs = f'stroke="{al.color}" stroke-width="{al.linewidth}"'
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if al.alpha < 1:
-        attrs += f' stroke-opacity="{al.alpha}"'
-    label = _esc(al.label) if al.label else ""
-    body.append(
-        f'<line class="simpleplot-series" data-label="{label}" x1="{_fmt(x1)}" '
-        f'y1="{_fmt(y1)}" x2="{_fmt(x2)}" y2="{_fmt(y2)}" {attrs}/>'
-    )
-
-
-def _render_span(sp, tr, body):
-    if sp.orientation == "vertical":       # axvspan: x band, full height
-        a, b = float(tr.x(sp.lo)), float(tr.x(sp.hi))
-        x, w = min(a, b), abs(b - a)
-        y, h = tr.px_top, tr.px_h
-    else:                                  # axhspan: y band, full width
-        a, b = float(tr.y(sp.lo)), float(tr.y(sp.hi))
-        y, h = min(a, b), abs(b - a)
-        x, w = tr.px_left, tr.px_w
-    label = _esc(sp.label) if sp.label else ""
-    body.append(
-        f'<rect class="simpleplot-series" data-label="{label}" x="{_fmt(x)}" '
-        f'y="{_fmt(y)}" width="{_fmt(w)}" height="{_fmt(h)}" fill="{sp.color}" '
-        f'fill-opacity="{sp.alpha}"/>'
-    )
-
-
 def _render_mesh(mesh: QuadMesh, tr, body):
     uri = png_data_uri(mesh.rgba())
     xmin, xmax, ymin, ymax = mesh.extent()
@@ -718,69 +651,6 @@ def _render_bars(bars: Bars, tr, ai, k, body):
     body.append(
         f'<g class="simpleplot-series" id="s{ai}_{k}" data-label="{label}"{op}>'
         f'{"".join(rects)}</g>'
-    )
-
-
-def _render_fill(fb: FillBetween, tr, ai, k, body):
-    top = tr.xy(fb.x, fb.y1)
-    bot = tr.xy(fb.x[::-1], fb.y2[::-1])
-    pts = np.vstack([top, bot])
-    coords = [f"{_fmt(x)},{_fmt(y)}" for x, y in pts]
-    d = "M" + coords[0] + "".join("L" + c for c in coords[1:]) + "Z"
-    label = _esc(fb.label) if fb.label else ""
-    body.append(
-        f'<path class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
-        f'd="{d}" fill="{fb.color}" fill-opacity="{fb.alpha}" stroke="none"/>'
-    )
-
-
-def _render_polygon(poly: Polygon, tr, ai, k, body):
-    pts = tr.xy(poly.x, poly.y)
-    coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts if np.isfinite([x, y]).all())
-    label = _esc(poly.label) if poly.label else ""
-    stroke = (f'stroke="{poly.edgecolor}" stroke-width="{poly.linewidth}"'
-              if poly.edgecolor else 'stroke="none"')
-    body.append(
-        f'<polygon class="simpleplot-series" id="s{ai}_{k}" data-label="{label}" '
-        f'points="{coords}" fill="{poly.color}" fill-opacity="{poly.alpha}" {stroke}/>'
-    )
-
-
-def _to_hex_color(c):
-    if isinstance(c, str):
-        return c
-    return "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
-
-
-def _render_polycollection(pc: PolyCollection, tr, body):
-    edge = f'stroke="{pc.edgecolor}"' if pc.edgecolor else 'stroke="none"'
-    op = f' fill-opacity="{pc.alpha}"' if pc.alpha < 1 else ""
-    parts = [f'<g class="simpleplot-series" {edge} stroke-width="0.4">']
-    for verts, fc in zip(pc.verts, pc.facecolors):
-        pts = tr.xy(verts[:, 0], verts[:, 1])
-        coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts)
-        parts.append(f'<polygon points="{coords}" fill="{_to_hex_color(fc)}"{op}/>')
-    parts.append("</g>")
-    body.append("".join(parts))
-
-
-def _render_linecollection(lc: LineCollection, tr, body):
-    dash = _DASH.get(lc.linestyle)
-    lines = []
-    for x0, y0, x1, y1 in lc.segments:
-        lines.append(
-            f'<line x1="{_fmt(tr.x(x0))}" y1="{_fmt(tr.y(y0))}" '
-            f'x2="{_fmt(tr.x(x1))}" y2="{_fmt(tr.y(y1))}"/>'
-        )
-    attrs = f'stroke="{lc.color}" stroke-width="{lc.linewidth}"'
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if lc.alpha < 1:
-        attrs += f' stroke-opacity="{lc.alpha}"'
-    label = _esc(lc.label) if lc.label else ""
-    body.append(
-        f'<g class="simpleplot-series" data-label="{label}" {attrs}>'
-        f'{"".join(lines)}</g>'
     )
 
 

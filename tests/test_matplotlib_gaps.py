@@ -337,3 +337,30 @@ def test_gouraud_shading_smoothly_interpolates():
     filled = img[img[..., 3] > 0][:, :3]
     assert len({tuple(px) for px in filled[::37]}) > 50
     assert fig.to_svg().count("<image") == 1
+
+
+# -- shared primitive layer -------------------------------------------------
+def test_geometric_artists_share_one_render_path():
+    # The geometric family is converted to backend-agnostic primitives once;
+    # both svg and raster consume the same converter (no per-backend renderer).
+    from simpleplot.primitives import artist_to_prims
+
+    fig, ax = simpleplot.subplots()
+    line = ax.plot([0, 1, 2], [0, 1, 4])
+    span = ax.axvspan(0.5, 1.5)
+    hl = ax.hlines([1, 2], 0, 2)
+
+    class _T:  # minimal transform stub
+        xmin, xmax = 0.0, 2.0
+        px_left = px_top = 0.0
+        px_w = px_h = 100.0
+        x = staticmethod(lambda v: np.asarray(v, float) * 50)
+        y = staticmethod(lambda v: np.asarray(v, float) * 25)
+        xy = staticmethod(lambda x, y: np.column_stack([np.asarray(x, float) * 50,
+                                                        np.asarray(y, float) * 25]))
+
+    for art in (line, span, hl):
+        assert artist_to_prims(art, _T(), 0, 0) is not None   # migrated
+    # a not-yet-migrated artist returns None (uses its legacy renderer)
+    bars = ax.bar([0, 1], [1, 2])
+    assert artist_to_prims(bars, _T(), 0, 0) is None

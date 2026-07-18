@@ -13,16 +13,18 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
-    Polygon, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin,
-    VLine,
+    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    FrameLine2D, Image, Pie, Polygon, QuadMesh, Quiver, ScatterCollection,
+    Span, Stem, Text, Violin,
 )
 from .colors import apply_colormap, to_hex
-from .svg import (
-    _DECIMATE_MIN_POINTS, _decimate_minmax, _effective_rect, _is_monotonic,
-    _pixel_rect, _resolve_tick_labels,
-)
+from .primitives import artist_to_prims
+from .primitives import Line as PLine
+from .primitives import Path as PPath
+from .primitives import PolygonBatch as PPolyBatch
+from .primitives import Rect as PRect
+from .primitives import Segments as PSegments
+from .svg import _effective_rect, _pixel_rect, _resolve_tick_labels
 from .ticker import format_ticks, log_ticks, nice_ticks
 from .transform import LinearTransform
 
@@ -171,86 +173,58 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
         _raster_legend(ax, st, L, T, Wp, Hp, S, draw)
 
 
-def _raster_artist(artist, tr, st, S, draw, canvas, clip):
-    if isinstance(artist, (Line2D, FrameLine2D)):
-        if isinstance(artist, FrameLine2D):
-            x0, y0 = artist.frame_xy(0)
-            pts = tr.xy(x0, y0)
+def _draw_prim(p, S, draw, canvas):
+    """Draw one backend-agnostic primitive onto the raster canvas."""
+    if isinstance(p, PLine):
+        _polyline(draw, np.array([p.p0, p.p1]), _rgb(p.stroke),
+                  max(1, int(round(p.stroke_width * S))), _DASH.get(p.linestyle))
+    elif isinstance(p, PRect):
+        pts = [(p.x, p.y), (p.x + p.w, p.y), (p.x + p.w, p.y + p.h), (p.x, p.y + p.h)]
+        _composite_polygon(canvas, pts, _rgba(p.fill, p.fill_opacity))
+    elif isinstance(p, PSegments):
+        w = max(1, int(round(p.stroke_width * S)))
+        dash = _DASH.get(p.linestyle)
+        for a, b, c, d in p.segs:
+            _polyline(draw, np.array([[a, b], [c, d]]), _rgb(p.stroke), w, dash)
+    elif isinstance(p, PPolyBatch):
+        outline = _rgb(p.edge) if p.edge else None
+        al = int(round(p.alpha * 255))
+        for verts, fc in zip(p.polys, p.fills):
+            pts = [tuple(v) for v in verts]
+            rgba = (_rgb(fc) if isinstance(fc, str)
+                    else (int(fc[0]), int(fc[1]), int(fc[2]))) + (al,)
+            _composite_polygon(canvas, pts, rgba, outline=outline)
+    elif isinstance(p, PPath):
+        if p.fill:
+            pts = [tuple(v) for sub in p.subpaths for v in sub if np.isfinite(v).all()]
+            if len(pts) >= 3:
+                outline = _rgb(p.stroke) if p.stroke else None
+                _composite_polygon(canvas, pts, _rgba(p.fill, p.fill_opacity),
+                                   outline=outline)
         else:
-            lx, ly = artist.x, artist.y
-            if lx.size > _DECIMATE_MIN_POINTS and _is_monotonic(lx):
-                lx, ly = _decimate_minmax(lx, ly, int(round(tr.px_w * S)))
-            pts = tr.xy(lx, ly)
-        _polyline(draw, pts, _rgb(artist.color),
+            w = max(1, int(round(p.stroke_width * S)))
+            dash = _DASH.get(p.linestyle)
+            for sub in p.subpaths:
+                _polyline(draw, sub, _rgb(p.stroke), w, dash)
+
+
+def _raster_artist(artist, tr, st, S, draw, canvas, clip):
+    prims = artist_to_prims(artist, tr, 0, 0)
+    if prims is not None:
+        for p in prims:
+            _draw_prim(p, S, draw, canvas)
+        return
+    if isinstance(artist, FrameLine2D):
+        x0, y0 = artist.frame_xy(0)
+        _polyline(draw, tr.xy(x0, y0), _rgb(artist.color),
                   max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
     elif isinstance(artist, ScatterCollection):
         _scatter(artist, tr, st, S, draw)
     elif isinstance(artist, (QuadMesh, Image)):
         _mesh(artist, tr, canvas)
-    elif isinstance(artist, VLine):
-        x = float(tr.x(artist.x))
-        _polyline(draw, np.array([[x, tr.px_top], [x, tr.px_top + tr.px_h]]),
-                  _rgb(artist.color), max(1, int(round(artist.linewidth * S))),
-                  _DASH.get(artist.linestyle))
-    elif isinstance(artist, HLine):
-        y = float(tr.y(artist.y))
-        _polyline(draw, np.array([[tr.px_left, y], [tr.px_left + tr.px_w, y]]),
-                  _rgb(artist.color), max(1, int(round(artist.linewidth * S))),
-                  _DASH.get(artist.linestyle))
-    elif isinstance(artist, AxLine):
-        if not np.isfinite(artist.slope):
-            x = float(tr.x(artist.x1))
-            seg = np.array([[x, tr.px_top], [x, tr.px_top + tr.px_h]])
-        else:
-            xmin, xmax = tr.xmin, tr.xmax
-            y0 = artist.y1 + artist.slope * (xmin - artist.x1)
-            y1 = artist.y1 + artist.slope * (xmax - artist.x1)
-            seg = np.array([[tr.x(xmin), tr.y(y0)], [tr.x(xmax), tr.y(y1)]])
-        _polyline(draw, seg, _rgb(artist.color),
-                  max(1, int(round(artist.linewidth * S))),
-                  _DASH.get(artist.linestyle))
-    elif isinstance(artist, Span):
-        rl, rt = tr.px_left, tr.px_top
-        rr, rb = tr.px_left + tr.px_w, tr.px_top + tr.px_h
-        if artist.orientation == "vertical":
-            a, b = float(tr.x(artist.lo)), float(tr.x(artist.hi))
-            box = [max(min(a, b), rl), rt, min(max(a, b), rr), rb]
-        else:
-            a, b = float(tr.y(artist.lo)), float(tr.y(artist.hi))
-            box = [rl, max(min(a, b), rt), rr, min(max(a, b), rb)]
-        if box[2] > box[0] and box[3] > box[1]:
-            pts = [(box[0], box[1]), (box[2], box[1]),
-                   (box[2], box[3]), (box[0], box[3])]
-            _composite_polygon(canvas, pts, _rgba(artist.color, artist.alpha))
     elif isinstance(artist, Bars):
         _bars(artist, tr, S, draw)
-    elif isinstance(artist, FillBetween):
-        top = tr.xy(artist.x, artist.y1)
-        bot = tr.xy(artist.x[::-1], artist.y2[::-1])
-        poly = [tuple(p) for p in np.vstack([top, bot]) if np.isfinite(p).all()]
-        if len(poly) >= 3:
-            _composite_polygon(canvas, poly, _rgba(artist.color, artist.alpha))
-    elif isinstance(artist, Polygon):
-        pts = [tuple(p) for p in tr.xy(artist.x, artist.y) if np.isfinite(p).all()]
-        if len(pts) >= 3:
-            outline = _rgb(artist.edgecolor) if artist.edgecolor else None
-            _composite_polygon(canvas, pts, _rgba(artist.color, artist.alpha),
-                               outline=outline)
-    elif isinstance(artist, PolyCollection):
-        outline = _rgb(artist.edgecolor) if artist.edgecolor else None
-        a = int(round(artist.alpha * 255))
-        for verts, fc in zip(artist.verts, artist.facecolors):
-            pts = [tuple(p) for p in tr.xy(verts[:, 0], verts[:, 1])]
-            rgba = (_rgb(fc) if isinstance(fc, str)
-                    else (int(fc[0]), int(fc[1]), int(fc[2]))) + (a,)
-            _composite_polygon(canvas, pts, rgba, outline=outline)
-    elif isinstance(artist, LineCollection):
-        w = max(1, int(round(artist.linewidth * S)))
-        dash = _DASH.get(artist.linestyle)
-        for x0, y0, x1, y1 in artist.segments:
-            seg = np.array([[tr.x(x0), tr.y(y0)], [tr.x(x1), tr.y(y1)]])
-            _polyline(draw, seg, _rgb(artist.color), w, dash)
     elif isinstance(artist, Stem):
         _stem(artist, tr, st, S, draw)
     elif isinstance(artist, ErrorBar):
