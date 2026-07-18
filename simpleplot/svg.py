@@ -337,11 +337,13 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         _render_colorbar(ax, tr, *alloc, clip_id, body)
         return
 
-    # Axes background.
-    body.append(
-        f'<rect x="{_fmt(px_left)}" y="{_fmt(px_top)}" width="{_fmt(px_w)}" '
-        f'height="{_fmt(px_h)}" fill="{st.axes_facecolor}"/>'
-    )
+    is_twin = ax._twin_of is not None
+    # Axes background (twins overlay their parent, so they draw none).
+    if not is_twin:
+        body.append(
+            f'<rect x="{_fmt(px_left)}" y="{_fmt(px_top)}" width="{_fmt(px_w)}" '
+            f'height="{_fmt(px_h)}" fill="{st.axes_facecolor}"/>'
+        )
 
     xticks = (ax._xticks if ax._xticks is not None else
               (log_ticks(xmin, xmax) if ax._xscale == "log" else nice_ticks(xmin, xmax)))
@@ -351,13 +353,17 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # Grid + ticks live in one group so client-side per-axes zoom can rebuild
     # them from new limits (see _interactive.py).
     body.append(f'<g id="ticks{index}">')
-    if ax._grid and not ax._axis_off:
+    if ax._grid and not ax._axis_off and not is_twin:
         _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body)
     if not ax._axis_off:
-        xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
-        ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
-        _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
-                      px_left, px_top, px_w, px_h, body)
+        if is_twin:
+            _render_twin_ticks(ax, st, tr, xticks, yticks,
+                               px_left, px_top, px_w, px_h, body)
+        else:
+            xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
+            ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+            _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
+                          px_left, px_top, px_w, px_h, body)
     body.append("</g>")
 
     # Artists: fixed clip to the axes rect, then a transformable zoom group that
@@ -410,9 +416,10 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_annotation(artist, tr, body)
     body.append("</g></g>")   # close zoom group + clip group
 
-    if not ax._axis_off:
+    if not ax._axis_off and not is_twin:
         _render_spines(st, px_left, px_top, px_w, px_h, body)
-    _render_labels(ax, st, px_left, px_top, px_w, px_h, body)
+    if not is_twin:
+        _render_labels(ax, st, px_left, px_top, px_w, px_h, body)
 
     if ax._show_legend:
         _render_legend(ax, st, px_left, px_top, px_w, px_h, body)
@@ -951,6 +958,45 @@ def _resolve_tick_labels(custom, ticks):
         return format_ticks(ticks)
     labs = list(custom)[:len(ticks)]
     return labs + [""] * (len(ticks) - len(labs))
+
+
+def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
+    """Draw a twin overlay's independent axis on the side opposite the parent."""
+    ts, tw, fs = st.tick_size, st.tick_width, st.tick_label_size
+    marks, labels = [], []
+    if ax._twin_shared == "x":                      # twinx: y-axis on the RIGHT
+        xr = px_left + px_w
+        for yt, lab in zip(yticks, _resolve_tick_labels(ax._yticklabels, yticks)):
+            y = tr.y(yt)
+            marks.append(f'<line x1="{_fmt(xr)}" y1="{_fmt(y)}" x2="{_fmt(xr + ts)}" y2="{_fmt(y)}"/>')
+            labels.append(
+                f'<text x="{_fmt(xr + ts + 2)}" y="{_fmt(y + fs * 0.35)}" '
+                f'text-anchor="start" font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+            )
+        if ax._ylabel:
+            lx = xr + ts + _max_ytick_width(ax, st) + st.label_size + 4
+            cy = px_top + px_h / 2.0
+            body.append(
+                f'<text x="{_fmt(lx)}" y="{_fmt(cy)}" text-anchor="middle" '
+                f'font-size="{st.label_size}" fill="{st.text_color}" '
+                f'transform="rotate(90 {_fmt(lx)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
+            )
+    else:                                           # twiny: x-axis on the TOP
+        for xt, lab in zip(xticks, _resolve_tick_labels(ax._xticklabels, xticks)):
+            x = tr.x(xt)
+            marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(px_top)}" x2="{_fmt(x)}" y2="{_fmt(px_top - ts)}"/>')
+            labels.append(
+                f'<text x="{_fmt(x)}" y="{_fmt(px_top - ts - 3)}" text-anchor="middle" '
+                f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+            )
+        if ax._xlabel:
+            body.append(
+                f'<text x="{_fmt(px_left + px_w / 2)}" y="{_fmt(px_top - ts - fs - st.label_size)}" '
+                f'text-anchor="middle" font-size="{st.label_size}" '
+                f'fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
+            )
+    body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
+    body.append("".join(labels))
 
 
 def _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,

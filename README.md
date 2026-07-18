@@ -98,14 +98,16 @@ Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
 **log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
 **`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
-`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `grid`, `set_axis_off`,
-and **`subplots(sharex=…, sharey=…)`**. Plus **`fig.tight_layout()`**
+`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `margins`, `grid`,
+`set_axis_off`, **`subplots(sharex=…, sharey=…)`**, and **`twinx`/`twiny`**
+(overlaid axes with a second y/x axis). Plus **`fig.tight_layout()`**
 (auto-margins so labels never overflow), text (`ax.text`, `ax.annotate` with
 arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
 `fig.colorbar(...)` (single **or shared across a list of axes**),
 `legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and
 colormaps `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `coolwarm`,
-`RdBu`, `gray` (+ any `_r` reversed variant) with linear or `LogNorm` scaling.
+`RdBu`, `gray` (+ any `_r` reversed variant) with `Normalize`, `LogNorm`,
+`PowerNorm`, or `SymLogNorm` scaling.
 
 ```bash
 python examples/plot_types.py    # plot / scatter / bar / hist / pie / imshow / ...

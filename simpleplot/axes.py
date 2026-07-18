@@ -51,6 +51,8 @@ class Axes:
         self._yinverted = False
         self._sharex_group = None   # list of axes sharing x limits, or None
         self._sharey_group = None
+        self._twin_of = None        # parent axes when this is a twinx/twiny overlay
+        self._twin_shared = None    # 'x' (twinx) or 'y' (twiny)
         self._xlabel = ""
         self._ylabel = ""
         self._title = ""
@@ -613,6 +615,30 @@ class Axes:
         self._ylim = (bottom, top) if top is not None else tuple(bottom)
         return self._ylim
 
+    def set_xbound(self, lower, upper):
+        """Set the x data limits (alias of :meth:`set_xlim`)."""
+        return self.set_xlim(lower, upper)
+
+    def set_ybound(self, lower, upper):
+        """Set the y data limits (alias of :meth:`set_ylim`)."""
+        return self.set_ylim(lower, upper)
+
+    def margins(self, m=None, x=None, y=None):
+        """Add fractional padding around the autoscaled data (like matplotlib).
+
+        ``margins(0.1)`` pads both axes 10%; per-axis via ``x=``/``y=``.
+        """
+        mx = x if x is not None else m
+        my = y if y is not None else m
+        (x0, x1), (y0, y1) = self._resolved_limits()
+        if mx:
+            dx = (x1 - x0) * mx
+            self.set_xlim(x0 - dx, x1 + dx)
+        if my:
+            dy = (y1 - y0) * my
+            self.set_ylim(y0 - dy, y1 + dy)
+        return self
+
     def set_xticks(self, ticks):
         """Set explicit x tick locations. Pass ``[]`` to hide ticks."""
         self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
@@ -636,6 +662,22 @@ class Axes:
     def invert_yaxis(self):
         """Reverse the y-axis direction (larger values at the bottom)."""
         self._yinverted = not self._yinverted
+
+    def twinx(self):
+        """Return an overlaid axes sharing this x-axis, y-axis drawn on the right."""
+        tw = self.figure.add_axes(self._rect)
+        tw._twin_of = self
+        tw._twin_shared = "x"
+        tw._subplotspec = self._subplotspec   # stay aligned through tight_layout
+        return tw
+
+    def twiny(self):
+        """Return an overlaid axes sharing this y-axis, x-axis drawn on the top."""
+        tw = self.figure.add_axes(self._rect)
+        tw._twin_of = self
+        tw._twin_shared = "y"
+        tw._subplotspec = self._subplotspec
+        return tw
 
     def set_xlabel(self, label):
         self._xlabel = label
@@ -708,7 +750,15 @@ class Axes:
         aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
         px = _pad(axmin, axmax, self._xscale, tight=mesh_x)
         py = _pad(aymin, aymax, self._yscale, tight=mesh_y)
-        return (xlim or px), (ylim or py)
+        rx, ry = (xlim or px), (ylim or py)
+        # A twin overlay inherits the shared axis' limits from its parent.
+        if self._twin_of is not None:
+            pxl, pyl = self._twin_of._resolved_limits()
+            if self._twin_shared == "x":
+                rx = pxl
+            else:
+                ry = pyl
+        return rx, ry
 
 
 def _bilinear_upsample(Z, max_side=480):

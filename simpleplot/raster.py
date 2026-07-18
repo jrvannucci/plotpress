@@ -129,14 +129,16 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
         _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas)
         return
 
-    draw.rectangle([L, T, L + Wp, T + Hp], fill=_rgb(st.axes_facecolor))
+    is_twin = ax._twin_of is not None
+    if not is_twin:
+        draw.rectangle([L, T, L + Wp, T + Hp], fill=_rgb(st.axes_facecolor))
 
     xticks = (ax._xticks if ax._xticks is not None else
               (log_ticks(xmin, xmax) if ax._xscale == "log" else nice_ticks(xmin, xmax)))
     yticks = (ax._yticks if ax._yticks is not None else
               (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
 
-    if ax._grid and not ax._axis_off:
+    if ax._grid and not ax._axis_off and not is_twin:
         gc = _rgba(st.grid_color, st.grid_alpha)
         gw = max(1, int(round(st.grid_width * S)))
         for xt in xticks:
@@ -153,10 +155,14 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
         _raster_artist(artist, tr, st, S, draw, canvas, clip)
 
     if not ax._axis_off:
-        _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
-        draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(st.spine_color),
-                       width=max(1, int(round(st.spine_width * S))))
-    _raster_labels(ax, st, L, T, Wp, Hp, S, draw)
+        if is_twin:
+            _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
+        else:
+            _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
+            draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(st.spine_color),
+                           width=max(1, int(round(st.spine_width * S))))
+    if not is_twin:
+        _raster_labels(ax, st, L, T, Wp, Hp, S, draw)
     if ax._show_legend:
         _raster_legend(ax, st, L, T, Wp, Hp, S, draw)
 
@@ -493,6 +499,35 @@ def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
         y = float(tr.y(yt))
         draw.line([L - ts, y, L, y], fill=col, width=max(1, int(round(st.tick_width * S))))
         draw.text((L - ts - 2, y), lab, fill=_rgb(st.text_color), font=font, anchor="rm")
+
+
+def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
+    col = _rgb(st.spine_color)
+    ts = st.tick_size * S
+    fs = st.tick_label_size * S
+    font = _font(fs)
+    tw = max(1, int(round(st.tick_width * S)))
+    if ax._twin_shared == "x":                       # twinx: y-axis on the RIGHT
+        xr = L + Wp
+        for yt, lab in zip(yticks, _resolve_tick_labels(ax._yticklabels, yticks)):
+            y = float(tr.y(yt))
+            draw.line([xr, y, xr + ts, y], fill=col, width=tw)
+            draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
+                      font=font, anchor="lm")
+        if ax._ylabel:
+            lx = xr + ts + st.tick_label_size * S * 3 + st.label_size * S
+            _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
+                   _rgb(st.text_color), _font(st.label_size * S))
+    else:                                            # twiny: x-axis on the TOP
+        for xt, lab in zip(xticks, _resolve_tick_labels(ax._xticklabels, xticks)):
+            x = float(tr.x(xt))
+            draw.line([x, T, x, T - ts], fill=col, width=tw)
+            draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),
+                      font=font, anchor="md")
+        if ax._xlabel:
+            draw.text((L + Wp / 2.0, T - ts - fs - st.label_size * S),
+                      ax._xlabel, fill=_rgb(st.text_color),
+                      font=_font(st.label_size * S), anchor="md")
 
 
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):

@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 
 import simpleplot
-from simpleplot.colors import LogNorm, apply_colormap, get_cmap, to_hex
+from simpleplot.colors import (
+    LogNorm, PowerNorm, SymLogNorm, apply_colormap, get_cmap, to_hex,
+)
 
 
 # -- colormaps & norms ------------------------------------------------------
@@ -170,3 +172,45 @@ def test_unshared_axes_stay_independent():
     axes[0].plot([0, 1], [0, 1])
     axes[1].plot([0, 1], [0, 100])
     assert axes[0].get_ylim() != axes[1].get_ylim()
+
+
+# -- PowerNorm / SymLogNorm -------------------------------------------------
+def test_power_and_symlog_norms():
+    p = PowerNorm(0.5, 0, 1)
+    assert abs(float(p(np.array([0.25]))[0]) - 0.5) < 1e-9    # sqrt(0.25)
+    s = SymLogNorm(1.0, -100, 100)
+    out = s(np.array([-100.0, 0.0, 100.0]))
+    np.testing.assert_allclose(out, [0.0, 0.5, 1.0], atol=1e-9)  # symmetric
+
+
+# -- twinx / twiny ----------------------------------------------------------
+def test_twinx_shares_x_independent_y():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 10], [0, 1])
+    ax2 = ax.twinx()
+    ax2.plot([0, 10], [0, 1000])
+    assert ax2._twin_of is ax and ax2._twin_shared == "x"
+    assert ax._resolved_limits()[0] == ax2._resolved_limits()[0]    # shared x
+    assert ax._resolved_limits()[1] != ax2._resolved_limits()[1]    # own y
+    ax2.set_ylabel("right")
+    assert ">right<" in fig.to_svg()
+
+
+def test_twiny_shares_y():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 1], [0, 10])
+    ax2 = ax.twiny()
+    ax2.plot([0, 500], [0, 10])
+    assert ax._resolved_limits()[1] == ax2._resolved_limits()[1]    # shared y
+    assert ax._resolved_limits()[0] != ax2._resolved_limits()[0]    # own x
+
+
+# -- margins / bounds -------------------------------------------------------
+def test_margins_and_bounds():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 10], [0, 5])
+    ax.margins(0.1)
+    x0, x1 = ax.get_xlim()
+    assert x0 < 0 and x1 > 10                       # padded outward
+    ax.set_xbound(0, 100)
+    assert ax.get_xlim() == (0, 100)

@@ -183,6 +183,49 @@ class LogNorm(Normalize):
         return (logA - lmin) / span
 
 
+class PowerNorm(Normalize):
+    """Map data to [0, 1] then raise to ``gamma`` (matplotlib's PowerNorm).
+
+    ``gamma < 1`` emphasizes low values, ``gamma > 1`` the high end.
+    """
+
+    def __init__(self, gamma=1.0, vmin=None, vmax=None):
+        super().__init__(vmin, vmax)
+        self.gamma = float(gamma)
+
+    def __call__(self, A):
+        A = np.asarray(A, dtype=float)
+        self.autoscale_none(A)
+        span = (self.vmax - self.vmin) or 1.0
+        t = np.clip((A - self.vmin) / span, 0.0, 1.0)
+        return np.power(t, self.gamma)
+
+
+class SymLogNorm(Normalize):
+    """Symmetric-log mapping: linear within ``+/-linthresh``, log beyond.
+
+    Handles data spanning zero and both signs (matplotlib's SymLogNorm).
+    """
+
+    def __init__(self, linthresh, vmin=None, vmax=None):
+        super().__init__(vmin, vmax)
+        self.linthresh = float(linthresh)
+
+    def _symlog(self, x):
+        lt = self.linthresh
+        x = np.asarray(x, dtype=float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            far = np.sign(x) * (1.0 + np.log10(np.abs(x) / lt))
+        return np.where(np.abs(x) <= lt, x / lt, far)
+
+    def __call__(self, A):
+        A = np.asarray(A, dtype=float)
+        self.autoscale_none(A)
+        lo, hi = self._symlog(self.vmin), self._symlog(self.vmax)
+        span = (hi - lo) or 1.0
+        return (self._symlog(A) - lo) / span
+
+
 def apply_colormap(A, lut, norm: Normalize) -> np.ndarray:
     """Map data array ``A`` to an RGBA uint8 array. NaNs become transparent."""
     normed = norm(A)
