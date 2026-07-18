@@ -30,6 +30,10 @@ gui = ["pywebview>=4.0"]
 # PyQt5+PyQtWebEngine work too; this extra pulls the PyQt6 stack by default.
 qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
 dev = ["pytest>=7"]
+# End-to-end point-picking tests: they drive the interactive HTML's JavaScript
+# in a headless browser. After installing, fetch the browser itself with
+# `playwright install chromium`.
+browser = ["pytest>=7", "playwright>=1.40"]
 # Benchmarking against matplotlib (benchmarks/ and the comparative perf tests).
 bench = ["matplotlib>=3.5"]
 
@@ -38,7 +42,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "perf: timing/benchmark tests (deselect with -m 'not perf')",
+    "browser: drives interactive HTML in a headless browser; needs the 'browser' extra plus `playwright install chromium` (select with -m browser)",
 ]
+# Browser tests are opt-in: they need a Chromium download, so a plain `pytest`
+# run stays dependency-free. Run them with `pytest -m browser`.
+addopts = "-m 'not browser'"
 
 [project.urls]
 Homepage = "https://github.com/simpleplot/simpleplot"

@@ -136,6 +136,23 @@ transforms/tickers/colors, a lossless PNG round-trip, SVG/HTML well-formedness
 and structure, and performance (regression guards + a comparative claim vs
 matplotlib).
 
+### Point-picking tests (opt-in)
+
+Point picking runs in JavaScript inside the interactive HTML, so it is tested
+end-to-end in a real browser: each case clicks the pixel where the renderer drew
+a known datum and asserts the marker reports that datum, across every pickable
+plot type (line, scatter, bar, stem, errorbar, quiver, eventplot, boxplot,
+violin, fill, pcolormesh, imshow, pie) and awkward axes (log, inverted,
+`set_aspect`, multi-subplot).
+
+These need a browser, so they are deselected by default and skip cleanly when it
+is missing:
+
+```bash
+pip install simpleplot[browser] && playwright install chromium
+python -m pytest -m browser
+```
+
 ## Benchmarks
 
 ```bash

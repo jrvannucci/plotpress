@@ -219,10 +219,8 @@ INTERACTIVE_JS = r"""
     if (mode === 'span') {
       var pdn = toUser(e), a = axesAt(pdn);
       if (a) {
-        var c = CUR[a.i];               // per-axes data pan over a plot
-        panAxes = { key: a.i, downUser: pdn, start: {
-          fx0: fwd(c.xmin, c.xscale), fx1: fwd(c.xmax, c.xscale),
-          fy0: fwd(c.ymin, c.yscale), fy1: fwd(c.ymax, c.yscale) } };
+        // per-axes data pan over a plot (directed edges: honors inverted axes)
+        panAxes = { key: a.i, downUser: pdn, start: edges(CUR[a.i]) };
       } else {
         panV = view.slice();            // over margins: whole-figure pan
       }
@@ -236,8 +234,8 @@ INTERACTIVE_JS = r"""
       var m = CUR[panAxes.key], s = panAxes.start, pc = toUser(e);
       var dfx = (pc.x - panAxes.downUser.x) / m.w * (s.fx1 - s.fx0);
       var dfy = (pc.y - panAxes.downUser.y) / m.h * (s.fy1 - s.fy0);
-      m.xmin = inv(s.fx0 - dfx, m.xscale); m.xmax = inv(s.fx1 - dfx, m.xscale);
-      m.ymin = inv(s.fy0 + dfy, m.yscale); m.ymax = inv(s.fy1 + dfy, m.yscale);
+      setXLim(m, s.fx0 - dfx, s.fx1 - dfx);
+      setYLim(m, s.fy0 + dfy, s.fy1 + dfy);
       refreshAxes(panAxes.key);
     } else if (mode === 'span') {
       var r = svg.getBoundingClientRect();
@@ -295,17 +293,34 @@ INTERACTIVE_JS = r"""
   }
   function fwd(v, s) { return s === 'log' ? Math.log10(v) : v; }
   function inv(u, s) { return s === 'log' ? Math.pow(10, u) : u; }
-  function toPixel(m, dx, dy) {
+
+  // An axes' limits in transformed (log-aware) space, *directed*: on an
+  // inverted axis they come back swapped, exactly as _render_axes swaps the
+  // limits it hands LinearTransform. Everything that maps between data and
+  // pixels goes through this, so inverted axes behave like normal ones.
+  function edges(m) {
     var fx0 = fwd(m.xmin, m.xscale), fx1 = fwd(m.xmax, m.xscale);
     var fy0 = fwd(m.ymin, m.yscale), fy1 = fwd(m.ymax, m.yscale);
-    return { x: m.x + (fwd(dx, m.xscale) - fx0) / (fx1 - fx0) * m.w,
-             y: m.y + (fy1 - fwd(dy, m.yscale)) / (fy1 - fy0) * m.h };
+    if (m.xinv) { var tx = fx0; fx0 = fx1; fx1 = tx; }
+    if (m.yinv) { var ty = fy0; fy0 = fy1; fy1 = ty; }
+    return { fx0: fx0, fx1: fx1, fy0: fy0, fy1: fy1 };
+  }
+  // Directed transformed edges -> data limits (min/max, since inv is monotonic).
+  function setXLim(m, a, b) {
+    m.xmin = inv(Math.min(a, b), m.xscale); m.xmax = inv(Math.max(a, b), m.xscale);
+  }
+  function setYLim(m, a, b) {
+    m.ymin = inv(Math.min(a, b), m.yscale); m.ymax = inv(Math.max(a, b), m.yscale);
+  }
+  function toPixel(m, dx, dy) {
+    var e = edges(m);
+    return { x: m.x + (fwd(dx, m.xscale) - e.fx0) / (e.fx1 - e.fx0) * m.w,
+             y: m.y + (e.fy1 - fwd(dy, m.yscale)) / (e.fy1 - e.fy0) * m.h };
   }
   function toData(m, px, py) {
-    var fx0 = fwd(m.xmin, m.xscale), fx1 = fwd(m.xmax, m.xscale);
-    var fy0 = fwd(m.ymin, m.yscale), fy1 = fwd(m.ymax, m.yscale);
-    return { x: inv(fx0 + (px - m.x) / m.w * (fx1 - fx0), m.xscale),
-             y: inv(fy1 - (py - m.y) / m.h * (fy1 - fy0), m.yscale) };
+    var e = edges(m);
+    return { x: inv(e.fx0 + (px - m.x) / m.w * (e.fx1 - e.fx0), m.xscale),
+             y: inv(e.fy1 - (py - m.y) / m.h * (e.fy1 - e.fy0), m.yscale) };
   }
 
   // ---- per-axes data zoom (client-side re-render) -----------------------
@@ -390,12 +405,12 @@ INTERACTIVE_JS = r"""
     var o = META[key], c = CUR[key];
     var g = document.getElementById('zoom' + key);
     if (!g) return;
-    // Work in transformed (log-aware) space so the remap stays affine.
-    var oxs = o.xscale, oys = o.yscale;
-    var ofx0 = fwd(o.xmin, oxs), ofx1 = fwd(o.xmax, oxs);
-    var cfx0 = fwd(c.xmin, oxs), cfx1 = fwd(c.xmax, oxs);
-    var ofy0 = fwd(o.ymin, oys), ofy1 = fwd(o.ymax, oys);
-    var cfy0 = fwd(c.ymin, oys), cfy1 = fwd(c.ymax, oys);
+    // Work in transformed (log-aware), direction-aware space so the remap
+    // stays affine. Both sets carry the same inversion flags, so an inverted
+    // axis simply zooms/pans in its own direction.
+    var oe = edges(o), ce = edges(c);
+    var ofx0 = oe.fx0, ofx1 = oe.fx1, cfx0 = ce.fx0, cfx1 = ce.fx1;
+    var ofy0 = oe.fy0, ofy1 = oe.fy1, cfy0 = ce.fy0, cfy1 = ce.fy1;
     var sx = (ofx1 - ofx0) / (cfx1 - cfx0);
     var sy = (ofy1 - ofy0) / (cfy1 - cfy0);
     var tx = o.x * (1 - sx) + (ofx0 - cfx0) / (cfx1 - cfx0) * o.w;
@@ -432,16 +447,12 @@ INTERACTIVE_JS = r"""
     applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
   }
   function zoomAxesAt(key, px, py, factor) {
-    var c = CUR[key];
+    var c = CUR[key], e = edges(c);
     // Zoom in transformed space (linear for 'linear', decades for 'log').
-    var fx0 = fwd(c.xmin, c.xscale), fx1 = fwd(c.xmax, c.xscale);
-    var fy0 = fwd(c.ymin, c.yscale), fy1 = fwd(c.ymax, c.yscale);
-    var cxf = fx0 + (px - c.x) / c.w * (fx1 - fx0);
-    var cyf = fy1 - (py - c.y) / c.h * (fy1 - fy0);
-    c.xmin = inv(cxf - (cxf - fx0) * factor, c.xscale);
-    c.xmax = inv(cxf + (fx1 - cxf) * factor, c.xscale);
-    c.ymin = inv(cyf - (cyf - fy0) * factor, c.yscale);
-    c.ymax = inv(cyf + (fy1 - cyf) * factor, c.yscale);
+    var cxf = e.fx0 + (px - c.x) / c.w * (e.fx1 - e.fx0);
+    var cyf = e.fy1 - (py - c.y) / c.h * (e.fy1 - e.fy0);
+    setXLim(c, cxf - (cxf - e.fx0) * factor, cxf + (e.fx1 - cxf) * factor);
+    setYLim(c, cyf - (cyf - e.fy0) * factor, cyf + (e.fy1 - cyf) * factor);
     refreshAxes(key);
   }
   function resetAxesOne(key) {

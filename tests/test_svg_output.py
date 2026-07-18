@@ -1,5 +1,6 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
+import math
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -307,7 +308,69 @@ def test_axes_metadata_for_picking():
     # Two data axes; the colorbar axes is excluded.
     assert len(meta) == 2
     for entry in meta.values():
-        assert {"x", "y", "w", "h", "xmin", "xmax", "ymin", "ymax"} <= set(entry)
+        assert {"x", "y", "w", "h", "xmin", "xmax", "ymin", "ymax",
+                "xscale", "yscale", "xinv", "yinv"} <= set(entry)
+
+
+def _meta_to_pixel(entry, dx, dy):
+    """Data -> pixel exactly as the client's toPixel() does, from metadata alone.
+
+    Mirrors the ``edges()``/``toPixel()`` pair in ``_interactive.py``; kept in
+    step with it so a drift between the metadata contract and the renderer
+    shows up here rather than as a mis-picked point in the browser.
+    """
+    fx = math.log10 if entry["xscale"] == "log" else (lambda v: v)
+    fy = math.log10 if entry["yscale"] == "log" else (lambda v: v)
+    fx0, fx1 = fx(entry["xmin"]), fx(entry["xmax"])
+    fy0, fy1 = fy(entry["ymin"]), fy(entry["ymax"])
+    if entry["xinv"]:
+        fx0, fx1 = fx1, fx0
+    if entry["yinv"]:
+        fy0, fy1 = fy1, fy0
+    return (entry["x"] + (fx(dx) - fx0) / (fx1 - fx0) * entry["w"],
+            entry["y"] + (fy1 - fy(dy)) / (fy1 - fy0) * entry["h"])
+
+
+@pytest.mark.parametrize("invert_x", [False, True])
+@pytest.mark.parametrize("invert_y", [False, True])
+@pytest.mark.parametrize("scale", ["linear", "log"])
+def test_pick_metadata_matches_renderer_transform(invert_x, invert_y, scale):
+    """The pick metadata must place a datum where the renderer draws it.
+
+    Point picking maps a click back to data using only ``axes_metadata``, so if
+    that disagrees with the renderer's transform every pick lands on the wrong
+    point. Inverted axes regressed exactly this way: the renderer swaps the
+    limits it feeds LinearTransform, and the metadata has to say so.
+    """
+    from simpleplot.svg import _effective_rect, _pixel_rect, axes_metadata
+    from simpleplot.transform import LinearTransform
+
+    data = [1.0, 10.0, 100.0, 1000.0] if scale == "log" else [0.0, 1.0, 2.0, 3.0]
+    fig, ax = simpleplot.subplots()
+    ax.plot(data, data)
+    ax.set_xscale(scale)
+    ax.set_yscale(scale)
+    if invert_x:
+        ax.invert_xaxis()
+    if invert_y:
+        ax.invert_yaxis()
+
+    entry = axes_metadata(fig)[0]
+
+    # The transform the renderer itself uses (see _render_axes).
+    dpi = 100
+    (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+    rect = _effective_rect(ax, *_pixel_rect(ax, fig.figsize[0] * dpi,
+                                            fig.figsize[1] * dpi),
+                           (xmin, xmax), (ymin, ymax))
+    tr = LinearTransform((xmax, xmin) if ax._xinverted else (xmin, xmax),
+                         (ymax, ymin) if ax._yinverted else (ymin, ymax),
+                         rect, xscale=ax._xscale, yscale=ax._yscale)
+
+    for dx, dy in zip(data, data):
+        px, py = _meta_to_pixel(entry, dx, dy)
+        assert px == pytest.approx(float(tr.x(dx)), abs=1e-3)
+        assert py == pytest.approx(float(tr.y(dy)), abs=1e-3)
 
 
 def test_interactive_html_embeds_pick_metadata():

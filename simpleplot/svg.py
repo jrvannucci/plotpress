@@ -133,6 +133,9 @@ def axes_metadata(fig):
             "ymin": round(float(ymin), 6), "ymax": round(float(ymax), 6),
             "grid": bool(ax._grid), "axis_off": bool(ax._axis_off),
             "xscale": ax._xscale, "yscale": ax._yscale,
+            # Axis direction, so the client maps data<->pixels the same way
+            # _render_axes does (it swaps the limits it feeds the transform).
+            "xinv": bool(ax._xinverted), "yinv": bool(ax._yinverted),
             # Whether ticks are user-fixed (don't auto-recompute on zoom).
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
         }
