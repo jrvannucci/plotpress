@@ -167,3 +167,59 @@ def test_violin_cut_widens_the_silhouette():
     assert tight.grids[0][0] == pytest.approx(d.min())
     assert wide.grids[0][0] < d.min()
     assert wide.grids[0][-1] > d.max()
+
+
+# -- degenerate input ------------------------------------------------------
+EMPTY = np.array([])
+ALL_NAN = np.array([np.nan, np.nan, np.nan])
+
+
+@pytest.mark.parametrize("data", [EMPTY, ALL_NAN], ids=["empty", "all-nan"])
+@pytest.mark.parametrize("method", ["kdeplot", "ecdfplot", "rugplot"])
+def test_1d_distributions_draw_nothing_rather_than_raising(method, data):
+    """An all-NaN column is a realistic input; these used to fail deep in numpy
+    with errors that named neither the caller nor the data."""
+    fig, ax = simpleplot.subplots()
+    art = getattr(ax, method)(data)
+    assert art.data_bounds() is None
+    assert fig.to_svg().startswith("<svg")
+
+
+@pytest.mark.parametrize("data", [EMPTY, ALL_NAN], ids=["empty", "all-nan"])
+@pytest.mark.parametrize("method", ["boxplot", "violinplot"])
+def test_grouped_distributions_drop_empty_datasets(method, data):
+    fig, ax = simpleplot.subplots()
+    art = getattr(ax, method)([data])
+    assert art.data_bounds() is None
+    assert fig.to_svg().startswith("<svg")
+
+
+@pytest.mark.parametrize("method", ["boxplot", "violinplot"])
+def test_empty_dataset_does_not_shift_its_neighbours(method):
+    a, c = _sample(seed=1), _sample(seed=2)
+    _, ax = simpleplot.subplots()
+    art = getattr(ax, method)([a, EMPTY, c], positions=[10.0, 20.0, 30.0])
+    # The empty column drops out; the survivors keep their own positions.
+    assert list(art.positions) == [10.0, 30.0]
+
+
+def test_grouped_distributions_ignore_nans_among_real_values():
+    d = _sample()
+    _, ax = simpleplot.subplots()
+    bp = ax.boxplot([np.concatenate([d, [np.nan, np.nan]])])
+    assert bp.stats[0]["med"] == pytest.approx(np.median(d))
+
+
+def test_hexbin_accepts_no_points():
+    fig, ax = simpleplot.subplots()
+    hb = ax.hexbin(EMPTY, EMPTY)
+    assert hb.data_bounds() is None
+    assert fig.to_svg().startswith("<svg")
+
+
+def test_empty_series_does_not_disturb_a_real_one_on_the_same_axes():
+    fig, ax = simpleplot.subplots()
+    ax.kdeplot(EMPTY)
+    ax.plot([0.0, 1.0, 2.0], [0.0, 5.0, 10.0])
+    lo, hi = ax.get_ylim()
+    assert lo == pytest.approx(-0.5) and hi == pytest.approx(10.5)

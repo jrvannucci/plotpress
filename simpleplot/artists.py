@@ -637,6 +637,8 @@ class BoxPlot(Artist):
         self.label = label
 
     def data_bounds(self):
+        if not self.stats:
+            return None
         vlo = min(min(s["lo"], *( [s["fliers"].min()] if len(s["fliers"]) else [s["lo"]] )) for s in self.stats)
         vhi = max(max(s["hi"], *( [s["fliers"].max()] if len(s["fliers"]) else [s["hi"]] )) for s in self.stats)
         clo = self.positions.min() - self.width
@@ -659,6 +661,8 @@ class Violin(Artist):
         self.label = label
 
     def data_bounds(self):
+        if not self.grids:
+            return None
         vlo = min(g.min() for g in self.grids)
         vhi = max(g.max() for g in self.grids)
         hw = max(h.max() for h in self.halfwidths)

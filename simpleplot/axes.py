@@ -21,6 +21,21 @@ from .artists import (
 from .colors import Normalize, apply_colormap, get_cmap
 
 
+def _finite_datasets(data, positions):
+    """Drop non-finite values, then any dataset left with no observations.
+
+    Each surviving dataset keeps its own position, so one empty column shifts
+    nothing. Without this, ``boxplot``/``violinplot`` reach ``np.percentile``
+    or ``d.min()`` on an empty array and fail well away from the caller.
+    """
+    positions = np.atleast_1d(np.asarray(positions, dtype=float))
+    kept = [(d[np.isfinite(d)], p) for d, p in zip(data, positions)]
+    kept = [(d, p) for d, p in kept if d.size]
+    if not kept:
+        return [], np.empty(0, dtype=float)
+    return [d for d, _ in kept], np.array([p for _, p in kept], dtype=float)
+
+
 def _kde_bandwidth(data):
     """Silverman's rule-of-thumb bandwidth for a 1-D sample."""
     n = data.size
@@ -380,6 +395,7 @@ class Axes:
         data = [np.asarray(d, float) for d in data]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
+        data, positions = _finite_datasets(data, positions)
         stats = []
         for d in data:
             q1, med, q3 = np.percentile(d, [25, 50, 75])
@@ -413,6 +429,7 @@ class Axes:
         data = [np.asarray(d, float) for d in data]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
+        data, positions = _finite_datasets(data, positions)
         grids, halfwidths = [], []
         for d in data:
             pad = cut * _kde_bandwidth(d)
@@ -471,10 +488,13 @@ class Axes:
         """
         d = np.asarray(data, float)
         d = d[np.isfinite(d)]
+        color = self._resolve_color(color)
+        if d.size == 0:      # nothing to estimate; draw nothing, like plot([])
+            return self.plot([], [], color=color, linewidth=linewidth,
+                             label=label)
         pad = cut * _kde_bandwidth(d)
         grid = np.linspace(d.min() - pad, d.max() + pad, points)
         dens = _gaussian_kde(d, grid)
-        color = self._resolve_color(color)
         if fill:
             self.fill_between(grid, dens, 0.0, color=color, alpha=alpha)
         return self.plot(grid, dens, color=color, linewidth=linewidth,
@@ -485,6 +505,9 @@ class Axes:
         """Empirical cumulative distribution of a 1-D sample."""
         d = np.asarray(data, float)
         d = np.sort(d[np.isfinite(d)])
+        if d.size == 0:
+            return self.plot([], [], color=self._resolve_color(color),
+                             linewidth=linewidth, label=label)
         y = np.arange(1, d.size + 1) / d.size
         if complementary:
             y = 1.0 - y
@@ -993,6 +1016,8 @@ def _hexbin(x, y, gridsize, mincnt):
     of the two candidate centers (rectangular grid, and the same grid shifted by
     half a cell) is nearest -- which tiles the plane with hexagons.
     """
+    if x.size == 0 or y.size == 0:
+        return [], np.empty(0, dtype=float)
     xmin, xmax = float(x.min()), float(x.max())
     ymin, ymax = float(y.min()), float(y.max())
     nx = max(int(gridsize), 1)
