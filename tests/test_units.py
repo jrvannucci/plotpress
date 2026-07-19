@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from simpleplot import colors
-from simpleplot.ticker import format_tick, nice_ticks
+from simpleplot.ticker import format_tick, format_ticks, log_ticks, nice_ticks
 from simpleplot.transform import LinearTransform
 
 
@@ -80,6 +80,36 @@ def test_nice_ticks_handles_equal_bounds():
 ])
 def test_format_tick(v, expected):
     assert format_tick(v) == expected
+
+
+@pytest.mark.parametrize("lo,hi", [
+    (100000, 101000),      # narrow band high above the 1e5 sci threshold
+    (1e6, 1.00002e6),
+    (0.0001, 0.00012),     # and below the 1e-3 threshold
+    (123456, 123460),
+])
+def test_format_ticks_never_duplicates_labels(lo, hi):
+    """Per-value formatting rounds these to one mantissa digit, collapsing a
+    whole axis to repeats of "1e5"; the set-level formatter must separate them."""
+    labels = format_ticks(nice_ticks(lo, hi))
+    assert len(set(labels)) == len(labels), labels
+
+
+def test_format_ticks_leaves_well_behaved_sets_alone():
+    assert format_ticks(nice_ticks(0, 10)) == ["0", "2", "4", "6", "8", "10"]
+    assert format_ticks(nice_ticks(0, 1)) == ["0", "0.2", "0.4", "0.6", "0.8", "1"]
+    # Zero keeps its bare form rather than picking up a shared exponent.
+    assert "0" in format_ticks(nice_ticks(-2e5, 2e5))
+    # Log decades are unevenly spaced: each label carries its own exponent.
+    assert format_ticks(log_ticks(1e-3, 1e3))[0] == "0.001"
+
+
+def test_format_ticks_degenerate_inputs():
+    assert format_ticks([]) == []
+    assert format_ticks([123456]) == ["1.2e5"]
+    # Ticks that are float-identical cannot be separated by any formatting;
+    # fall back rather than emitting a long meaningless mantissa.
+    assert format_ticks([1.0, 1.0, 1.0]) == ["1", "1", "1"]
 
 
 # -- colors ----------------------------------------------------------------

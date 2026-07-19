@@ -67,5 +67,50 @@ def format_tick(v: float) -> str:
     return s
 
 
+def _sci_tick(v: float, exp: int, decimals: int) -> str:
+    """Format ``v`` against a *shared* exponent, e.g. ``1.002e5`` for exp=5."""
+    mant = f"{v / 10.0 ** exp:.{decimals}f}"
+    if "." in mant:
+        mant = mant.rstrip("0").rstrip(".")
+    return f"{mant}e{exp}"
+
+
 def format_ticks(values) -> List[str]:
-    return [format_tick(float(v)) for v in values]
+    """Format a *set* of ticks so no two labels collide.
+
+    ``format_tick`` alone rounds each value to one mantissa digit, which turns a
+    narrow band at high magnitude into six identical labels (ticks across
+    [100000, 101000] all read "1e5"). For an evenly spaced set, pick a single
+    shared exponent and carry enough mantissa digits to resolve the tick *step*,
+    so the labels stay distinct and comparable.
+
+    Unevenly spaced sets -- log decades, mainly -- keep the per-value form,
+    where each label already carries its own exponent.
+    """
+    vals = [float(v) for v in values]
+    labels = [format_tick(v) for v in vals]
+    if len(set(labels)) == len(labels):
+        return labels                      # already distinct -- nothing to repair
+    if len(vals) < 2 or not all(math.isfinite(v) for v in vals):
+        return labels
+
+    diffs = np.diff(vals)
+    step = abs(float(diffs[0]))
+    # Uneven spacing means no single exponent describes the set; a zero step
+    # means the ticks are float-identical, so no formatting can separate them.
+    if step == 0 or not np.allclose(diffs, diffs[0], rtol=1e-6):
+        return labels
+
+    peak = max(abs(v) for v in vals)
+    if peak == 0:
+        return labels
+
+    exp = math.floor(math.log10(peak))
+    # Enough decimals that one step is visible in the mantissa: the step spans
+    # 10**-d of the shared decade when d = exp - log10(step). The 1e-9 absorbs
+    # float dust so an exact power-of-ten step doesn't round a digit up.
+    decimals = max(0, min(12, math.ceil(exp - math.log10(step) - 1e-9)))
+    shared = [_sci_tick(v, exp, decimals) for v in vals]
+    # Only adopt the rewrite if it actually separated them (a range so narrow
+    # that 12 decimals cannot resolve it keeps the shorter per-value labels).
+    return shared if len(set(shared)) == len(shared) else labels

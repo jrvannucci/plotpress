@@ -359,11 +359,40 @@ INTERACTIVE_JS = r"""
       out.push(Math.pow(10, e));
     return out;
   }
-  // Ticks + a formatter for one axis, respecting its scale.
+  function allDistinct(a) {
+    for (var i = 0; i < a.length; i++)
+      for (var j = i + 1; j < a.length; j++) if (a[i] === a[j]) return false;
+    return true;
+  }
+  // Format v against a shared exponent: "1.002e5". Mirrors ticker._sci_tick.
+  function sciShared(v, exp, dec) {
+    var mant = (v / Math.pow(10, exp)).toFixed(dec);
+    if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
+    return mant + 'e' + exp;
+  }
+  // Mirrors ticker.format_ticks. Per-value formatting rounds to one mantissa
+  // digit, so zooming into a narrow band at high magnitude labels every tick
+  // "1e5". When that collides, share one exponent across the set and carry
+  // enough mantissa digits to resolve the step.
+  function fmtTickSet(ticks, step) {
+    var labels = ticks.map(function (v) { return fmtTick(v, step); });
+    if (allDistinct(labels)) return labels;
+    var peak = 0;
+    for (var i = 0; i < ticks.length; i++) peak = Math.max(peak, Math.abs(ticks[i]));
+    if (!step || !peak || !isFinite(peak)) return labels;
+    var exp = Math.floor(Math.log10(peak));
+    var dec = Math.max(0, Math.min(12, Math.ceil(exp - Math.log10(step) - 1e-9)));
+    var shared = ticks.map(function (v) { return sciShared(v, exp, dec); });
+    return allDistinct(shared) ? shared : labels;
+  }
+  // Ticks + their rendered labels for one axis, respecting its scale.
   function axisTicks(lo, hi, scale) {
-    if (scale === 'log') return { ticks: jsLogTicks(lo, hi), fmt: fmtNum };
+    if (scale === 'log') {
+      var lt = jsLogTicks(lo, hi);
+      return { ticks: lt, labels: lt.map(function (v) { return fmtNum(v); }) };
+    }
     var r = jsNiceTicks(lo, hi, 5);
-    return { ticks: r.ticks, fmt: function (v) { return fmtTick(v, r.step); } };
+    return { ticks: r.ticks, labels: fmtTickSet(r.ticks, r.step) };
   }
 
   // Rebuild an axes' grid + ticks + numeric labels from its current limits.
@@ -385,15 +414,15 @@ INTERACTIVE_JS = r"""
       parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + STYLE.grid_alpha + '">' + gl.join('') + '</g>');
     }
     var marks = [], labels = [];
-    xr.ticks.forEach(function (xt) {
+    xr.ticks.forEach(function (xt, i) {
       var px = toPixel(m, xt, m.ymin).x;
       marks.push('<line x1="' + px.toFixed(2) + '" y1="' + yb.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (yb + ts).toFixed(2) + '"/>');
-      labels.push('<text x="' + px.toFixed(2) + '" y="' + (yb + ts + fs).toFixed(2) + '" text-anchor="middle" font-size="' + fs + '" fill="' + STYLE.text + '">' + xr.fmt(xt) + '</text>');
+      labels.push('<text x="' + px.toFixed(2) + '" y="' + (yb + ts + fs).toFixed(2) + '" text-anchor="middle" font-size="' + fs + '" fill="' + STYLE.text + '">' + xr.labels[i] + '</text>');
     });
-    yr.ticks.forEach(function (yt) {
+    yr.ticks.forEach(function (yt, i) {
       var py = toPixel(m, m.xmin, yt).y;
       marks.push('<line x1="' + (m.x - ts).toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + m.x.toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
-      labels.push('<text x="' + (m.x - ts - 2).toFixed(2) + '" y="' + (py + fs * 0.35).toFixed(2) + '" text-anchor="end" font-size="' + fs + '" fill="' + STYLE.text + '">' + yr.fmt(yt) + '</text>');
+      labels.push('<text x="' + (m.x - ts - 2).toFixed(2) + '" y="' + (py + fs * 0.35).toFixed(2) + '" text-anchor="end" font-size="' + fs + '" fill="' + STYLE.text + '">' + yr.labels[i] + '</text>');
     });
     parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + marks.join('') + '</g>');
     parts.push(labels.join(''));
