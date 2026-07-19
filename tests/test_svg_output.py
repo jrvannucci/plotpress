@@ -612,6 +612,27 @@ def test_wait_for_extract_without_gui_raises(monkeypatch):
         fig.show(wait_for_extract=True)
 
 
+def test_html_payloads_cannot_break_out_of_their_script_block():
+    """An HTML parser ends a <script> at the first "</script" in its text, so a
+    label carrying one would close the JSON payload and run what follows."""
+    import json
+
+    evil = '</script><script>window.PWNED=1</script>'
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 1, 2], [0, 1, 2], values={evil: np.arange(3.0)})
+    ax.plot_frames(np.arange(3), np.zeros((2, 3)), slider_label=evil)
+    html = fig.to_html(interactive=True)
+
+    assert "</script><script>window.PWNED=1</script>" not in html
+    assert "\\u003c/script\\u003e" in html          # escaped, still inside JSON
+
+    # Every payload block is intact and still parses back to the original text.
+    for pid in ("simpleplot-pick", "simpleplot-sliders"):
+        start = html.index('id="%s">' % pid) + len('id="%s">' % pid)
+        end = html.index("</script>", start)
+        assert evil in json.dumps(json.loads(html[start:end]))
+
+
 def test_pick_data_omits_oversized_series_and_meshes():
     from simpleplot.svg import pick_data
 

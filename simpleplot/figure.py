@@ -8,6 +8,8 @@ mutable state.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 from .axes import Axes
@@ -240,22 +242,20 @@ class Figure:
         svg = svg.replace("<svg ", '<svg id="simpleplot-svg" ', 1)
         script = ""
         if interactive:
-            import json
-
             from ._interactive import INTERACTIVE_JS
             from .svg import axes_metadata, frame_data, pick_data, style_payload
 
-            meta = json.dumps(axes_metadata(self))
-            pick = json.dumps(pick_data(self, precision=pick_precision))
-            styl = json.dumps(style_payload(self))
+            meta = _json_payload(axes_metadata(self))
+            pick = _json_payload(pick_data(self, precision=pick_precision))
+            styl = _json_payload(style_payload(self))
             payloads = (
                 f'<script type="application/json" id="simpleplot-meta">{meta}</script>'
                 f'<script type="application/json" id="simpleplot-pick">{pick}</script>'
                 f'<script type="application/json" id="simpleplot-style">{styl}</script>'
             )
             if self._sliders:
-                frames = json.dumps(frame_data(self))
-                sliders = json.dumps(self._sliders)
+                frames = _json_payload(frame_data(self))
+                sliders = _json_payload(self._sliders)
                 payloads += (
                     f'<script type="application/json" id="simpleplot-frames">{frames}</script>'
                     f'<script type="application/json" id="simpleplot-sliders">{sliders}</script>'
@@ -385,6 +385,24 @@ class _MarkerApi:
             except Exception:
                 pass
         return True
+
+
+def _json_payload(obj) -> str:
+    """JSON for embedding in an inline ``<script>`` block.
+
+    An HTML parser ends a script element at the first ``</script`` in its text,
+    wherever it appears -- so a label or dimension name carrying that substring
+    would close the payload early and turn whatever followed into live markup.
+    ``json.dumps`` does not escape ``<``, so escape it (plus ``>`` and ``&``) as
+    ``\\uXXXX``. These are valid JSON string escapes, so ``JSON.parse`` still
+    yields the original characters.
+    """
+    return (
+        json.dumps(obj)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
 
 
 def _flatten_axes(ax):
