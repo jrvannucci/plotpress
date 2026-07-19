@@ -175,6 +175,11 @@ class ScatterCollection(Artist):
         self.c = None if c is None else np.asarray(c, dtype=float)
         self.lut = get_cmap(cmap)
         self.norm = norm if norm is not None else Normalize()
+        if self.c is not None:
+            # Scale now rather than lazily at render, matching QuadMesh/Image:
+            # a colorbar over this needs vmin/vmax to size its tick labels
+            # before anything has been drawn.
+            self.norm.autoscale_none(self.c)
 
         # Extra per-point dimensions (name -> array) surfaced by point picking.
         # The color dimension `c` is included automatically when present.

@@ -163,6 +163,43 @@ def test_tight_layout_leaves_non_subplot_colorbar_parents_alone():
     assert ax._rect == stolen
 
 
+def test_colorbar_reserves_room_for_its_tick_labels():
+    """The renderer draws tick labels outside the bar, so the steal has to cover
+    them too -- otherwise they spill into the next subplot or off the figure."""
+    from simpleplot.figure import _cbar_label_width
+
+    fig, axes = simpleplot.subplots(1, 2)
+    m = None
+    for ax in axes:
+        m = ax.pcolormesh(np.arange(25.0).reshape(5, 5) * 1000)
+    cax = fig.colorbar(m, ax=axes[0])
+    fig.tight_layout()
+
+    label_w = _cbar_label_width(cax)
+    assert label_w > 0
+    # Labels clear the bar without reaching the neighbouring subplot.
+    assert cax._rect[0] + cax._rect[2] + label_w <= axes[1]._rect[0] + 1e-9
+
+
+def test_rightmost_colorbar_labels_stay_on_the_figure():
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(np.arange(25.0).reshape(5, 5) * 1e6)   # wide labels
+    cax = fig.colorbar(m, ax=ax)
+    fig.tight_layout()
+
+    from simpleplot.figure import _cbar_label_width
+    assert cax._rect[0] + cax._rect[2] + _cbar_label_width(cax) <= 1.0 + 1e-9
+
+
+def test_mappable_norms_are_scaled_before_anything_is_drawn():
+    """Colorbar layout measures tick labels, which needs vmin/vmax up front."""
+    fig, ax = simpleplot.subplots()
+    scat = ax.scatter([0.0, 1.0, 2.0], [0.0, 1.0, 2.0], c=np.array([1.0, 5.0, 9.0]))
+    mesh = ax.pcolormesh(np.arange(9.0).reshape(3, 3))
+    for m in (scat, mesh):
+        assert m.norm.vmin is not None and m.norm.vmax is not None
+
+
 def test_single_axes_colorbar_still_works():
     fig, ax = simpleplot.subplots()
     m = ax.pcolormesh(np.arange(9.0).reshape(3, 3))
