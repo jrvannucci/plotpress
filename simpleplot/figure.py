@@ -126,8 +126,8 @@ class Figure:
         """Auto-fit subplot margins so ticks/labels/titles never overflow.
 
         Measures each axes' decorations with the bundled font metrics and
-        re-lays-out the subplot grid. Call it *before* ``colorbar`` (colorbars
-        are positioned relative to their parent's rect).
+        re-lays-out the subplot grid. Safe to call before or after
+        :meth:`colorbar`; any colorbar over this grid is re-fitted afterwards.
         """
         from .fonts import text_width
         from .ticker import format_ticks, log_ticks, nice_ticks
@@ -187,6 +187,15 @@ class Figure:
             row, col = idx // ncols, idx % ncols
             ax._rect = (left + col * (axw + gap_w),
                         bottom + (nrows - 1 - row) * (axh + gap_h), axw, axh)
+
+        # The rects above are full grid cells, which undoes any space a colorbar
+        # had already taken -- leaving the bar stranded on top of its plot. Take
+        # it back. Colorbars over axes this pass did not touch are left alone,
+        # since their parents are still carrying the original steal.
+        for cax in self.axes:
+            if cax._is_colorbar and cax._cbar_parents:
+                if all(p in specs for p in cax._cbar_parents):
+                    _layout_colorbar(cax)
         return self
 
     # -- colorbar -----------------------------------------------------------
@@ -198,27 +207,17 @@ class Figure:
         spanning them all, placed on their right -- the grid is squeezed to make
         room). All the axes should share the mappable's ``vmin``/``vmax`` for the
         shared bar to describe them accurately.
+
+        Order relative to :meth:`tight_layout` does not matter -- the steal is
+        recorded and re-applied whenever the grid is reflowed.
         """
-        axlist = _flatten_axes(ax)
-        if len(axlist) == 1:
-            left, bottom, w, h = axlist[0]._rect
-            cbar_w = w * fraction
-            axlist[0]._rect = (left, bottom, w * (1 - fraction - pad), h)
-            cax = self.add_axes((left + w * (1 - fraction), bottom, cbar_w, h))
-        else:
-            rects = np.array([a._rect for a in axlist])
-            gl, gb = rects[:, 0].min(), rects[:, 1].min()
-            gr = (rects[:, 0] + rects[:, 2]).max()
-            gt = (rects[:, 1] + rects[:, 3]).max()
-            span_w = gr - gl
-            cbar_w = span_w * fraction
-            scale = (span_w - span_w * (fraction + pad)) / span_w
-            for a in axlist:                       # squeeze the group leftward
-                left, bottom, w, h = a._rect
-                a._rect = (gl + (left - gl) * scale, bottom, w * scale, h)
-            cax = self.add_axes((gr - cbar_w, gb, cbar_w, gt - gb))
+        cax = self.add_axes((0.0, 0.0, 1.0, 1.0))   # rect set by _layout_colorbar
         cax._is_colorbar = True
         cax._cbar_source = mappable
+        cax._cbar_parents = _flatten_axes(ax)
+        cax._cbar_fraction = float(fraction)
+        cax._cbar_pad = float(pad)
+        _layout_colorbar(cax)
         return cax
 
     # -- serialization ------------------------------------------------------
@@ -385,6 +384,33 @@ class _MarkerApi:
             except Exception:
                 pass
         return True
+
+
+def _layout_colorbar(cax):
+    """Steal space from ``cax``'s parent axes and place the bar in the gap.
+
+    Derived from the parents' *current* rects rather than baked in at creation,
+    so :meth:`Figure.tight_layout` can re-run it after reflowing the grid. Each
+    call assumes the parents are at their full, un-stolen-from size -- which is
+    exactly the state tight_layout leaves them in.
+    """
+    axlist = cax._cbar_parents
+    fraction, pad = cax._cbar_fraction, cax._cbar_pad
+    if len(axlist) == 1:
+        left, bottom, w, h = axlist[0]._rect
+        axlist[0]._rect = (left, bottom, w * (1 - fraction - pad), h)
+        cax._rect = (left + w * (1 - fraction), bottom, w * fraction, h)
+        return
+    rects = np.array([a._rect for a in axlist])
+    gl, gb = rects[:, 0].min(), rects[:, 1].min()
+    gr = (rects[:, 0] + rects[:, 2]).max()
+    gt = (rects[:, 1] + rects[:, 3]).max()
+    span_w = gr - gl
+    scale = (span_w - span_w * (fraction + pad)) / span_w
+    for a in axlist:                       # squeeze the group leftward
+        left, bottom, w, h = a._rect
+        a._rect = (gl + (left - gl) * scale, bottom, w * scale, h)
+    cax._rect = (gr - span_w * fraction, gb, span_w * fraction, gt - gb)
 
 
 def _json_payload(obj) -> str:

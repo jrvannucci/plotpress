@@ -128,6 +128,41 @@ def test_shared_colorbar_over_axes_list():
     assert right <= cax._rect[0] + 1e-9
 
 
+@pytest.mark.parametrize("order", ["ct", "tc", "tct", "ctt"])
+def test_colorbar_and_tight_layout_compose_in_any_order(order):
+    """tight_layout resets each subplot to a full grid cell, which used to undo
+    the space colorbar had taken and strand the bar on top of its own plot."""
+    fig, ax = simpleplot.subplots()
+    m = ax.pcolormesh(np.arange(25.0).reshape(5, 5))
+    for step in order:
+        fig.colorbar(m, ax=ax) if step == "c" else fig.tight_layout()
+    cax = next(a for a in fig.axes if a._is_colorbar)
+    assert ax._rect[0] + ax._rect[2] <= cax._rect[0] + 1e-9
+
+
+def test_shared_colorbar_survives_tight_layout():
+    fig, axes = simpleplot.subplots(2, 2)
+    m = None
+    for ax in axes.ravel():
+        m = ax.pcolormesh(np.ones((4, 4)), vmin=0, vmax=1)
+    cax = fig.colorbar(m, ax=axes)
+    fig.tight_layout()
+    right = max(a._rect[0] + a._rect[2] for a in axes.ravel())
+    assert right <= cax._rect[0] + 1e-9
+
+
+def test_tight_layout_leaves_non_subplot_colorbar_parents_alone():
+    """A parent tight_layout does not reflow keeps its original steal, so the
+    colorbar must not be re-applied on top of it."""
+    fig = simpleplot.Figure()
+    ax = fig.add_axes((0.1, 0.1, 0.8, 0.8))
+    m = ax.pcolormesh(np.arange(25.0).reshape(5, 5))
+    fig.colorbar(m, ax=ax)
+    stolen = ax._rect
+    fig.tight_layout()
+    assert ax._rect == stolen
+
+
 def test_single_axes_colorbar_still_works():
     fig, ax = simpleplot.subplots()
     m = ax.pcolormesh(np.arange(9.0).reshape(3, 3))

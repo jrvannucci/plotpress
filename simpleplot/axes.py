@@ -70,9 +70,13 @@ class Axes:
         self._axis_off = False
         self._subplotspec = None   # (nrows, ncols, index) for tight_layout
 
-        # Colorbar bookkeeping.
+        # Colorbar bookkeeping. On a colorbar axes, _cbar_parents/_fraction/_pad
+        # record the space it stole, so tight_layout can re-apply it.
         self._is_colorbar = False
         self._cbar_source = None
+        self._cbar_parents = None
+        self._cbar_fraction = 0.05
+        self._cbar_pad = 0.02
 
     # -- style / color cycle ------------------------------------------------
     def _next_color(self):
