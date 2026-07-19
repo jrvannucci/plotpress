@@ -7,6 +7,8 @@ the source compact while staying visually faithful.
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 
 # Viridis anchor stops at t = 0.0, 0.1, ... 1.0 (RGB 0-255).
@@ -133,7 +135,11 @@ def to_hex(color: str) -> str:
 class Normalize:
     """Linearly map data to [0, 1] using ``vmin``/``vmax``.
 
-    Unset limits are inferred from the data on first use.
+    Unset limits are inferred from the data on first use. That inference writes
+    back to the instance, so artists take a private copy (see
+    :func:`resolve_norm`) rather than scaling the norm you handed them -- one
+    norm passed to two figures would otherwise pin the second to the first's
+    data range.
     """
 
     def __init__(self, vmin=None, vmax=None):
@@ -224,6 +230,24 @@ class SymLogNorm(Normalize):
         lo, hi = self._symlog(self.vmin), self._symlog(self.vmax)
         span = (hi - lo) or 1.0
         return (self._symlog(A) - lo) / span
+
+
+def resolve_norm(norm, vmin=None, vmax=None) -> Normalize:
+    """Return the norm instance an artist should own.
+
+    A caller-supplied norm is *copied*. Autoscaling mutates ``vmin``/``vmax`` in
+    place, so without this the first artist to use a norm would pin it for every
+    later one -- including artists on a different figure, which is exactly the
+    shared mutable state this library sets out not to have. Copying keeps the
+    caller's object pristine and makes each artist's scaling depend only on its
+    own data.
+
+    Limits set explicitly on the norm survive the copy, so passing one
+    ``Normalize(0, 100)`` to several artists still puts them on a common scale.
+    """
+    if norm is None:
+        return Normalize(vmin, vmax)
+    return copy.copy(norm)
 
 
 def colorbar_ticks(norm):
