@@ -34,8 +34,38 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[dev]
 
+      # An explicit -m replaces the "not browser" default from pyproject.toml,
+      # so exclude the browser tests here too: this job has no Chromium, and
+      # they get their own job below.
       - name: Run tests
-        run: pytest -m "not perf" -q
+        run: pytest -m "not perf and not browser" -q
+
+  # End-to-end point-picking tests. They drive the interactive HTML's JavaScript
+  # in a headless Chromium, so they need a browser download and are deselected
+  # from the matrix job above (addopts in pyproject.toml). One Python version is
+  # enough: what they exercise is the client-side JS, not Python behavior.
+  browser:
+    name: Point-picking tests (browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + browser test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[browser]
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      # -m browser overrides the "not browser" default in pyproject.toml.
+      - name: Run point-picking tests
+        run: pytest -m browser -q
 
   docs:
     name: Build docs

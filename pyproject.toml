@@ -33,7 +33,8 @@ dev = ["pytest>=7"]
 # End-to-end point-picking tests: they drive the interactive HTML's JavaScript
 # in a headless browser. After installing, fetch the browser itself with
 # `playwright install chromium`.
-browser = ["pytest>=7", "playwright>=1.40"]
+# pytest>=8.2 for importorskip(reason=...), used to explain the skip.
+browser = ["pytest>=8.2", "playwright>=1.40"]
 # Benchmarking against matplotlib (benchmarks/ and the comparative perf tests).
 bench = ["matplotlib>=3.5"]
 
