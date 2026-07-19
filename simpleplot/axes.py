@@ -775,12 +775,20 @@ class Axes:
         return sp
 
     # -- limits / labels ----------------------------------------------------
-    def set_xlim(self, left, right=None):
-        self._xlim = (left, right) if right is not None else tuple(left)
+    def set_xlim(self, left=None, right=None):
+        """Set the x limits. Returns the stored ``(left, right)``.
+
+        Accepts ``set_xlim(lo, hi)``, ``set_xlim((lo, hi))``, or ``None`` on
+        either side to autoscale just that end -- ``set_xlim(0, None)`` pins the
+        left edge and lets the data decide the right. Both ``None`` clears back
+        to full autoscaling.
+        """
+        self._xlim = _norm_limits(left, right)
         return self._xlim
 
-    def set_ylim(self, bottom, top=None):
-        self._ylim = (bottom, top) if top is not None else tuple(bottom)
+    def set_ylim(self, bottom=None, top=None):
+        """Set the y limits; same forms as :meth:`set_xlim`."""
+        self._ylim = _norm_limits(bottom, top)
         return self._ylim
 
     def tick_params(self, axis="both", labelsize=None, length=None, width=None,
@@ -930,7 +938,7 @@ class Axes:
         group so linked plots line up.
         """
         xlim, ylim = self._xlim, self._ylim
-        if xlim is not None and ylim is not None:
+        if _both_set(xlim) and _both_set(ylim):
             return xlim, ylim
 
         xgroup = self._sharex_group or [self]
@@ -939,7 +947,8 @@ class Axes:
         aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
         px = _pad(axmin, axmax, self._xscale, tight=mesh_x)
         py = _pad(aymin, aymax, self._yscale, tight=mesh_y)
-        rx, ry = (xlim or px), (ylim or py)
+        # A one-sided limit takes the autoscaled value for the end left open.
+        rx, ry = _fill_limits(xlim, px), _fill_limits(ylim, py)
         # A twin overlay inherits the shared axis' limits from its parent.
         if self._twin_of is not None:
             pxl, pyl = self._twin_of._resolved_limits()
@@ -1017,6 +1026,35 @@ def _hexbin(x, y, gridsize, mincnt):
         verts.append(np.column_stack([cx + hx, cy + hy]))
         counts.append(c)
     return verts, np.asarray(counts, float)
+
+
+def _norm_limits(lower, upper):
+    """Normalize ``set_xlim``/``set_ylim`` arguments to a stored limit pair.
+
+    Returns ``(lo, hi)`` with either entry ``None`` to mean "autoscale this
+    end", or ``None`` for the whole pair when neither end is pinned. Accepting a
+    ``None`` here rather than storing it verbatim is what keeps a half-set limit
+    from reaching the transform, where it used to surface as a bare
+    ``float(None)`` TypeError at render time.
+    """
+    if upper is None and lower is not None and np.ndim(lower) != 0:
+        lower, upper = lower                      # a single (lo, hi) sequence
+    lo = None if lower is None else float(lower)
+    hi = None if upper is None else float(upper)
+    return None if lo is None and hi is None else (lo, hi)
+
+
+def _both_set(lim):
+    """True when ``lim`` pins both ends (so no autoscaling is needed)."""
+    return lim is not None and lim[0] is not None and lim[1] is not None
+
+
+def _fill_limits(lim, auto):
+    """Resolve a stored limit pair against autoscaled ``auto`` bounds."""
+    if lim is None:
+        return auto
+    lo, hi = lim
+    return (auto[0] if lo is None else lo, auto[1] if hi is None else hi)
 
 
 def _pad(lo, hi, scale="linear", tight=False, frac=0.05):
