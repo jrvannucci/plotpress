@@ -1,6 +1,8 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
 import math
+import os
+import time
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -610,6 +612,86 @@ def test_wait_for_extract_without_gui_raises(monkeypatch):
     ax.plot([0, 1], [0, 1])
     with pytest.raises(RuntimeError):
         fig.show(wait_for_extract=True)
+
+
+def _without_pywebview(monkeypatch):
+    """Force show() down its browser-fallback path."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_webview(name, *args, **kwargs):
+        if name == "webview":
+            raise ImportError("no pywebview")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_webview)
+
+
+def test_browser_fallback_reuses_one_temp_file_per_figure(tmp_path, monkeypatch):
+    """It used to drop a fresh temp file on every call and never remove any."""
+    import tempfile
+    import webbrowser
+
+    _without_pywebview(monkeypatch)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(url))
+
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 1], [0, 1])
+    for _ in range(4):
+        fig.show()
+
+    files = list(tmp_path.glob("simpleplot-*.html"))
+    assert len(files) == 1        # one per figure, not one per call
+    assert len(opened) == 4       # ...and the browser still opens every time
+    assert files[0].read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_browser_fallback_rewrites_the_file_when_the_figure_changes(tmp_path,
+                                                                   monkeypatch):
+    import tempfile
+    import webbrowser
+
+    _without_pywebview(monkeypatch)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: None)
+
+    fig, ax = simpleplot.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.show()
+    first = next(tmp_path.glob("simpleplot-*.html")).read_text(encoding="utf-8")
+    ax.set_title("added later")
+    fig.show()
+    second = next(tmp_path.glob("simpleplot-*.html")).read_text(encoding="utf-8")
+    assert "added later" in second and "added later" not in first
+
+
+def test_stale_browser_tempfiles_are_reaped_and_fresh_ones_survive(tmp_path):
+    """Cleanup goes by age: the fallback hands its file to another process, so
+    deleting on the way out would race a script that exits right after show()."""
+    from simpleplot.figure import _sweep_stale_tempfiles
+
+    fresh = tmp_path / "simpleplot-fresh.html"
+    stale = tmp_path / "simpleplot-stale.html"
+    other = tmp_path / "someone-elses.html"
+    for p in (fresh, stale, other):
+        p.write_text("x", encoding="utf-8")
+    long_ago = time.time() - 48 * 3600
+    os.utime(stale, (long_ago, long_ago))
+
+    _sweep_stale_tempfiles(str(tmp_path))
+
+    assert fresh.exists()       # this session's figure must not be pulled away
+    assert not stale.exists()
+    assert other.exists()       # only our own prefix is ours to delete
+
+
+def test_sweep_tolerates_a_missing_directory(tmp_path):
+    from simpleplot.figure import _sweep_stale_tempfiles
+
+    _sweep_stale_tempfiles(str(tmp_path / "does-not-exist"))   # must not raise
 
 
 def test_html_payloads_cannot_break_out_of_their_script_block():

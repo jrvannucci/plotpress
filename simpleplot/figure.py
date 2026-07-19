@@ -9,6 +9,8 @@ mutable state.
 from __future__ import annotations
 
 import json
+import os
+import time
 
 import numpy as np
 
@@ -30,6 +32,9 @@ class Figure:
         # can offer a checkbox to link them.
         self._sliders = {}          # unit_id -> spec
         self._slider_index_n = {}   # connection index -> n_frames (validation)
+
+        # Temp file backing show()'s browser fallback, reused across calls.
+        self._show_path = None
 
         # Figure-level (global) text spanning all subplots.
         self._suptitle = None
@@ -336,14 +341,20 @@ class Figure:
                     "wait_for_extract=True needs the native window; install it "
                     "with: pip install simpleplot[gui]"
                 )
-            import os
             import tempfile
             import webbrowser
 
-            fd, name = tempfile.mkstemp(suffix=".html")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            tmpdir = tempfile.gettempdir()
+            _sweep_stale_tempfiles(tmpdir)
+            if self._show_path is None:
+                # One file per figure: re-showing overwrites it rather than
+                # dropping another copy in the temp directory.
+                fd, self._show_path = tempfile.mkstemp(
+                    suffix=".html", prefix=_TEMP_PREFIX, dir=tmpdir)
+                os.close(fd)
+            with open(self._show_path, "w", encoding="utf-8") as f:
                 f.write(html)
-            webbrowser.open("file://" + os.path.abspath(name))
+            webbrowser.open("file://" + os.path.abspath(self._show_path))
             return None
 
         api = _MarkerApi()
@@ -402,6 +413,35 @@ def _cbar_label_width(cax) -> float:
     _, _, labels = colorbar_ticks(cax._cbar_source.norm)
     text_px = max((text_width(t, st.tick_label_size) for t in labels), default=0.0)
     return (st.tick_size + 2 + text_px) / (cax.figure.figsize[0] * st.dpi)
+
+
+_TEMP_PREFIX = "simpleplot-"
+_TEMP_MAX_AGE = 24 * 3600     # seconds
+
+
+def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
+    """Delete figures the browser fallback left behind in earlier sessions.
+
+    That fallback cannot clean up after itself on the way out: ``webbrowser``
+    hands the file to another process and returns immediately, so unlinking it
+    -- at exit or otherwise -- races a script that exits right after calling
+    ``show()``. Reaping by age sidesteps the race entirely, since a file this
+    old belongs to a process that is long gone.
+    """
+    cutoff = time.time() - max_age
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    for name in names:
+        if not (name.startswith(_TEMP_PREFIX) and name.endswith(".html")):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+        except OSError:
+            pass          # vanished, or belongs to another user -- not ours to fix
 
 
 def _layout_colorbar(cax):
