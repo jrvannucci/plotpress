@@ -11,7 +11,12 @@ Each figure owns a :class:`~simpleplot.style.Style` (there is no global
 
    fig, ax = simpleplot.subplots()
    fig.style.line_width = 2.5
-   fig.style.font_family = "Georgia, serif"
+   fig.style.font_family = "Liberation Sans, Arial, sans-serif"
+
+.. note::
+
+   Font choice has a caveat worth reading before you change it -- see
+   :ref:`fonts-and-layout` below.
 
 Create a variant without mutating the original with ``Style.copy(**overrides)``,
 and pass it to :func:`~simpleplot.subplots`:
@@ -40,7 +45,7 @@ Style fields
    * - ``spine_color`` / ``spine_width``
      - axes frame
    * - ``font_family``
-     - CSS font stack for text
+     - CSS font stack for text (see :ref:`fonts-and-layout`)
    * - ``font_size`` / ``title_size`` / ``label_size``
      - text sizes
    * - ``text_color``
@@ -55,6 +60,50 @@ Style fields
      - default scatter diameter (points)
    * - ``color_cycle``
      - list of colors cycled per axes (default tab10)
+
+.. _fonts-and-layout:
+
+Fonts and layout
+----------------
+
+A figure is laid out *before* anything draws its glyphs -- SVG emits ``<text>``
+and the viewer rasterizes it -- so simpleplot has to **predict** how wide text
+will be. It predicts using bundled Helvetica advance widths, which keeps layout
+identical on every machine with no font-file dependency.
+
+The cost: **only Helvetica-metric families are measured accurately.**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 20 35
+
+   * - Family
+     - Width vs Helvetica
+     - Result
+   * - Helvetica, Arial, Liberation Sans
+     - within 0.1%
+     - accurate (the default stack)
+   * - Verdana
+     - +16%
+     - legend/label text overruns its box
+   * - Arial Black
+     - +26%
+     - overruns
+   * - Courier New and monospace faces
+     - +46%
+     - badly overruns
+   * - Arial Narrow and condensed faces
+     - -18%
+     - margins too generous
+
+Anything outside the safe band still renders -- but legend boxes and axis
+margins were sized for Helvetica, so expect to hand-tune ``figsize`` and
+spacing. See :doc:`../auto_examples/plot_33_font_metrics` for the measurements
+and a worked illustration.
+
+PNG export picks a metric-compatible face to match the layout, falling back to
+Pillow's built-in font on machines that have none installed. PDF references the
+base-14 Helvetica directly, so it is exact.
 
 Colormaps and normalization
 ---------------------------
