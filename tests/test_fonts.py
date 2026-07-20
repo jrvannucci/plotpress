@@ -155,3 +155,52 @@ def _tick_labels(ax):
 
     (_, _), (lo, hi) = ax._resolved_limits()
     return _resolve_tick_labels(ax._yticklabels, nice_ticks(lo, hi))
+
+
+@pytest.mark.parametrize("data_scale", [1.0, 1e7, 1e-7],
+                         ids=["narrow-ticks", "wide-ticks", "sci-ticks"])
+def test_raster_places_the_ylabel_where_svg_does(data_scale, monkeypatch):
+    """raster used the tick-label font *size* plus a constant as a stand-in for
+    their measured width, drifting up to ~9px from the SVG position and jamming
+    the label against the figure edge when tick labels were narrow.
+
+    Drives the real raster path and captures the x it hands _vtext, rather than
+    recomputing the formula here -- which would pass no matter what raster does.
+    """
+    import re
+
+    from simpleplot import raster
+
+    fig, ax = simpleplot.subplots(figsize=(7.0, 3.6))
+    ax.bar([0, 1, 2], np.array([1.0, 2.0, 3.0]) * data_scale)
+    ax.set_ylabel("YYYY")
+    fig.tight_layout()
+
+    svg_x = float(re.search(
+        r'<text x="([-\d.]+)"[^>]*rotate\(-90[^)]*\)">YYYY</text>',
+        fig.to_svg()).group(1))
+
+    seen = []
+    real_vtext = raster._vtext
+    monkeypatch.setattr(raster, "_vtext",
+                        lambda draw, text, x, y, fill, font:
+                        (seen.append((text, x)), real_vtext(draw, text, x, y, fill, font))[1])
+    scale = 2
+    raster.figure_to_image(fig, scale=scale)
+
+    drawn = [x for text, x in seen if text == "YYYY"]
+    assert drawn, "the y label was never drawn"
+    assert drawn[0] / scale == pytest.approx(svg_x, abs=0.01)
+
+
+def test_twin_axes_png_still_renders(tmp_path):
+    fig, ax = simpleplot.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    ax.set_ylabel("left")
+    tw = ax.twinx()
+    tw.plot([0.0, 1.0], [0.0, 100.0])
+    tw.set_ylabel("right")
+    fig.tight_layout()
+    out = tmp_path / "twin.png"
+    fig.save(str(out), scale=2)
+    assert out.stat().st_size > 0

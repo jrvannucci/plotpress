@@ -26,7 +26,9 @@ from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
-from .svg import _effective_rect, _pixel_rect, _resolve_tick_labels
+from .svg import (
+    _effective_rect, _max_ytick_width, _pixel_rect, _resolve_tick_labels,
+)
 from .ticker import format_ticks, log_ticks, nice_ticks
 from .transform import LinearTransform
 
@@ -567,7 +569,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
             draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
                       font=font, anchor="lm")
         if ax._ylabel:
-            lx = xr + ts + st.tick_label_size * S * 3 + st.label_size * S
+            lx = xr + ts + (_max_ytick_width(ax, st) + st.label_size + 4) * S
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                    _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     else:                                            # twiny: x-axis on the TOP
@@ -589,8 +591,12 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
                   font=_font(st.label_size * S, st.font_family), anchor="mm")
     if ax._ylabel and not ax._axis_off:
-        _vtext(draw, ax._ylabel, L - (st.tick_label_size + st.label_size + 20) * S,
-               T + Hp / 2.0, _rgb(st.text_color), _font(st.label_size * S, st.font_family))
+        # Mirror svg._render_labels exactly: clear the *measured* tick labels.
+        # Substituting the tick font size for their width put this up to ~9px
+        # from where the SVG draws it, jammed against the figure edge.
+        lx = L - (st.tick_size + _max_ytick_width(ax, st) + st.label_size + 4) * S
+        _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
+               _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     if ax._title:
         draw.text((cx, T - 8 * S), ax._title, fill=_rgb(st.text_color),
                   font=_font(st.title_size * S, st.font_family), anchor="mb")
