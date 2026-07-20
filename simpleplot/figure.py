@@ -135,7 +135,8 @@ class Figure:
         :meth:`colorbar`; any colorbar over this grid is re-fitted afterwards.
         """
         from .fonts import text_width
-        from .ticker import format_ticks, log_ticks, nice_ticks
+        from .svg import _resolve_tick_labels
+        from .ticker import log_ticks, nice_ticks
 
         st = self.style
         Wpx = self.figsize[0] * st.dpi
@@ -155,7 +156,11 @@ class Figure:
             (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
             yt = (ax._yticks if ax._yticks is not None else
                   (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
-            ytw = max((text_width(l, st.tick_label_size) for l in format_ticks(yt)),
+            # Measure the labels as drawn: explicit set_yticklabels strings are
+            # usually far wider than the numbers they replace (category names),
+            # and sizing the margin from the tick *values* clips them.
+            ylabels = _resolve_tick_labels(ax._yticklabels, yt)
+            ytw = max((text_width(l, st.tick_label_size) for l in ylabels),
                       default=0.0)
             ldec = st.tick_size + ytw + 4
             if ax._ylabel:

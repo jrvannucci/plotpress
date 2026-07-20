@@ -107,3 +107,51 @@ def test_metrics_are_font_family_independent():
     fig_w.tight_layout()
     fig_n.tight_layout()
     assert ax_w._rect == ax_n._rect      # identical layout despite different fonts
+
+
+def test_tight_layout_measures_custom_tick_labels():
+    """Category names set via set_yticklabels are usually far wider than the
+    numbers they replace; sizing the margin from the tick *values* clipped them."""
+    labels = ["a very long category name"] * 3
+    fig, ax = simpleplot.subplots()
+    ax.barh(np.arange(3), [1.0, 2.0, 3.0])
+    ax.set_yticks(np.arange(3))
+    ax.set_yticklabels(labels)
+    fig.tight_layout()
+
+    needed = max(text_width(l, ax.style.tick_label_size) for l in labels)
+    reserved = ax._rect[0] * fig.figsize[0] * ax.style.dpi
+    assert reserved >= needed
+
+
+def test_ylabel_clears_custom_tick_labels():
+    """The y label is placed past the widest tick label, so it must measure the
+    custom strings too."""
+    from simpleplot.svg import _max_ytick_width
+
+    fig, ax = simpleplot.subplots()
+    ax.barh(np.arange(3), [1.0, 2.0, 3.0])
+    ax.set_yticks(np.arange(3))
+    ax.set_yticklabels(["short"] * 3)
+    narrow = _max_ytick_width(ax, ax.style)
+    ax.set_yticklabels(["a very long category name"] * 3)
+    wide = _max_ytick_width(ax, ax.style)
+    assert wide > narrow * 2
+
+
+def test_tight_layout_still_measures_numeric_ticks():
+    fig, ax = simpleplot.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1e7])
+    fig.tight_layout()
+    labels = _tick_labels(ax)
+    needed = max(text_width(l, ax.style.tick_label_size) for l in labels)
+    reserved = ax._rect[0] * fig.figsize[0] * ax.style.dpi
+    assert reserved >= needed
+
+
+def _tick_labels(ax):
+    from simpleplot.svg import _resolve_tick_labels
+    from simpleplot.ticker import nice_ticks
+
+    (_, _), (lo, hi) = ax._resolved_limits()
+    return _resolve_tick_labels(ax._yticklabels, nice_ticks(lo, hi))

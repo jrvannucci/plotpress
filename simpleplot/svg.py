@@ -983,8 +983,17 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
 
 
 def _max_ytick_width(ax, st):
+    """Width of the widest y tick label, as drawn.
+
+    Must mirror the tick selection the renderer uses -- explicit ``set_yticks``
+    and ``set_yticklabels`` included -- or the y label gets placed on top of
+    labels this never measured.
+    """
     (_, _), (ymin, ymax) = ax._resolved_limits()
-    labels = format_ticks(nice_ticks(ymin, ymax))
+    ticks = (ax._yticks if ax._yticks is not None else
+             (log_ticks(ymin, ymax) if ax._yscale == "log"
+              else nice_ticks(ymin, ymax)))
+    labels = _resolve_tick_labels(ax._yticklabels, ticks)
     return max((text_width(l, st.tick_label_size) for l in labels), default=0.0)
 
 
