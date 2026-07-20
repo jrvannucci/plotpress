@@ -68,16 +68,86 @@ def _composite_polygon(canvas, pts, rgba, outline=None):
     canvas.alpha_composite(layer, (x0, y0))
 
 
-def _font(size):
+# Faces whose advance widths match the bundled Helvetica metrics. Arial and
+# Liberation Sans are metric-compatible with Helvetica by design, so glyphs
+# drawn from them land inside the space the layout reserved. Pillow's built-in
+# default is not compatible -- it runs up to ~16% wide on letter-heavy strings,
+# which is what used to push PNG axis labels out of their boxes.
+_HELVETICA_METRIC_FILES = (
+    "Helvetica.ttc", "Helvetica.ttf",          # macOS
+    "arial.ttf", "Arial.ttf",                  # Windows
+    "LiberationSans-Regular.ttf",              # Linux
+    "Arimo-Regular.ttf",                       # metric-compatible, ships with some distros
+)
+
+# Best-effort file names for the families most likely to appear in a stack.
+# Deliberately small: resolving arbitrary family names is a font-database job
+# (matplotlib links FreeType and ships 8 MB to do it), and simpleplot's layout
+# metrics are Helvetica's regardless -- see the note in fonts/__init__.py.
+_FAMILY_FILES = {
+    "helvetica": _HELVETICA_METRIC_FILES,
+    "arial": ("arial.ttf", "Arial.ttf", "LiberationSans-Regular.ttf"),
+    "liberation sans": ("LiberationSans-Regular.ttf",),
+    "verdana": ("verdana.ttf", "Verdana.ttf", "DejaVuSans.ttf"),
+    "tahoma": ("tahoma.ttf", "Tahoma.ttf"),
+    "courier new": ("cour.ttf", "Courier New.ttf", "LiberationMono-Regular.ttf"),
+    "monospace": ("cour.ttf", "LiberationMono-Regular.ttf", "DejaVuSansMono.ttf"),
+    "times new roman": ("times.ttf", "Times New Roman.ttf",
+                        "LiberationSerif-Regular.ttf"),
+    "serif": ("times.ttf", "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"),
+    "dejavu sans": ("DejaVuSans.ttf",),
+}
+
+
+def _font_files(family):
+    """Candidate font files for a CSS font stack, best first.
+
+    Always ends with the Helvetica-metric faces: those agree with the widths
+    the layout was computed from, so they are the right thing to fall back to
+    when a requested family cannot be found.
+    """
+    names = [n.strip().strip("'\"").lower()
+             for n in (family or "").split(",") if n.strip()]
+    out = []
+    for n in names:
+        for f in _FAMILY_FILES.get(n, ()):
+            if f not in out:
+                out.append(f)
+    for f in _HELVETICA_METRIC_FILES:
+        if f not in out:
+            out.append(f)
+    return out
+
+
+def _font(size, family=None):
+    """A Pillow font for ``size`` px, honoring ``family`` where the system has it.
+
+    Falls back to Pillow's built-in face when nothing else resolves, which keeps
+    headless machines rendering rather than failing.
+    """
     from PIL import ImageFont
 
-    key = int(round(size))
-    if key not in _font_cache:
+    key = (int(round(size)), family)
+    if key in _font_cache:
+        return _font_cache[key]
+
+    font = None
+    for name in _font_files(family):
         try:
-            _font_cache[key] = ImageFont.load_default(size=key)
-        except TypeError:                      # very old Pillow
-            _font_cache[key] = ImageFont.load_default()
-    return _font_cache[key]
+            font = ImageFont.truetype(name, key[0])
+            break
+        except OSError:
+            continue                           # not installed here; try the next
+    if font is None:
+        try:
+            font = ImageFont.load_default(size=key[0])
+        except Exception:
+            # TypeError on very old Pillow (no size=); OSError/ImportError if the
+            # sized default needs FreeType and this build lacks it. The unsized
+            # bitmap default is the last resort that always exists.
+            font = ImageFont.load_default()
+    _font_cache[key] = font
+    return font
 
 
 def figure_to_image(fig, scale=2):
@@ -262,7 +332,7 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
         _violin(artist, tr, draw)
     elif isinstance(artist, Text):
         _text(draw, float(tr.x(artist.x)), float(tr.y(artist.y)), artist.text,
-              _rgb(artist.color), _font(artist.size * S), artist.ha, artist.va,
+              _rgb(artist.color), _font(artist.size * S, st.font_family), artist.ha, artist.va,
               artist.rotation)
     elif isinstance(artist, Annotation):
         tx, ty = float(tr.x(artist.xytext[0])), float(tr.y(artist.xytext[1]))
@@ -271,7 +341,7 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
             col = (artist.arrowprops.get("color", artist.color)
                    if isinstance(artist.arrowprops, dict) else artist.color)
             _quiver_arrow(draw, tx, ty, px, py, _rgb(col), S)
-        _text(draw, tx, ty, artist.text, _rgb(artist.color), _font(artist.size * S),
+        _text(draw, tx, ty, artist.text, _rgb(artist.color), _font(artist.size * S, st.font_family),
               artist.ha, artist.va, 0.0)
 
 
@@ -469,7 +539,7 @@ def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
     ts = st.tick_size * S
     col = _rgb(st.spine_color)
     fs = st.tick_label_size * S
-    font = _font(fs)
+    font = _font(fs, st.font_family)
     yb = T + Hp
     xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
     ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
@@ -487,7 +557,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
     col = _rgb(st.spine_color)
     ts = st.tick_size * S
     fs = st.tick_label_size * S
-    font = _font(fs)
+    font = _font(fs, st.font_family)
     tw = max(1, int(round(st.tick_width * S)))
     if ax._twin_shared == "x":                       # twinx: y-axis on the RIGHT
         xr = L + Wp
@@ -499,7 +569,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
         if ax._ylabel:
             lx = xr + ts + st.tick_label_size * S * 3 + st.label_size * S
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
-                   _rgb(st.text_color), _font(st.label_size * S))
+                   _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     else:                                            # twiny: x-axis on the TOP
         for xt, lab in zip(xticks, _resolve_tick_labels(ax._xticklabels, xticks)):
             x = float(tr.x(xt))
@@ -509,7 +579,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
         if ax._xlabel:
             draw.text((L + Wp / 2.0, T - ts - fs - st.label_size * S),
                       ax._xlabel, fill=_rgb(st.text_color),
-                      font=_font(st.label_size * S), anchor="md")
+                      font=_font(st.label_size * S, st.font_family), anchor="md")
 
 
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
@@ -517,13 +587,13 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
     if ax._xlabel and not ax._axis_off:
         y = T + Hp + (st.tick_size + st.tick_label_size + st.label_size + 4) * S
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
-                  font=_font(st.label_size * S), anchor="mm")
+                  font=_font(st.label_size * S, st.font_family), anchor="mm")
     if ax._ylabel and not ax._axis_off:
         _vtext(draw, ax._ylabel, L - (st.tick_label_size + st.label_size + 20) * S,
-               T + Hp / 2.0, _rgb(st.text_color), _font(st.label_size * S))
+               T + Hp / 2.0, _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     if ax._title:
         draw.text((cx, T - 8 * S), ax._title, fill=_rgb(st.text_color),
-                  font=_font(st.title_size * S), anchor="mb")
+                  font=_font(st.title_size * S, st.font_family), anchor="mb")
 
 
 def _vtext(draw, text, x, y, fill, font):
@@ -553,7 +623,7 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     if not entries:
         return
     fs = st.tick_label_size * S
-    font = _font(fs)
+    font = _font(fs, st.font_family)
     line_h = fs + 6 * S
     sample = 22 * S
     pad = 6 * S
@@ -602,16 +672,16 @@ def _raster_figtexts(fig, W, H, S, draw):
         t = fig._suptitle
         size = (t.get("size") or st.title_size * 1.5) * S
         draw.text((W / 2, 6 * S), t["text"], fill=_rgb(st.text_color),
-                  font=_font(size), anchor="ma")
+                  font=_font(size, st.font_family), anchor="ma")
     if fig._supxlabel:
         t = fig._supxlabel
         size = (t.get("size") or st.label_size * 1.2) * S
         draw.text((W / 2, H - 6 * S), t["text"], fill=_rgb(st.text_color),
-                  font=_font(size), anchor="md")
+                  font=_font(size, st.font_family), anchor="md")
     if fig._supylabel:
         t = fig._supylabel
         size = (t.get("size") or st.label_size * 1.2) * S
-        _vtext(draw, t["text"], 6 * S + size / 2, H / 2, _rgb(st.text_color), _font(size))
+        _vtext(draw, t["text"], 6 * S + size / 2, H / 2, _rgb(st.text_color), _font(size, st.font_family))
 
 
 def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):
@@ -629,7 +699,7 @@ def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):
                    width=max(1, int(round(ax.style.spine_width * S))))
     st = ax.style
     _, fracs, tlabels = colorbar_ticks(src.norm)
-    font = _font(st.tick_label_size * S)
+    font = _font(st.tick_label_size * S, st.font_family)
     for frac, lab in zip(fracs, tlabels):
         y = T + (1 - frac) * Hp
         draw.line([L + Wp, y, L + Wp + st.tick_size * S, y], fill=_rgb(st.spine_color), width=S)

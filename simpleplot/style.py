@@ -33,6 +33,14 @@ class Style:
     spine_width: float = 0.8
 
     # Text
+    #
+    # Layout reserves space for text using bundled *Helvetica* advance widths
+    # (see simpleplot.fonts), because an SVG figure is laid out before anything
+    # draws the glyphs. Helvetica, Arial and Liberation Sans are metric-
+    # compatible, so the default stack is accurate. A family with different
+    # widths still renders, but legend boxes and axis margins are sized for
+    # Helvetica and will not fit it -- Courier New runs ~46% wide, Arial Narrow
+    # ~18% narrow.
     font_family: str = "Helvetica, Arial, sans-serif"
     font_size: float = 10.0
     title_size: float = 12.0

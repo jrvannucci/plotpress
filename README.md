@@ -227,3 +227,13 @@ Artists never render themselves — they just hold arrays. The geometry of each
 artist is computed once in `primitives.py`; `svg.py` and `raster.py` are thin
 emitters over that shared primitive vocabulary, so an artist is defined in one
 place, not per backend.
+
+**Fonts.** A figure is laid out *before* anything draws its glyphs — SVG emits
+`<text>` and lets the viewer rasterize — so simpleplot has to predict text width
+from bundled Helvetica metrics. That keeps layout identical on every machine
+with no font-file dependency, at one cost: **only Helvetica-metric families are
+measured accurately.** Helvetica, Arial and Liberation Sans agree to within
+0.1%; setting `Style.font_family` to something else still renders, but legend
+boxes and axis margins are sized for Helvetica (Courier New runs ~46% wide).
+PNG export picks a metric-compatible face to match, falling back to Pillow's
+built-in font where the system has none.
