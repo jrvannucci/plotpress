@@ -1,6 +1,6 @@
 """
-Fonts and layout (a known limitation)
-=====================================
+Font metrics: only Helvetica-compatible families fit
+====================================================
 
 A figure is laid out *before* anything draws its glyphs: SVG emits ``<text>``
 and lets the viewer rasterize. So simpleplot has to **predict** how wide text
@@ -114,8 +114,8 @@ fig2, ax2 = simpleplot.subplots(figsize=(7.0, 3.6))
 ax2.bar(x - 0.18, mean_err, width=0.34, label="mean")
 ax2.bar(x + 0.18, worst_err, width=0.34, label="worst case")
 ax2.set_xticks(x)
-ax2.set_xticklabels([f"scale={s}\n({9 * s}px)" for s in scales])
-ax2.set_ylabel("tick-label width error (%)")
+ax2.set_xticklabels([f"scale={s} ({9 * s}px)" for s in scales])
+ax2.set_ylabel("width error (%)")
 ax2.set_title("Pixel rounding, at the scales fig.save() actually renders")
 ax2.grid(True)
 ax2.legend()

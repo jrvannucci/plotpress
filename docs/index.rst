@@ -49,6 +49,7 @@ See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
    user_guide/viewing
    user_guide/interactivity
    user_guide/architecture
+   user_guide/limitations
 
 .. toctree::
    :maxdepth: 2

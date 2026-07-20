@@ -66,44 +66,17 @@ Style fields
 Fonts and layout
 ----------------
 
-A figure is laid out *before* anything draws its glyphs -- SVG emits ``<text>``
-and the viewer rasterizes it -- so simpleplot has to **predict** how wide text
-will be. It predicts using bundled Helvetica advance widths, which keeps layout
-identical on every machine with no font-file dependency.
+A figure is laid out *before* anything draws its glyphs, so simpleplot predicts
+text width from bundled Helvetica advance widths. **Only Helvetica-metric
+families are measured accurately** -- Helvetica, Arial and Liberation Sans agree
+to within 0.1%, while Courier New needs ~46% more room than gets reserved for
+it and overruns its legend box.
 
-The cost: **only Helvetica-metric families are measured accurately.**
+Prefer a family in that safe band. Anything else still renders, but expect to
+hand-tune ``figsize`` and spacing.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 45 20 35
-
-   * - Family
-     - Width vs Helvetica
-     - Result
-   * - Helvetica, Arial, Liberation Sans
-     - within 0.1%
-     - accurate (the default stack)
-   * - Verdana
-     - +16%
-     - legend/label text overruns its box
-   * - Arial Black
-     - +26%
-     - overruns
-   * - Courier New and monospace faces
-     - +46%
-     - badly overruns
-   * - Arial Narrow and condensed faces
-     - -18%
-     - margins too generous
-
-Anything outside the safe band still renders -- but legend boxes and axis
-margins were sized for Helvetica, so expect to hand-tune ``figsize`` and
-spacing. See :doc:`../auto_examples/plot_33_font_metrics` for the measurements
-and a worked illustration.
-
-PNG export picks a metric-compatible face to match the layout, falling back to
-Pillow's built-in font on machines that have none installed. PDF references the
-base-14 Helvetica directly, so it is exact.
+See :ref:`limitation-font-metrics` for the full table and the reasoning, and
+:doc:`../auto_examples/limitations/plot_01_font_metrics` for the measurements.
 
 Colormaps and normalization
 ---------------------------
