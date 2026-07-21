@@ -78,34 +78,21 @@ Both backends consume the same primitives and the same layout, so output
 matches closely, but they are not guaranteed pixel-identical. SVG and PDF are
 the reference: PDF references the base-14 Helvetica directly and is exact.
 
-Density estimates scale with the sample
-----------------------------------------
+Density estimates are approximate for large samples
+----------------------------------------------------
 
-``kdeplot`` and ``violinplot`` evaluate a Gaussian kernel at every grid point
-for every observation, building an intermediate of ``grid x n`` values. Unlike
-the line and mesh paths -- which decimate and stay fast into the millions of
-points -- these grow linearly and are not subsampled:
+``kdeplot`` and ``violinplot`` use the exact kernel sum for small samples. Above
+a few thousand observations that sum's ``grid x n`` intermediate dominates
+(~0.9 s and 20M floats at 100k), so they switch to **linear binning**: the data
+is binned onto the grid once and the result convolved with the kernel, which is
+independent of sample size and handles millions of points in milliseconds.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 30 25 45
-
-   * - Sample size
-     - ``kdeplot`` time
-     - Intermediate array
-   * - 1,000
-     - ~10 ms
-     - 0.2M floats
-   * - 10,000
-     - ~100 ms
-     - 2M floats
-   * - 100,000
-     - ~0.9 s
-     - 20M floats
-
-For large samples, thin the data before plotting (a random subsample of ~10,000
-points changes a density estimate very little), or lower ``points=`` to shrink
-the grid.
+The binned estimate is an approximation -- typically well under 1% from the
+exact curve, and always a proper density that integrates to 1. It is least
+accurate where a coarse grid cannot resolve the bandwidth, which happens when
+heavy-tailed outliers stretch the range; raise ``points=`` there if the peak
+looks blocky. The switch-over is by sample size alone, so a given dataset always
+renders the same way.
 
 Not implemented
 ---------------

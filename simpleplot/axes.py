@@ -43,14 +43,58 @@ def _kde_bandwidth(data):
     return (1.06 * (std or 1.0) * n ** (-1 / 5)) or 1.0
 
 
+# Above this many observations the exact estimator's ``(grid, n)`` intermediate
+# is the bottleneck (~0.9s and 20M floats at 100k), so switch to linear binning.
+# Below it, keep the exact sum so small-sample plots are unchanged to the bit.
+_KDE_BINNING_MIN = 4000
+
+
 def _gaussian_kde(data, grid):
-    """Simple Gaussian KDE (Silverman bandwidth) evaluated on ``grid``."""
+    """Gaussian KDE (Silverman bandwidth) evaluated on a uniform ``grid``.
+
+    Exact for small samples. For large ones it bins the data onto the grid and
+    convolves with the kernel, which is accurate to a fraction of a percent but
+    drops the cost from ``O(grid x n)`` to ``O(n) + O(grid x kernel)`` -- so a
+    100k-point density is milliseconds instead of ~a second.
+    """
     data = np.asarray(data, float)
     n = data.size
     bw = _kde_bandwidth(data)
-    u = (grid[:, None] - data[None, :]) / bw
-    k = np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)
-    return k.sum(axis=1) / (n * bw)
+    if n < _KDE_BINNING_MIN:
+        u = (grid[:, None] - data[None, :]) / bw
+        k = np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)
+        return k.sum(axis=1) / (n * bw)
+    return _binned_gaussian_kde(data, grid, bw, n)
+
+
+def _binned_gaussian_kde(data, grid, bw, n):
+    """KDE by linear binning + convolution, for large ``n``.
+
+    Each observation is spread across its two bracketing grid nodes (linear
+    binning -- markedly more accurate than snapping to the nearest), giving a
+    weight per node. The density is then that weight array convolved with the
+    Gaussian sampled on the grid spacing. Both operations are independent of the
+    per-point work that made the exact estimator scale with ``n``.
+    """
+    lo, hi = grid[0], grid[-1]
+    m = grid.size
+    dx = (hi - lo) / (m - 1)
+
+    pos = np.clip((data - lo) / dx, 0.0, m - 1)   # data lies within the grid span
+    left = np.minimum(np.floor(pos).astype(np.intp), m - 2)
+    frac = pos - left                             # weight going to the right node
+    weights = (np.bincount(left, weights=1.0 - frac, minlength=m)
+               + np.bincount(left + 1, weights=frac, minlength=m))
+
+    half = int(np.ceil(4.0 * bw / dx))            # truncate the kernel past 4 bw
+    t = np.arange(-half, half + 1) * (dx / bw)
+    kernel = np.exp(-0.5 * t * t)
+    # Normalize the *discrete* kernel to sum to 1 rather than using the analytic
+    # constant. The two agree when the grid resolves the bandwidth, but only the
+    # discrete sum keeps the density integrating to 1 when heavy-tailed outliers
+    # stretch the grid so coarse that dx approaches bw.
+    kernel /= kernel.sum()
+    return np.convolve(weights, kernel, mode="same") / (n * dx)
 
 
 class Axes:

@@ -21,6 +21,47 @@ def test_kdeplot_is_a_normalised_density():
     assert (line.y >= 0).all()
 
 
+def test_kdeplot_binned_and_exact_estimators_agree():
+    """Above _KDE_BINNING_MIN the density is computed by binning + convolution
+    instead of the exact per-point sum; the two must match closely."""
+    from simpleplot.axes import (
+        _binned_gaussian_kde, _gaussian_kde, _kde_bandwidth,
+    )
+
+    d = _sample(50_000, seed=3)
+    bw = _kde_bandwidth(d)
+    grid = np.linspace(d.min() - 3 * bw, d.max() + 3 * bw, 200)
+    # Exact reference, computed directly (the public path would bin at this n).
+    u = (grid[:, None] - d[None, :]) / bw
+    exact = (np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)).sum(axis=1) / (d.size * bw)
+    binned = _binned_gaussian_kde(d, grid, bw, d.size)
+    assert np.abs(binned - exact).max() < 0.01 * exact.max()
+    assert (binned >= 0).all()
+
+
+@pytest.mark.parametrize("gen", [
+    lambda: np.random.default_rng(0).standard_t(3, 100_000),        # heavy tails
+    lambda: np.random.default_rng(1).exponential(1.0, 100_000),     # skewed
+    lambda: np.concatenate([np.random.default_rng(2).normal(-3, 1, 60_000),
+                            np.random.default_rng(3).normal(3, 1, 40_000)]),
+], ids=["heavy-tail", "skewed", "bimodal"])
+def test_kdeplot_stays_normalised_for_large_awkward_samples(gen):
+    """Heavy-tailed outliers can stretch the grid until dx approaches the
+    bandwidth; the density must still integrate to 1 there."""
+    _, ax = simpleplot.subplots()
+    line = ax.kdeplot(gen())
+    assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=2e-3)
+    assert (line.y >= 0).all()
+
+
+def test_kdeplot_handles_a_million_points():
+    """The exact estimator's (grid, n) intermediate cannot even be allocated at
+    this size; the binned path is what makes it possible at all."""
+    _, ax = simpleplot.subplots()
+    line = ax.kdeplot(np.random.default_rng(0).normal(size=1_000_000))
+    assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=1e-3)
+
+
 def test_kdeplot_cut_extends_past_the_data():
     d = _sample()
     _, ax = simpleplot.subplots()
