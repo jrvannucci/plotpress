@@ -82,6 +82,16 @@ def test_format_tick(v, expected):
     assert format_tick(v) == expected
 
 
+@pytest.mark.parametrize("lo,hi", [(-0.06, 0.04), (-0.2, 0.2), (-0.6, 0.3)])
+def test_nice_ticks_snaps_the_zero_tick_exactly(lo, hi):
+    """For an unlucky step (0.02) np.arange lands the zero tick at ~1e-17, which
+    then formats as "1.4e-17" instead of "0"."""
+    ticks = nice_ticks(lo, hi)
+    assert (ticks == 0.0).sum() == 1          # exactly one true zero
+    assert "0" in format_ticks(ticks)
+    assert not any("e-1" in lab for lab in format_ticks(ticks))  # no dust label
+
+
 @pytest.mark.parametrize("lo,hi", [
     (100000, 101000),      # narrow band high above the 1e5 sci threshold
     (1e6, 1.00002e6),

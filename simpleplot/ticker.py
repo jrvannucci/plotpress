@@ -31,6 +31,10 @@ def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
 
     start = math.ceil(vmin / step) * step
     ticks = np.arange(start, vmax + step * 0.5, step)
+    # Snap the near-zero tick to exactly zero. For an unlucky step (0.02, say)
+    # np.arange lands it at ~1e-17 instead of 0, which then formats as "1.4e-17".
+    # A real tick is a multiple of step, so only the zero tick can be this close.
+    ticks[np.abs(ticks) < step * 1e-6] = 0.0
     # Guard against float dust producing points just outside the range.
     ticks = ticks[(ticks >= vmin - step * 1e-6) & (ticks <= vmax + step * 1e-6)]
     return ticks
