@@ -1,7 +1,9 @@
 # simpleplot
 
-A fast, **figure-centric**, **SVG-first** plotting library with a matplotlib-like
-API and **no global state**.
+A **lightweight, dependency-light** plotting library that renders **SVG and
+self-contained interactive HTML** through a **matplotlib-shaped** API — with
+**no global state** and **no compiled extension**, so it installs everywhere
+`pip` runs.
 
 ```python
 import simpleplot
@@ -19,15 +21,39 @@ fig.save("out.html", interactive=True)    # interactive toolbar: zoom / pick / a
 fig.show()                                # native pop-up window
 ```
 
-## Why simpleplot is different from matplotlib
+## What it is for
+
+simpleplot is **not a matplotlib replacement**, and it does not try to match
+matplotlib's twenty years of breadth (no polar or 3-D axes, one font-metric
+family — see [Supported plot types](#supported-plot-types) below). It aims at a
+narrower, underserved spot: plotting where matplotlib's install footprint or
+global state gets in the way.
+
+**Reach for simpleplot when you want to:**
+
+- **Ship plots from a constrained runtime** — locked-down servers, minimal
+  containers, Pyodide/WASM, or CI — where a pure-Python + NumPy install with no
+  build toolchain and no per-platform wheels matters.
+- **Embed in web apps or notebooks** as SVG or self-contained interactive HTML
+  whose JS makes no external requests (works under strict CSPs like Jupyter).
+- **Write library or server code** that should never touch a global "current
+  figure" or a process-wide `rcParams`.
+
+**Reach for matplotlib** (or seaborn, Plotly) when you need publication-grade
+typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or the
+deep ecosystem that pandas, seaborn and scikit-learn plot into.
+
+## What makes it different
 
 1. **No `pyplot`, no globals.** There is no "current figure/axes" and no global
    `rcParams`. A `Figure` owns its axes and its own `Style`; two figures never
    share mutable state. `simpleplot.subplots()` returns `(fig, axes)` just like
    `plt.subplots()` — but touches no global state.
-2. **matplotlib-like API** so porting is easy: `Figure`/`Axes`, `plot`,
-   `scatter`, `pcolormesh`, `set_xlabel/ylabel/title`, `set_xlim/ylim`, `grid`,
-   `legend`, `colorbar`.
+2. **matplotlib-*shaped* API** so moving code either direction is mostly
+   mechanical: `Figure`/`Axes`, `plot`, `scatter`, `pcolormesh`,
+   `set_xlabel/ylabel/title`, `set_xlim/ylim`, `grid`, `legend`, `colorbar`. It
+   is shaped, not drop-in — there's no `pyplot` state machine and not every
+   matplotlib keyword is present; treat the gallery as the compatibility surface.
 3. **SVG-first + built for speed.** Output is vector SVG; only mesh/image layers
    are rasterized (as a single embedded `<image>`, not thousands of rects). Each
    series is one `<path>`. It's **pure Python + NumPy** — vectorized coordinate

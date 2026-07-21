@@ -19,6 +19,26 @@ no global "current figure/axes" and no global ``rcParams``.
    axes[1].scatter(x, np.cos(x), s=8); axes[1].set_title("cos")
    fig.tight_layout()
 
+.. _matplotlib-shaped-api:
+
+How close is the matplotlib API?
+--------------------------------
+
+The object-oriented core is deliberately matplotlib-*shaped*: ``Figure`` /
+``Axes`` with ``plot``, ``scatter``, ``bar``, ``hist``, ``pcolormesh``,
+``set_xlabel`` / ``set_ylabel`` / ``set_title``, ``set_xlim`` / ``set_ylim``,
+``grid``, ``legend``, ``colorbar``, ``twinx`` / ``twiny``, log scales and the
+``"C0"``..``"CN"`` colour cycle all behave as you would expect. Code written
+against ``fig, ax = plt.subplots()`` usually ports by changing the import.
+
+It is a **shaped** API, not a drop-in one. There is no ``pyplot`` state machine
+(``plt.plot`` / ``plt.gca`` / ``plt.savefig``), no ``rcParams``, and the long
+tail of matplotlib keyword arguments and plot types is not all present. Treat
+the :ref:`gallery <gallery>` as the compatibility surface: if a call appears
+there, it works the same way; if it doesn't, assume it needs adapting rather
+than a straight copy. Known gaps and trade-offs are catalogued under
+:ref:`limitations`.
+
 Output surfaces
 ---------------
 
