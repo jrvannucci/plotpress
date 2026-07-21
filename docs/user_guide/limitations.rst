@@ -76,7 +76,9 @@ means maintaining a parallel backend in ``raster.py``.
 
 Both backends consume the same primitives and the same layout, so output
 matches closely, but they are not guaranteed pixel-identical. SVG and PDF are
-the reference: PDF references the base-14 Helvetica directly and is exact.
+the reference: PDF references the base-14 Helvetica directly and is exact. The
+one visible disagreement is a newline in a label -- see
+:doc:`../auto_examples/limitations/plot_03_single_line_text`.
 
 Density estimates are approximate for large samples
 ----------------------------------------------------
@@ -92,7 +94,8 @@ exact curve, and always a proper density that integrates to 1. It is least
 accurate where a coarse grid cannot resolve the bandwidth, which happens when
 heavy-tailed outliers stretch the range; raise ``points=`` there if the peak
 looks blocky. The switch-over is by sample size alone, so a given dataset always
-renders the same way.
+renders the same way. See
+:doc:`../auto_examples/limitations/plot_02_kde_binning`.
 
 Not implemented
 ---------------
