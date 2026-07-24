@@ -24,10 +24,11 @@ fig.show()                                # native pop-up window
 ## What it is for
 
 simpleplot is **not a matplotlib replacement**, and it does not try to match
-matplotlib's twenty years of breadth (no polar or 3-D axes, one font-metric
-family — see [Supported plot types](#supported-plot-types) below). It aims at a
-narrower, underserved spot: plotting where matplotlib's install footprint or
-global state gets in the way.
+matplotlib's twenty years of breadth (no geographic projections or triangulated
+grids, one font-metric family, and its polar / 3-D axes project onto the 2-D
+core rather than a dedicated pipeline — see [Supported plot types](#supported-plot-types)
+below). It aims at a narrower, underserved spot: plotting where matplotlib's
+install footprint or global state gets in the way.
 
 **Reach for simpleplot when you want to:**
 
@@ -123,6 +124,17 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 | `matshow` | `spy` | `broken_barh` |
 | `stairs` | `axline` | |
 
+**Signal processing** (pure-NumPy Welch estimators): `psd`, `csd`, `cohere`,
+`magnitude_spectrum`, `angle_spectrum`, `phase_spectrum`, `specgram`, `xcorr`,
+`acorr`.
+
+**Polar** (`projection="polar"`): `plot`, `scatter`, `fill`, with
+`set_rmax`/`set_rlim`/`set_rticks`/`set_thetagrids` and orientation control.
+**3-D** (`projection="3d"`): `scatter`/`scatter3D`, `plot`/`plot3D`,
+`plot_surface` (depth-sorted, colorbar-ready), `plot_wireframe`, `view_init` —
+projected onto the 2-D core (orthographic, painter's algorithm), see the
+[limitations docs](https://simpleplot.readthedocs.io) for the caveats.
+
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
 **log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
@@ -146,8 +158,8 @@ python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
 **Not yet implemented** (would need new primitives): `streamplot`/`barbs`,
-triangulation (`tri*`), polar, and 3-D axes. These are the main remaining
-plot-type gaps vs matplotlib's full gallery.
+triangulation (`tri*`), and geographic / map projections. These are the main
+remaining plot-type gaps vs matplotlib's full gallery.
 
 ## Testing
 
@@ -225,8 +237,8 @@ feature, not a trade-off.
 **Next:**
 - Finish unifying the SVG and raster renderers behind the shared primitive
   layer (pure Python) so features aren't implemented twice.
-- More plot types: `streamplot`/`barbs`, triangulation (`tri*`), polar, and
-  3-D axes.
+- More plot types: `streamplot`/`barbs` and triangulation (`tri*`).
+- Deeper polar / 3-D (polar bars, cross-collection depth sorting).
 - Hover tooltips; decimation for huge scatter collections.
 
 ## Architecture notes
@@ -237,6 +249,9 @@ feature, not a trade-off.
 |--------|----------------|
 | `figure.py` | `Figure`, `subplots()`, layout, save/show/`_repr_*` |
 | `axes.py` | `Axes`: plotting methods, limits, autoscale |
+| `polar.py` | `PolarAxes`: (θ, r) projection + polar frame, built from existing artists |
+| `axes3d.py` | `Axes3D`: orthographic (x, y, z) projection, depth-sorted surface |
+| `_spectral.py` | pure-NumPy Welch spectral estimators (psd/csd/cohere/specgram/…) |
 | `artists.py` | data-only scene primitives (`Line2D`, `ScatterCollection`, `QuadMesh`) |
 | `style.py` | per-figure `Style` (replaces global `rcParams`) |
 | `transform.py` | vectorized data→pixel transforms (linear + log scales) |

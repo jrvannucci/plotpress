@@ -97,12 +97,36 @@ looks blocky. The switch-over is by sample size alone, so a given dataset always
 renders the same way. See
 :doc:`../auto_examples/limitations/plot_02_kde_binning`.
 
+.. _limitation-3d:
+
+3-D and polar are projected onto the 2-D core
+---------------------------------------------
+
+Polar (``projection="polar"``) and 3-D (``projection="3d"``) axes are real, but
+they are built by projecting the data into the existing 2-D renderer rather than
+by a dedicated 3-D pipeline -- so a few things follow from that choice:
+
+* **3-D uses orthographic projection with a painter's algorithm.** There is no
+  perspective and no per-fragment depth buffer. Faces *within* one
+  ``plot_surface`` are sorted back-to-front, which is correct for a single
+  height field, but separate collections (two surfaces, or a surface and a line)
+  are drawn in call order and can occlude wrongly where they interpenetrate.
+* **Polar orientation is fixed before plotting.** ``set_theta_direction`` /
+  ``set_theta_zero_location`` project the data as it is added, so they raise if
+  called after the first plot. 3-D ``view_init`` *can* move after plotting -- it
+  reprojects the whole scene.
+* Polar covers ``plot``/``scatter``/``fill``; 3-D covers
+  ``scatter``/``plot``/``plot_surface``/``plot_wireframe``. Other plot types are
+  not polar- or 3-D-aware.
+
 Not implemented
 ---------------
 
 Deliberate omissions, listed so you do not go looking:
 
-* No 3-D axes, no polar or geographic projections.
+* No geographic / map projections (these need projection-database and datum
+  machinery out of proportion to a pure-Python library).
+* No ``streamplot`` / ``barbs``, and no triangulation (``tri*``) plot types.
 * No animation API. ``plot_frames`` gives a slider over an extra dimension in
   interactive HTML, which covers the common case.
 * No text layout beyond single-line strings -- no rich text, no math/LaTeX

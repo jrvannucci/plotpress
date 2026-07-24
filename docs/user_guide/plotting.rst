@@ -94,6 +94,74 @@ Vector fields
 ``quiver(X, Y, U, V, scale=None, color=None, label=None)``
     A field of arrows. ``scale`` maps ``(U, V)`` to data units (auto if ``None``).
 
+Signal processing
+-----------------
+
+Welch-averaged spectral estimators (pure NumPy -- no SciPy). Each computes with
+matplotlib's ``mlab`` conventions (Hann window, mean detrend, one-sided scaling)
+and draws through an existing artist. ``NFFT``, ``Fs``, ``noverlap`` and
+``window`` control the estimate.
+
+``psd(x, NFFT=256, Fs=2, noverlap=0, ...)`` / ``csd(x, y, ...)`` / ``cohere(x, y, ...)``
+    Power / cross spectral density (in dB) and magnitude-squared coherence.
+    Each returns ``(values, freqs, line)``.
+
+``magnitude_spectrum(x, Fs=2, scale=None, ...)`` / ``angle_spectrum`` / ``phase_spectrum``
+    Single-shot spectra of the whole signal. ``scale="dB"`` plots the magnitude
+    in decibels. Return ``(spectrum, freqs, line)``.
+
+``specgram(x, NFFT=256, Fs=2, noverlap=128, cmap="viridis", ...)``
+    Spectrogram (power in dB) drawn with :meth:`imshow`. Returns
+    ``(spectrum, freqs, t, image)``.
+
+``xcorr(x, y, normed=True, maxlags=10, ...)`` / ``acorr(x, ...)``
+    Lagged cross- / auto-correlation over ``+-maxlags``, drawn as stems plus
+    markers. Return ``(lags, c, lines, markers)``.
+
+Polar
+-----
+
+Create a polar axes with ``projection="polar"``; angles are in **radians**.
+
+.. code-block:: python
+
+   fig, ax = simpleplot.subplots(projection="polar")
+   theta = np.linspace(0, 2 * np.pi, 400)
+   ax.plot(theta, 1 + 0.5 * np.sin(5 * theta))
+   ax.set_rmax(1.6)
+
+``plot(theta, r, ...)`` / ``scatter(theta, r, ...)`` / ``fill(theta, r, ...)``
+    The polar-aware plot types. Orientation is set with
+    ``set_theta_zero_location("N")`` and ``set_theta_direction(-1)`` *before*
+    plotting; radial extent with ``set_rmax``/``set_rlim``/``set_rticks`` and the
+    spokes with ``set_thetagrids``.
+
+3-D
+---
+
+Create a 3-D axes with ``projection="3d"``; set the camera with
+``view_init(elev=, azim=)``.
+
+.. code-block:: python
+
+   fig, ax = simpleplot.subplots(projection="3d")
+   X, Y = np.meshgrid(np.linspace(-3, 3, 60), np.linspace(-3, 3, 60))
+   ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="viridis")
+   ax.set_zlabel("z")
+
+``scatter(xs, ys, zs, ...)`` / ``plot(xs, ys, zs, ...)``
+    3-D points and polylines (also ``scatter3D`` / ``plot3D``).
+
+``plot_surface(X, Y, Z, cmap="viridis", edgecolor=None, ...)``
+    Depth-sorted colormapped surface. The returned collection works with
+    :meth:`~simpleplot.figure.Figure.colorbar`.
+
+``plot_wireframe(X, Y, Z, color=None, ...)``
+    Grid wireframe.
+
+The camera and per-axis scaling are honest orthographic projection with a
+painter's-algorithm surface -- see :ref:`the 3-D caveats <limitation-3d>`.
+
 Text and annotations
 --------------------
 
