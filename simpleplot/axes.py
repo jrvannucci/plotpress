@@ -19,6 +19,7 @@ from .artists import (
     VLine,
 )
 from .colors import Normalize, apply_colormap, get_cmap
+from . import _spectral
 
 
 def _finite_datasets(data, positions):
@@ -704,6 +705,120 @@ class Axes:
                                          label=lbl))
             base = top
         return out
+
+    # -- signal processing --------------------------------------------------
+    # Each estimator lives in ``_spectral`` (pure NumPy); these methods only
+    # compute-then-delegate to an existing artist, so no backend learns a new
+    # primitive. ``window`` defaults to a Hann window; pass a callable
+    # ``n -> weights`` or a length-``NFFT`` array to override.
+    def psd(self, x, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
+            color=None, linewidth=None, label=None):
+        """Power spectral density (Welch). Returns ``(Pxx, freqs, line)``."""
+        win = np.hanning if window is None else window
+        Pxx, freqs = _spectral.psd(x, NFFT, Fs, noverlap, win, detrend)
+        line = self.plot(freqs, 10.0 * np.log10(Pxx), color=color,
+                         linewidth=linewidth, label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Power Spectral Density (dB/Hz)")
+        return Pxx, freqs, line
+
+    def csd(self, x, y, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
+            color=None, linewidth=None, label=None):
+        """Cross spectral density magnitude. Returns ``(Pxy, freqs, line)``."""
+        win = np.hanning if window is None else window
+        Pxy, freqs = _spectral.csd(x, y, NFFT, Fs, noverlap, win, detrend)
+        line = self.plot(freqs, 10.0 * np.log10(np.abs(Pxy)), color=color,
+                         linewidth=linewidth, label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Cross Spectral Density (dB/Hz)")
+        return Pxy, freqs, line
+
+    def cohere(self, x, y, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
+               color=None, linewidth=None, label=None):
+        """Magnitude-squared coherence. Returns ``(Cxy, freqs, line)``."""
+        win = np.hanning if window is None else window
+        Cxy, freqs = _spectral.cohere(x, y, NFFT, Fs, noverlap, win, detrend)
+        line = self.plot(freqs, Cxy, color=color, linewidth=linewidth,
+                         label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Coherence")
+        return Cxy, freqs, line
+
+    def magnitude_spectrum(self, x, Fs=2, detrend=True, window=None, scale=None,
+                           color=None, linewidth=None, label=None):
+        """Magnitude spectrum ``|X(f)|``. ``scale='dB'`` plots decibels.
+
+        Returns ``(spectrum, freqs, line)``.
+        """
+        win = np.hanning if window is None else window
+        mag, freqs = _spectral.magnitude_spectrum(x, Fs, win, detrend)
+        y = 20.0 * np.log10(mag) if scale == "dB" else mag
+        line = self.plot(freqs, y, color=color, linewidth=linewidth, label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Magnitude (dB)" if scale == "dB" else "Magnitude")
+        return mag, freqs, line
+
+    def angle_spectrum(self, x, Fs=2, detrend=True, window=None,
+                       color=None, linewidth=None, label=None):
+        """Wrapped phase spectrum (radians). Returns ``(angles, freqs, line)``."""
+        win = np.hanning if window is None else window
+        ang, freqs = _spectral.angle_spectrum(x, Fs, win, detrend)
+        line = self.plot(freqs, ang, color=color, linewidth=linewidth,
+                         label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Angle (radians)")
+        return ang, freqs, line
+
+    def phase_spectrum(self, x, Fs=2, detrend=True, window=None,
+                       color=None, linewidth=None, label=None):
+        """Unwrapped phase spectrum (radians). Returns ``(phase, freqs, line)``."""
+        win = np.hanning if window is None else window
+        ph, freqs = _spectral.phase_spectrum(x, Fs, win, detrend)
+        line = self.plot(freqs, ph, color=color, linewidth=linewidth,
+                         label=label)
+        self.set_xlabel("Frequency")
+        self.set_ylabel("Phase (radians)")
+        return ph, freqs, line
+
+    def specgram(self, x, NFFT=256, Fs=2, noverlap=128, detrend=True,
+                 window=None, cmap="viridis", norm=None, vmin=None, vmax=None):
+        """Spectrogram (power in dB). Returns ``(spectrum, freqs, t, image)``."""
+        win = np.hanning if window is None else window
+        P, freqs, t = _spectral.specgram(x, NFFT, Fs, noverlap, win, detrend)
+        Z = 10.0 * np.log10(np.maximum(P, 1e-20))
+        dt = (t[1] - t[0]) / 2.0 if t.size > 1 else 0.5
+        df = (freqs[1] - freqs[0]) / 2.0 if freqs.size > 1 else 0.5
+        im = self.imshow(Z, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
+                         origin="lower",
+                         extent=(t[0] - dt, t[-1] + dt,
+                                 freqs[0] - df, freqs[-1] + df))
+        self.set_xlabel("Time")
+        self.set_ylabel("Frequency")
+        return P, freqs, t, im
+
+    def xcorr(self, x, y, normed=True, detrend=False, maxlags=10, usevlines=True,
+              color=None, marker="o", markersize=None, linewidth=None,
+              label=None):
+        """Cross-correlation of ``x`` and ``y`` over ``+-maxlags``.
+
+        Returns ``(lags, c, lines, markers)`` where ``lines`` is the stem
+        collection (``usevlines``) or connecting line, and ``markers`` is the
+        dot at each lag.
+        """
+        lags, c = _spectral.correlation(x, y, detrend, normed, maxlags)
+        col = self._resolve_color(color)
+        self.axhline(0.0, color="#333333", linewidth=0.8, linestyle="-")
+        if usevlines:
+            lines = self.vlines(lags, 0.0, c, color=col, linewidth=linewidth)
+        else:
+            lines = self.plot(lags, c, color=col, linewidth=linewidth)
+        markers = self.scatter(lags, c, s=markersize, color=col, marker=marker,
+                               label=label)
+        return lags, c, lines, markers
+
+    def acorr(self, x, **kwargs):
+        """Autocorrelation -- :meth:`xcorr` of ``x`` with itself."""
+        return self.xcorr(x, x, **kwargs)
 
     def set_xscale(self, scale):
         """Set the x-axis scale: ``'linear'`` or ``'log'``."""

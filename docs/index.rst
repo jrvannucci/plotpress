@@ -25,9 +25,11 @@ What it is for
 --------------
 
 simpleplot is **not a matplotlib replacement**, and it does not try to match
-matplotlib's twenty years of breadth (no polar or 3-D axes, one font-metric
-family -- see :ref:`limitations`). It aims at a narrower, underserved spot:
-plotting where matplotlib's install footprint or global state gets in the way.
+matplotlib's twenty years of breadth (no geographic projections or triangulated
+grids, one font-metric family, and its polar / 3-D axes are projected onto the
+2-D core rather than a dedicated pipeline -- see :ref:`limitations`). It aims at
+a narrower, underserved spot: plotting where matplotlib's install footprint or
+global state gets in the way.
 
 Reach for simpleplot when you want to:
 

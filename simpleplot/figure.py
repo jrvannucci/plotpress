@@ -15,8 +15,22 @@ import time
 import numpy as np
 
 from .axes import Axes
+from .axes3d import Axes3D
+from .polar import PolarAxes
 from .style import Style
 from .svg import figure_to_svg
+
+
+def _axes_class(projection):
+    """Resolve a ``projection`` name to its Axes class."""
+    if projection in (None, "rectilinear"):
+        return Axes
+    if projection == "polar":
+        return PolarAxes
+    if projection == "3d":
+        return Axes3D
+    raise ValueError(
+        "unknown projection %r (use None, 'polar', or '3d')" % projection)
 
 
 class Figure:
@@ -80,28 +94,34 @@ class Figure:
         }
 
     # -- axes construction --------------------------------------------------
-    def add_axes(self, rect) -> Axes:
-        """Add an axes at ``rect = (left, bottom, width, height)`` (fractions)."""
-        ax = Axes(self, rect)
+    def add_axes(self, rect, projection=None) -> Axes:
+        """Add an axes at ``rect = (left, bottom, width, height)`` (fractions).
+
+        ``projection='polar'`` makes it a :class:`~simpleplot.polar.PolarAxes`.
+        """
+        ax = _axes_class(projection)(self, rect)
         self.axes.append(ax)
         return ax
 
-    def add_subplot(self, nrows=1, ncols=1, index=1) -> Axes:
-        ax = self.add_axes(_subplot_rect(nrows, ncols, index))
+    def add_subplot(self, nrows=1, ncols=1, index=1, projection=None) -> Axes:
+        ax = self.add_axes(_subplot_rect(nrows, ncols, index), projection=projection)
         ax._subplotspec = (nrows, ncols, index)
         return ax
 
-    def subplots(self, nrows=1, ncols=1, squeeze=True, sharex=False, sharey=False):
+    def subplots(self, nrows=1, ncols=1, squeeze=True, sharex=False, sharey=False,
+                 projection=None):
         """Create a grid of axes; return a single Axes or a NumPy array of them.
 
         ``sharex``/``sharey`` link the grid so autoscaling spans every subplot
         (shared limits) and inner tick labels are hidden, like matplotlib.
+        ``projection='polar'`` makes every axes in the grid polar.
         """
         grid = np.empty((nrows, ncols), dtype=object)
         for r in range(nrows):
             for c in range(ncols):
                 index = r * ncols + c + 1
-                ax = self.add_axes(_subplot_rect(nrows, ncols, index))
+                ax = self.add_axes(_subplot_rect(nrows, ncols, index),
+                                   projection=projection)
                 ax._subplotspec = (nrows, ncols, index)
                 grid[r, c] = ax
 
@@ -510,15 +530,18 @@ def _flatten_axes(ax):
 
 
 def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
-             facecolor=None, squeeze=True, sharex=False, sharey=False):
+             facecolor=None, squeeze=True, sharex=False, sharey=False,
+             projection=None):
     """Convenience constructor mirroring ``matplotlib.pyplot.subplots``.
 
     Unlike matplotlib, this creates and returns a fresh, fully independent
     figure -- there is no global state touched. ``sharex``/``sharey`` link the
-    grid's limits and hide inner tick labels.
+    grid's limits and hide inner tick labels. ``projection='polar'`` makes the
+    axes polar.
     """
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
-    axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex, sharey=sharey)
+    axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex,
+                        sharey=sharey, projection=projection)
     return fig, axes
 
 
