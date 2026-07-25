@@ -116,6 +116,24 @@ def test_set_xlim3d_changes_normalization():
     assert not np.allclose(line2.x, x_default)
 
 
+def test_each_axis_gets_multiple_ticks_along_its_edge():
+    # Regression for the "which axis does this number belong to?" ambiguity:
+    # ticks must run along each edge (several per axis), not just sit on the two
+    # shared corners, and each axis name must be present.
+    from simpleplot.artists import Text, LineCollection
+    _, ax = _ax3d()
+    ax.scatter([-3, 3], [-3, 3], [-0.5, 0.5], color="C0")
+    ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("z")
+    texts = [t.text for t in ax._frame_artists if isinstance(t, Text)]
+    for name in ("x", "y", "z"):
+        assert name in texts
+    numeric = [t for t in texts if t not in ("x", "y", "z")]
+    assert len(numeric) >= 9            # >3 ticks per axis, not 2 corners each
+    # a dedicated tick-mark collection ties numbers to their edges
+    lcs = [a for a in ax._frame_artists if isinstance(a, LineCollection)]
+    assert len(lcs) == 2                # cube edges + tick marks
+
+
 def test_cycle_colors_are_stable_across_reprojection():
     # Colors are resolved once at plot time; a later view change (which reprojects
     # the whole scene) must not re-roll the cycle or change a series' color.
