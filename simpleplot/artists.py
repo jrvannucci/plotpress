@@ -774,5 +774,16 @@ class Pie(Artist):
         self.radius = radius
         self.autopct = autopct
 
+    def pct_text(self, frac):
+        """Formatted ``autopct`` label for a wedge holding ``frac`` of the total.
+
+        ``autopct`` is a ``%``-style format string (e.g. ``"%.1f%%"``) or a
+        callable ``pct -> str``; ``None`` means no percentage labels.
+        """
+        if self.autopct is None:
+            return None
+        pct = 100.0 * float(frac)
+        return self.autopct(pct) if callable(self.autopct) else self.autopct % pct
+
     def data_bounds(self):
         return None  # pie manages its own (hidden) axes

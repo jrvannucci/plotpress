@@ -674,7 +674,8 @@ class Axes:
         verts, counts = _hexbin(x, y, gridsize, mincnt)
         lut = get_cmap(cmap)
         norm = Normalize()
-        norm.autoscale_none(counts) if len(counts) else None
+        if len(counts):
+            norm.autoscale_none(counts)
         facecolors = apply_colormap(counts, lut, norm)[:, :3] if len(counts) else []
         pc = PolyCollection(verts, facecolors, label=label)
         pc.lut, pc.norm = lut, norm      # make it a colorbar mappable
@@ -1112,7 +1113,8 @@ class Axes:
                     lo = min(lo, b[ix])
                 if np.isfinite(b[ix + 1]):
                     hi = max(hi, b[ix + 1])
-            has_mesh = has_mesh or any(isinstance(a, QuadMesh) for a in ax.artists)
+            has_mesh = has_mesh or any(isinstance(a, (QuadMesh, Image))
+                                       for a in ax.artists)
         if not np.isfinite(lo) or not np.isfinite(hi):
             lo, hi = 0.0, 1.0
         return lo, hi, has_mesh
@@ -1192,13 +1194,14 @@ def _hexbin(x, y, gridsize, mincnt):
     d2 = (sx - (i2 + 0.5)) ** 2 + (sy - (j2 + 0.5)) ** 2
     use1 = d1 <= d2
 
-    from collections import Counter
-    cells = Counter()
-    for k in range(len(x)):
-        if use1[k]:
-            cells[(int(i1[k]), int(j1[k]), 0)] += 1
-        else:
-            cells[(int(i2[k]), int(j2[k]), 1)] += 1
+    # Each point lands on grid 1 (g=0) or the half-shifted grid 2 (g=1); tally
+    # the (i, j, g) cells with a single vectorized unique-with-counts, not a
+    # per-point Python loop.
+    gi = np.where(use1, i1, i2)
+    gj = np.where(use1, j1, j2)
+    gg = np.where(use1, 0, 1)
+    cells, cell_counts = np.unique(np.stack([gi, gj, gg], axis=1), axis=0,
+                                   return_counts=True)
 
     # Hexagon vertex offsets (pointy-top), scaled to the cell size.
     ang = np.pi / 180 * (60 * np.arange(6) + 30)
@@ -1206,7 +1209,7 @@ def _hexbin(x, y, gridsize, mincnt):
     hy = (dy / 1.5) * np.sin(ang)
 
     verts, counts = [], []
-    for (i, j, g), c in cells.items():
+    for (i, j, g), c in zip(cells, cell_counts):
         if c < mincnt:
             continue
         cx = xmin + i * dx + (dx / 2 if g else 0)

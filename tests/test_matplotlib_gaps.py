@@ -451,3 +451,94 @@ def test_geometric_artists_share_one_render_path():
     # a not-yet-migrated artist returns None (uses its legacy renderer)
     bars = ax.bar([0, 1], [1, 2])
     assert artist_to_prims(bars, _T(), 0, 0) is None
+
+
+# -- backend parity regressions (found in the code audit) -------------------
+def _nonbg_pixels(fig, scale=2):
+    """Count pixels that differ from the figure background, for raster checks."""
+    from simpleplot.raster import figure_to_image
+    arr = np.asarray(figure_to_image(fig, scale=scale))
+    return int((arr < 250).any(axis=2).sum())
+
+
+@pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
+def test_boxplot_renders_in_both_orientations_and_backends(orientation):
+    """Regression: the raster backend only drew *vertical* boxplots, so a
+    horizontal boxplot exported to PNG/PDF came out empty."""
+    pytest.importorskip("PIL")
+    rng = np.random.RandomState(0)
+    data = [rng.normal(size=100) for _ in range(3)]
+    fig, ax = simpleplot.subplots()
+    ax.boxplot(data, orientation=orientation)
+
+    # An empty axes (just frame + ticks) for the same figure size, to prove the
+    # boxes themselves add substantial ink in either orientation.
+    empty, _ = simpleplot.subplots()
+    assert _nonbg_pixels(fig) > _nonbg_pixels(empty) * 2
+    assert "<rect" in fig.to_svg()
+
+
+def test_boxplot_fliers_render_in_raster():
+    """Outliers past the whiskers draw as open circles in both backends."""
+    pytest.importorskip("PIL")
+    data = np.array([0.0, 1.0, 1.0, 1.0, 2.0, 100.0])   # 100 is a clear flier
+    fig, ax = simpleplot.subplots()
+    ax.boxplot([data])
+    assert "<circle" in fig.to_svg()
+    with_flier = _nonbg_pixels(fig)
+    fig2, ax2 = simpleplot.subplots()
+    ax2.boxplot([data[:-1]])                              # same data, no flier
+    assert with_flier > _nonbg_pixels(fig2)
+
+
+def test_pie_autopct_labels_render_in_both_backends():
+    """Regression: ``autopct`` was accepted but never drawn by either backend,
+    and the raster backend drew no wedge labels at all."""
+    pytest.importorskip("PIL")
+    fig, ax = simpleplot.subplots()
+    ax.pie([25, 25, 25, 25], labels=["AAAA", "BBBB", "CCCC", "DDDD"],
+           autopct="%.0f%%")
+    svg = fig.to_svg()
+    assert "AAAA" in svg and "25%" in svg
+
+    labelled = _nonbg_pixels(fig)
+    fig2, ax2 = simpleplot.subplots()
+    ax2.pie([25, 25, 25, 25])                             # no labels / no pct
+    assert labelled > _nonbg_pixels(fig2)
+
+
+def test_pie_autopct_accepts_a_callable():
+    fig, ax = simpleplot.subplots()
+    ax.pie([1, 3], autopct=lambda pct: f"[{pct:.0f}]")
+    svg = fig.to_svg()
+    assert "[25]" in svg and "[75]" in svg
+
+
+@pytest.mark.parametrize("method,kw", [
+    ("imshow", {}),
+    ("hist2d", {}),
+])
+def test_image_autoscale_is_tight(method, kw):
+    """Images pin the limits to their extent, like ``pcolormesh`` and
+    matplotlib -- no 5% autoscale margin framing the raster in background."""
+    fig, ax = simpleplot.subplots()
+    if method == "imshow":
+        ax.imshow(np.arange(12).reshape(3, 4))
+        assert ax.get_xlim() == (0.0, 4.0)
+        assert ax.get_ylim() == (0.0, 3.0)
+    else:
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        counts, im = ax.hist2d(x, x, bins=2)
+        xlo, xhi = ax.get_xlim()
+        assert xlo == pytest.approx(x.min()) and xhi == pytest.approx(x.max())
+
+
+def test_hexbin_conserves_point_counts():
+    """Every point lands in exactly one hexagon, so with mincnt=1 the counts
+    sum to the number of points (guards the vectorized cell tally)."""
+    from simpleplot.axes import _hexbin
+    rng = np.random.RandomState(1)
+    x, y = rng.normal(size=2000), rng.normal(size=2000)
+    verts, counts = _hexbin(x, y, 15, 1)
+    assert counts.sum() == x.size
+    assert len(verts) == len(counts)
