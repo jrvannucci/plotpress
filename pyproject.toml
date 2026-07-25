@@ -35,8 +35,11 @@ dev = ["pytest>=7"]
 # `playwright install chromium`.
 # pytest>=8.2 for importorskip(reason=...), used to explain the skip.
 browser = ["pytest>=8.2", "playwright>=1.40"]
-# Benchmarking against matplotlib (benchmarks/ and the comparative perf tests).
-bench = ["matplotlib>=3.5"]
+# Benchmarking and cross-library parity: matplotlib for benchmarks/ and the
+# comparative perf tests, seaborn for the seaborn checks in
+# tests/test_matplotlib_parity.py. Both are importorskip'd, so a plain install
+# still runs; this extra makes the cross-library tests reproducible.
+bench = ["matplotlib>=3.5", "seaborn>=0.12"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
