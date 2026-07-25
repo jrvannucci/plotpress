@@ -17,7 +17,7 @@ from .artists import (
     FrameLine2D, Pie, Polygon, Quiver, ScatterCollection, Span, Stem, Text,
     Violin,
 )
-from .colors import apply_colormap, colorbar_ticks, to_hex
+from .colors import colorbar_ticks, to_hex
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
@@ -29,7 +29,7 @@ from .primitives import Segments as PSegments
 from .svg import (
     _effective_rect, _max_ytick_width, _pixel_rect, _resolve_tick_labels,
 )
-from .ticker import format_ticks, log_ticks, nice_ticks
+from .ticker import log_ticks, nice_ticks
 from .transform import LinearTransform
 
 _DASH = {"-": None, "--": (6, 4), ":": (1, 3), "-.": (6, 3, 1, 3)}

@@ -22,9 +22,7 @@ from .artists import (
 from .colors import colorbar_ticks
 from .fonts import text_width
 from .png import png_data_uri
-from .primitives import (
-    _DECIMATE_MIN_POINTS, _decimate_minmax, _is_monotonic, artist_to_prims,
-)
+from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers

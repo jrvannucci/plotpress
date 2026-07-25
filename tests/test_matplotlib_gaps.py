@@ -362,7 +362,7 @@ def test_broken_barh_and_stairs():
 
 # -- huge-line decimation ---------------------------------------------------
 def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
-    from simpleplot.svg import _decimate_minmax
+    from simpleplot.primitives import _decimate_minmax
 
     x = np.linspace(0, 10, 50000)
     y = np.sin(x)
@@ -374,7 +374,7 @@ def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
 
 
 def test_small_and_nonmonotonic_lines_are_not_decimated():
-    from simpleplot.svg import _decimate_minmax, _is_monotonic
+    from simpleplot.primitives import _decimate_minmax, _is_monotonic
 
     # a parametric loop (non-monotonic x) must not be per-column collapsed
     t = np.linspace(0, 2 * np.pi, 10000)

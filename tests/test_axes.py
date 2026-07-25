@@ -120,6 +120,28 @@ def test_one_sided_limit_stays_local_to_its_axes_when_shared():
     assert axes[1].get_ylim()[0] != 0             # ...not to the whole group
 
 
+@pytest.mark.parametrize("setlim, scale", [
+    (lambda ax: ax.set_xlim(3, 0), "linear"),
+    (lambda ax: ax.set_ylim(3, 0), "linear"),
+    (lambda ax: (ax.set_yscale("log"), ax.set_ylim(100, 1)), "log"),
+])
+def test_reversed_limits_render_like_matplotlib_inversion(setlim, scale):
+    # set_xlim(hi, lo) reverses the axis in matplotlib. It used to crash the
+    # linear tickers (math domain error) and silently drop all log ticks.
+    fig, ax = simpleplot.subplots()
+    ax.plot([1, 10, 100], [1, 10, 100])
+    setlim(ax)
+    svg = fig.to_svg()
+    assert svg.startswith("<svg")
+
+
+def test_reversed_ticks_are_order_independent():
+    from simpleplot.ticker import log_ticks, nice_ticks
+    np.testing.assert_array_equal(nice_ticks(3, 0), nice_ticks(0, 3))
+    np.testing.assert_array_equal(log_ticks(100, 1), log_ticks(1, 100))
+    assert len(log_ticks(100, 1)) > 0     # not silently empty
+
+
 def test_mesh_autoscale_is_tight():
     _, ax = simpleplot.subplots()
     ax.pcolormesh(np.zeros((5, 5)))

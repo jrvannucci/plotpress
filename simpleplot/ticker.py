@@ -9,7 +9,14 @@ import numpy as np
 
 
 def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
-    """Return ~``n`` evenly spaced "nice" tick locations within [vmin, vmax]."""
+    """Return ~``n`` evenly spaced "nice" tick locations within [vmin, vmax].
+
+    Order-independent: ``set_xlim(hi, lo)`` reverses the axis (like matplotlib),
+    so the caller may pass ``vmin > vmax``. The tick *locations* are the same
+    either way -- the reversal is handled by the transform -- so normalize here.
+    """
+    if vmin > vmax:
+        vmin, vmax = vmax, vmin
     if vmin == vmax:
         vmin, vmax = vmin - 0.5, vmax + 0.5
     if not (math.isfinite(vmin) and math.isfinite(vmax)):
@@ -41,7 +48,13 @@ def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
 
 
 def log_ticks(vmin: float, vmax: float) -> np.ndarray:
-    """Decade tick locations (powers of 10) spanning [vmin, vmax]."""
+    """Decade tick locations (powers of 10) spanning [vmin, vmax].
+
+    Order-independent (see :func:`nice_ticks`): a reversed log limit still gets
+    its decade ticks rather than silently rendering none.
+    """
+    if vmin > vmax:
+        vmin, vmax = vmax, vmin
     if vmin <= 0:
         # Data/limits reached here non-positive; pick a small positive floor
         # (three decades below the top), never zero. Matches the interactive JS.
