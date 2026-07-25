@@ -24,6 +24,7 @@ import numpy as np
 from .axes import Axes
 from .artists import LineCollection, PolyCollection, Text
 from .colors import Normalize, apply_colormap, get_cmap
+from .ticker import nice_ticks
 
 
 class Axes3D(Axes):
@@ -168,7 +169,7 @@ class Axes3D(Axes):
             elif kind == "wire":
                 last = self._emit_wire(norm, arrs, kwargs)
 
-        pad = 0.75
+        pad = 1.0        # room for the outward tick labels / axis names
         Axes.set_xlim(self, -pad, pad)
         Axes.set_ylim(self, -pad, pad)
         return last if last is not None else self
@@ -257,31 +258,53 @@ class Axes3D(Axes):
         size = self.style.tick_label_size
         lbl_size = self.style.label_size
 
-        def txt(pt, s, sz):
-            t = Text(pt[0], pt[1], s, color="#555555", size=sz,
-                     ha="center", va="center")
+        def project(p):
+            px, py, _ = self._project_norm(np.array([p[0]]), np.array([p[1]]),
+                                           np.array([p[2]]))
+            return np.array([float(px[0]), float(py[0])])
+
+        def txt(pt, s, sz, color="#555555"):
+            t = Text(pt[0], pt[1], s, color=color, size=sz, ha="center",
+                     va="center")
             self.artists.append(t)
             self._frame_artists.append(t)
 
         def fmt(v):
             return ("%.3g" % v)
 
-        # one representative edge per axis: label its name at the midpoint and
-        # its data min/max at the two ends.
+        center = project((0.0, 0.0, 0.0))
+
+        # One representative edge per axis. Ticks run *along* the edge, and every
+        # label is pushed radially outward from the cube centre -- so an axis'
+        # numbers trace its own line instead of piling up on the corners it
+        # shares with the neighbouring axes (which was the ambiguity). Small tick
+        # marks tie each number to its edge, and the axis name sits furthest out.
         axis_edges = [
-            (self._xlabel or "x", (-.5, -.5, -.5), (.5, -.5, -.5), (x0, x1)),
-            (self._ylabel or "y", (.5, -.5, -.5), (.5, .5, -.5), (y0, y1)),
-            (self._zlabel or "z", (-.5, -.5, -.5), (-.5, -.5, .5), (z0, z1)),
+            (self._xlabel or "x", np.array([-.5, -.5, -.5]),
+             np.array([.5, -.5, -.5]), (x0, x1)),
+            (self._ylabel or "y", np.array([.5, -.5, -.5]),
+             np.array([.5, .5, -.5]), (y0, y1)),
+            (self._zlabel or "z", np.array([-.5, -.5, -.5]),
+             np.array([-.5, -.5, .5]), (z0, z1)),
         ]
+        tick_segs = []
         for name, a, b, (lo, hi) in axis_edges:
-            pa, pb = corners[a], corners[b]
-            mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-            out = (mid[0] + (mid[0]) * 0.12, mid[1] + (mid[1]) * 0.12 - 0.04)
-            txt(_offset(pa, pb, 0.12), fmt(lo), size)
-            txt(_offset(pb, pa, 0.12), fmt(hi), size)
-            txt(out, name, lbl_size)
+            pa, pb = project(a), project(b)
+            mid = (pa + pb) / 2.0
+            out = mid - center
+            out = out / (np.hypot(*out) or 1.0)          # unit outward direction
+            span = (hi - lo) or 1.0
+            for t in nice_ticks(lo, hi):
+                if not (lo - 1e-9 <= t <= hi + 1e-9):
+                    continue
+                p2 = project(a + (t - lo) / span * (b - a))
+                tick_segs.append((p2[0], p2[1],
+                                  p2[0] + out[0] * 0.03, p2[1] + out[1] * 0.03))
+                txt(p2 + out * 0.085, fmt(t), size)
+            txt(mid + out * 0.2, name, lbl_size, color="#333333")
 
-
-def _offset(p, other, frac):
-    """Push point ``p`` a little away from segment ``p->other`` (for labels)."""
-    return (p[0] - (other[0] - p[0]) * frac, p[1] - (other[1] - p[1]) * frac)
+        if tick_segs:
+            tlc = LineCollection(np.array(tick_segs, float), color="#a0a0a0",
+                                 linewidth=0.8)
+            self.artists.append(tlc)
+            self._frame_artists.append(tlc)
