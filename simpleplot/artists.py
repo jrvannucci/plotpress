@@ -767,7 +767,14 @@ class Pie(Artist):
     def __init__(self, values, colors, labels=None, startangle=90.0,
                  radius=1.0, autopct=None):
         self.values = np.asarray(values, float)
-        self.fracs = self.values / self.values.sum()
+        total = self.values.sum()
+        # An all-zero (or empty) pie has no wedges to size; fall back to equal
+        # slices rather than dividing by zero into NaN fractions.
+        if total == 0:
+            n = self.values.size
+            self.fracs = np.full(n, 1.0 / n) if n else self.values
+        else:
+            self.fracs = self.values / total
         self.colors = colors
         self.labels = labels
         self.startangle = startangle

@@ -66,6 +66,7 @@ deep ecosystem that pandas, seaborn and scikit-learn plot into.
 ```bash
 pip install simpleplot            # SVG + interactive HTML + PNG/PDF export
 pip install simpleplot[gui]       # + native pop-up window (fig.show(), pywebview)
+pip install simpleplot[qt]        # + embed in a PyQt/PySide app (fig.show_qt())
 pip install simpleplot[dev]       # + pytest (contributors)
 pip install simpleplot[bench]     # + matplotlib (benchmark comparison)
 ```
@@ -87,6 +88,7 @@ the browser.
 | `fig.to_svg()` / `fig.to_html()` | string, for embedding |
 | `fig._repr_svg_()` | inline SVG in Jupyter |
 | `fig.show()` | native pop-up window (pywebview, `[gui]` extra; falls back to browser) |
+| `fig.show_qt()` | embed in a PyQt/PySide app (`simpleplot.qt`, `[qt]` extra) |
 
 ## Interactive figures
 
@@ -263,6 +265,7 @@ feature, not a trade-off.
 | `raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
 | `fonts/` | bundled Helvetica metrics (layout only; no glyph rasterization) |
 | `_interactive.py` | inlined vanilla JS: toolbar, per-axes zoom, picking, annotate, sliders, export |
+| `qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
 
 Artists never render themselves — they just hold arrays. The geometry of each
 artist is computed once in `primitives.py`; `svg.py` and `raster.py` are thin
