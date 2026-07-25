@@ -97,13 +97,19 @@ class Figure:
     def add_axes(self, rect, projection=None) -> Axes:
         """Add an axes at ``rect = (left, bottom, width, height)`` (fractions).
 
-        ``projection='polar'`` makes it a :class:`~simpleplot.polar.PolarAxes`.
+        ``projection='polar'`` makes it a :class:`~simpleplot.polar.PolarAxes`;
+        ``projection='3d'`` an :class:`~simpleplot.axes3d.Axes3D`.
         """
         ax = _axes_class(projection)(self, rect)
         self.axes.append(ax)
         return ax
 
     def add_subplot(self, nrows=1, ncols=1, index=1, projection=None) -> Axes:
+        """Add the ``index``-th axes (1-based) of an ``nrows`` x ``ncols`` grid.
+
+        ``projection`` accepts the same values as :meth:`add_axes`
+        (``'polar'`` / ``'3d'``).
+        """
         ax = self.add_axes(_subplot_rect(nrows, ncols, index), projection=projection)
         ax._subplotspec = (nrows, ncols, index)
         return ax

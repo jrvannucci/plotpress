@@ -711,13 +711,20 @@ def _render_pie(pie: Pie, tr, body):
             f'A{_fmt(R)},{_fmt(R)} 0 {large} 1 {_fmt(x1)},{_fmt(y1)} Z" '
             f'fill="{pie.colors[i]}" stroke="#ffffff" stroke-width="1.5"/>'
         )
+        am = (a0 + a1) / 2.0
         if pie.labels is not None:
-            am = (a0 + a1) / 2.0
             lx, ly = cx + 1.15 * R * math.cos(am), cy - 1.15 * R * math.sin(am)
             anchor = "start" if math.cos(am) >= 0 else "end"
             labels.append(
                 f'<text x="{_fmt(lx)}" y="{_fmt(ly)}" text-anchor="{anchor}" '
                 f'font-size="10" dominant-baseline="middle">{_esc(pie.labels[i])}</text>'
+            )
+        pct = pie.pct_text(frac)
+        if pct is not None:
+            px, py = cx + 0.6 * R * math.cos(am), cy - 0.6 * R * math.sin(am)
+            labels.append(
+                f'<text x="{_fmt(px)}" y="{_fmt(py)}" text-anchor="middle" '
+                f'font-size="10" dominant-baseline="middle">{_esc(pct)}</text>'
             )
         ang = a1
     body.append("".join(parts) + "".join(labels))
@@ -794,6 +801,10 @@ def _render_boxplot(bp: BoxPlot, tr, st, body):
             parts.append(f'<line x1="{_fmt(xm)}" y1="{_fmt(y0)}" x2="{_fmt(xm)}" y2="{_fmt(y1)}" stroke="{bp.color}" stroke-width="1.8"/>')
             parts.append(f'<line x1="{_fmt(xq1)}" y1="{_fmt(yc)}" x2="{_fmt(xlo)}" y2="{_fmt(yc)}" stroke="{bp.color}" stroke-width="1"/>')
             parts.append(f'<line x1="{_fmt(xq3)}" y1="{_fmt(yc)}" x2="{_fmt(xhi)}" y2="{_fmt(yc)}" stroke="{bp.color}" stroke-width="1"/>')
+            parts.append(f'<line x1="{_fmt(xlo)}" y1="{_fmt(y0)}" x2="{_fmt(xlo)}" y2="{_fmt(y1)}" stroke="{bp.color}" stroke-width="1"/>')
+            parts.append(f'<line x1="{_fmt(xhi)}" y1="{_fmt(y0)}" x2="{_fmt(xhi)}" y2="{_fmt(y1)}" stroke="{bp.color}" stroke-width="1"/>')
+            for fx in s["fliers"]:
+                parts.append(f'<circle cx="{_fmt(tr.x(fx))}" cy="{_fmt(yc)}" r="{_fmt(r)}" fill="none" stroke="{bp.color}"/>')
     body.append("".join(parts))
 
 

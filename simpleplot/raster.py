@@ -327,7 +327,7 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
                            float(tr.x(c)), float(tr.y(e))],
                           fill=_rgb(color), width=max(1, int(round(1.2 * S))))
     elif isinstance(artist, Pie):
-        _pie(artist, tr, S, draw)
+        _pie(artist, tr, st, S, draw)
     elif isinstance(artist, BoxPlot):
         _boxplot(artist, tr, st, S, draw)
     elif isinstance(artist, Violin):
@@ -466,23 +466,36 @@ def _quiver(q, tr, S, draw):
                       fill=col, width=w)
 
 
-def _pie(pie, tr, S, draw):
+def _pie(pie, tr, st, S, draw):
     cx = tr.px_left + tr.px_w / 2.0
     cy = tr.px_top + tr.px_h / 2.0
     R = 0.42 * min(tr.px_w, tr.px_h) * pie.radius
     box = [cx - R, cy - R, cx + R, cy + R]
+    font = _font(10 * S, st.font_family)          # matches svg's fixed 10px
+    txt_fill = _rgb(st.text_color)
     ang = math.radians(pie.startangle)
     for i, frac in enumerate(pie.fracs):
         a1 = ang - frac * 2 * math.pi
         draw.pieslice(box, -math.degrees(ang), -math.degrees(a1),
                       fill=_rgb(pie.colors[i]), outline=(255, 255, 255),
                       width=max(1, int(round(1.5 * S))))
+        am = (ang + a1) / 2.0
+        if pie.labels is not None:
+            lx, ly = cx + 1.15 * R * math.cos(am), cy - 1.15 * R * math.sin(am)
+            ha = "left" if math.cos(am) >= 0 else "right"
+            _text(draw, lx, ly, str(pie.labels[i]), txt_fill, font, ha, "center")
+        pct = pie.pct_text(frac)
+        if pct is not None:
+            px, py = cx + 0.6 * R * math.cos(am), cy - 0.6 * R * math.sin(am)
+            _text(draw, px, py, pct, txt_fill, font, "center", "center")
         ang = a1
 
 
 def _boxplot(bp, tr, st, S, draw):
     col = _rgb(bp.color)
     w = max(1, int(round(1.3 * S)))
+    wm = max(1, int(round(1.8 * S)))
+    r = st.marker_size / 2.0 * st.dpi / 72.0 * S
     for pos, s in zip(bp.positions, bp.stats):
         c0, c1 = pos - bp.width / 2, pos + bp.width / 2
         if bp.orientation == "vertical":
@@ -492,11 +505,29 @@ def _boxplot(bp, tr, st, S, draw):
             ylo, yhi = float(tr.y(s["lo"])), float(tr.y(s["hi"]))
             draw.rectangle([min(x0, x1), min(yq1, yq3), max(x0, x1), max(yq1, yq3)],
                            outline=col, width=w)
-            draw.line([x0, ym, x1, ym], fill=col, width=max(1, int(round(1.8 * S))))
+            draw.line([x0, ym, x1, ym], fill=col, width=wm)
             draw.line([xc, yq1, xc, ylo], fill=col, width=S)
             draw.line([xc, yq3, xc, yhi], fill=col, width=S)
             draw.line([x0, ylo, x1, ylo], fill=col, width=S)
             draw.line([x0, yhi, x1, yhi], fill=col, width=S)
+            for fx in s["fliers"]:
+                fy = float(tr.y(fx))
+                draw.ellipse([xc - r, fy - r, xc + r, fy + r], outline=col, width=S)
+        else:
+            y0, y1 = float(tr.y(c0)), float(tr.y(c1))
+            yc = float(tr.y(pos))
+            xq1, xq3, xm = float(tr.x(s["q1"])), float(tr.x(s["q3"])), float(tr.x(s["med"]))
+            xlo, xhi = float(tr.x(s["lo"])), float(tr.x(s["hi"]))
+            draw.rectangle([min(xq1, xq3), min(y0, y1), max(xq1, xq3), max(y0, y1)],
+                           outline=col, width=w)
+            draw.line([xm, y0, xm, y1], fill=col, width=wm)
+            draw.line([xq1, yc, xlo, yc], fill=col, width=S)
+            draw.line([xq3, yc, xhi, yc], fill=col, width=S)
+            draw.line([xlo, y0, xlo, y1], fill=col, width=S)
+            draw.line([xhi, y0, xhi, y1], fill=col, width=S)
+            for fx in s["fliers"]:
+                fxx = float(tr.x(fx))
+                draw.ellipse([fxx - r, yc - r, fxx + r, yc + r], outline=col, width=S)
 
 
 def _violin(v, tr, draw):
