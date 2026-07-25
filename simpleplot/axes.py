@@ -285,10 +285,10 @@ class Axes:
         self.artists.append(b)
         return b
 
-    def hist(self, data, bins=10, range=None, color=None, edgecolor="#ffffff",
+    def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
              label=None, alpha=1.0, density=False):
         """Histogram. Returns ``(counts, edges, bars)``."""
-        counts, edges = np.histogram(np.asarray(data, float), bins=bins,
+        counts, edges = np.histogram(np.asarray(x, float), bins=bins,
                                      range=range, density=density)
         centers = (edges[:-1] + edges[1:]) / 2.0
         widths = np.diff(edges)
@@ -395,10 +395,10 @@ class Axes:
         self.artists.append(eb)
         return eb
 
-    def imshow(self, A, cmap="viridis", norm=None, vmin=None, vmax=None,
+    def imshow(self, X, cmap="viridis", norm=None, vmin=None, vmax=None,
                extent=None, origin="upper", alpha=1.0, label=None):
         """Display an image / 2-D array."""
-        im = Image(A, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
+        im = Image(X, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
                    origin=origin, alpha=alpha, label=label)
         self.artists.append(im)
         return im
@@ -417,14 +417,14 @@ class Axes:
         self.set_aspect("equal")
         return im
 
-    def pie(self, values, labels=None, colors=None, startangle=90.0, radius=1.0,
+    def pie(self, x, labels=None, colors=None, startangle=90.0, radius=1.0,
             autopct=None):
         """Pie chart. Hides the axis and fixes an equal-aspect square view."""
-        n = len(values)
+        n = len(x)
         if colors is None:
             cyc = self.style.color_cycle
             colors = [cyc[i % len(cyc)] for i in range(n)]
-        p = Pie(values, colors, labels=labels, startangle=startangle,
+        p = Pie(x, colors, labels=labels, startangle=startangle,
                 radius=radius, autopct=autopct)
         self.artists.append(p)
         self.set_axis_off()
@@ -432,12 +432,12 @@ class Axes:
         self.set_ylim(-1.3, 1.3)
         return p
 
-    def boxplot(self, data, positions=None, widths=0.5, color=None,
+    def boxplot(self, x, positions=None, widths=0.5, color=None,
                 orientation="vertical", label=None):
         """Box-and-whisker plot of one or more datasets."""
-        if isinstance(data, np.ndarray) and data.ndim == 1:
-            data = [data]
-        data = [np.asarray(d, float) for d in data]
+        if isinstance(x, np.ndarray) and x.ndim == 1:
+            x = [x]
+        data = [np.asarray(d, float) for d in x]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
         data, positions = _finite_datasets(data, positions)
@@ -1023,13 +1023,25 @@ class Axes:
             self.set_ylim(y0 - dy, y1 + dy)
         return self
 
-    def set_xticks(self, ticks):
-        """Set explicit x tick locations. Pass ``[]`` to hide ticks."""
-        self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
+    def set_xticks(self, ticks, labels=None):
+        """Set explicit x tick locations. Pass ``[]`` to hide ticks.
 
-    def set_yticks(self, ticks):
-        """Set explicit y tick locations. Pass ``[]`` to hide ticks."""
+        ``labels`` optionally sets the tick label strings in the same call
+        (matplotlib's combined ``set_xticks(ticks, labels)`` form).
+        """
+        self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
+        if labels is not None:
+            self.set_xticklabels(labels)
+
+    def set_yticks(self, ticks, labels=None):
+        """Set explicit y tick locations. Pass ``[]`` to hide ticks.
+
+        ``labels`` optionally sets the tick label strings in the same call
+        (matplotlib's combined ``set_yticks(ticks, labels)`` form).
+        """
         self._yticks = None if ticks is None else np.asarray(ticks, dtype=float)
+        if labels is not None:
+            self.set_yticklabels(labels)
 
     def set_xticklabels(self, labels):
         """Set explicit x tick label strings (pair with :meth:`set_xticks`)."""
@@ -1063,14 +1075,14 @@ class Axes:
         tw._subplotspec = self._subplotspec
         return tw
 
-    def set_xlabel(self, label):
-        self._xlabel = label
+    def set_xlabel(self, xlabel):
+        self._xlabel = xlabel
 
-    def set_ylabel(self, label):
-        self._ylabel = label
+    def set_ylabel(self, ylabel):
+        self._ylabel = ylabel
 
-    def set_title(self, title):
-        self._title = title
+    def set_title(self, label):
+        self._title = label
 
     def grid(self, visible=True):
         self._grid = bool(visible)
