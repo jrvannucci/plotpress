@@ -1,0 +1,77 @@
+name: Release
+
+# Deliberately NOT triggered by pushing a tag. Tagging records what the code is;
+# publishing to PyPI is irreversible -- a version number can never be reused,
+# even after a delete -- so it takes a second, explicit action: publishing the
+# GitHub Release (or running this workflow by hand).
+#
+# One-time setup before the first successful run: register this repository as a
+# trusted publisher for the `simpleplot` project at
+# https://pypi.org/manage/account/publishing/ with workflow `release.yml` and
+# environment `pypi`. Trusted publishing uses a short-lived OIDC token, so there
+# is no API token to store or rotate.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # versioningit derives the version from the nearest v* tag, so the
+          # default shallow checkout would build something labelled 0.0.0.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Report the version that was built
+        # A release build must not be a dev build. Anything carrying a
+        # .postN/+dirty/0+unknown suffix means the tag was missing or the tree
+        # was not clean, and must not reach PyPI.
+        run: |
+          ls -l dist/
+          version=$(ls dist/*.whl | sed -E 's/.*simpleplot-(.+)-py3.*/\1/')
+          echo "Built version: $version"
+          case "$version" in
+            *post*|*dirty*|0+unknown)
+              echo "::error::Refusing to publish a non-release version: $version"
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/simpleplot
+    permissions:
+      id-token: write        # mints the OIDC token for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

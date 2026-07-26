@@ -30,7 +30,31 @@ from .colors import (
 from .figure import Figure, subplots
 from .style import Style
 
-__version__ = "0.0.1"
+def _detect_version() -> str:
+    """The installed version, however this copy of simpleplot is being run.
+
+    Three cases, in order of precision. ``_version.py`` is written by
+    versioningit at build time and is the exact string the artifact was built
+    with. Failing that -- a source checkout that was never built, which is how
+    the test suite imports the package -- fall back to the metadata of an
+    installed copy. If neither exists, say so rather than inventing a number.
+    """
+    try:
+        from ._version import __version__ as v
+        return v
+    except ImportError:
+        pass
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+    except ImportError:                       # pragma: no cover - Python < 3.8
+        return "0+unknown"
+    try:
+        return version("simpleplot")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
+__version__ = _detect_version()
 
 __all__ = [
     "Figure",

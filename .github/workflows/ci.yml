@@ -98,9 +98,9 @@ jobs:
         with:
           path: docs/_build/html
 
-  # Optional: publish the built docs to GitHub Pages on pushes to main.
+  # Publishes the built docs to GitHub Pages on pushes to main -- this is where
+  # the documentation at https://jrvannucci.github.io/simpleplot/ comes from.
   # Requires enabling Pages once: repo Settings -> Pages -> Source = "GitHub Actions".
-  # (Read the Docs already builds the same site via .readthedocs.yaml.)
   deploy-docs:
     name: Deploy docs to GitHub Pages
     needs: docs

@@ -135,7 +135,8 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 **3-D** (`projection="3d"`): `scatter`/`scatter3D`, `plot`/`plot3D`,
 `plot_surface` (depth-sorted, colorbar-ready), `plot_wireframe`, `view_init` —
 projected onto the 2-D core (orthographic, painter's algorithm), see the
-[limitations docs](https://simpleplot.readthedocs.io) for the caveats.
+[limitations docs](https://jrvannucci.github.io/simpleplot/user_guide/limitations.html)
+for the caveats.
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
