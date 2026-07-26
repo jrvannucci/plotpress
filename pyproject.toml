@@ -1,10 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "versioningit>=2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "simpleplot"
-version = "0.0.1"
+# Derived from the git tag by versioningit -- see [tool.versioningit] below.
+# There is deliberately no version literal here or in simpleplot/__init__.py:
+# two hand-maintained copies drift, and the tag is the thing a release
+# actually is.
+dynamic = ["version"]
 description = "A fast, figure-centric, SVG-first plotting library with a matplotlib-like API and no global state."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -54,6 +58,35 @@ addopts = "-m 'not browser'"
 
 [project.urls]
 Homepage = "https://github.com/jrvannucci/simpleplot"
+Documentation = "https://jrvannucci.github.io/simpleplot/"
+Changelog = "https://github.com/jrvannucci/simpleplot/blob/main/CHANGELOG.md"
+
+# Version comes from the git tag: `git tag -a v0.1.0 -m ...` is the release.
+[tool.versioningit]
+# Used only when there is no git repository at all -- installing from an sdist
+# that predates this config, say. A normal build never reaches it, and a wheel
+# carrying this string would be a bug worth noticing.
+default-version = "0+unknown"
+
+[tool.versioningit.vcs]
+method = "git"
+match = ["v*"]
+# No tags yet. Until the first `v*` tag exists, builds report 0.0.0 plus the
+# commit distance rather than failing, so a fresh clone still installs.
+default-tag = "v0.0.0"
+
+[tool.versioningit.format]
+# Tagged commit -> "0.1.0". Anything else says so, so a dev build is never
+# mistaken for a release on PyPI or in a bug report.
+distance = "{base_version}.post{distance}+{rev}"
+dirty = "{base_version}+dirty"
+distance-dirty = "{base_version}.post{distance}+{rev}.dirty"
+
+# Written at build time so the installed package can report its own version
+# without importing setuptools or shelling out to git. Git-ignored: it is a
+# build artifact, not source.
+[tool.versioningit.write]
+file = "simpleplot/_version.py"
 
 [tool.setuptools.packages.find]
 include = ["simpleplot*"]
