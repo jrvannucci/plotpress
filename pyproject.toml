@@ -53,7 +53,7 @@ markers = [
 addopts = "-m 'not browser'"
 
 [project.urls]
-Homepage = "https://github.com/simpleplot/simpleplot"
+Homepage = "https://github.com/jrvannucci/simpleplot"
 
 [tool.setuptools.packages.find]
 include = ["simpleplot*"]
