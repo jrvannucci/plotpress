@@ -72,6 +72,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # conf.py renders simpleplot.__version__ into the page title, and
+          # versioningit reads that from the nearest v* tag. A shallow checkout
+          # sees no tags, so the published site would be titled 0.0.0.postN.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
