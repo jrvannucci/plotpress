@@ -1,63 +1,69 @@
 """
-Font metrics: only Helvetica-compatible families fit
-====================================================
+Font metrics: which families simpleplot can measure
+===================================================
 
 A figure is laid out *before* anything draws its glyphs: SVG emits ``<text>``
 and lets the viewer rasterize. So simpleplot has to **predict** how wide text
-will be, and it always predicts with the bundled Helvetica advance widths.
+will be, and it predicts from bundled advance-width tables.
 
-That keeps layout identical on every machine with no font-file dependency, at
-one cost: only Helvetica-metric families are measured accurately. Set
-``Style.font_family`` to a family with different widths and the figure still
-renders, but legend boxes and axis margins were sized for Helvetica.
+It bundles the base-14 metric families -- Helvetica, Times and Courier, each in
+regular / bold / italic / bold-italic -- plus DejaVu Sans. A family that
+resolves to one of those is measured exactly. A family that resolves to none of
+them is measured *as Helvetica*, and that is where layout goes wrong: the figure
+still renders, but legend boxes and axis margins were sized for the wrong font.
 
-The chart below shows how much room each family *actually* needs, as a
-percentage of what the layout reserved. Anything past 100% overflows its box;
-anything well under wastes margin.
+The chart below shows how much room each family actually needs, as a percentage
+of what the layout reserved. Anything past 100% overflows its box; anything well
+under wastes margin.
 """
 import numpy as np
 import simpleplot
 
-# Advance widths relative to Helvetica, measured at 200px against the bundled
-# table (large enough that per-glyph pixel rounding is negligible). Hard-coded
-# so this example renders identically everywhere, including doc builders that
-# have none of these fonts installed.
+# Percentages are hard-coded so this example renders identically everywhere,
+# including doc builders that have none of these fonts installed. The measured
+# families sit at 100% by construction: simpleplot reserves space using the very
+# table that describes them. The fallback figures are their true widths relative
+# to Helvetica, which is what gets reserved on their behalf.
 FAMILIES = [
-    ("Arial", 99.9),
-    ("Liberation Sans", 99.9),
-    ("Arial Narrow", 81.9),
-    ("Verdana", 115.5),
-    ("Arial Black", 125.8),
-    ("Courier New", 145.6),
+    ("Arial", 99.9, True),
+    ("Liberation Sans", 99.9, True),
+    ("Courier New", 100.0, True),
+    ("Times New Roman", 100.0, True),
+    ("DejaVu Sans", 100.0, True),
+    ("Arial Narrow", 81.9, False),
+    ("Verdana", 115.5, False),
+    ("Arial Black", 125.8, False),
 ]
 SAFE_BAND = 3.0          # within a few % the difference is invisible
 
-names = [n for n, _ in FAMILIES]
-pct = np.array([p for _, p in FAMILIES])
+names = [n for n, _, _ in FAMILIES]
+pct = np.array([p for _, p, _ in FAMILIES])
+measured = [m for _, _, m in FAMILIES]
 y = np.arange(len(names))
 
-fig, ax = simpleplot.subplots(figsize=(8.0, 4.2))
+fig, ax = simpleplot.subplots(figsize=(8.0, 4.6))
 
-# Shade the band where a family is effectively interchangeable with Helvetica.
+# Shade the band where a family is effectively interchangeable with what was
+# reserved for it.
 ax.axvspan(100 - SAFE_BAND, 100 + SAFE_BAND, color="#2ca02c", alpha=0.13,
            label="fits the reserved space")
 
-colors = ["#2ca02c" if abs(p - 100) <= SAFE_BAND else "#d62728" for p in pct]
+colors = ["#2ca02c" if m else "#d62728" for m in measured]
 ax.barh(y, pct - 100, height=0.6, left=100, color=colors, edgecolor="#ffffff",
         linewidth=0.8)
 ax.axvline(100, color="#333333", linewidth=1.2, linestyle="-")
 
-for i, p in enumerate(pct):
+for i, (p, m) in enumerate(zip(pct, measured)):
     over = p - 100
-    ax.text(p + (1.5 if over >= 0 else -1.5), i,
-            f"{over:+.0f}%" if abs(over) >= 1 else "match",
+    label = "measured" if m else f"{over:+.0f}%"
+    ax.text(p + (1.5 if over >= 0 else -1.5), i, label,
             ha="left" if over >= 0 else "right", va="center", fontsize=9)
 
 ax.set_yticks(y)
 ax.set_yticklabels(names)
 ax.set_xlim(60, 165)
 ax.set_xlabel("width actually needed, as % of the space simpleplot reserved")
-ax.set_title("Layout reserves space using Helvetica metrics")
+ax.set_title("Green: a bundled table measures it. Red: measured as Helvetica.")
 ax.grid(True)
 ax.legend(loc="lower right")
 fig.tight_layout()
@@ -69,13 +75,22 @@ fig.tight_layout()
 # * **Arial** and **Liberation Sans** are metric-compatible with Helvetica by
 #   design -- they agree to within 0.1%, so the default stack
 #   ``"Helvetica, Arial, sans-serif"`` is accurate everywhere.
-# * **Courier New** needs ~46% more room than was reserved: legend text runs
-#   past its box and axis labels crowd the tick numbers.
-# * **Arial Narrow** needs ~18% less, so margins come out too generous. Ugly
-#   rather than broken.
+# * **Courier New**, **Times New Roman** and **DejaVu Sans** each resolve to
+#   their own bundled table, so they are measured exactly too. Courier New used
+#   to be the worst case here, needing ~46% more room than was reserved.
+# * **Verdana**, **Arial Black** and **Arial Narrow** have proprietary metrics
+#   that match nothing bundled, so they fall back to Helvetica and stay wrong --
+#   the first two overflow, the third wastes margin. Ugly rather than broken.
 #
-# If you want a different look, prefer a family in the safe band. Everything
+# If you want a different look, prefer a family in the green group. Everything
 # else renders, but you should expect to hand-tune ``figsize`` and margins.
+#
+# Weight matters too
+# ------------------
+#
+# Bold is not a free variation on regular: Helvetica-Bold runs 5-9% wider on
+# realistic label strings. simpleplot bundles the bold tables and measures the
+# elements it draws bold -- the legend title and ``suptitle`` -- with them.
 #
 # The second limitation: pixel rounding
 # -------------------------------------

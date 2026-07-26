@@ -82,6 +82,16 @@ _HELVETICA_METRIC_FILES = (
     "Arimo-Regular.ttf",                       # metric-compatible, ships with some distros
 )
 
+# Bold counterparts, in the same platform order. SVG draws the figure suptitle
+# and the legend title bold, so the raster backend has to as well or the two
+# outputs disagree on weight.
+_HELVETICA_METRIC_FILES_BOLD = (
+    "Helvetica-Bold.ttf",                      # macOS
+    "arialbd.ttf", "Arial Bold.ttf",           # Windows
+    "LiberationSans-Bold.ttf",                 # Linux
+    "Arimo-Bold.ttf",
+)
+
 # Best-effort file names for the families most likely to appear in a stack.
 # Deliberately small: resolving arbitrary family names is a font-database job
 # (matplotlib links FreeType and ships 8 MB to do it), and simpleplot's layout
@@ -100,28 +110,51 @@ _FAMILY_FILES = {
     "dejavu sans": ("DejaVuSans.ttf",),
 }
 
+_FAMILY_FILES_BOLD = {
+    "helvetica": _HELVETICA_METRIC_FILES_BOLD,
+    "arial": ("arialbd.ttf", "Arial Bold.ttf", "LiberationSans-Bold.ttf"),
+    "liberation sans": ("LiberationSans-Bold.ttf",),
+    "verdana": ("verdanab.ttf", "Verdana Bold.ttf", "DejaVuSans-Bold.ttf"),
+    "tahoma": ("tahomabd.ttf", "Tahoma Bold.ttf"),
+    "courier new": ("courbd.ttf", "Courier New Bold.ttf", "LiberationMono-Bold.ttf"),
+    "monospace": ("courbd.ttf", "LiberationMono-Bold.ttf", "DejaVuSansMono-Bold.ttf"),
+    "times new roman": ("timesbd.ttf", "Times New Roman Bold.ttf",
+                        "LiberationSerif-Bold.ttf"),
+    "serif": ("timesbd.ttf", "LiberationSerif-Bold.ttf", "DejaVuSerif-Bold.ttf"),
+    "dejavu sans": ("DejaVuSans-Bold.ttf",),
+}
 
-def _font_files(family):
+
+def _font_files(family, bold=False):
     """Candidate font files for a CSS font stack, best first.
 
-    Always ends with the Helvetica-metric faces: those agree with the widths
-    the layout was computed from, so they are the right thing to fall back to
-    when a requested family cannot be found.
+    Always ends with the Helvetica-metric faces of the requested weight: those
+    agree with the widths the layout was computed from, so they are the right
+    thing to fall back to when a requested family cannot be found. A bold
+    request that finds no bold file falls through to the regular faces rather
+    than to Pillow's default, since the right glyphs at the wrong weight beat
+    the wrong glyphs.
     """
+    table = _FAMILY_FILES_BOLD if bold else _FAMILY_FILES
+    metric_files = _HELVETICA_METRIC_FILES_BOLD if bold else _HELVETICA_METRIC_FILES
     names = [n.strip().strip("'\"").lower()
              for n in (family or "").split(",") if n.strip()]
     out = []
     for n in names:
-        for f in _FAMILY_FILES.get(n, ()):
+        for f in table.get(n, ()):
             if f not in out:
                 out.append(f)
-    for f in _HELVETICA_METRIC_FILES:
+    for f in metric_files:
         if f not in out:
             out.append(f)
+    if bold:
+        for f in _font_files(family, bold=False):
+            if f not in out:
+                out.append(f)
     return out
 
 
-def _font(size, family=None):
+def _font(size, family=None, bold=False):
     """A Pillow font for ``size`` px, honoring ``family`` where the system has it.
 
     Falls back to Pillow's built-in face when nothing else resolves, which keeps
@@ -129,12 +162,12 @@ def _font(size, family=None):
     """
     from PIL import ImageFont
 
-    key = (int(round(size)), family)
+    key = (int(round(size)), family, bool(bold))
     if key in _font_cache:
         return _font_cache[key]
 
     font = None
-    for name in _font_files(family):
+    for name in _font_files(family, bold):
         try:
             font = ImageFont.truetype(name, key[0])
             break
@@ -661,6 +694,7 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
         return
     fs = st.tick_label_size * S
     font = _font(fs, st.font_family)
+    title_font = _font(fs, st.font_family, bold=True)   # SVG draws the title bold
     line_h = fs + 6 * S
     sample = 22 * S
     pad = 6 * S
@@ -672,7 +706,7 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     title_h = line_h if title else 0
     box_w = col_w * ncol + pad
     if title:
-        box_w = max(box_w, draw.textlength(title, font=font) + pad * 2)
+        box_w = max(box_w, draw.textlength(title, font=title_font) + pad * 2)
     box_h = line_h * nrows + pad + title_h
 
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
@@ -682,7 +716,7 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
                    outline=(204, 204, 204))
     if title:
         draw.text((bx + box_w / 2, by + pad), title, fill=_rgb(st.text_color),
-                  font=font, anchor="ma")
+                  font=title_font, anchor="ma")
     for i, a in enumerate(entries):
         r, c = divmod(i, ncol)
         sx = bx + pad + c * col_w
@@ -709,7 +743,7 @@ def _raster_figtexts(fig, W, H, S, draw):
         t = fig._suptitle
         size = (t.get("size") or st.title_size * 1.5) * S
         draw.text((W / 2, 6 * S), t["text"], fill=_rgb(st.text_color),
-                  font=_font(size, st.font_family), anchor="ma")
+                  font=_font(size, st.font_family, bold=True), anchor="ma")
     if fig._supxlabel:
         t = fig._supxlabel
         size = (t.get("size") or st.label_size * 1.2) * S

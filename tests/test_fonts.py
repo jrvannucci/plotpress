@@ -57,7 +57,8 @@ def test_resolved_face_beats_pillows_builtin_default():
 
 def test_font_lookup_falls_back_instead_of_raising(monkeypatch):
     """Headless machines have none of these files; PNG export must still work."""
-    monkeypatch.setattr(raster, "_font_files", lambda family: ["no-such-font.ttf"])
+    monkeypatch.setattr(raster, "_font_files",
+                        lambda family, bold=False: ["no-such-font.ttf"])
     raster._font_cache.clear()
     font = raster._font(12, "Whatever, sans-serif")
     assert font is not None
@@ -93,20 +94,138 @@ def test_png_export_still_works_end_to_end(tmp_path):
     assert out.stat().st_size > 0
 
 
-def test_metrics_are_font_family_independent():
-    """The documented limitation: text_width measures Helvetica, whatever the
-    configured family. Guards the docs against silently drifting from the code."""
-    wide = simpleplot.Style(font_family="Courier New, monospace")
-    narrow = simpleplot.Style(font_family="Helvetica, Arial, sans-serif")
-    fig_w, ax_w = simpleplot.subplots(style=wide)
-    fig_n, ax_n = simpleplot.subplots(style=narrow)
-    for ax in (ax_w, ax_n):
-        ax.plot([0.0, 1.0], [0.0, 1.0], label="a series label")
-        ax.legend()
-        ax.set_ylabel("y axis label")
-    fig_w.tight_layout()
-    fig_n.tight_layout()
-    assert ax_w._rect == ax_n._rect      # identical layout despite different fonts
+def _laid_out(family):
+    fig, ax = simpleplot.subplots(style=simpleplot.Style(font_family=family))
+    ax.plot([0.0, 1.0], [0.0, 1.0], label="a series label")
+    ax.legend()
+    ax.set_ylabel("y axis label")
+    fig.tight_layout()
+    return ax
+
+
+def test_layout_follows_the_configured_metric_family():
+    """Courier is much wider than Helvetica, so it must reserve a wider margin.
+
+    This used to assert the opposite -- that layout ignored font_family -- back
+    when there was a single Helvetica table. Kept inverted rather than deleted
+    so the docs cannot silently drift from the code again.
+    """
+    courier = _laid_out("Courier New, monospace")
+    helvetica = _laid_out("Helvetica, Arial, sans-serif")
+    assert courier._rect[0] > helvetica._rect[0]
+
+
+def test_metric_compatible_families_lay_out_identically():
+    """Arial and Liberation Sans are Helvetica clones by design; measuring them
+    as anything else would be wrong."""
+    base = _laid_out("Helvetica")._rect
+    assert _laid_out("Arial")._rect == base
+    assert _laid_out("Liberation Sans")._rect == base
+
+
+def test_unmeasurable_family_falls_back_to_helvetica():
+    """Verdana's metrics are proprietary and match nothing bundled, so it is
+    measured as Helvetica -- the documented limitation."""
+    assert _laid_out("Verdana, sans-serif")._rect == _laid_out("Helvetica")._rect
+
+
+def test_legend_title_box_fits_its_bold_title():
+    """The legend title is drawn bold but used to be measured with regular
+    metrics, so a long title overhung the box it was centered in."""
+    from simpleplot.svg import _legend_layout
+
+    title = "Measurement conditions"
+    fig, ax = simpleplot.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0], label="s")
+    ax.legend(title=title)
+    lay = _legend_layout(ax, ax.style)
+
+    fam = ax.style.font_family
+    as_bold = text_width(title, lay["fs"], fam, bold=True)
+    as_regular = text_width(title, lay["fs"], fam)
+    assert lay["box_w"] >= as_bold + lay["pad"] * 2
+    # Guards the guard: if bold and regular measured the same, the assert above
+    # would pass no matter what the code did.
+    assert as_bold > as_regular
+
+
+def test_bold_is_wider_than_regular():
+    for s in ("legend title", "Series A", "y axis label"):
+        assert text_width(s, 10, bold=True) > text_width(s, 10)
+
+
+def test_courier_is_measured_monospaced():
+    wide = text_width("iiii", 10, "Courier New, monospace")
+    assert wide == pytest.approx(text_width("WWWW", 10, "Courier New, monospace"))
+    # ...and genuinely wider than the Helvetica it used to be measured as.
+    assert wide > text_width("iiii", 10)
+
+
+@pytest.mark.parametrize("stack, expected", [
+    ("Helvetica, Arial, sans-serif", "helvetica"),
+    ("Arial", "helvetica"),
+    ("'Liberation Sans'", "helvetica"),
+    ("Courier New, monospace", "courier"),
+    ("Times New Roman, serif", "times"),
+    ("DejaVu Sans", "dejavu sans"),
+    ("Verdana, sans-serif", "helvetica"),      # unmeasurable -> documented fallback
+    ("NoSuchFace, Courier New", "courier"),    # skips past the unknown name
+    ("", "helvetica"),
+    (None, "helvetica"),
+])
+def test_family_resolution(stack, expected):
+    from simpleplot.fonts import resolve_family
+
+    assert resolve_family(stack) == expected
+
+
+def test_bundled_tables_match_their_afm_sources():
+    """The width tables are generated; this catches them drifting from source.
+
+    Reads the same URW base-14 AFMs the generator reads, by glyph name, and
+    compares every ASCII advance.
+    """
+    matplotlib = pytest.importorskip("matplotlib", reason="AFM sources ship with matplotlib")
+    import os
+    import sys
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+    try:
+        import gen_font_metrics as gen
+    finally:
+        sys.path.pop(0)
+
+    from simpleplot.fonts import metrics
+
+    afm_dir = os.path.join(os.path.dirname(matplotlib.__file__),
+                           "mpl-data", "fonts", "afm")
+    for key, fn in gen._AFM_SOURCES.items():
+        path = os.path.join(afm_dir, fn)
+        if not os.path.exists(path):
+            pytest.skip(f"{fn} not bundled with this matplotlib")
+        expected = gen._afm_widths(path)
+        if key[0] == "courier":
+            assert set(expected.values()) == {metrics._COURIER_ADVANCE}
+        else:
+            assert metrics._TABLES[key] == expected, f"{key} drifted from {fn}"
+
+
+def test_raster_resolves_a_real_bold_face_for_the_legend_title():
+    """SVG draws the legend title and suptitle bold; PNG must not draw them
+    regular, or the two backends disagree on weight."""
+    bold = raster._font(18, simpleplot.Style().font_family, bold=True)
+    regular = raster._font(18, simpleplot.Style().font_family)
+    if bold.getname() == regular.getname():
+        pytest.skip("no bold face installed on this machine")
+    assert bold.getlength("legend title") > regular.getlength("legend title")
+
+
+def test_bold_lookup_falls_back_to_regular_before_pillows_default():
+    """Right glyphs at the wrong weight beat Pillow's metric-incompatible
+    built-in, so the bold candidate list ends with the regular faces."""
+    files = raster._font_files("Helvetica, Arial, sans-serif", bold=True)
+    for regular in raster._HELVETICA_METRIC_FILES:
+        assert regular in files
 
 
 def test_tight_layout_measures_custom_tick_labels():
