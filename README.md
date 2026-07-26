@@ -274,10 +274,12 @@ place, not per backend.
 
 **Fonts.** A figure is laid out *before* anything draws its glyphs — SVG emits
 `<text>` and lets the viewer rasterize — so simpleplot has to predict text width
-from bundled Helvetica metrics. That keeps layout identical on every machine
-with no font-file dependency, at one cost: **only Helvetica-metric families are
-measured accurately.** Helvetica, Arial and Liberation Sans agree to within
-0.1%; setting `Style.font_family` to something else still renders, but legend
-boxes and axis margins are sized for Helvetica (Courier New runs ~46% wide).
-PNG export picks a metric-compatible face to match, falling back to Pillow's
-built-in font where the system has none.
+from bundled metric tables. That keeps layout identical on every machine with no
+font-file dependency. Bundled are the base-14 metric families — **Helvetica,
+Times and Courier**, each in regular / bold / italic / bold-italic — plus
+**DejaVu Sans**, which covers the metric-compatible clones too (Arial and
+Liberation Sans are Helvetica, Liberation Serif is Times, Liberation Mono is
+Courier). Families outside those groups — Verdana, Tahoma, Arial Black, Arial
+Narrow — have proprietary metrics, so they render but are measured as Helvetica
+and need hand-tuned `figsize`. PNG export picks a matching face, falling back to
+Pillow's built-in font where the system has none.

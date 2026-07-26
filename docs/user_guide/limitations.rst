@@ -11,41 +11,62 @@ discovering it in a figure. Worked examples with measurements live in the
 
 .. _limitation-font-metrics:
 
-Only Helvetica-metric fonts are measured accurately
----------------------------------------------------
+Only bundled metric families are measured accurately
+----------------------------------------------------
 
 A figure is laid out *before* anything draws its glyphs: SVG emits ``<text>``
 and the viewer rasterizes it. simpleplot therefore has to **predict** how wide
-text will be, and it predicts using a bundled table of Helvetica advance
-widths. That keeps layout identical on every machine with no font-file
-dependency -- but it is only correct for fonts whose widths match Helvetica's.
+text will be, and it predicts from bundled advance-width tables. That keeps
+layout identical on every machine with no font-file dependency -- but it is
+only correct for families those tables describe.
+
+Bundled are the base-14 metric families -- Helvetica, Times and Courier, each
+in regular / bold / italic / bold-italic -- plus DejaVu Sans. Any family that
+resolves to one of them is measured exactly:
 
 .. list-table::
    :header-rows: 1
-   :widths: 45 20 35
+   :widths: 45 25 30
 
    * - Family
-     - Width vs Helvetica
+     - Measured as
      - Result
-   * - Helvetica, Arial, Liberation Sans
-     - within 0.1%
+   * - Helvetica, Arial, Liberation Sans, Arimo
+     - Helvetica
      - accurate (the default stack)
+   * - Times New Roman, Liberation Serif, Tinos
+     - Times
+     - accurate
+   * - Courier New, Liberation Mono, Cousine
+     - Courier
+     - accurate
+   * - DejaVu Sans
+     - DejaVu Sans
+     - accurate
    * - Verdana
-     - +16%
+     - Helvetica (+16% needed)
      - legend and label text overruns its box
    * - Arial Black
-     - +26%
+     - Helvetica (+26% needed)
      - overruns
-   * - Courier New and monospace faces
-     - +46%
-     - badly overruns
    * - Arial Narrow and condensed faces
-     - -18%
+     - Helvetica (-18% needed)
      - margins come out too generous
 
-Anything outside the safe band still renders -- but legend boxes and axis
-margins were sized for Helvetica, so expect to hand-tune ``figsize`` and
-spacing. See :doc:`../auto_examples/limitations/plot_01_font_metrics`.
+The families in the lower group have proprietary metrics that match nothing
+bundled, so they fall back to Helvetica. They still render -- but their legend
+boxes and axis margins were sized for the wrong font, so expect to hand-tune
+``figsize`` and spacing. See
+:doc:`../auto_examples/limitations/plot_01_font_metrics`.
+
+Weight is modelled, style is available
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Bold is not a free variation on regular -- Helvetica-Bold runs 5-9% wider on
+realistic label strings. The elements simpleplot draws bold (the legend title
+and ``suptitle``) are measured with the bold tables, in both the SVG and raster
+backends. Italic tables are bundled for the same reason, though nothing in the
+default styling draws italic yet.
 
 **Why not just measure the real font?** Because layout would then depend on
 which fonts happen to be installed, and the same script would produce different
@@ -53,6 +74,10 @@ margins on different machines. Reading real metrics is possible in pure Python
 (``fontTools`` parses a ``.ttf``), so this is a determinism trade-off rather
 than a technical barrier. For comparison, matplotlib solves the general problem
 by bundling 8.5 MB of fonts and linking FreeType through a C extension.
+
+The tables themselves are generated from authoritative sources rather than
+typed by hand -- see ``tools/gen_font_metrics.py`` -- and a test re-derives them
+from those sources to catch drift.
 
 Text width is an estimate, not a measurement
 --------------------------------------------
