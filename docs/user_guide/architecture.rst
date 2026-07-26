@@ -46,7 +46,7 @@ Module                        Responsibility
 ``svg.py``                    SVG emitter over the shared primitives
 ``png.py``                    stdlib-only PNG encoder for image layers
 ``raster.py``                 Pillow PNG backend; svglib/reportlab PDF
-``fonts/``                    bundled Helvetica metrics (layout only)
+``fonts/``                    bundled width tables + the family registry (layout only)
 ``_interactive.py``           inlined vanilla JS: toolbar, zoom, pick, sliders
 ============================  ==================================================
 

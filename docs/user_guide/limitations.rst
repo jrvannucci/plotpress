@@ -70,10 +70,16 @@ default styling draws italic yet.
 
 **Why not just measure the real font?** Because layout would then depend on
 which fonts happen to be installed, and the same script would produce different
-margins on different machines. Reading real metrics is possible in pure Python
-(``fontTools`` parses a ``.ttf``), so this is a determinism trade-off rather
-than a technical barrier. For comparison, matplotlib solves the general problem
-by bundling 8.5 MB of fonts and linking FreeType through a C extension.
+margins on different machines. This is a determinism trade-off, not a technical
+barrier -- so it is offered as a choice rather than refused outright. Set
+``Style(measure_installed_fonts=True)`` and simpleplot measures the file on this
+machine instead, which is the right call when you need an unmeasurable family to
+fit and can live with layout that varies across machines. See
+:ref:`measure-installed-fonts`.
+
+The measuring is done by Pillow, which is already required for PNG export, so
+the option costs no extra install. For comparison, matplotlib solves the general
+problem by bundling 8.5 MB of fonts and linking FreeType through a C extension.
 
 The tables themselves are generated from authoritative sources rather than
 typed by hand -- see ``tools/gen_font_metrics.py`` -- and a test re-derives them

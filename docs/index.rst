@@ -26,7 +26,7 @@ What it is for
 
 simpleplot is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or triangulated
-grids, one font-metric family, and its polar / 3-D axes are projected onto the
+grids, a handful of font-metric families, and its polar / 3-D axes are projected onto the
 2-D core rather than a dedicated pipeline -- see :ref:`limitations`). It aims at
 a narrower, underserved spot: plotting where matplotlib's install footprint or
 global state gets in the way.
@@ -78,7 +78,6 @@ See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
    user_guide/viewing
    user_guide/interactivity
    user_guide/architecture
-   user_guide/limitations
 
 .. toctree::
    :maxdepth: 2
@@ -86,3 +85,9 @@ See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
 
    auto_examples/index
    api
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Limitations
+
+   user_guide/limitations
