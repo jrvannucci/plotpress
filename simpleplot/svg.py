@@ -20,7 +20,6 @@ from .artists import (
     ScatterCollection, Span, Stem, Text, Violin,
 )
 from .colors import colorbar_ticks
-from .fonts import text_width
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
@@ -1003,8 +1002,7 @@ def _max_ytick_width(ax, st):
              (log_ticks(ymin, ymax) if ax._yscale == "log"
               else nice_ticks(ymin, ymax)))
     labels = _resolve_tick_labels(ax._yticklabels, ticks)
-    return max((text_width(l, st.tick_label_size, st.font_family) for l in labels),
-               default=0.0)
+    return max((st.text_width(l, st.tick_label_size) for l in labels), default=0.0)
 
 
 # loc name -> (fx, fy) fractions of the free space inside the axes: 0 = left/top.
@@ -1028,7 +1026,7 @@ def _legend_layout(ax, st):
     pad = 6
     ncol = min(max(1, ax._legend_ncol), len(entries))
     nrows = (len(entries) + ncol - 1) // ncol
-    text_w = max(text_width(a.label, fs, st.font_family) for a in entries)
+    text_w = max(st.text_width(a.label, fs) for a in entries)
     col_w = sample_w + text_w + pad * 2
     title = ax._legend_title
     title_h = line_h if title else 0
@@ -1037,7 +1035,7 @@ def _legend_layout(ax, st):
         # Drawn bold below, so it must be measured bold: Helvetica-Bold runs
         # 5-9% wider than regular on real label strings, which is enough to
         # push a title out through the side of its own box.
-        box_w = max(box_w, text_width(title, fs, st.font_family, bold=True) + pad * 2)
+        box_w = max(box_w, st.text_width(title, fs, bold=True) + pad * 2)
     box_h = line_h * nrows + pad + title_h
     return {
         "entries": entries, "fs": fs, "line_h": line_h, "sample_w": sample_w,

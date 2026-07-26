@@ -18,6 +18,13 @@ from .artists import (
     Violin,
 )
 from .colors import colorbar_ticks, to_hex
+# Which files can draw a given font stack is declared once, in fonts/families,
+# next to which width table measures it -- see that module for why the two must
+# be decided together. Imported under the old private names so anything
+# monkeypatching this module keeps working.
+from .fonts.families import HELVETICA_FILES as _HELVETICA_METRIC_FILES
+from .fonts.families import HELVETICA_FILES_BOLD as _HELVETICA_METRIC_FILES_BOLD
+from .fonts.families import font_files as _font_files
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
@@ -68,90 +75,6 @@ def _composite_polygon(canvas, pts, rgba, outline=None):
     ldraw.polygon([(px - x0, py - y0) for px, py in pts], fill=rgba,
                   outline=outline)
     canvas.alpha_composite(layer, (x0, y0))
-
-
-# Faces whose advance widths match the bundled Helvetica metrics. Arial and
-# Liberation Sans are metric-compatible with Helvetica by design, so glyphs
-# drawn from them land inside the space the layout reserved. Pillow's built-in
-# default is not compatible -- it runs up to ~16% wide on letter-heavy strings,
-# which is what used to push PNG axis labels out of their boxes.
-_HELVETICA_METRIC_FILES = (
-    "Helvetica.ttc", "Helvetica.ttf",          # macOS
-    "arial.ttf", "Arial.ttf",                  # Windows
-    "LiberationSans-Regular.ttf",              # Linux
-    "Arimo-Regular.ttf",                       # metric-compatible, ships with some distros
-)
-
-# Bold counterparts, in the same platform order. SVG draws the figure suptitle
-# and the legend title bold, so the raster backend has to as well or the two
-# outputs disagree on weight.
-_HELVETICA_METRIC_FILES_BOLD = (
-    "Helvetica-Bold.ttf",                      # macOS
-    "arialbd.ttf", "Arial Bold.ttf",           # Windows
-    "LiberationSans-Bold.ttf",                 # Linux
-    "Arimo-Bold.ttf",
-)
-
-# Best-effort file names for the families most likely to appear in a stack.
-# Deliberately small: resolving arbitrary family names is a font-database job
-# (matplotlib links FreeType and ships 8 MB to do it), and simpleplot's layout
-# metrics are Helvetica's regardless -- see the note in fonts/__init__.py.
-_FAMILY_FILES = {
-    "helvetica": _HELVETICA_METRIC_FILES,
-    "arial": ("arial.ttf", "Arial.ttf", "LiberationSans-Regular.ttf"),
-    "liberation sans": ("LiberationSans-Regular.ttf",),
-    "verdana": ("verdana.ttf", "Verdana.ttf", "DejaVuSans.ttf"),
-    "tahoma": ("tahoma.ttf", "Tahoma.ttf"),
-    "courier new": ("cour.ttf", "Courier New.ttf", "LiberationMono-Regular.ttf"),
-    "monospace": ("cour.ttf", "LiberationMono-Regular.ttf", "DejaVuSansMono.ttf"),
-    "times new roman": ("times.ttf", "Times New Roman.ttf",
-                        "LiberationSerif-Regular.ttf"),
-    "serif": ("times.ttf", "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"),
-    "dejavu sans": ("DejaVuSans.ttf",),
-}
-
-_FAMILY_FILES_BOLD = {
-    "helvetica": _HELVETICA_METRIC_FILES_BOLD,
-    "arial": ("arialbd.ttf", "Arial Bold.ttf", "LiberationSans-Bold.ttf"),
-    "liberation sans": ("LiberationSans-Bold.ttf",),
-    "verdana": ("verdanab.ttf", "Verdana Bold.ttf", "DejaVuSans-Bold.ttf"),
-    "tahoma": ("tahomabd.ttf", "Tahoma Bold.ttf"),
-    "courier new": ("courbd.ttf", "Courier New Bold.ttf", "LiberationMono-Bold.ttf"),
-    "monospace": ("courbd.ttf", "LiberationMono-Bold.ttf", "DejaVuSansMono-Bold.ttf"),
-    "times new roman": ("timesbd.ttf", "Times New Roman Bold.ttf",
-                        "LiberationSerif-Bold.ttf"),
-    "serif": ("timesbd.ttf", "LiberationSerif-Bold.ttf", "DejaVuSerif-Bold.ttf"),
-    "dejavu sans": ("DejaVuSans-Bold.ttf",),
-}
-
-
-def _font_files(family, bold=False):
-    """Candidate font files for a CSS font stack, best first.
-
-    Always ends with the Helvetica-metric faces of the requested weight: those
-    agree with the widths the layout was computed from, so they are the right
-    thing to fall back to when a requested family cannot be found. A bold
-    request that finds no bold file falls through to the regular faces rather
-    than to Pillow's default, since the right glyphs at the wrong weight beat
-    the wrong glyphs.
-    """
-    table = _FAMILY_FILES_BOLD if bold else _FAMILY_FILES
-    metric_files = _HELVETICA_METRIC_FILES_BOLD if bold else _HELVETICA_METRIC_FILES
-    names = [n.strip().strip("'\"").lower()
-             for n in (family or "").split(",") if n.strip()]
-    out = []
-    for n in names:
-        for f in table.get(n, ()):
-            if f not in out:
-                out.append(f)
-    for f in metric_files:
-        if f not in out:
-            out.append(f)
-    if bold:
-        for f in _font_files(family, bold=False):
-            if f not in out:
-                out.append(f)
-    return out
 
 
 def _font(size, family=None, bold=False):

@@ -27,13 +27,25 @@ Because layout happens before anything draws the glyphs, simpleplot has to
   as a little slack in margins, never as overlap.
 
 Lifting the first limitation for arbitrary families means measuring real font
-files -- ``fontTools`` parses a ``.ttf`` in pure Python -- but that makes layout
-depend on which fonts happen to be installed, which is exactly what these tables
-exist to avoid.
+files, which makes layout depend on which fonts happen to be installed -- the
+very thing these tables exist to avoid. It is therefore offered as an opt-in
+rather than refused: see :mod:`simpleplot.fonts.installed` and
+``Style(measure_installed_fonts=True)``.
 
-The tables are generated; see ``tools/gen_font_metrics.py`` for their sources.
+Module layout
+-------------
+``families``
+    The single registry of font families: which width table measures a CSS
+    stack, and which files should draw it. Declared together so layout and the
+    raster backend cannot disagree about what a family is.
+``metrics``
+    The bundled width tables and :func:`text_width`. Generated -- see
+    ``tools/gen_font_metrics.py`` for the sources.
+``installed``
+    Opt-in measurement of the real font files on this machine.
 """
 
-from .metrics import resolve_family, text_width
+from .families import font_files, resolve_family
+from .metrics import text_width
 
-__all__ = ["resolve_family", "text_width"]
+__all__ = ["font_files", "resolve_family", "text_width"]

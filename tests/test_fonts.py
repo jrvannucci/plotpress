@@ -72,9 +72,41 @@ def test_candidate_list_always_ends_with_metric_compatible_faces():
 
 
 def test_candidate_list_prefers_the_requested_family():
+    """The named family's own faces come before the metric-family fallback."""
+    from simpleplot.fonts import families
+
     files = raster._font_files("Courier New, monospace")
-    assert files[0] == "cour.ttf"
-    assert "arial.ttf" in files          # ...but still falls back to compatible
+    first_courier = min(files.index(f) for f in ("Courier New.ttf", "cour.ttf"))
+    first_fallback = min(files.index(f) for f in families.HELVETICA_FILES
+                         if f in files)
+    assert first_courier < first_fallback
+
+
+def test_no_chain_mixes_metrically_incompatible_faces():
+    """The rule that makes falling back safe: a stack's candidate files belong
+    either to the metric family that measured it or to the Helvetica last
+    resort -- never to some third family that merely looks similar.
+
+    DejaVu Serif is 29% wider than Times and DejaVu Sans 14% wider than
+    Helvetica, so a serif or Verdana chain tailing into either would overflow
+    every box on a machine with no better face installed.
+    """
+    from simpleplot.fonts import families
+
+    owner = {}
+    for metric_family, (regular, bold) in families._METRIC_FILES.items():
+        for f in regular + bold:
+            owner.setdefault(f, metric_family)
+
+    for name, entry in families._FAMILIES.items():
+        for want_bold in (False, True):
+            for f in families.font_files(name, bold=want_bold):
+                who = owner.get(f)
+                if who is None:
+                    continue        # the family's own face, e.g. verdana.ttf
+                assert who in (entry.metrics, "helvetica"), (
+                    f"{name!r} would draw with {f!r} ({who}) but is measured "
+                    f"as {entry.metrics}")
 
 
 @pytest.mark.parametrize("family", [None, "", "Helvetica, Arial, sans-serif",
@@ -226,6 +258,63 @@ def test_bold_lookup_falls_back_to_regular_before_pillows_default():
     files = raster._font_files("Helvetica, Arial, sans-serif", bold=True)
     for regular in raster._HELVETICA_METRIC_FILES:
         assert regular in files
+
+
+def test_installed_measurement_is_off_by_default():
+    """Determinism is the default: nothing consults the machine unless asked."""
+    assert simpleplot.Style().measure_installed_fonts is False
+
+
+def test_installed_measurement_matches_bundled_for_metric_compatible_faces():
+    """Arial is metric-compatible with Helvetica, so measuring the real file
+    must reproduce the bundled table. Cross-validates the generated data
+    against a font that actually exists on this machine."""
+    from simpleplot.fonts.installed import installed_table
+
+    table = installed_table("Arial")
+    if table is None:
+        pytest.skip("no Arial-metric face installed")
+    for ch in ("n", "W", "0", "i", " "):
+        assert table[ch] == pytest.approx(text_width(ch, 1000), abs=1.0)
+
+
+def test_installed_measurement_changes_layout_for_an_unmeasurable_family():
+    """The whole point of the opt-in: Verdana is ~14% wider than the Helvetica
+    it otherwise gets measured as, so turning this on must widen its margin."""
+    from simpleplot.fonts.installed import installed_table
+
+    if installed_table("Verdana") is None:
+        pytest.skip("Verdana not installed")
+
+    def margin(measure_installed):
+        style = simpleplot.Style(font_family="Verdana, sans-serif",
+                                 measure_installed_fonts=measure_installed)
+        fig, ax = simpleplot.subplots(style=style)
+        ax.barh(np.arange(3), [1.0, 2.0, 3.0])
+        ax.set_yticks(np.arange(3))
+        ax.set_yticklabels(["a wide category name"] * 3)
+        fig.tight_layout()
+        return ax._rect[0]
+
+    assert margin(True) > margin(False)
+
+
+def test_installed_measurement_falls_back_when_nothing_resolves(monkeypatch):
+    """A machine with none of the candidate files must still lay out, using the
+    bundled tables rather than raising."""
+    from simpleplot.fonts import installed
+
+    # _measure imports font_files from .families at call time, so patch it there.
+    monkeypatch.setattr("simpleplot.fonts.families.font_files",
+                        lambda family, bold=False: ["no-such-font.ttf"])
+    installed.clear_cache()
+    try:
+        assert installed.installed_table("Whatever") is None
+        # ...and text_width still returns the bundled estimate.
+        assert text_width("abc", 10, "Whatever", measure_installed=True) == \
+            text_width("abc", 10, "Whatever")
+    finally:
+        installed.clear_cache()
 
 
 def test_tight_layout_measures_custom_tick_labels():

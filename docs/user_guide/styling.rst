@@ -67,13 +67,37 @@ Fonts and layout
 ----------------
 
 A figure is laid out *before* anything draws its glyphs, so simpleplot predicts
-text width from bundled Helvetica advance widths. **Only Helvetica-metric
-families are measured accurately** -- Helvetica, Arial and Liberation Sans agree
-to within 0.1%, while Courier New needs ~46% more room than gets reserved for
-it and overruns its legend box.
+text width from bundled advance-width tables. It bundles **Helvetica, Times and
+Courier** -- each in regular, bold, italic and bold-italic -- plus **DejaVu
+Sans**, which covers their metric-compatible clones too: Arial and Liberation
+Sans are measured as Helvetica, Liberation Serif as Times, Liberation Mono as
+Courier.
 
-Prefer a family in that safe band. Anything else still renders, but expect to
-hand-tune ``figsize`` and spacing.
+Families outside those groups -- Verdana, Tahoma, Arial Black, Arial Narrow --
+have proprietary metrics matching nothing bundled, so they are measured as
+Helvetica. They still render, but expect to hand-tune ``figsize`` and spacing.
+
+.. _measure-installed-fonts:
+
+Measuring the fonts you actually have
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you need one of those unmeasurable families to lay out correctly, opt into
+measuring the real file::
+
+    style = simpleplot.Style(font_family="Verdana, sans-serif",
+                             measure_installed_fonts=True)
+
+Verdana is about 14% wider than the Helvetica it is otherwise measured as, so
+this widens its margins to what it actually needs. It needs no extra install --
+Pillow already ships for PNG export and does the measuring.
+
+It is **off by default**, because it trades away the property the bundled
+tables exist to provide: with it on, layout depends on which fonts this machine
+has, so the same script can produce different margins on a colleague's box or on
+CI. Turn it on when fidelity on your own machine is worth more than
+reproducibility across machines. If no candidate file resolves, it silently
+falls back to the bundled tables rather than failing.
 
 See :ref:`limitation-font-metrics` for the full table and the reasoning, and
 :doc:`../auto_examples/limitations/plot_01_font_metrics` for the measurements.

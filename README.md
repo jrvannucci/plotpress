@@ -263,7 +263,7 @@ feature, not a trade-off.
 | `primitives.py` | backend-agnostic pixel-space primitives + one artist→primitive converter |
 | `png.py` | stdlib-only PNG encoder for mesh/image layers |
 | `raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
-| `fonts/` | bundled Helvetica metrics (layout only; no glyph rasterization) |
+| `fonts/` | bundled width tables + the family registry (layout only; no glyph rasterization) |
 | `_interactive.py` | inlined vanilla JS: toolbar, per-axes zoom, picking, annotate, sliders, export |
 | `qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
 
@@ -281,5 +281,7 @@ Times and Courier**, each in regular / bold / italic / bold-italic — plus
 Liberation Sans are Helvetica, Liberation Serif is Times, Liberation Mono is
 Courier). Families outside those groups — Verdana, Tahoma, Arial Black, Arial
 Narrow — have proprietary metrics, so they render but are measured as Helvetica
-and need hand-tuned `figsize`. PNG export picks a matching face, falling back to
+and need hand-tuned `figsize`; `Style(measure_installed_fonts=True)` opts into
+measuring the real file on this machine instead, trading cross-machine
+reproducibility for fidelity. PNG export picks a matching face, falling back to
 Pillow's built-in font where the system has none.

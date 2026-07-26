@@ -168,9 +168,15 @@ centered / right-aligned and margins sized.
 Widths are in 1/1000 em. Sources are the URW base-14 clones (metric-compatible
 with Adobe Helvetica / Times / Courier) and the DejaVu Sans TTFs; see the
 generator for why they are read by glyph name rather than by character code.
+
+Which table describes a given CSS font stack is decided in ``families.py``,
+alongside which files should draw it -- one declaration, so layout and the
+raster backend cannot disagree.
 """
 
 from __future__ import annotations
+
+from .families import DEFAULT_METRIC_FAMILY, resolve_family
 '''
 
 FOOTER = '''
@@ -204,62 +210,31 @@ _TABLES = {
     ("dejavu sans", True, True): _DEJAVU_SANS_BOLD_ITALIC,
 }
 
-# CSS family name -> metric family. Only faces that are genuinely
-# metric-compatible share an entry: Arial and Liberation Sans are
-# metric-compatible with Helvetica by design, Tinos/Liberation Serif with
-# Times, Cousine/Liberation Mono with Courier.
-#
-# Deliberately absent: Verdana, Tahoma, Arial Black and Arial Narrow. Their
-# metrics are proprietary and match nothing here, so they resolve to the
-# Helvetica default and stay inaccurate -- see the limitations docs.
-_FAMILY_ALIASES = {
-    "helvetica": "helvetica",
-    "helvetica neue": "helvetica",
-    "arial": "helvetica",
-    "liberation sans": "helvetica",
-    "arimo": "helvetica",
-    "nimbus sans": "helvetica",
-    "sans-serif": "helvetica",
-    "times": "times",
-    "times new roman": "times",
-    "liberation serif": "times",
-    "tinos": "times",
-    "nimbus roman": "times",
-    "serif": "times",
-    "courier": "courier",
-    "courier new": "courier",
-    "liberation mono": "courier",
-    "cousine": "courier",
-    "nimbus mono": "courier",
-    "monospace": "courier",
-    "dejavu sans": "dejavu sans",
-}
-
-_DEFAULT_FAMILY = "helvetica"
-
-
-def resolve_family(family):
-    """First recognized metric family in a CSS font stack.
-
-    ``family`` is a stack like ``"Helvetica, Arial, sans-serif"``. Unknown names
-    are skipped so a stack that names an unmeasurable face first still finds a
-    measurable fallback behind it; a stack with no recognized name at all
-    resolves to Helvetica, which is what the layout historically assumed.
-    """
-    for name in (family or "").split(","):
-        name = name.strip().strip("'\\"").lower()
-        if name in _FAMILY_ALIASES:
-            return _FAMILY_ALIASES[name]
-    return _DEFAULT_FAMILY
-
-
-def text_width(text, font_size, family=None, bold=False, italic=False):
+def text_width(text, font_size, family=None, bold=False, italic=False,
+               measure_installed=False):
     """Estimated rendered width of ``text`` in pixels at ``font_size`` px.
 
     ``family`` is a CSS font stack; it is resolved to the nearest bundled
     metric family. ``bold`` / ``italic`` select the matching face, which matters
     because bold Helvetica runs several percent wider than regular.
+
+    ``measure_installed`` opts out of the bundled tables and measures the font
+    file actually present on this machine, which is more faithful for families
+    simpleplot cannot otherwise measure but makes layout depend on what is
+    installed. It silently falls back to the bundled tables when no face
+    resolves. See :mod:`simpleplot.fonts.installed`.
     """
+    if measure_installed:
+        from .installed import installed_table
+
+        table = installed_table(family, bold, italic)
+        if table is not None:
+            default = table.get("0", _DEFAULTS[DEFAULT_METRIC_FAMILY])
+            units = 0
+            for ch in text:
+                units += table.get(ch, default)
+            return units / 1000.0 * font_size
+
     resolved = resolve_family(family)
     if resolved == "courier":
         return len(text) * _COURIER_ADVANCE / 1000.0 * font_size

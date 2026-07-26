@@ -160,7 +160,6 @@ class Figure:
         re-lays-out the subplot grid. Safe to call before or after
         :meth:`colorbar`; any colorbar over this grid is re-fitted afterwards.
         """
-        from .fonts import text_width
         from .svg import _resolve_tick_labels
         from .ticker import log_ticks, nice_ticks
 
@@ -186,8 +185,8 @@ class Figure:
             # usually far wider than the numbers they replace (category names),
             # and sizing the margin from the tick *values* clips them.
             ylabels = _resolve_tick_labels(ax._yticklabels, yt)
-            ytw = max((text_width(l, st.tick_label_size, st.font_family)
-                       for l in ylabels), default=0.0)
+            ytw = max((st.text_width(l, st.tick_label_size) for l in ylabels),
+                      default=0.0)
             ldec = st.tick_size + ytw + 4
             if ax._ylabel:
                 ldec += st.label_size + 6
@@ -438,11 +437,10 @@ def _cbar_label_width(cax) -> float:
     anything has been drawn.
     """
     from .colors import colorbar_ticks
-    from .fonts import text_width
 
     st = cax.style
     _, _, labels = colorbar_ticks(cax._cbar_source.norm)
-    text_px = max((text_width(t, st.tick_label_size, st.font_family) for t in labels),
+    text_px = max((st.text_width(t, st.tick_label_size) for t in labels),
                   default=0.0)
     return (st.tick_size + 2 + text_px) / (cax.figure.figsize[0] * st.dpi)
 
