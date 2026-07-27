@@ -15,7 +15,7 @@ Only bundled metric families are measured accurately
 ----------------------------------------------------
 
 A figure is laid out *before* anything draws its glyphs: SVG emits ``<text>``
-and the viewer rasterizes it. simpleplot therefore has to **predict** how wide
+and the viewer rasterizes it. plotpress therefore has to **predict** how wide
 text will be, and it predicts from bundled advance-width tables. That keeps
 layout identical on every machine with no font-file dependency -- but it is
 only correct for families those tables describe.
@@ -63,7 +63,7 @@ Weight is modelled, style is available
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Bold is not a free variation on regular -- Helvetica-Bold runs 5-9% wider on
-realistic label strings. The elements simpleplot draws bold (the legend title
+realistic label strings. The elements plotpress draws bold (the legend title
 and ``suptitle``) are measured with the bold tables, in both the SVG and raster
 backends. Italic tables are bundled for the same reason, though nothing in the
 default styling draws italic yet.
@@ -72,7 +72,7 @@ default styling draws italic yet.
 which fonts happen to be installed, and the same script would produce different
 margins on different machines. This is a determinism trade-off, not a technical
 barrier -- so it is offered as a choice rather than refused outright. Set
-``Style(measure_installed_fonts=True)`` and simpleplot measures the file on this
+``Style(measure_installed_fonts=True)`` and plotpress measures the file on this
 machine instead, which is the right call when you need an unmeasurable family to
 fit and can live with layout that varies across machines. See
 :ref:`measure-installed-fonts`.

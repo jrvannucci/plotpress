@@ -1,15 +1,15 @@
-"""simpleplot gallery: line, scatter, and pcolormesh -- no global state anywhere.
+"""plotpress gallery: line, scatter, and pcolormesh -- no global state anywhere.
 
 Run: python examples/gallery.py   (writes .svg files next to this script)
 """
 
 import numpy as np
 
-import simpleplot
+import plotpress
 
 
 def line_example():
-    fig, ax = simpleplot.subplots(figsize=(6.4, 4.0))
+    fig, ax = plotpress.subplots(figsize=(6.4, 4.0))
     x = np.linspace(0, 4 * np.pi, 400)
     ax.plot(x, np.sin(x), label="sin")
     ax.plot(x, np.cos(x), label="cos", linestyle="--")
@@ -24,7 +24,7 @@ def line_example():
 
 def scatter_example():
     rng = np.random.default_rng(0)
-    fig, ax = simpleplot.subplots(figsize=(6.4, 4.0))
+    fig, ax = plotpress.subplots(figsize=(6.4, 4.0))
     x = rng.normal(size=300)
     y = x * 0.5 + rng.normal(size=300)
     ax.scatter(x, y, c=x * x + y * y, cmap="plasma", s=8, alpha=0.8)
@@ -35,7 +35,7 @@ def scatter_example():
 
 
 def pcolormesh_example():
-    fig, ax = simpleplot.subplots(figsize=(6.0, 4.5))
+    fig, ax = plotpress.subplots(figsize=(6.0, 4.5))
     x = np.linspace(-3, 3, 200)
     y = np.linspace(-3, 3, 200)
     X, Y = np.meshgrid(x, y)
@@ -49,7 +49,7 @@ def pcolormesh_example():
 
 
 def subplots_example():
-    fig, axes = simpleplot.subplots(2, 2, figsize=(8, 6))
+    fig, axes = plotpress.subplots(2, 2, figsize=(8, 6))
     x = np.linspace(0, 10, 200)
     axes[0, 0].plot(x, np.sin(x))
     axes[0, 0].set_title("sin")

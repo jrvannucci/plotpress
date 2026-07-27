@@ -16,7 +16,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
@@ -29,7 +29,7 @@ def build():
     centers = 2 * np.pi + 3 * np.sin(t)
     bumps = np.exp(-((x[None, :] - centers[:, None]) ** 2) / 1.5)
 
-    fig, axes = simpleplot.subplots(1, 2, figsize=(13, 4.5))
+    fig, axes = plotpress.subplots(1, 2, figsize=(13, 4.5))
 
     ax = axes[0]
     ax.plot_frames(x, wave, slider_values=t, slider_label="t", label="sin(x - t)")

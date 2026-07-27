@@ -1,6 +1,6 @@
-"""simpleplot's take on matplotlib's canonical "Plot types" reference grid.
+"""plotpress's take on matplotlib's canonical "Plot types" reference grid.
 
-Recreates the core matplotlib plot-type gallery with simpleplot: line, scatter, bar,
+Recreates the core matplotlib plot-type gallery with plotpress: line, scatter, bar,
 barh, hist, step, fill_between, stem, errorbar, imshow, pcolormesh, and pie.
 
 Run: python examples/plot_types.py   (writes plot_types.svg + .html)
@@ -13,12 +13,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
     rng = np.random.default_rng(0)
-    fig, axes = simpleplot.subplots(4, 3, figsize=(13, 15))
+    fig, axes = plotpress.subplots(4, 3, figsize=(13, 15))
 
     # 1. plot
     ax = axes[0, 0]

@@ -7,13 +7,13 @@ lands behind the data -- not just that a figure renders.
 import numpy as np
 import pytest
 
-import simpleplot
-from simpleplot.polar import PolarAxes
-from simpleplot.artists import Line2D, Text
+import plotpress
+from plotpress.polar import PolarAxes
+from plotpress.artists import Line2D, Text
 
 
 def _polar():
-    fig, ax = simpleplot.subplots(projection="polar")
+    fig, ax = plotpress.subplots(projection="polar")
     return fig, ax
 
 
@@ -102,9 +102,9 @@ def test_scatter_and_fill_project_too():
 
 def test_polar_renders_in_both_backends():
     pytest.importorskip("PIL")
-    from simpleplot.raster import figure_to_image
+    from plotpress.raster import figure_to_image
 
-    fig, ax = simpleplot.subplots(projection="polar")
+    fig, ax = plotpress.subplots(projection="polar")
     theta = np.linspace(0, 2 * np.pi, 200)
     ax.plot(theta, 1 + 0.4 * np.cos(3 * theta))
     assert "°" in fig.to_svg()

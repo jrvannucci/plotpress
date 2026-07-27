@@ -16,7 +16,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
@@ -28,7 +28,7 @@ def build():
     bump = np.exp(-((x[None, :] - (2 * np.pi + 3 * np.sin(t[:, None]))) ** 2) / 1.5)
     decay = np.exp(-z[:, None] / 3) * np.sin(x[None, :])   # 40 frames over z
 
-    fig, axes = simpleplot.subplots(1, 3, figsize=(18, 4.5))
+    fig, axes = plotpress.subplots(1, 3, figsize=(18, 4.5))
 
     # Panels 0 and 1: own docked sliders, sharing connection index "t"
     # (badge + checkbox to link them).

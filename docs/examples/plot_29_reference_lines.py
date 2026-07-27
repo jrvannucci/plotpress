@@ -5,12 +5,12 @@ Reference lines, spans & fills
 ``axhline`` / ``axvspan`` / ``axhspan`` / ``fill_between`` / ``axline``.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 x = np.linspace(0, 10, 300)
 y = np.sin(x)
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 ax.plot(x, y, label="sin")
 ax.fill_between(x, y, 0, color="#1f77b4", alpha=0.2)
 ax.axhline(0, color="k", linestyle=":")

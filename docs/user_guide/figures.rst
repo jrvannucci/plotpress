@@ -1,22 +1,22 @@
 Figures and layout
 ===================
 
-Everything hangs off a :class:`~simpleplot.figure.Figure`. There is **no global
+Everything hangs off a :class:`~plotpress.figure.Figure`. There is **no global
 state** -- no ``pyplot``, no "current figure/axes", no global ``rcParams``. Two
 figures never share mutable state.
 
 Creating figures and axes
 -------------------------
 
-``simpleplot.subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style=None, facecolor=None, squeeze=True)``
+``plotpress.subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style=None, facecolor=None, squeeze=True)``
     Create a figure and a grid of axes; returns ``(fig, axes)`` just like
     ``matplotlib.pyplot.subplots`` -- but touches no globals. ``axes`` is a
-    single :class:`~simpleplot.axes.Axes`, a 1-D array, or a 2-D array.
+    single :class:`~plotpress.axes.Axes`, a 1-D array, or a 2-D array.
 
     .. code-block:: python
 
-       fig, ax = simpleplot.subplots()
-       fig, axes = simpleplot.subplots(2, 3, figsize=(12, 7))
+       fig, ax = plotpress.subplots()
+       fig, axes = plotpress.subplots(2, 3, figsize=(12, 7))
 
 Methods on the figure:
 

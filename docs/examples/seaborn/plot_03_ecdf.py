@@ -7,13 +7,13 @@ density it involves no bin width and no bandwidth -- nothing is smoothed away.
 ``complementary=True`` plots ``P(X > x)`` instead.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(7)
 setosa = rng.normal(5.0, 0.35, 300)
 virginica = rng.normal(6.6, 0.64, 300)
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 ax.ecdfplot(setosa, linewidth=1.8, label="setosa")
 ax.ecdfplot(virginica, linewidth=1.8, label="virginica")
 ax.ecdfplot(virginica, color="#8d99ae", linewidth=1.3, complementary=True,

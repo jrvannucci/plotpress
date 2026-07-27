@@ -21,7 +21,7 @@ Legend entries remain clickable to toggle series regardless of mode.
 
 INTERACTIVE_JS = r"""
 (function () {
-  var svg = document.getElementById('simpleplot-svg');
+  var svg = document.getElementById('plotpress-svg');
   if (!svg) return;
   var SVGNS = 'http://www.w3.org/2000/svg';
   var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
@@ -54,9 +54,9 @@ INTERACTIVE_JS = r"""
     });
   }
 
-  var metaEl = document.getElementById('simpleplot-meta');
+  var metaEl = document.getElementById('plotpress-meta');
   var META = metaEl ? JSON.parse(metaEl.textContent) : {};
-  var styleEl = document.getElementById('simpleplot-style');
+  var styleEl = document.getElementById('plotpress-style');
   var STYLE = styleEl ? JSON.parse(styleEl.textContent) : {};
 
   // CUR holds each axes' *current* limits (mutated by per-axes data zoom);
@@ -73,46 +73,46 @@ INTERACTIVE_JS = r"""
   // ---- toolbar -----------------------------------------------------------
   var style = document.createElement('style');
   style.textContent =
-    '.simpleplot-toolbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;' +
+    '.plotpress-toolbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;' +
     'font:12px system-ui,sans-serif;z-index:1000}' +
-    '.simpleplot-toolbar button{padding:6px 11px;border:1px solid #b8b8b8;' +
+    '.plotpress-toolbar button{padding:6px 11px;border:1px solid #b8b8b8;' +
     'background:#fff;color:#222;border-radius:6px;cursor:pointer;' +
     'box-shadow:0 1px 3px rgba(0,0,0,.18)}' +
-    '.simpleplot-toolbar button:hover{background:#f1f1f1}' +
-    '.simpleplot-toolbar button.active{background:#2b8cff;color:#fff;' +
+    '.plotpress-toolbar button:hover{background:#f1f1f1}' +
+    '.plotpress-toolbar button.active{background:#2b8cff;color:#fff;' +
     'border-color:#2b8cff}' +
-    '.simpleplot-sliders{position:fixed;bottom:12px;left:50%;' +
+    '.plotpress-sliders{position:fixed;bottom:12px;left:50%;' +
     'transform:translateX(-50%);display:flex;flex-direction:column;' +
     'gap:6px;z-index:1000}' +
-    '.simpleplot-slider{display:flex;align-items:center;gap:12px;' +
+    '.plotpress-slider{display:flex;align-items:center;gap:12px;' +
     'background:#fff;padding:8px 16px;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.2);' +
     'font:12px system-ui,sans-serif}' +
-    '.simpleplot-slider input[type=range]{width:240px}' +
-    '.simpleplot-slider .val{min-width:90px;font-variant-numeric:tabular-nums}' +
-    '.simpleplot-slider button{padding:3px 8px;border:1px solid #b8b8b8;' +
+    '.plotpress-slider input[type=range]{width:240px}' +
+    '.plotpress-slider .val{min-width:90px;font-variant-numeric:tabular-nums}' +
+    '.plotpress-slider button{padding:3px 8px;border:1px solid #b8b8b8;' +
     'background:#fff;border-radius:5px;cursor:pointer;font-size:13px;' +
     'line-height:1.1}' +
-    '.simpleplot-slider button:hover{background:#f1f1f1}' +
-    '.simpleplot-slider .link{display:flex;align-items:center;gap:4px;' +
+    '.plotpress-slider button:hover{background:#f1f1f1}' +
+    '.plotpress-slider .link{display:flex;align-items:center;gap:4px;' +
     'font-size:11px;color:#555;cursor:pointer;user-select:none}' +
-    '.simpleplot-slider .idx{background:#e8eeff;border:1px solid #b9c6ef;' +
+    '.plotpress-slider .idx{background:#e8eeff;border:1px solid #b9c6ef;' +
     'border-radius:4px;padding:0 5px;font-weight:600;color:#2b5bd7}' +
-    '.simpleplot-pin.selected circle{fill:#2b8cff;r:5}' +
-    '.simpleplot-pin.simpleplot-note rect{fill:#b45309}' +   /* user notes: amber */
-    '.simpleplot-zoom line,.simpleplot-zoom path{vector-effect:non-scaling-stroke}' +
-    '.simpleplot-extract{position:fixed;top:56px;right:10px;width:360px;' +
+    '.plotpress-pin.selected circle{fill:#2b8cff;r:5}' +
+    '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
+    '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
+    '.plotpress-extract{position:fixed;top:56px;right:10px;width:360px;' +
     'max-height:72vh;overflow:auto;background:#fff;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);padding:10px;' +
     'z-index:2000;font:12px system-ui,sans-serif}' +
-    '.simpleplot-extract textarea{width:100%;height:180px;box-sizing:border-box;' +
+    '.plotpress-extract textarea{width:100%;height:180px;box-sizing:border-box;' +
     'font:11px ui-monospace,monospace;resize:vertical}' +
-    '.simpleplot-extract button{padding:4px 8px;border:1px solid #b8b8b8;' +
+    '.plotpress-extract button{padding:4px 8px;border:1px solid #b8b8b8;' +
     'background:#fff;border-radius:5px;cursor:pointer}';
   document.head.appendChild(style);
 
   var bar = document.createElement('div');
-  bar.className = 'simpleplot-toolbar';
+  bar.className = 'plotpress-toolbar';
   var TOOLS = [
     { mode: 'span', label: 'Span' },
     { mode: 'zoom', label: 'Zoom' },
@@ -141,7 +141,7 @@ INTERACTIVE_JS = r"""
       resetAxes();                               // restore every axes' data limits
       mode = null;
       selectedPin = null;                        // clear all markers too
-      document.querySelectorAll('.simpleplot-pin').forEach(function (p) { p.remove(); });
+      document.querySelectorAll('.plotpress-pin').forEach(function (p) { p.remove(); });
     } else {
       mode = (mode === m) ? null : m;  // clicking the active tool turns it off
     }
@@ -169,7 +169,7 @@ INTERACTIVE_JS = r"""
   function startRubber(e) {
     var p = toUser(e);
     var el = document.createElementNS(SVGNS, 'rect');
-    el.setAttribute('class', 'simpleplot-rubber');
+    el.setAttribute('class', 'plotpress-rubber');
     el.setAttribute('fill', '#2b8cff'); el.setAttribute('fill-opacity', 0.15);
     el.setAttribute('stroke', '#2b8cff');
     el.setAttribute('stroke-width', 1 / pxPerUser());
@@ -214,7 +214,7 @@ INTERACTIVE_JS = r"""
 
   svg.addEventListener('mousedown', function (e) {
     if (e.button !== 0) return;   // ignore right/middle button (right = delete pin)
-    if (!mode || e.target.closest('.simpleplot-pin')) return;
+    if (!mode || e.target.closest('.plotpress-pin')) return;
     down = { x: e.clientX, y: e.clientY }; moved = false;
     if (mode === 'span') {
       var pdn = toUser(e), a = axesAt(pdn);
@@ -262,12 +262,12 @@ INTERACTIVE_JS = r"""
   });
 
   // ---- legend toggle (always available) ---------------------------------
-  document.querySelectorAll('.simpleplot-legend text').forEach(function (t) {
+  document.querySelectorAll('.plotpress-legend text').forEach(function (t) {
     var label = t.textContent;
     t.style.cursor = 'pointer';
     t.addEventListener('click', function (e) {
       e.stopPropagation();
-      document.querySelectorAll('.simpleplot-series').forEach(function (s) {
+      document.querySelectorAll('.plotpress-series').forEach(function (s) {
         if (s.getAttribute('data-label') === label) {
           var hidden = s.style.display === 'none';
           s.style.display = hidden ? '' : 'none';
@@ -278,7 +278,7 @@ INTERACTIVE_JS = r"""
   });
 
   // ---- point picking (pick mode) ----------------------------------------
-  var pickEl = document.getElementById('simpleplot-pick');
+  var pickEl = document.getElementById('plotpress-pick');
   var PICK = pickEl ? JSON.parse(pickEl.textContent) : {};
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
 
@@ -459,7 +459,7 @@ INTERACTIVE_JS = r"""
     return null;
   }
   function relayoutPins(key) {
-    document.querySelectorAll('.simpleplot-pin').forEach(function (pin) {
+    document.querySelectorAll('.plotpress-pin').forEach(function (pin) {
       if (pinAxesKey(pin) !== String(key)) return;
       var anchor = pinAnchor(pin);
       if (anchor) {
@@ -604,7 +604,7 @@ INTERACTIVE_JS = r"""
 
   function addPin(px, py, label) {
     var g = document.createElementNS(SVGNS, 'g');
-    g.setAttribute('class', 'simpleplot-pin'); g.style.cursor = 'pointer';
+    g.setAttribute('class', 'plotpress-pin'); g.style.cursor = 'pointer';
     var dot = document.createElementNS(SVGNS, 'circle');
     dot.setAttribute('r', 3.5); dot.setAttribute('fill', '#111');
     dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', 1);
@@ -792,9 +792,9 @@ INTERACTIVE_JS = r"""
 
   function getMarkers() {
     return Array.prototype.map.call(
-      document.querySelectorAll('.simpleplot-pin'), markerRecord);
+      document.querySelectorAll('.plotpress-pin'), markerRecord);
   }
-  window.simpleplotGetMarkers = getMarkers;   // programmatic access
+  window.plotpressGetMarkers = getMarkers;   // programmatic access
 
   function toCSV(recs) {
     if (!recs.length) return '';
@@ -821,10 +821,10 @@ INTERACTIVE_JS = r"""
   }
 
   function showExtractPanel(records, csv, json) {
-    var old = document.querySelector('.simpleplot-extract');
+    var old = document.querySelector('.plotpress-extract');
     if (old) old.remove();
     var panel = document.createElement('div');
-    panel.className = 'simpleplot-extract';
+    panel.className = 'plotpress-extract';
     var head = document.createElement('div');
     head.style.cssText = 'font-weight:600;margin-bottom:6px';
     head.textContent = records.length + ' marker' + (records.length === 1 ? '' : 's');
@@ -866,11 +866,11 @@ INTERACTIVE_JS = r"""
     } catch (e) {}
     // In wait-for-extract mode the kernel closes the window on receipt, so skip
     // the panel; otherwise show it for copy/download.
-    if (!window.SIMPLEPLOT_WAIT_EXTRACT) {
+    if (!window.PLOTPRESS_WAIT_EXTRACT) {
       showExtractPanel(records, toCSV(records), JSON.stringify(records, null, 2));
     }
   }
-  window.simpleplotExtract = doExtract;
+  window.plotpressExtract = doExtract;
 
   // Nearest vertex of an animated (frame) series at its current frame.
   function nearestFrameVertex(axesKey, m, p) {
@@ -898,14 +898,14 @@ INTERACTIVE_JS = r"""
     if (!text) return;
     var d = toData(a.m, p.x, p.y);
     var g = addPin(p.x, p.y, text);
-    g.classList.add('simpleplot-note');
+    g.classList.add('plotpress-note');
     g.dataset.x = d.x; g.dataset.y = d.y; g.dataset.axes = a.i;
     g.dataset.annotation = '1';
   }
 
   svg.addEventListener('click', function (e) {
     if (moved) return;
-    if (e.target.closest('.simpleplot-legend') || e.target.closest('.simpleplot-pin')) return;
+    if (e.target.closest('.plotpress-legend') || e.target.closest('.plotpress-pin')) return;
     if (mode === 'note') { addNote(e); return; }
     if (mode !== 'pick') return;
     var p = toUser(e), a = axesAt(p);
@@ -951,8 +951,8 @@ INTERACTIVE_JS = r"""
   // driving all shared series; a docked unit sits under its axes. Docked units
   // that share a connection index show an index badge + a checkbox to link them
   // so they scrub together on demand.
-  var framesEl = document.getElementById('simpleplot-frames');
-  var unitsEl = document.getElementById('simpleplot-sliders');
+  var framesEl = document.getElementById('plotpress-frames');
+  var unitsEl = document.getElementById('plotpress-sliders');
   var FRAMES = framesEl ? JSON.parse(framesEl.textContent) : null;
   var UNITS = unitsEl ? JSON.parse(unitsEl.textContent) : null;
   var LINKS = {};  // connection index -> [slider api]
@@ -964,7 +964,7 @@ INTERACTIVE_JS = r"""
 
   // Move any pins attached to this unit's series to the new frame's vertex.
   function updateFramePins(unit, f) {
-    var pins = document.querySelectorAll('.simpleplot-pin[data-frame-unit="' + unit + '"]');
+    var pins = document.querySelectorAll('.plotpress-pin[data-frame-unit="' + unit + '"]');
     for (var i = 0; i < pins.length; i++) {
       var pin = pins[i];
       var a = resolve(pinAnchor(pin), +pin.dataset.index);  // uses current frame
@@ -995,7 +995,7 @@ INTERACTIVE_JS = r"""
 
   function buildSlider(unit, spec, opts) {
     var box = document.createElement('div');
-    box.className = 'simpleplot-slider';
+    box.className = 'plotpress-slider';
     var api = { index: spec.index, checkbox: null, external: null, frame: 0 };
 
     // Index badge + link checkbox (only when this index is shared by 2+ units).
@@ -1101,7 +1101,7 @@ INTERACTIVE_JS = r"""
       if (spec.global) {
         if (!globalBar) {
           globalBar = document.createElement('div');
-          globalBar.className = 'simpleplot-sliders';
+          globalBar.className = 'plotpress-sliders';
           document.body.appendChild(globalBar);
         }
         var g = buildSlider(u, spec, { inputWidth: 240, showLink: false });
@@ -1125,7 +1125,7 @@ INTERACTIVE_JS = r"""
   window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
       selectedPin = null;
-      document.querySelectorAll('.simpleplot-pin').forEach(function (p) { p.remove(); });
+      document.querySelectorAll('.plotpress-pin').forEach(function (p) { p.remove(); });
       return;
     }
     if (!selectedPin) return;

@@ -2,7 +2,7 @@
 Text is single-line, and PNG is a separate renderer
 ===================================================
 
-Two design choices meet here. simpleplot lays out only **single-line** strings
+Two design choices meet here. plotpress lays out only **single-line** strings
 -- there is no rich text, no math, no multi-line wrapping. And PNG is drawn by a
 second backend (Pillow) rather than by rasterizing the SVG, because every SVG
 rasterizer in Python needs cairo, a system library rather than a pip wheel.
@@ -17,12 +17,12 @@ would read ``peak 3.2 (2024)`` on a single line. The green label uses two
 separate ``text()`` calls and looks identical in every format.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 x = np.linspace(0, 10, 200)
 y = np.sin(x) * np.exp(-x / 8)
 
-fig, ax = simpleplot.subplots(figsize=(8, 4.5))
+fig, ax = plotpress.subplots(figsize=(8, 4.5))
 ax.plot(x, y)
 
 # Not portable: one text() call with a newline. PNG (this image) breaks it into

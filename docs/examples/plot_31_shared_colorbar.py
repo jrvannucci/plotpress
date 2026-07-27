@@ -3,15 +3,15 @@ Shared colorbar over a grid
 ===========================
 
 One colorbar describing a whole grid of axes -- pass the list of axes and
-simpleplot squeezes the grid to make room. All panels share ``vmin``/``vmax``.
+plotpress squeezes the grid to make room. All panels share ``vmin``/``vmax``.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 g = np.linspace(-3, 3, 60)
 X, Y = np.meshgrid(g, g)
 
-fig, axes = simpleplot.subplots(2, 3, figsize=(11, 6))
+fig, axes = plotpress.subplots(2, 3, figsize=(11, 6))
 m = None
 for k, ax in enumerate(axes.ravel()):
     Z = np.exp(-((X - (k - 2)) ** 2 + Y ** 2) / 2.0)

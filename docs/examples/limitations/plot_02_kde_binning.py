@@ -13,7 +13,7 @@ The binned curve is an *approximation* of the exact one. This example shows how
 close it is, and where it is least accurate.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(0)
 
@@ -21,7 +21,7 @@ rng = np.random.default_rng(0)
 data = np.concatenate([rng.normal(-2.0, 0.7, 30_000),
                        rng.normal(1.5, 1.0, 20_000)])
 
-fig, (ax1, ax2) = simpleplot.subplots(1, 2, figsize=(11, 4))
+fig, (ax1, ax2) = plotpress.subplots(1, 2, figsize=(11, 4))
 
 # kdeplot returns the *binned* estimate for a sample this size.
 binned = ax1.kdeplot(data, fill=True, label="binned (what kdeplot draws)")
@@ -66,7 +66,7 @@ fig.tight_layout()
 
 heavy = rng.standard_t(3, 50_000)          # extreme outliers stretch the range
 
-fig2, ax = simpleplot.subplots(figsize=(8, 4))
+fig2, ax = plotpress.subplots(figsize=(8, 4))
 ax.kdeplot(heavy, points=200, color="#d62728", linewidth=1.0,
            label="points=200 (default)")
 ax.kdeplot(heavy, points=800, color="#1f77b4", linewidth=1.8,

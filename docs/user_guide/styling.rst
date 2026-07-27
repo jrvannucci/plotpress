@@ -4,12 +4,12 @@ Styling and colors
 Per-figure style
 ----------------
 
-Each figure owns a :class:`~simpleplot.style.Style` (there is no global
+Each figure owns a :class:`~plotpress.style.Style` (there is no global
 ``rcParams``). Mutating one figure's style never affects another.
 
 .. code-block:: python
 
-   fig, ax = simpleplot.subplots()
+   fig, ax = plotpress.subplots()
    fig.style.line_width = 2.5
    fig.style.font_family = "Liberation Sans, Arial, sans-serif"
 
@@ -19,13 +19,13 @@ Each figure owns a :class:`~simpleplot.style.Style` (there is no global
    :ref:`fonts-and-layout` below.
 
 Create a variant without mutating the original with ``Style.copy(**overrides)``,
-and pass it to :func:`~simpleplot.subplots`:
+and pass it to :func:`~plotpress.subplots`:
 
 .. code-block:: python
 
-   dark = simpleplot.Style(facecolor="#111", text_color="#eee",
+   dark = plotpress.Style(facecolor="#111", text_color="#eee",
                            axes_facecolor="#111", spine_color="#888")
-   fig, ax = simpleplot.subplots(style=dark)
+   fig, ax = plotpress.subplots(style=dark)
 
 Style fields
 ------------
@@ -66,7 +66,7 @@ Style fields
 Fonts and layout
 ----------------
 
-A figure is laid out *before* anything draws its glyphs, so simpleplot predicts
+A figure is laid out *before* anything draws its glyphs, so plotpress predicts
 text width from bundled advance-width tables. It bundles **Helvetica, Times and
 Courier** -- each in regular, bold, italic and bold-italic -- plus **DejaVu
 Sans**, which covers their metric-compatible clones too: Arial and Liberation
@@ -85,7 +85,7 @@ Measuring the fonts you actually have
 If you need one of those unmeasurable families to lay out correctly, opt into
 measuring the real file::
 
-    style = simpleplot.Style(font_family="Verdana, sans-serif",
+    style = plotpress.Style(font_family="Verdana, sans-serif",
                              measure_installed_fonts=True)
 
 Verdana is about 14% wider than the Helvetica it is otherwise measured as, so
@@ -107,18 +107,18 @@ Colormaps and normalization
 
 Built-in colormaps: ``"viridis"``, ``"plasma"``, ``"gray"``.
 
-``simpleplot.available_colormaps()``
+``plotpress.available_colormaps()``
     List the available colormap names.
 
-``simpleplot.get_cmap(name)``
+``plotpress.get_cmap(name)``
     Return a ``256x3`` uint8 lookup table (or pass an array through).
 
-``simpleplot.Normalize(vmin=None, vmax=None)``
+``plotpress.Normalize(vmin=None, vmax=None)``
     Linearly map data to ``[0, 1]`` for colormapping. Unset limits are inferred
     from the data on first use. Pass to ``pcolormesh``/``imshow``/``scatter`` via
     ``norm=`` (or use the ``vmin``/``vmax`` shortcuts).
 
     .. code-block:: python
 
-       norm = simpleplot.Normalize(0, 1)
+       norm = plotpress.Normalize(0, 1)
        ax.pcolormesh(x, y, Z, cmap="plasma", norm=norm)

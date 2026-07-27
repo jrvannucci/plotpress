@@ -10,7 +10,7 @@ on a single figure** (a 20x25 grid), each an independent axes with its *own*
 Because every field is drawn against the **same** ``vmin``/``vmax``, one shared
 colorbar on the right describes all 500 plots at once.
 
-This is the "many axes on one figure" case simpleplot is built for. Every mesh
+This is the "many axes on one figure" case plotpress is built for. Every mesh
 is rasterized to a single embedded ``<image>`` (not thousands of vector rects),
 there is no global state, and there is no per-artist Python overhead -- so
 building all 500 plots, their labels, and the shared colorbar takes only a
@@ -20,7 +20,7 @@ figure title below.
 import time
 
 import numpy as np
-import simpleplot
+import plotpress
 
 NROWS, NCOLS = 20, 25          # 500 plots
 NY = NX = 40                   # 40x40 mesh per plot
@@ -45,7 +45,7 @@ vmax = max(Z.max() for Z in fields)
 
 # Pass 2: one axes per field, each fully labelled, all on the shared norm.
 t0 = time.perf_counter()
-fig, axes = simpleplot.subplots(NROWS, NCOLS, figsize=(24, 20))
+fig, axes = plotpress.subplots(NROWS, NCOLS, figsize=(24, 20))
 flat = axes.ravel()
 mesh = None
 for ax, Z, (cx, cy) in zip(flat, fields, centers):
@@ -57,7 +57,7 @@ fig.tight_layout()
 
 # One shared colorbar spanning the whole grid on the right. Because every mesh
 # uses the same vmin/vmax, a single bar describes all 500 plots; pass the list
-# of axes and simpleplot squeezes the grid and places one tall colorbar.
+# of axes and plotpress squeezes the grid and places one tall colorbar.
 fig.colorbar(mesh, ax=flat)
 
 build_ms = (time.perf_counter() - t0) * 1e3

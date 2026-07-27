@@ -1,9 +1,9 @@
 """Performance tests.
 
 Two kinds:
-* Regression guards -- simpleplot must render each scenario under a generous wall
+* Regression guards -- plotpress must render each scenario under a generous wall
   time, so a future change that tanks performance fails CI.
-* Comparative claims -- when matplotlib is installed, simpleplot must be faster
+* Comparative claims -- when matplotlib is installed, plotpress must be faster
   (that is the whole point of the library). These skip if matplotlib is absent.
 
 Thresholds are deliberately loose to stay stable across machines/CI; the
@@ -26,21 +26,21 @@ _MAX_SECONDS = {
 
 
 @pytest.mark.parametrize("name", list(scenarios.SCENARIOS))
-def test_simpleplot_render_under_threshold(name):
-    t = scenarios.timeit(scenarios.SCENARIOS[name]["simpleplot"], repeat=3)
+def test_plotpress_render_under_threshold(name):
+    t = scenarios.timeit(scenarios.SCENARIOS[name]["plotpress"], repeat=3)
     assert t < _MAX_SECONDS[name], f"{name} took {t:.3f}s (limit {_MAX_SECONDS[name]}s)"
 
 
 @pytest.mark.skipif(not scenarios.has_matplotlib(), reason="matplotlib not installed")
 @pytest.mark.parametrize("name", ["many_axes_8x8_grid", "line_100k_points"])
-def test_simpleplot_faster_than_matplotlib(name):
+def test_plotpress_faster_than_matplotlib(name):
     # For figures with many axes, avoiding matplotlib's per-Artist Python
-    # overhead makes simpleplot faster end-to-end. The single huge polyline is
+    # overhead makes plotpress faster end-to-end. The single huge polyline is
     # also a win thanks to min/max path decimation (see
-    # simpleplot.primitives._decimate_minmax) -- all in pure Python.
-    et = scenarios.timeit(scenarios.SCENARIOS[name]["simpleplot"], repeat=3)
+    # plotpress.primitives._decimate_minmax) -- all in pure Python.
+    et = scenarios.timeit(scenarios.SCENARIOS[name]["plotpress"], repeat=3)
     mt = scenarios.timeit(scenarios.SCENARIOS[name]["mpl"], repeat=3)
-    assert et < mt, f"{name}: simpleplot {et:.3f}s not faster than matplotlib {mt:.3f}s"
+    assert et < mt, f"{name}: plotpress {et:.3f}s not faster than matplotlib {mt:.3f}s"
 
 
 @pytest.mark.skipif(not scenarios.has_matplotlib(), reason="matplotlib not installed")
@@ -49,7 +49,7 @@ def test_report_speedups(capsys):
     with capsys.disabled():
         print()
         for name, b in scenarios.SCENARIOS.items():
-            et = scenarios.timeit(b["simpleplot"], repeat=3)
+            et = scenarios.timeit(b["plotpress"], repeat=3)
             mt = scenarios.timeit(b["mpl"], repeat=3)
-            print(f"  {name:22} simpleplot {et*1e3:7.1f}ms  mpl {mt*1e3:7.1f}ms  "
+            print(f"  {name:22} plotpress {et*1e3:7.1f}ms  mpl {mt*1e3:7.1f}ms  "
                   f"({mt/et:.1f}x faster)")

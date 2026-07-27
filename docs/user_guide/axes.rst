@@ -54,7 +54,7 @@ Grid, legend, visibility
 
 ``set_axis_off()``
     Hide the spines, ticks, grid, and axis labels (the title is kept). Used
-    automatically by :meth:`~simpleplot.axes.Axes.pie`.
+    automatically by :meth:`~plotpress.axes.Axes.pie`.
 
 .. note::
 

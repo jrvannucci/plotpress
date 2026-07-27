@@ -1,18 +1,18 @@
 """Opt-in measurement of the fonts actually installed on this machine.
 
-Off by default, and deliberately so. simpleplot's bundled width tables exist to
+Off by default, and deliberately so. plotpress's bundled width tables exist to
 make layout *deterministic*: the same script produces the same margins on every
 machine, because it never asks the machine anything. Turning this on trades that
 guarantee for fidelity, and it is a real trade -- a figure laid out here may not
 match one laid out on a colleague's box, or on CI.
 
 Turn it on when the fidelity is worth more than the reproducibility: you are
-setting ``Style.font_family`` to a face simpleplot cannot measure (Verdana,
+setting ``Style.font_family`` to a face plotpress cannot measure (Verdana,
 Tahoma, Arial Black, Arial Narrow) and you would rather have correct margins on
 your own machine than portable ones.
 
-    fig, ax = simpleplot.subplots(
-        style=simpleplot.Style(font_family="Verdana, sans-serif",
+    fig, ax = plotpress.subplots(
+        style=plotpress.Style(font_family="Verdana, sans-serif",
                                measure_installed_fonts=True))
 
 Implementation note: this needs no new dependency. Pillow is already required
@@ -20,7 +20,7 @@ for PNG export, it already resolves a bare font file name against the system
 font directories, and it already measures glyph advances -- the same machinery
 the raster backend draws with. Reusing it is what keeps layout and PNG output
 agreeing about what a face is: both go through
-:func:`simpleplot.fonts.families.font_files`.
+:func:`plotpress.fonts.families.font_files`.
 """
 
 from __future__ import annotations

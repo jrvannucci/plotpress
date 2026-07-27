@@ -1,7 +1,7 @@
 """More of matplotlib's "Plot types": statistical, gridded, and vector fields.
 
 Adds boxplot, violinplot, eventplot, quiver, contour, hist2d, and stackplot to
-the simpleplot gallery. Writes a static .svg and an interactive .html.
+the plotpress gallery. Writes a static .svg and an interactive .html.
 
 Run: python examples/plot_types_2.py
 """
@@ -13,12 +13,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
     rng = np.random.default_rng(1)
-    fig, axes = simpleplot.subplots(2, 4, figsize=(17, 8))
+    fig, axes = plotpress.subplots(2, 4, figsize=(17, 8))
     ax = axes.ravel()
 
     groups = [rng.normal(m, s, 200) for m, s in [(0, 1), (1, 1.5), (-1, 0.8)]]

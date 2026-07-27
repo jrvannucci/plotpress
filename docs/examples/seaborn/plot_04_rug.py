@@ -8,13 +8,13 @@ not. Tick length is a fraction of the axes, so repeated rugs share a baseline
 and none of them disturb the autoscale.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(7)
 setosa = rng.normal(5.0, 0.35, 70)
 virginica = rng.normal(6.6, 0.64, 70)
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 ax.kdeplot(np.concatenate([setosa, virginica]), color="#b8c4d9", fill=True,
            alpha=0.45, label="kde")
 ax.rugplot(setosa, color="#1f77b4", label="setosa")

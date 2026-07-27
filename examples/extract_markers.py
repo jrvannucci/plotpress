@@ -18,12 +18,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
     rng = np.random.default_rng(4)
-    fig, axes = simpleplot.subplots(1, 2, figsize=(11, 4.5))
+    fig, axes = plotpress.subplots(1, 2, figsize=(11, 4.5))
 
     t = np.linspace(0, 4 * np.pi, 400)
     axes[0].plot(t, np.sin(t), label="sin")

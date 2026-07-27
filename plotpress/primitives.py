@@ -2,8 +2,8 @@
 
 The geometry of an artist (applying the transform, splitting on NaN, decimating
 huge lines, computing quad corners) is computed *once* here, producing a small
-fixed vocabulary of primitives. Each backend (:mod:`simpleplot.svg`,
-:mod:`simpleplot.raster`) then only needs to know how to draw those few
+fixed vocabulary of primitives. Each backend (:mod:`plotpress.svg`,
+:mod:`plotpress.raster`) then only needs to know how to draw those few
 primitive types -- so a new artist that emits, say, a filled polygon needs no
 new code in either backend.
 

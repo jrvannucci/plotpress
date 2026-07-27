@@ -1,7 +1,7 @@
 Plotting methods
 ================
 
-Every plot type is a method on :class:`~simpleplot.axes.Axes`. Signatures mirror
+Every plot type is a method on :class:`~plotpress.axes.Axes`. Signatures mirror
 matplotlib. See the :ref:`gallery <gallery>` for a rendered example of each.
 
 Lines and areas
@@ -52,7 +52,7 @@ Bars and histograms
 
 ``hist2d(x, y, bins=20, range=None, cmap="viridis")``
     2-D histogram rendered as an image. Returns ``(counts, image)`` -- pass the
-    image to :meth:`~simpleplot.figure.Figure.colorbar`.
+    image to :meth:`~plotpress.figure.Figure.colorbar`.
 
 Statistical
 -----------
@@ -125,7 +125,7 @@ Create a polar axes with ``projection="polar"``; angles are in **radians**.
 
 .. code-block:: python
 
-   fig, ax = simpleplot.subplots(projection="polar")
+   fig, ax = plotpress.subplots(projection="polar")
    theta = np.linspace(0, 2 * np.pi, 400)
    ax.plot(theta, 1 + 0.5 * np.sin(5 * theta))
    ax.set_rmax(1.6)
@@ -144,7 +144,7 @@ Create a 3-D axes with ``projection="3d"``; set the camera with
 
 .. code-block:: python
 
-   fig, ax = simpleplot.subplots(projection="3d")
+   fig, ax = plotpress.subplots(projection="3d")
    X, Y = np.meshgrid(np.linspace(-3, 3, 60), np.linspace(-3, 3, 60))
    ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="viridis")
    ax.set_zlabel("z")
@@ -154,7 +154,7 @@ Create a 3-D axes with ``projection="3d"``; set the camera with
 
 ``plot_surface(X, Y, Z, cmap="viridis", edgecolor=None, ...)``
     Depth-sorted colormapped surface. The returned collection works with
-    :meth:`~simpleplot.figure.Figure.colorbar`.
+    :meth:`~plotpress.figure.Figure.colorbar`.
 
 ``plot_wireframe(X, Y, Z, color=None, ...)``
     Grid wireframe.

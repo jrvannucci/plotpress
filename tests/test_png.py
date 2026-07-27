@@ -5,7 +5,7 @@ import zlib
 
 import numpy as np
 
-from simpleplot.png import encode_png, png_data_uri
+from plotpress.png import encode_png, png_data_uri
 
 
 def _decode_png(data):

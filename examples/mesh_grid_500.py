@@ -2,9 +2,9 @@
 
 That is 500 embedded ``<image>`` layers covering 500 * 35 * 45 = 787,500 mesh
 cells. In matplotlib every cell of a QuadMesh is vector geometry, so an SVG of
-this figure is enormous and slow; simpleplot rasterizes each mesh to a single
+this figure is enormous and slow; plotpress rasterizes each mesh to a single
 ``<image>``, so the whole figure stays small and renders fast -- this is the
-"many axes on one figure" case simpleplot is built for.
+"many axes on one figure" case plotpress is built for.
 
 Run: python examples/mesh_grid_500.py
 """
@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 NROWS, NCOLS = 25, 20          # 500 axes
 NY, NX = 35, 45               # pcolormesh grid per axes (rows x cols = pixels)
@@ -30,7 +30,7 @@ def build():
     y = np.linspace(0, 3, NY)
     X, Y = np.meshgrid(x, y)   # shape (NY, NX) = (35, 45)
 
-    fig, axes = simpleplot.subplots(NROWS, NCOLS, figsize=(28, 34))
+    fig, axes = plotpress.subplots(NROWS, NCOLS, figsize=(28, 34))
     flat = axes.ravel()
     for k, ax in enumerate(flat):
         fx = 1 + (k % 7) * 0.6

@@ -17,12 +17,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
     rng = np.random.default_rng(11)
-    fig, axes = simpleplot.subplots(1, 3, figsize=(16, 4.5))
+    fig, axes = plotpress.subplots(1, 3, figsize=(16, 4.5))
 
     # 1) pcolormesh -> pick reports z (the field value at the clicked cell).
     ax = axes[0]

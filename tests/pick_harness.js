@@ -3,27 +3,27 @@
 // Runs inside the page against unmodified fig.to_html() output: it selects
 // "Point Pick" through the actual toolbar button, dispatches a real click at
 // the pixel where the renderer drew a known datum, and reads the resulting
-// marker back through the public window.simpleplotGetMarkers() API. Nothing
+// marker back through the public window.plotpressGetMarkers() API. Nothing
 // here reaches into the picking code's internals.
 //
 // Takes the target list (see tests/pick_cases.py) and returns one result per
 // target, so a failure names the field that disagreed.
 (function (targets) {
-  var svg = document.getElementById('simpleplot-svg');
-  if (!svg) return { error: 'no #simpleplot-svg in the document' };
-  if (typeof window.simpleplotGetMarkers !== 'function') {
-    return { error: 'window.simpleplotGetMarkers is missing' };
+  var svg = document.getElementById('plotpress-svg');
+  if (!svg) return { error: 'no #plotpress-svg in the document' };
+  if (typeof window.plotpressGetMarkers !== 'function') {
+    return { error: 'window.plotpressGetMarkers is missing' };
   }
 
   var pick = null;
-  document.querySelectorAll('.simpleplot-toolbar button').forEach(function (b) {
+  document.querySelectorAll('.plotpress-toolbar button').forEach(function (b) {
     if (b.textContent === 'Point Pick') pick = b;
   });
   if (!pick) return { error: 'no "Point Pick" button in the toolbar' };
   if (!pick.classList.contains('active')) pick.click();
 
   function clearPins() {
-    document.querySelectorAll('.simpleplot-pin').forEach(function (p) {
+    document.querySelectorAll('.plotpress-pin').forEach(function (p) {
       p.remove();
     });
   }
@@ -52,7 +52,7 @@
       bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0
     }));
 
-    var markers = window.simpleplotGetMarkers();
+    var markers = window.plotpressGetMarkers();
     var got = markers.length ? markers[markers.length - 1] : null;
     var bad = [];
     if (!got) {

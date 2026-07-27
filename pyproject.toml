@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "versioningit>=2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "simpleplot"
+name = "plotpress"
 # Derived from the git tag by versioningit -- see [tool.versioningit] below.
-# There is deliberately no version literal here or in simpleplot/__init__.py:
+# There is deliberately no version literal here or in plotpress/__init__.py:
 # two hand-maintained copies drift, and the tag is the thing a release
 # actually is.
 dynamic = ["version"]
@@ -13,7 +13,7 @@ description = "A fast, figure-centric, SVG-first plotting library with a matplot
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "simpleplot contributors" }]
+authors = [{ name = "plotpress contributors" }]
 keywords = ["plotting", "svg", "visualization", "matplotlib", "figure"]
 # The standard install covers all file output out of the box: SVG, interactive
 # HTML, PNG raster, and vector PDF -- pure-wheel deps, installable everywhere.
@@ -30,7 +30,7 @@ dependencies = [
 # standard install stays server/CI/notebook friendly; fig.show() otherwise
 # falls back to the browser.
 gui = ["pywebview>=4.0"]
-# Embed interactive figures in a PyQt/PySide app (simpleplot.qt). PySide6 or
+# Embed interactive figures in a PyQt/PySide app (plotpress.qt). PySide6 or
 # PyQt5+PyQtWebEngine work too; this extra pulls the PyQt6 stack by default.
 qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
 dev = ["pytest>=7"]
@@ -57,9 +57,9 @@ markers = [
 addopts = "-m 'not browser'"
 
 [project.urls]
-Homepage = "https://github.com/jrvannucci/simpleplot"
-Documentation = "https://jrvannucci.github.io/simpleplot/"
-Changelog = "https://github.com/jrvannucci/simpleplot/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/jrvannucci/plotpress"
+Documentation = "https://jrvannucci.github.io/plotpress/"
+Changelog = "https://github.com/jrvannucci/plotpress/blob/main/CHANGELOG.md"
 
 # Version comes from the git tag: `git tag -a v0.1.0 -m ...` is the release.
 [tool.versioningit]
@@ -86,10 +86,10 @@ distance-dirty = "{base_version}.post{distance}+{rev}.dirty"
 # without importing setuptools or shelling out to git. Git-ignored: it is a
 # build artifact, not source.
 [tool.versioningit.write]
-file = "simpleplot/_version.py"
+file = "plotpress/_version.py"
 
 [tool.setuptools.packages.find]
-include = ["simpleplot*"]
+include = ["plotpress*"]
 
 [tool.setuptools.package-data]
-simpleplot = ["fonts/*.py"]
+plotpress = ["fonts/*.py"]

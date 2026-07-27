@@ -4,16 +4,16 @@ Usage
 Figures, not globals
 --------------------
 
-Everything hangs off a :class:`~simpleplot.Figure`. ``simpleplot.subplots()``
+Everything hangs off a :class:`~plotpress.Figure`. ``plotpress.subplots()``
 returns ``(fig, axes)`` just like matplotlib's ``plt.subplots()`` -- but there is
 no global "current figure/axes" and no global ``rcParams``.
 
 .. code-block:: python
 
-   import simpleplot
+   import plotpress
    import numpy as np
 
-   fig, axes = simpleplot.subplots(1, 2, figsize=(10, 4))
+   fig, axes = plotpress.subplots(1, 2, figsize=(10, 4))
    x = np.linspace(0, 10, 200)
    axes[0].plot(x, np.sin(x)); axes[0].set_title("sin")
    axes[1].scatter(x, np.cos(x), s=8); axes[1].set_title("cos")

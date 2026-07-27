@@ -14,12 +14,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 
 def build():
     rng = np.random.default_rng(3)
-    fig, axes = simpleplot.subplots(2, 2, figsize=(9, 6))
+    fig, axes = plotpress.subplots(2, 2, figsize=(9, 6))
     x = np.linspace(0, 4 * np.pi, 400)
 
     ax = axes[0, 0]

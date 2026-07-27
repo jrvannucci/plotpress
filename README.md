@@ -1,4 +1,4 @@
-# simpleplot
+# plotpress
 
 A **lightweight, dependency-light** plotting library that renders **SVG and
 self-contained interactive HTML** through a **matplotlib-shaped** API — with
@@ -6,10 +6,10 @@ self-contained interactive HTML** through a **matplotlib-shaped** API — with
 `pip` runs.
 
 ```python
-import simpleplot
+import plotpress
 import numpy as np
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 x = np.linspace(0, 4 * np.pi, 400)
 ax.plot(x, np.sin(x), label="sin")
 ax.plot(x, np.cos(x), label="cos", linestyle="--")
@@ -23,14 +23,14 @@ fig.show()                                # native pop-up window
 
 ## What it is for
 
-simpleplot is **not a matplotlib replacement**, and it does not try to match
+plotpress is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or triangulated
 grids, one font-metric family, and its polar / 3-D axes project onto the 2-D
 core rather than a dedicated pipeline — see [Supported plot types](#supported-plot-types)
 below). It aims at a narrower, underserved spot: plotting where matplotlib's
 install footprint or global state gets in the way.
 
-**Reach for simpleplot when you want to:**
+**Reach for plotpress when you want to:**
 
 - **Ship plots from a constrained runtime** — locked-down servers, minimal
   containers, Pyodide/WASM, or CI — where a pure-Python + NumPy install with no
@@ -48,7 +48,7 @@ deep ecosystem that pandas, seaborn and scikit-learn plot into.
 
 1. **No `pyplot`, no globals.** There is no "current figure/axes" and no global
    `rcParams`. A `Figure` owns its axes and its own `Style`; two figures never
-   share mutable state. `simpleplot.subplots()` returns `(fig, axes)` just like
+   share mutable state. `plotpress.subplots()` returns `(fig, axes)` just like
    `plt.subplots()` — but touches no global state.
 2. **matplotlib-*shaped* API** so moving code either direction is mostly
    mechanical: `Figure`/`Axes`, `plot`, `scatter`, `pcolormesh`,
@@ -64,11 +64,11 @@ deep ecosystem that pandas, seaborn and scikit-learn plot into.
 ## Install
 
 ```bash
-pip install simpleplot            # SVG + interactive HTML + PNG/PDF export
-pip install simpleplot[gui]       # + native pop-up window (fig.show(), pywebview)
-pip install simpleplot[qt]        # + embed in a PyQt/PySide app (fig.show_qt())
-pip install simpleplot[dev]       # + pytest (contributors)
-pip install simpleplot[bench]     # + matplotlib (benchmark comparison)
+pip install plotpress            # SVG + interactive HTML + PNG/PDF export
+pip install plotpress[gui]       # + native pop-up window (fig.show(), pywebview)
+pip install plotpress[qt]        # + embed in a PyQt/PySide app (fig.show_qt())
+pip install plotpress[dev]       # + pytest (contributors)
+pip install plotpress[bench]     # + matplotlib (benchmark comparison)
 ```
 
 The standard install covers **all file output** -- SVG, interactive HTML, PNG and
@@ -88,7 +88,7 @@ the browser.
 | `fig.to_svg()` / `fig.to_html()` | string, for embedding |
 | `fig._repr_svg_()` | inline SVG in Jupyter |
 | `fig.show()` | native pop-up window (pywebview, `[gui]` extra; falls back to browser) |
-| `fig.show_qt()` | embed in a PyQt/PySide app (`simpleplot.qt`, `[qt]` extra) |
+| `fig.show_qt()` | embed in a PyQt/PySide app (`plotpress.qt`, `[qt]` extra) |
 
 ## Interactive figures
 
@@ -112,7 +112,7 @@ extra dimension; multiple sliders can be linked by a shared index.
 
 ## Supported plot types
 
-simpleplot covers the core of matplotlib's "Plot types" reference grid:
+plotpress covers the core of matplotlib's "Plot types" reference grid:
 
 | | | |
 |---|---|---|
@@ -135,7 +135,7 @@ simpleplot covers the core of matplotlib's "Plot types" reference grid:
 **3-D** (`projection="3d"`): `scatter`/`scatter3D`, `plot`/`plot3D`,
 `plot_surface` (depth-sorted, colorbar-ready), `plot_wireframe`, `view_init` —
 projected onto the 2-D core (orthographic, painter's algorithm), see the
-[limitations docs](https://jrvannucci.github.io/simpleplot/user_guide/limitations.html)
+[limitations docs](https://jrvannucci.github.io/plotpress/user_guide/limitations.html)
 for the caveats.
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
@@ -167,7 +167,7 @@ remaining plot-type gaps vs matplotlib's full gallery.
 ## Testing
 
 ```bash
-pip install simpleplot[dev]         # pytest
+pip install plotpress[dev]         # pytest
 python -m pytest -m "not perf"  # fast unit + output tests (~2s)
 python -m pytest -m perf -s     # timing tests + speedup report (needs matplotlib)
 ```
@@ -190,28 +190,28 @@ These need a browser, so they are deselected by default and skip cleanly when it
 is missing:
 
 ```bash
-pip install simpleplot[browser] && playwright install chromium
+pip install plotpress[browser] && playwright install chromium
 python -m pytest -m browser
 ```
 
 ## Benchmarks
 
 ```bash
-pip install simpleplot[bench]        # matplotlib, for comparison
-python benchmarks/benchmark.py  # simpleplot vs matplotlib, plot build + SVG output
+pip install plotpress[bench]        # matplotlib, for comparison
+python benchmarks/benchmark.py  # plotpress vs matplotlib, plot build + SVG output
 ```
 
 Representative run (best of 3, one machine — build **and** serialize to SVG,
 both using the object-oriented API):
 
-| scenario | simpleplot | matplotlib | speedup |
+| scenario | plotpress | matplotlib | speedup |
 |----------|------:|-----------:|--------:|
 | pcolormesh 300×300 | ~16 ms | ~6400 ms | **~400×** |
 | many axes (8×8 grid) | ~40 ms | ~1600 ms | **~40×** |
 | scatter, 5k points | ~15 ms | ~220 ms | **~14×** |
 | single line, 100k points | ~9 ms | ~48 ms | **~5.6×** |
 
-**Honest caveat:** simpleplot's win comes from avoiding matplotlib's per-`Artist`
+**Honest caveat:** plotpress's win comes from avoiding matplotlib's per-`Artist`
 Python overhead (many axes) and from rasterizing meshes to one `<image>` instead
 of tens of thousands of vector cells (pcolormesh). The *single huge polyline*
 case used to be a loss (pure-Python float→string serialization of 100k points);
@@ -229,7 +229,7 @@ annotations and figure-level titles; per-axes **data** zoom / pan / box-zoom wit
 live ticks, point-picking + extraction, in-browser annotation, and sliders for
 3-D data.
 
-**Pure Python, and staying that way.** simpleplot is deliberately pure Python +
+**Pure Python, and staying that way.** plotpress is deliberately pure Python +
 NumPy with no compiled extension — it installs everywhere pip does, no build
 toolchain, no per-platform wheels. Speed comes from NumPy, not native code:
 coordinate formatting is vectorized, huge lines are min/max-decimated (the
@@ -246,7 +246,7 @@ feature, not a trade-off.
 
 ## Architecture notes
 
-`simpleplot/` layout:
+`plotpress/` layout:
 
 | Module | Responsibility |
 |--------|----------------|
@@ -274,7 +274,7 @@ emitters over that shared primitive vocabulary, so an artist is defined in one
 place, not per backend.
 
 **Fonts.** A figure is laid out *before* anything draws its glyphs — SVG emits
-`<text>` and lets the viewer rasterize — so simpleplot has to predict text width
+`<text>` and lets the viewer rasterize — so plotpress has to predict text width
 from bundled metric tables. That keeps layout identical on every machine with no
 font-file dependency. Bundled are the base-14 metric families — **Helvetica,
 Times and Courier**, each in regular / bold / italic / bold-italic — plus

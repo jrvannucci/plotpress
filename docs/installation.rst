@@ -3,10 +3,10 @@ Installation
 
 .. code-block:: bash
 
-   pip install simpleplot            # SVG + interactive HTML + PNG/PDF export
-   pip install simpleplot[gui]       # + native pop-up window (fig.show())
-   pip install simpleplot[dev]       # + pytest (contributors)
-   pip install simpleplot[bench]     # + matplotlib (benchmark comparison)
+   pip install plotpress            # SVG + interactive HTML + PNG/PDF export
+   pip install plotpress[gui]       # + native pop-up window (fig.show())
+   pip install plotpress[dev]       # + pytest (contributors)
+   pip install plotpress[bench]     # + matplotlib (benchmark comparison)
 
 The standard install covers **all file output** -- SVG, interactive HTML, PNG
 and vector PDF -- with pure-wheel dependencies (NumPy, Pillow, svglib, reportlab)

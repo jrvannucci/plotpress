@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import simpleplot
+import plotpress
 
 NROWS, NCOLS = 5, 5          # 25 plots; raise for a larger grid
 N_SAMPLES = 300
@@ -39,7 +39,7 @@ def build():
     rng = np.random.default_rng(11)
     t = np.linspace(0.0, 1.0, N_SAMPLES)
 
-    fig, axes = simpleplot.subplots(NROWS, NCOLS, figsize=(4.6 * NCOLS, 3.6 * NROWS))
+    fig, axes = plotpress.subplots(NROWS, NCOLS, figsize=(4.6 * NCOLS, 3.6 * NROWS))
     for k, ax in enumerate(axes.ravel()):
         y = make_signal(rng, t)
 

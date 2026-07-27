@@ -1,17 +1,17 @@
-"""Sphinx configuration for the simpleplot documentation (Read the Docs)."""
+"""Sphinx configuration for the plotpress documentation (Read the Docs)."""
 
 import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 
-import simpleplot  # noqa: E402
+import plotpress  # noqa: E402
 
 # -- Project information ------------------------------------------------------
-project = "simpleplot"
-copyright = "2026, simpleplot contributors"
-author = "simpleplot contributors"
-release = simpleplot.__version__
+project = "plotpress"
+copyright = "2026, plotpress contributors"
+author = "plotpress contributors"
+release = plotpress.__version__
 version = release
 
 # -- General configuration ----------------------------------------------------
@@ -44,7 +44,7 @@ suppress_warnings = ["config.cache"]
 
 # -- HTML output (Read the Docs theme) ----------------------------------------
 html_theme = "sphinx_rtd_theme"
-html_title = f"simpleplot {version}"
+html_title = f"plotpress {version}"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,
@@ -54,31 +54,31 @@ html_theme_options = {
 # "Edit on GitHub" / source links in the RTD theme header.
 html_context = {
     "display_github": True,
-    "github_user": "simpleplot",
-    "github_repo": "simpleplot",
+    "github_user": "plotpress",
+    "github_repo": "plotpress",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }
 
 
-# -- sphinx-gallery: capture simpleplot Figures as example images -------------
-def _simpleplot_scraper(block, block_vars, gallery_conf):
-    """Save any new ``simpleplot.Figure`` created by an example to a PNG.
+# -- sphinx-gallery: capture plotpress Figures as example images -------------
+def _plotpress_scraper(block, block_vars, gallery_conf):
+    """Save any new ``plotpress.Figure`` created by an example to a PNG.
 
     Mirrors sphinx-gallery's matplotlib scraper, but scans the example's globals
-    (simpleplot has no global figure registry) and rasterizes via the built-in
+    (plotpress has no global figure registry) and rasterizes via the built-in
     Pillow backend.
     """
     from sphinx_gallery.scrapers import figure_rst
 
     it = block_vars["image_path_iterator"]
-    seen = block_vars.setdefault("_simpleplot_seen", set())
+    seen = block_vars.setdefault("_plotpress_seen", set())
     paths = []
     for value in list(block_vars["example_globals"].values()):
-        if isinstance(value, simpleplot.Figure) and id(value) not in seen:
+        if isinstance(value, plotpress.Figure) and id(value) not in seen:
             seen.add(id(value))
             path = next(it)
-            value.save(path, scale=2)      # PNG via simpleplot.raster
+            value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
     return figure_rst(paths, gallery_conf["src_dir"])
 
@@ -88,7 +88,7 @@ sphinx_gallery_conf = {
     "gallery_dirs": "auto_examples",
     # Separator-agnostic so examples execute on Windows and POSIX alike.
     "filename_pattern": r"plot_",
-    "image_scrapers": (_simpleplot_scraper,),
+    "image_scrapers": (_plotpress_scraper,),
     "reset_modules": (),
     "thumbnail_size": (400, 280),
     "remove_config_comments": True,
