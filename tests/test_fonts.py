@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-import simpleplot
-from simpleplot import raster
-from simpleplot.fonts import text_width
+import plotpress
+from plotpress import raster
+from plotpress.fonts import text_width
 
 SAMPLES = ["1.002e5", "y axis label", "a series label", "Wwwiii", "-0.5"]
 
@@ -40,7 +40,7 @@ needs_metric_font = pytest.mark.skipif(
 @needs_metric_font
 def test_default_stack_resolves_to_a_helvetica_metric_face():
     """PNG glyphs must come from a face the layout metrics actually describe."""
-    font = raster._font(18, simpleplot.Style().font_family)
+    font = raster._font(18, plotpress.Style().font_family)
     # 18px == tick_label_size * the default scale=2 supersample.
     assert _rms_error(font, 18) < 1.0
 
@@ -51,7 +51,7 @@ def test_resolved_face_beats_pillows_builtin_default():
 
     size = 18
     builtin = ImageFont.load_default(size=size)
-    resolved = raster._font(size, simpleplot.Style().font_family)
+    resolved = raster._font(size, plotpress.Style().font_family)
     assert _rms_error(resolved, size) < _rms_error(builtin, size)
 
 
@@ -73,7 +73,7 @@ def test_candidate_list_always_ends_with_metric_compatible_faces():
 
 def test_candidate_list_prefers_the_requested_family():
     """The named family's own faces come before the metric-family fallback."""
-    from simpleplot.fonts import families
+    from plotpress.fonts import families
 
     files = raster._font_files("Courier New, monospace")
     first_courier = min(files.index(f) for f in ("Courier New.ttf", "cour.ttf"))
@@ -91,7 +91,7 @@ def test_no_chain_mixes_metrically_incompatible_faces():
     Helvetica, so a serif or Verdana chain tailing into either would overflow
     every box on a machine with no better face installed.
     """
-    from simpleplot.fonts import families
+    from plotpress.fonts import families
 
     owner = {}
     for metric_family, (regular, bold) in families._METRIC_FILES.items():
@@ -116,7 +116,7 @@ def test_font_lookup_accepts_any_family_string(family):
 
 
 def test_png_export_still_works_end_to_end(tmp_path):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0], label="a series label")
     ax.legend()
     ax.set_ylabel("y axis label")
@@ -127,7 +127,7 @@ def test_png_export_still_works_end_to_end(tmp_path):
 
 
 def _laid_out(family):
-    fig, ax = simpleplot.subplots(style=simpleplot.Style(font_family=family))
+    fig, ax = plotpress.subplots(style=plotpress.Style(font_family=family))
     ax.plot([0.0, 1.0], [0.0, 1.0], label="a series label")
     ax.legend()
     ax.set_ylabel("y axis label")
@@ -164,10 +164,10 @@ def test_unmeasurable_family_falls_back_to_helvetica():
 def test_legend_title_box_fits_its_bold_title():
     """The legend title is drawn bold but used to be measured with regular
     metrics, so a long title overhung the box it was centered in."""
-    from simpleplot.svg import _legend_layout
+    from plotpress.svg import _legend_layout
 
     title = "Measurement conditions"
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0], label="s")
     ax.legend(title=title)
     lay = _legend_layout(ax, ax.style)
@@ -206,7 +206,7 @@ def test_courier_is_measured_monospaced():
     (None, "helvetica"),
 ])
 def test_family_resolution(stack, expected):
-    from simpleplot.fonts import resolve_family
+    from plotpress.fonts import resolve_family
 
     assert resolve_family(stack) == expected
 
@@ -227,7 +227,7 @@ def test_bundled_tables_match_their_afm_sources():
     finally:
         sys.path.pop(0)
 
-    from simpleplot.fonts import metrics
+    from plotpress.fonts import metrics
 
     afm_dir = os.path.join(os.path.dirname(matplotlib.__file__),
                            "mpl-data", "fonts", "afm")
@@ -245,8 +245,8 @@ def test_bundled_tables_match_their_afm_sources():
 def test_raster_resolves_a_real_bold_face_for_the_legend_title():
     """SVG draws the legend title and suptitle bold; PNG must not draw them
     regular, or the two backends disagree on weight."""
-    bold = raster._font(18, simpleplot.Style().font_family, bold=True)
-    regular = raster._font(18, simpleplot.Style().font_family)
+    bold = raster._font(18, plotpress.Style().font_family, bold=True)
+    regular = raster._font(18, plotpress.Style().font_family)
     if bold.getname() == regular.getname():
         pytest.skip("no bold face installed on this machine")
     assert bold.getlength("legend title") > regular.getlength("legend title")
@@ -262,14 +262,14 @@ def test_bold_lookup_falls_back_to_regular_before_pillows_default():
 
 def test_installed_measurement_is_off_by_default():
     """Determinism is the default: nothing consults the machine unless asked."""
-    assert simpleplot.Style().measure_installed_fonts is False
+    assert plotpress.Style().measure_installed_fonts is False
 
 
 def test_installed_measurement_matches_bundled_for_metric_compatible_faces():
     """Arial is metric-compatible with Helvetica, so measuring the real file
     must reproduce the bundled table. Cross-validates the generated data
     against a font that actually exists on this machine."""
-    from simpleplot.fonts.installed import installed_table
+    from plotpress.fonts.installed import installed_table
 
     table = installed_table("Arial")
     if table is None:
@@ -281,15 +281,15 @@ def test_installed_measurement_matches_bundled_for_metric_compatible_faces():
 def test_installed_measurement_changes_layout_for_an_unmeasurable_family():
     """The whole point of the opt-in: Verdana is ~14% wider than the Helvetica
     it otherwise gets measured as, so turning this on must widen its margin."""
-    from simpleplot.fonts.installed import installed_table
+    from plotpress.fonts.installed import installed_table
 
     if installed_table("Verdana") is None:
         pytest.skip("Verdana not installed")
 
     def margin(measure_installed):
-        style = simpleplot.Style(font_family="Verdana, sans-serif",
+        style = plotpress.Style(font_family="Verdana, sans-serif",
                                  measure_installed_fonts=measure_installed)
-        fig, ax = simpleplot.subplots(style=style)
+        fig, ax = plotpress.subplots(style=style)
         ax.barh(np.arange(3), [1.0, 2.0, 3.0])
         ax.set_yticks(np.arange(3))
         ax.set_yticklabels(["a wide category name"] * 3)
@@ -302,10 +302,10 @@ def test_installed_measurement_changes_layout_for_an_unmeasurable_family():
 def test_installed_measurement_falls_back_when_nothing_resolves(monkeypatch):
     """A machine with none of the candidate files must still lay out, using the
     bundled tables rather than raising."""
-    from simpleplot.fonts import installed
+    from plotpress.fonts import installed
 
     # _measure imports font_files from .families at call time, so patch it there.
-    monkeypatch.setattr("simpleplot.fonts.families.font_files",
+    monkeypatch.setattr("plotpress.fonts.families.font_files",
                         lambda family, bold=False: ["no-such-font.ttf"])
     installed.clear_cache()
     try:
@@ -321,7 +321,7 @@ def test_tight_layout_measures_custom_tick_labels():
     """Category names set via set_yticklabels are usually far wider than the
     numbers they replace; sizing the margin from the tick *values* clipped them."""
     labels = ["a very long category name"] * 3
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.barh(np.arange(3), [1.0, 2.0, 3.0])
     ax.set_yticks(np.arange(3))
     ax.set_yticklabels(labels)
@@ -335,9 +335,9 @@ def test_tight_layout_measures_custom_tick_labels():
 def test_ylabel_clears_custom_tick_labels():
     """The y label is placed past the widest tick label, so it must measure the
     custom strings too."""
-    from simpleplot.svg import _max_ytick_width
+    from plotpress.svg import _max_ytick_width
 
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.barh(np.arange(3), [1.0, 2.0, 3.0])
     ax.set_yticks(np.arange(3))
     ax.set_yticklabels(["short"] * 3)
@@ -348,7 +348,7 @@ def test_ylabel_clears_custom_tick_labels():
 
 
 def test_tight_layout_still_measures_numeric_ticks():
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1e7])
     fig.tight_layout()
     labels = _tick_labels(ax)
@@ -358,8 +358,8 @@ def test_tight_layout_still_measures_numeric_ticks():
 
 
 def _tick_labels(ax):
-    from simpleplot.svg import _resolve_tick_labels
-    from simpleplot.ticker import nice_ticks
+    from plotpress.svg import _resolve_tick_labels
+    from plotpress.ticker import nice_ticks
 
     (_, _), (lo, hi) = ax._resolved_limits()
     return _resolve_tick_labels(ax._yticklabels, nice_ticks(lo, hi))
@@ -377,9 +377,9 @@ def test_raster_places_the_ylabel_where_svg_does(data_scale, monkeypatch):
     """
     import re
 
-    from simpleplot import raster
+    from plotpress import raster
 
-    fig, ax = simpleplot.subplots(figsize=(7.0, 3.6))
+    fig, ax = plotpress.subplots(figsize=(7.0, 3.6))
     ax.bar([0, 1, 2], np.array([1.0, 2.0, 3.0]) * data_scale)
     ax.set_ylabel("YYYY")
     fig.tight_layout()
@@ -402,7 +402,7 @@ def test_raster_places_the_ylabel_where_svg_does(data_scale, monkeypatch):
 
 
 def test_twin_axes_png_still_renders(tmp_path):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     ax.set_ylabel("left")
     tw = ax.twinx()

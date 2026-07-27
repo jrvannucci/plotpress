@@ -6,14 +6,14 @@ Marginal rugs on a scatter
 distributions without the extra axes a jointplot would need.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(11)
 n = 250
 x = rng.normal(5.9, 0.7, n)
 y = 0.55 * x + rng.normal(0.0, 0.35, n)
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 ax.scatter(x, y, s=14, color="#1f77b4", alpha=0.55)
 ax.rugplot(x, color="#1f77b4", alpha=0.6)
 ax.rugplot(y, side="left", color="#1f77b4", alpha=0.6)

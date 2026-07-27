@@ -12,8 +12,8 @@ No global state
 ---------------
 
 Unlike matplotlib, there is no ``pyplot`` layer and no global ``rcParams``. A
-:class:`~simpleplot.figure.Figure` owns its axes and its own
-:class:`~simpleplot.style.Style`. ``simpleplot.subplots()`` returns a fresh,
+:class:`~plotpress.figure.Figure` owns its axes and its own
+:class:`~plotpress.style.Style`. ``plotpress.subplots()`` returns a fresh,
 fully independent figure.
 
 SVG-first, selectively raster
@@ -53,7 +53,7 @@ Module                        Responsibility
 Performance
 -----------
 
-Avoiding matplotlib's per-``Artist`` Python overhead makes simpleplot much
+Avoiding matplotlib's per-``Artist`` Python overhead makes plotpress much
 faster for **many-axes** figures, and rasterizing meshes to one image makes
 ``pcolormesh`` dramatically cheaper. Even a single huge polyline is a win:
 coordinate formatting is vectorized with ``numpy.char`` and monotonic lines are

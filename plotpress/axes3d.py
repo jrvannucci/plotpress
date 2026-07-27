@@ -1,7 +1,7 @@
 """3-D axes: (x, y, z) plotting on top of the 2-D Cartesian core.
 
-Like :class:`~simpleplot.polar.PolarAxes`, an :class:`Axes3D` is an ordinary
-:class:`~simpleplot.axes.Axes` with equal aspect and the rectangular frame off.
+Like :class:`~plotpress.polar.PolarAxes`, an :class:`Axes3D` is an ordinary
+:class:`~plotpress.axes.Axes` with equal aspect and the rectangular frame off.
 It normalizes data into a unit cube, applies an orthographic camera set by
 ``elev``/``azim``, and emits the projected geometry through existing artists
 (``scatter``/``plot``/``PolyCollection``/``LineCollection``). The renderer never

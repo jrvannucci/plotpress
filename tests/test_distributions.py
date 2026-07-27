@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 
-import simpleplot
-from simpleplot.artists import FillBetween, Rug, ScatterCollection, Violin
-from simpleplot.primitives import Segments, artist_to_prims
-from simpleplot.transform import LinearTransform
+import plotpress
+from plotpress.artists import FillBetween, Rug, ScatterCollection, Violin
+from plotpress.primitives import Segments, artist_to_prims
+from plotpress.transform import LinearTransform
 
 
 def _sample(n=400, loc=0.0, scale=1.0, seed=0):
@@ -15,7 +15,7 @@ def _sample(n=400, loc=0.0, scale=1.0, seed=0):
 
 # -- kdeplot ----------------------------------------------------------------
 def test_kdeplot_is_a_normalised_density():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     line = ax.kdeplot(_sample(2000))
     assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=1e-3)
     assert (line.y >= 0).all()
@@ -24,7 +24,7 @@ def test_kdeplot_is_a_normalised_density():
 def test_kdeplot_binned_and_exact_estimators_agree():
     """Above _KDE_BINNING_MIN the density is computed by binning + convolution
     instead of the exact per-point sum; the two must match closely."""
-    from simpleplot.axes import (
+    from plotpress.axes import (
         _binned_gaussian_kde, _gaussian_kde, _kde_bandwidth,
     )
 
@@ -48,7 +48,7 @@ def test_kdeplot_binned_and_exact_estimators_agree():
 def test_kdeplot_stays_normalised_for_large_awkward_samples(gen):
     """Heavy-tailed outliers can stretch the grid until dx approaches the
     bandwidth; the density must still integrate to 1 there."""
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     line = ax.kdeplot(gen())
     assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=2e-3)
     assert (line.y >= 0).all()
@@ -57,14 +57,14 @@ def test_kdeplot_stays_normalised_for_large_awkward_samples(gen):
 def test_kdeplot_handles_a_million_points():
     """The exact estimator's (grid, n) intermediate cannot even be allocated at
     this size; the binned path is what makes it possible at all."""
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     line = ax.kdeplot(np.random.default_rng(0).normal(size=1_000_000))
     assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=1e-3)
 
 
 def test_kdeplot_cut_extends_past_the_data():
     d = _sample()
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     tight = ax.kdeplot(d, cut=0.0)
     wide = ax.kdeplot(d, cut=3.0)
     assert tight.x[0] == pytest.approx(d.min())
@@ -75,7 +75,7 @@ def test_kdeplot_cut_extends_past_the_data():
 
 
 def test_kdeplot_fill_adds_a_filled_band():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.kdeplot(_sample(), fill=False)
     assert not any(isinstance(a, FillBetween) for a in ax.artists)
     ax.kdeplot(_sample(), fill=True)
@@ -84,7 +84,7 @@ def test_kdeplot_fill_adds_a_filled_band():
 
 # -- ecdfplot ---------------------------------------------------------------
 def test_ecdfplot_spans_zero_to_one_and_is_monotonic():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     step = ax.ecdfplot(_sample())
     assert step.y.min() == pytest.approx(0.0)
     assert step.y.max() == pytest.approx(1.0)
@@ -93,14 +93,14 @@ def test_ecdfplot_spans_zero_to_one_and_is_monotonic():
 
 def test_ecdfplot_hits_half_at_the_median():
     d = _sample(1001)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     step = ax.ecdfplot(d)
     assert np.interp(np.median(d), step.x, step.y) == pytest.approx(0.5, abs=0.01)
 
 
 def test_ecdfplot_complementary_is_the_mirror():
     d = _sample()
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     plain = ax.ecdfplot(d)
     comp = ax.ecdfplot(d, complementary=True)
     np.testing.assert_allclose(comp.y, 1.0 - plain.y)
@@ -114,7 +114,7 @@ def _prims(artist, height_px=50.0):
 
 def test_rugplot_does_not_move_the_autoscale():
     """Regression: the rug is placed in axes fractions, not data units."""
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     before = ax._resolved_limits()
     ax.rugplot([0.2, 0.5, 0.9])
@@ -124,7 +124,7 @@ def test_rugplot_does_not_move_the_autoscale():
 
 def test_rugplot_calls_share_one_baseline():
     """Regression: two rugs used to disagree because each re-read get_ylim()."""
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     a = ax.rugplot([0.2, 0.5])
     b = ax.rugplot([0.3, 0.7])
@@ -136,14 +136,14 @@ def test_rugplot_calls_share_one_baseline():
 
 
 def test_rugplot_height_is_a_fraction_of_the_axes():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     rug = ax.rugplot([0.25, 0.75], height=0.1)
     (seg,) = _prims(rug, height_px=50.0)
     np.testing.assert_allclose(seg.segs[:, 1] - seg.segs[:, 3], 0.1 * 50.0)
 
 
 def test_rugplot_bounds_only_its_own_axis():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     bottom = ax.rugplot([1.0, 3.0]).data_bounds()
     assert bottom[:2] == (1.0, 3.0)
     assert np.isnan(bottom[2]) and np.isnan(bottom[3])
@@ -153,14 +153,14 @@ def test_rugplot_bounds_only_its_own_axis():
 
 
 def test_rugplot_side_left_runs_horizontally():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     (seg,) = _prims(ax.rugplot([0.25, 0.75], side="left"))
     np.testing.assert_allclose(seg.segs[:, 1], seg.segs[:, 3])  # constant y
     assert (seg.segs[:, 2] > seg.segs[:, 0]).all()              # extends right
 
 
 def test_rugplot_renders_to_svg():
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     ax.rugplot([0.2, 0.5, 0.9])
     assert "<svg" in fig.to_svg()
@@ -168,13 +168,13 @@ def test_rugplot_renders_to_svg():
 
 # -- violinplot inner / cut -------------------------------------------------
 def test_violin_inner_none_adds_only_the_violin():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.violinplot([_sample(), _sample(seed=1)])
     assert len(ax.artists) == 1 and isinstance(ax.artists[0], Violin)
 
 
 def test_violin_inner_box_adds_summary_marks():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.violinplot([_sample()], inner="box")
     assert len(ax.artists) > 1
     assert any(isinstance(a, ScatterCollection) for a in ax.artists)
@@ -182,7 +182,7 @@ def test_violin_inner_box_adds_summary_marks():
 
 @pytest.mark.parametrize("inner", ["box", "quartile", "stick"])
 def test_violin_inner_modes_render(inner):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.violinplot([_sample(), _sample(seed=1)], inner=inner)
     assert "<svg" in fig.to_svg()
 
@@ -192,7 +192,7 @@ def test_violin_median_dot_follows_orientation(orientation, ix):
     """Regression: the median dot used to be placed at (position, median)
     regardless of orientation, which misplaced it and skewed the autoscale."""
     d = _sample()
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.violinplot([d], positions=[1.0], orientation=orientation, inner="box")
     dot = next(a for a in ax.artists if isinstance(a, ScatterCollection))
     value, position = (dot.y, dot.x) if ix else (dot.x, dot.y)
@@ -202,7 +202,7 @@ def test_violin_median_dot_follows_orientation(orientation, ix):
 
 def test_violin_cut_widens_the_silhouette():
     d = _sample()
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     tight = ax.violinplot([d], cut=0.0)
     wide = ax.violinplot([d], cut=2.0)
     assert tight.grids[0][0] == pytest.approx(d.min())
@@ -220,7 +220,7 @@ ALL_NAN = np.array([np.nan, np.nan, np.nan])
 def test_1d_distributions_draw_nothing_rather_than_raising(method, data):
     """An all-NaN column is a realistic input; these used to fail deep in numpy
     with errors that named neither the caller nor the data."""
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     art = getattr(ax, method)(data)
     assert art.data_bounds() is None
     assert fig.to_svg().startswith("<svg")
@@ -229,7 +229,7 @@ def test_1d_distributions_draw_nothing_rather_than_raising(method, data):
 @pytest.mark.parametrize("data", [EMPTY, ALL_NAN], ids=["empty", "all-nan"])
 @pytest.mark.parametrize("method", ["boxplot", "violinplot"])
 def test_grouped_distributions_drop_empty_datasets(method, data):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     art = getattr(ax, method)([data])
     assert art.data_bounds() is None
     assert fig.to_svg().startswith("<svg")
@@ -238,7 +238,7 @@ def test_grouped_distributions_drop_empty_datasets(method, data):
 @pytest.mark.parametrize("method", ["boxplot", "violinplot"])
 def test_empty_dataset_does_not_shift_its_neighbours(method):
     a, c = _sample(seed=1), _sample(seed=2)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     art = getattr(ax, method)([a, EMPTY, c], positions=[10.0, 20.0, 30.0])
     # The empty column drops out; the survivors keep their own positions.
     assert list(art.positions) == [10.0, 30.0]
@@ -246,20 +246,20 @@ def test_empty_dataset_does_not_shift_its_neighbours(method):
 
 def test_grouped_distributions_ignore_nans_among_real_values():
     d = _sample()
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     bp = ax.boxplot([np.concatenate([d, [np.nan, np.nan]])])
     assert bp.stats[0]["med"] == pytest.approx(np.median(d))
 
 
 def test_hexbin_accepts_no_points():
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     hb = ax.hexbin(EMPTY, EMPTY)
     assert hb.data_bounds() is None
     assert fig.to_svg().startswith("<svg")
 
 
 def test_empty_series_does_not_disturb_a_real_one_on_the_same_axes():
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.kdeplot(EMPTY)
     ax.plot([0.0, 1.0, 2.0], [0.0, 5.0, 10.0])
     lo, hi = ax.get_ylim()

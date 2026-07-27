@@ -1,4 +1,4 @@
-"""simpleplot -- a fast, figure-centric, SVG-first plotting library.
+"""plotpress -- a fast, figure-centric, SVG-first plotting library.
 
 Distinct from matplotlib in three ways:
 
@@ -8,7 +8,7 @@ Distinct from matplotlib in three ways:
    render itself.
 2. **matplotlib-like API.** ``Figure``/``Axes`` and methods like ``plot``,
    ``scatter``, ``pcolormesh``, ``set_xlabel``, ``legend`` mirror matplotlib so
-   existing code is easy to port. ``simpleplot.subplots(...)`` returns
+   existing code is easy to port. ``plotpress.subplots(...)`` returns
    ``(fig, axes)`` just like ``plt.subplots(...)`` -- minus the globals.
 3. **SVG-first + fast.** Output is vector SVG (with embedded raster only for
    mesh/image layers), optionally interactive. The hot paths are vectorized in
@@ -17,8 +17,8 @@ Distinct from matplotlib in three ways:
 
 Example
 -------
->>> import simpleplot
->>> fig, ax = simpleplot.subplots()
+>>> import plotpress
+>>> fig, ax = plotpress.subplots()
 >>> ax.plot([0, 1, 2], [0, 1, 4], label="quadratic")
 >>> ax.legend()
 >>> fig.save("out.svg")
@@ -31,7 +31,7 @@ from .figure import Figure, subplots
 from .style import Style
 
 def _detect_version() -> str:
-    """The installed version, however this copy of simpleplot is being run.
+    """The installed version, however this copy of plotpress is being run.
 
     Three cases, in order of precision. ``_version.py`` is written by
     versioningit at build time and is the exact string the artifact was built
@@ -49,7 +49,7 @@ def _detect_version() -> str:
     except ImportError:                       # pragma: no cover - Python < 3.8
         return "0+unknown"
     try:
-        return version("simpleplot")
+        return version("plotpress")
     except PackageNotFoundError:
         return "0+unknown"
 

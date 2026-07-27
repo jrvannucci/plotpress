@@ -1,6 +1,6 @@
 """Polar axes: (theta, r) plotting on top of the Cartesian core.
 
-A :class:`PolarAxes` is an ordinary :class:`~simpleplot.axes.Axes` running with
+A :class:`PolarAxes` is an ordinary :class:`~plotpress.axes.Axes` running with
 equal aspect and the rectangular frame turned off. It projects ``(theta, r)``
 data to ``(x, y) = (r cos theta, r sin theta)`` before handing it to the normal
 plotting methods, and it builds its own polar frame -- radial grid circles,

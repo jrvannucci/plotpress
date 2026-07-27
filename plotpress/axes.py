@@ -2,7 +2,7 @@
 
 Mirrors the subset of matplotlib's ``Axes`` API needed for line, scatter, and
 pcolormesh plots. Holds its own artists, limits, labels, and a reference to the
-owning figure's :class:`~simpleplot.style.Style` -- there is no global current-axes
+owning figure's :class:`~plotpress.style.Style` -- there is no global current-axes
 state anywhere.
 """
 

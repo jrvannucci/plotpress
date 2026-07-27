@@ -1,7 +1,7 @@
 """The Figure: the root object that owns everything needed to render itself.
 
 There is no global "current figure" or "current axes". A figure holds its own
-axes, its own :class:`~simpleplot.style.Style`, and knows how to serialize itself to
+axes, its own :class:`~plotpress.style.Style`, and knows how to serialize itself to
 SVG/HTML or show itself in a native pop-up window. Two figures never share
 mutable state.
 """
@@ -97,8 +97,8 @@ class Figure:
     def add_axes(self, rect, projection=None) -> Axes:
         """Add an axes at ``rect = (left, bottom, width, height)`` (fractions).
 
-        ``projection='polar'`` makes it a :class:`~simpleplot.polar.PolarAxes`;
-        ``projection='3d'`` an :class:`~simpleplot.axes3d.Axes3D`.
+        ``projection='polar'`` makes it a :class:`~plotpress.polar.PolarAxes`;
+        ``projection='3d'`` an :class:`~plotpress.axes3d.Axes3D`.
         """
         ax = _axes_class(projection)(self, rect)
         self.axes.append(ax)
@@ -237,7 +237,7 @@ class Figure:
     def colorbar(self, mappable, ax, fraction=0.05, pad=0.02) -> Axes:
         """Add a colorbar for ``mappable``.
 
-        ``ax`` may be a single :class:`~simpleplot.axes.Axes` (the colorbar
+        ``ax`` may be a single :class:`~plotpress.axes.Axes` (the colorbar
         steals space from it) or a list / array of axes (one **shared** colorbar
         spanning them all, placed on their right -- the grid is squeezed to make
         room). All the axes should share the mappable's ``vmin``/``vmax`` for the
@@ -273,7 +273,7 @@ class Figure:
         """
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
-        svg = svg.replace("<svg ", '<svg id="simpleplot-svg" ', 1)
+        svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
         script = ""
         if interactive:
             from ._interactive import INTERACTIVE_JS
@@ -283,25 +283,25 @@ class Figure:
             pick = _json_payload(pick_data(self, precision=pick_precision))
             styl = _json_payload(style_payload(self))
             payloads = (
-                f'<script type="application/json" id="simpleplot-meta">{meta}</script>'
-                f'<script type="application/json" id="simpleplot-pick">{pick}</script>'
-                f'<script type="application/json" id="simpleplot-style">{styl}</script>'
+                f'<script type="application/json" id="plotpress-meta">{meta}</script>'
+                f'<script type="application/json" id="plotpress-pick">{pick}</script>'
+                f'<script type="application/json" id="plotpress-style">{styl}</script>'
             )
             if self._sliders:
                 frames = _json_payload(frame_data(self))
                 sliders = _json_payload(self._sliders)
                 payloads += (
-                    f'<script type="application/json" id="simpleplot-frames">{frames}</script>'
-                    f'<script type="application/json" id="simpleplot-sliders">{sliders}</script>'
+                    f'<script type="application/json" id="plotpress-frames">{frames}</script>'
+                    f'<script type="application/json" id="plotpress-sliders">{sliders}</script>'
                 )
-            config = ("<script>window.SIMPLEPLOT_WAIT_EXTRACT=true;</script>"
+            config = ("<script>window.PLOTPRESS_WAIT_EXTRACT=true;</script>"
                       if wait_extract else "")
             script = config + payloads + f"<script>{INTERACTIVE_JS}</script>"
         return (
             "<!doctype html><html><head><meta charset='utf-8'>"
             "<style>body{margin:0;background:#f5f5f5;display:flex;"
             "justify-content:center;align-items:center;min-height:100vh}"
-            "#simpleplot-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2)}"
+            "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2)}"
             "</style></head><body>"
             f"{svg}{script}</body></html>"
         )
@@ -356,7 +356,7 @@ class Figure:
         window (no manual close needed).
 
         The native window needs the ``[gui]`` extra
-        (``pip install simpleplot[gui]``). Without it, this falls back to opening
+        (``pip install plotpress[gui]``). Without it, this falls back to opening
         the figure in the default browser and returns ``None`` (use the in-page
         Extract panel to copy/download).
         """
@@ -369,7 +369,7 @@ class Figure:
             if wait_for_extract:
                 raise RuntimeError(
                     "wait_for_extract=True needs the native window; install it "
-                    "with: pip install simpleplot[gui]"
+                    "with: pip install plotpress[gui]"
                 )
             import tempfile
             import webbrowser
@@ -388,21 +388,21 @@ class Figure:
             return None
 
         api = _MarkerApi()
-        window = webview.create_window("simpleplot", html=html, js_api=api,
+        window = webview.create_window("plotpress", html=html, js_api=api,
                                        width=w, height=h)
         if wait_for_extract:
             api._window = window   # Extract closes the window -> unblocks below
         webview.start()
         return api.markers
 
-    def show_qt(self, title="simpleplot", block=True, interactive=True,
+    def show_qt(self, title="plotpress", block=True, interactive=True,
                 pick_precision=6):
         """Display in a native Qt window (PyQt/PySide), for Qt-based apps.
 
-        Thin wrapper around ``simpleplot.qt.view``. Needs a Qt binding with
-        WebEngine (``pip install simpleplot[qt]``). To embed the figure inside
+        Thin wrapper around ``plotpress.qt.view``. Needs a Qt binding with
+        WebEngine (``pip install plotpress[qt]``). To embed the figure inside
         your own Qt layout instead of a standalone window, use
-        ``simpleplot.qt.SimplePlotWidget`` directly.
+        ``plotpress.qt.PlotPressWidget`` directly.
         """
         from .qt import view
         return view(self, title=title, block=block, interactive=interactive,
@@ -445,7 +445,7 @@ def _cbar_label_width(cax) -> float:
     return (st.tick_size + 2 + text_px) / (cax.figure.figsize[0] * st.dpi)
 
 
-_TEMP_PREFIX = "simpleplot-"
+_TEMP_PREFIX = "plotpress-"
 _TEMP_MAX_AGE = 24 * 3600     # seconds
 
 

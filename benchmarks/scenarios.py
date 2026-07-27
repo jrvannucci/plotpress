@@ -1,6 +1,6 @@
-"""Shared benchmark scenarios comparing simpleplot vs matplotlib.
+"""Shared benchmark scenarios comparing plotpress vs matplotlib.
 
-Each scenario provides an ``simpleplot`` builder and a matplotlib (``mpl``) builder.
+Each scenario provides an ``plotpress`` builder and a matplotlib (``mpl``) builder.
 Both do the same work: construct the figure *and serialize it to SVG*, so we
 measure the whole "make the plot" cost, not just object creation.
 
@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 
-import simpleplot
+import plotpress
 
 _RNG = np.random.default_rng(1234)
 
@@ -53,29 +53,29 @@ _GRID_Y = np.sin(_GRID_X)
 
 
 # --------------------------------------------------------------------------
-# simpleplot builders
+# plotpress builders
 # --------------------------------------------------------------------------
-def _simpleplot_line():
-    fig, ax = simpleplot.subplots()
+def _plotpress_line():
+    fig, ax = plotpress.subplots()
     ax.plot(_X_100K, _Y_100K)
     return fig.to_svg()
 
 
-def _simpleplot_scatter():
-    fig, ax = simpleplot.subplots()
+def _plotpress_scatter():
+    fig, ax = plotpress.subplots()
     ax.scatter(_SCAT_X, _SCAT_Y, s=4)
     return fig.to_svg()
 
 
-def _simpleplot_mesh():
-    fig, ax = simpleplot.subplots()
+def _plotpress_mesh():
+    fig, ax = plotpress.subplots()
     m = ax.pcolormesh(_MESH)
     fig.colorbar(m, ax=ax)
     return fig.to_svg()
 
 
-def _simpleplot_many_axes():
-    fig, axes = simpleplot.subplots(8, 8, figsize=(16, 16))
+def _plotpress_many_axes():
+    fig, axes = plotpress.subplots(8, 8, figsize=(16, 16))
     for ax in axes.ravel():
         ax.plot(_GRID_X, _GRID_Y)
     return fig.to_svg()
@@ -128,8 +128,8 @@ def _mpl_many_axes():
 
 
 SCENARIOS = {
-    "line_100k_points": {"simpleplot": _simpleplot_line, "mpl": _mpl_line},
-    "scatter_5k_points": {"simpleplot": _simpleplot_scatter, "mpl": _mpl_scatter},
-    "pcolormesh_300x300": {"simpleplot": _simpleplot_mesh, "mpl": _mpl_mesh},
-    "many_axes_8x8_grid": {"simpleplot": _simpleplot_many_axes, "mpl": _mpl_many_axes},
+    "line_100k_points": {"plotpress": _plotpress_line, "mpl": _mpl_line},
+    "scatter_5k_points": {"plotpress": _plotpress_scatter, "mpl": _mpl_scatter},
+    "pcolormesh_300x300": {"plotpress": _plotpress_mesh, "mpl": _mpl_mesh},
+    "many_axes_8x8_grid": {"plotpress": _plotpress_many_axes, "mpl": _mpl_many_axes},
 }

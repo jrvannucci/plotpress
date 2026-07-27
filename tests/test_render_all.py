@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytest
 
-from simpleplot.figure import Figure
+from plotpress.figure import Figure
 
 NS = "{http://www.w3.org/2000/svg}"
 # Data-bearing marks (never axis decoration) and the full geometry set.

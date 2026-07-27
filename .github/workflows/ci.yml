@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # conf.py renders simpleplot.__version__ into the page title, and
+          # conf.py renders plotpress.__version__ into the page title, and
           # versioningit reads that from the nearest v* tag. A shallow checkout
           # sees no tags, so the published site would be titled 0.0.0.postN.
           fetch-depth: 0
@@ -104,7 +104,7 @@ jobs:
           path: docs/_build/html
 
   # Publishes the built docs to GitHub Pages on pushes to main -- this is where
-  # the documentation at https://jrvannucci.github.io/simpleplot/ comes from.
+  # the documentation at https://jrvannucci.github.io/plotpress/ comes from.
   # Requires enabling Pages once: repo Settings -> Pages -> Source = "GitHub Actions".
   deploy-docs:
     name: Deploy docs to GitHub Pages

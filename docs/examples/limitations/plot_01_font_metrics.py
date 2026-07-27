@@ -1,9 +1,9 @@
 """
-Font metrics: which families simpleplot can measure
+Font metrics: which families plotpress can measure
 ===================================================
 
 A figure is laid out *before* anything draws its glyphs: SVG emits ``<text>``
-and lets the viewer rasterize. So simpleplot has to **predict** how wide text
+and lets the viewer rasterize. So plotpress has to **predict** how wide text
 will be, and it predicts from bundled advance-width tables.
 
 It bundles the base-14 metric families -- Helvetica, Times and Courier, each in
@@ -17,11 +17,11 @@ of what the layout reserved. Anything past 100% overflows its box; anything well
 under wastes margin.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 # Percentages are hard-coded so this example renders identically everywhere,
 # including doc builders that have none of these fonts installed. The measured
-# families sit at 100% by construction: simpleplot reserves space using the very
+# families sit at 100% by construction: plotpress reserves space using the very
 # table that describes them. The fallback figures are their true widths relative
 # to Helvetica, which is what gets reserved on their behalf.
 FAMILIES = [
@@ -41,7 +41,7 @@ pct = np.array([p for _, p, _ in FAMILIES])
 measured = [m for _, _, m in FAMILIES]
 y = np.arange(len(names))
 
-fig, ax = simpleplot.subplots(figsize=(8.0, 4.6))
+fig, ax = plotpress.subplots(figsize=(8.0, 4.6))
 
 # Shade the band where a family is effectively interchangeable with what was
 # reserved for it.
@@ -62,7 +62,7 @@ for i, (p, m) in enumerate(zip(pct, measured)):
 ax.set_yticks(y)
 ax.set_yticklabels(names)
 ax.set_xlim(60, 165)
-ax.set_xlabel("width actually needed, as % of the space simpleplot reserved")
+ax.set_xlabel("width actually needed, as % of the space plotpress reserved")
 ax.set_title("Green: a bundled table measures it. Red: measured as Helvetica.")
 ax.grid(True)
 ax.legend(loc="lower right")
@@ -89,7 +89,7 @@ fig.tight_layout()
 # ------------------
 #
 # Bold is not a free variation on regular: Helvetica-Bold runs 5-9% wider on
-# realistic label strings. simpleplot bundles the bold tables and measures the
+# realistic label strings. plotpress bundles the bold tables and measures the
 # elements it draws bold -- the legend title and ``suptitle`` -- with them.
 #
 # The second limitation: pixel rounding
@@ -104,7 +104,7 @@ fig.tight_layout()
 # We can model it exactly, with no font files involved: ask ``text_width`` for
 # each glyph and round it, which is what a renderer does.
 
-from simpleplot.fonts import text_width
+from plotpress.fonts import text_width
 
 SAMPLES = ["1.002e5", "y axis label", "a series label", "-0.5", "Wwwiii",
            "0.002", "temperature (K)", "Title of the plot", "1000", "-1e5"]
@@ -125,7 +125,7 @@ for scale in scales:
     worst_err.append(max(e))
 
 x = np.arange(len(scales))
-fig2, ax2 = simpleplot.subplots(figsize=(7.0, 3.6))
+fig2, ax2 = plotpress.subplots(figsize=(7.0, 3.6))
 ax2.bar(x - 0.18, mean_err, width=0.34, label="mean")
 ax2.bar(x + 0.18, worst_err, width=0.34, label="worst case")
 ax2.set_xticks(x)

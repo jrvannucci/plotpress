@@ -8,7 +8,7 @@ across the density at Q1/median/Q3, or ``"stick"`` for one line per
 observation.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(7)
 groups = [
@@ -18,7 +18,7 @@ groups = [
 ]
 names = ["setosa", "versicolor", "virginica"]
 
-fig, axes = simpleplot.subplots(1, 3, figsize=(12.0, 4.0), sharey=True)
+fig, axes = plotpress.subplots(1, 3, figsize=(12.0, 4.0), sharey=True)
 for ax, inner in zip(axes, ["box", "quartile", "stick"]):
     ax.violinplot(groups, cut=2.0, inner=inner)
     ax.set_xticks([1, 2, 3])

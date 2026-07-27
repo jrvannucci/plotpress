@@ -36,7 +36,7 @@ At a glance
      - **yes**
      - ``[gui]``
    * - Qt window / widget
-     - ``fig.show_qt()`` or ``simpleplot.qt.SimplePlotWidget``
+     - ``fig.show_qt()`` or ``plotpress.qt.PlotPressWidget``
      - **yes**
      - ``[qt]``
    * - Embedded
@@ -55,7 +55,7 @@ The most portable options are files you double-click:
    fig.save("figure.html", interactive=True)    # full toolbar, self-contained
 
 .. figure:: /_static/view_static.png
-   :alt: A static simpleplot figure rendered in a browser
+   :alt: A static plotpress figure rendered in a browser
    :width: 100%
 
    A saved SVG (or PNG) opened in a browser -- vector, portable, no toolbar.
@@ -72,12 +72,12 @@ Evaluating a figure in a notebook cell displays it **inline as static SVG**
 
 .. code-block:: python
 
-   fig, ax = simpleplot.subplots()
+   fig, ax = plotpress.subplots()
    ax.plot(x, y)
    fig                     # renders inline
 
 .. figure:: /_static/view_jupyter.png
-   :alt: A simpleplot figure rendered inline in a Jupyter notebook cell
+   :alt: A plotpress figure rendered inline in a Jupyter notebook cell
    :width: 100%
 
    Evaluating ``fig`` in a notebook cell renders it inline as static SVG
@@ -111,7 +111,7 @@ the ``[gui]`` extra and blocks until the window is closed; without it,
    markers = fig.show(wait_for_extract=True) # block, return picked data to Python
 
 .. figure:: /_static/view_window.png
-   :alt: The native simpleplot window with its interactive toolbar
+   :alt: The native plotpress window with its interactive toolbar
    :width: 100%
 
    ``fig.show()`` -- a native OS window hosting the same interactive figure,
@@ -123,26 +123,26 @@ See :doc:`output` for ``wait_for_extract`` and the extraction format.
 In a PyQt / PySide app
 ----------------------
 
-For Qt-based desktop apps, ``simpleplot.qt`` renders the interactive figure
+For Qt-based desktop apps, ``plotpress.qt`` renders the interactive figure
 in a ``QWebEngineView`` -- the *same* toolbar (span / zoom / point-pick /
 annotate / sliders / extract), reusing the HTML renderer rather than
 reimplementing it. It works with **PyQt6**, **PySide6**, or **PyQt5** and needs
-the ``[qt]`` extra (``pip install simpleplot[qt]``).
+the ``[qt]`` extra (``pip install plotpress[qt]``).
 
 Quick standalone window:
 
 .. code-block:: python
 
-   fig.show_qt()                 # or: import simpleplot.qt as spqt; spqt.view(fig)
+   fig.show_qt()                 # or: import plotpress.qt as spqt; spqt.view(fig)
 
-``SimplePlotWidget`` is a plain ``QWidget``, so it embeds into any layout of your
+``PlotPressWidget`` is a plain ``QWidget``, so it embeds into any layout of your
 own application like any other widget:
 
 .. code-block:: python
 
-   from simpleplot.qt import SimplePlotWidget
+   from plotpress.qt import PlotPressWidget
 
-   plot = SimplePlotWidget(fig)          # a QWidget
+   plot = PlotPressWidget(fig)          # a QWidget
    my_layout.addWidget(plot)             # drop it anywhere
 
    plot.set_figure(other_fig)            # redraw with a different figure
@@ -152,7 +152,7 @@ The widget owns a ``QWebEngineView`` (exposed as ``plot.view`` for further
 customization) and loads the document from a temporary file, so even large,
 mesh-heavy figures render (``QWebEngineView.setHtml`` alone caps at ~2 MB). Pass
 ``pick_precision=`` to shrink the embedded point-pick data for big figures, just
-as with :meth:`~simpleplot.Figure.to_html`.
+as with :meth:`~plotpress.Figure.to_html`.
 
 Embedded in your own page or app
 --------------------------------

@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from simpleplot import colors
-from simpleplot.ticker import format_tick, format_ticks, log_ticks, nice_ticks
-from simpleplot.transform import LinearTransform
+from plotpress import colors
+from plotpress.ticker import format_tick, format_ticks, log_ticks, nice_ticks
+from plotpress.transform import LinearTransform
 
 
 # -- transform -------------------------------------------------------------
@@ -44,7 +44,7 @@ def test_log_transform_nonpositive_is_nan():
 
 
 def test_log_ticks_are_decades():
-    from simpleplot.ticker import log_ticks
+    from plotpress.ticker import log_ticks
     np.testing.assert_array_equal(log_ticks(1, 1000), [1, 10, 100, 1000])
     np.testing.assert_array_equal(log_ticks(0.01, 10), [0.01, 0.1, 1, 10])
 
@@ -52,7 +52,7 @@ def test_log_ticks_are_decades():
 def test_log_ticks_nonpositive_vmin_stays_near_vmax():
     # A non-positive lower bound (e.g. user set_xlim(0, 100) on a log axis)
     # must clamp to three decades below vmax, not blow up to ~300 decades.
-    from simpleplot.ticker import log_ticks
+    from plotpress.ticker import log_ticks
     np.testing.assert_array_equal(log_ticks(0.0, 100.0), [0.1, 1, 10, 100])
     np.testing.assert_array_equal(log_ticks(-5.0, 1000.0), [1, 10, 100, 1000])
 

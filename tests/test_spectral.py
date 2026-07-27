@@ -7,7 +7,7 @@ that the calls render -- correctness the delegation to plot/imshow can't fake.
 import numpy as np
 import pytest
 
-import simpleplot
+import plotpress
 
 
 def _tone(freq, Fs, n, seed=0):
@@ -20,7 +20,7 @@ def _tone(freq, Fs, n, seed=0):
 def test_psd_peaks_at_the_tone_frequency():
     Fs, f0 = 1000.0, 100.0
     x = _tone(f0, Fs, 8192)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     Pxx, freqs, line = ax.psd(x, NFFT=1024, Fs=Fs, noverlap=512)
     assert Pxx.shape == freqs.shape
     assert abs(freqs[np.argmax(Pxx)] - f0) <= Fs / 1024      # within one bin
@@ -32,7 +32,7 @@ def test_psd_peaks_at_the_tone_frequency():
 def test_specgram_shape_and_extent():
     Fs = 1000.0
     x = _tone(120.0, Fs, 4096)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     P, freqs, t, im = ax.specgram(x, NFFT=256, Fs=Fs, noverlap=128)
     assert P.shape == (freqs.size, t.size)
     assert im in ax.artists
@@ -46,7 +46,7 @@ def test_cohere_is_bounded_and_high_for_related_signals():
     base = rng.standard_normal(n)
     x = base + 0.1 * rng.standard_normal(n)
     y = base + 0.1 * rng.standard_normal(n)              # shares the same source
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     Cxy, freqs, _ = ax.cohere(x, y, NFFT=512, Fs=Fs, noverlap=256)
     assert np.all(Cxy >= -1e-9) and np.all(Cxy <= 1 + 1e-9)
     assert Cxy.mean() > 0.5                               # strongly coherent
@@ -54,7 +54,7 @@ def test_cohere_is_bounded_and_high_for_related_signals():
 
 def test_magnitude_and_phase_spectrum_agree_on_length():
     x = _tone(50.0, 1000.0, 2000)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     mag, f1, _ = ax.magnitude_spectrum(x, Fs=1000.0)
     ph, f2, _ = ax.phase_spectrum(x, Fs=1000.0)
     ang, f3, _ = ax.angle_spectrum(x, Fs=1000.0)
@@ -68,9 +68,9 @@ def test_magnitude_spectrum_db_scale_is_log():
     # The returned spectrum is linear either way (as in matplotlib); scale="dB"
     # only changes what is *plotted*, so assert on the line's y-data.
     x = _tone(50.0, 1000.0, 2000)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     lin, _, line_lin = ax.magnitude_spectrum(x, Fs=1000.0)
-    fig2, ax2 = simpleplot.subplots()
+    fig2, ax2 = plotpress.subplots()
     db, _, line_db = ax2.magnitude_spectrum(x, Fs=1000.0, scale="dB")
     np.testing.assert_allclose(db, lin, rtol=1e-6)                 # both linear
     np.testing.assert_allclose(line_lin.y, lin, rtol=1e-6)
@@ -80,7 +80,7 @@ def test_magnitude_spectrum_db_scale_is_log():
 def test_acorr_peaks_at_zero_lag_and_is_normed():
     rng = np.random.default_rng(2)
     x = rng.standard_normal(500)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     lags, c, lines, markers = ax.acorr(x, maxlags=20)
     assert np.array_equal(lags, np.arange(-20, 21))
     assert lags[np.argmax(c)] == 0
@@ -92,7 +92,7 @@ def test_xcorr_symmetry_of_lag_axis():
     rng = np.random.default_rng(3)
     x = rng.standard_normal(300)
     y = rng.standard_normal(300)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     lags, c, _, _ = ax.xcorr(x, y, maxlags=15)
     assert lags[0] == -15 and lags[-1] == 15
     assert c.size == 31
@@ -100,10 +100,10 @@ def test_xcorr_symmetry_of_lag_axis():
 
 def test_spectral_methods_render_in_both_backends():
     pytest.importorskip("PIL")
-    from simpleplot.raster import figure_to_image
+    from plotpress.raster import figure_to_image
 
     x = _tone(80.0, 1000.0, 4096)
-    fig, axes = simpleplot.subplots(2, 2)
+    fig, axes = plotpress.subplots(2, 2)
     axes[0, 0].psd(x, Fs=1000.0)
     axes[0, 1].specgram(x, Fs=1000.0)
     axes[1, 0].magnitude_spectrum(x, Fs=1000.0)

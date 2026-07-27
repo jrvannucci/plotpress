@@ -1,6 +1,6 @@
 """End-to-end point-picking tests: real clicks in a real browser.
 
-The picking logic lives in JavaScript (``simpleplot/_interactive.py``), so the
+The picking logic lives in JavaScript (``plotpress/_interactive.py``), so the
 rest of the suite can only check the payloads that feed it. These tests close
 that gap: they load an interactive figure in a headless Chromium, click at the
 pixel where the renderer drew a known datum, and assert the marker reports that
@@ -85,9 +85,9 @@ def test_click_picks_the_right_point(page, tmp_path, case):
 
 def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     """A click outside any axes must not drop a marker."""
-    import simpleplot
+    import plotpress
 
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     path = tmp_path / "empty.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
@@ -95,8 +95,8 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
 
     n = page.evaluate(
         """() => {
-          const svg = document.getElementById('simpleplot-svg');
-          document.querySelectorAll('.simpleplot-toolbar button')
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button')
             .forEach(b => { if (b.textContent === 'Point Pick') b.click(); });
           // (2, 2) in SVG user space is the figure's top-left margin, well
           // outside the axes rectangle.
@@ -105,6 +105,6 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
           const c = pt.matrixTransform(svg.getScreenCTM());
           (document.elementFromPoint(c.x, c.y) || svg).dispatchEvent(
             new MouseEvent('click', {bubbles: true, clientX: c.x, clientY: c.y}));
-          return window.simpleplotGetMarkers().length;
+          return window.plotpressGetMarkers().length;
         }""")
     assert n == 0, "a click in the margin created %d marker(s)" % n

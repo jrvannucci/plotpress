@@ -4,9 +4,9 @@ Each case pairs an interactive figure with a list of targets. A target says
 "a click at this SVG pixel must produce a marker with these values".
 
 The click pixel is computed with the *renderer's* own transform -- built here
-exactly as :func:`simpleplot.svg._render_axes` builds it -- so it is the pixel
+exactly as :func:`plotpress.svg._render_axes` builds it -- so it is the pixel
 where the datum is actually drawn. The picking JS has to map that pixel back to
-the datum through its own independent machinery (the ``simpleplot-meta``
+the datum through its own independent machinery (the ``plotpress-meta``
 payload plus ``toPixel``). The two paths never share code, so agreement is
 evidence rather than tautology.
 
@@ -19,9 +19,9 @@ import math
 
 import numpy as np
 
-import simpleplot
-from simpleplot.svg import _effective_rect, _pixel_rect, pick_data
-from simpleplot.transform import LinearTransform
+import plotpress
+from plotpress.svg import _effective_rect, _pixel_rect, pick_data
+from plotpress.transform import LinearTransform
 
 
 class Case:
@@ -74,14 +74,14 @@ def build_cases():
     # -- line ---------------------------------------------------------------
     x = np.linspace(0, 10, 11)
     y = np.sin(x)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot(x, y)
     cases.append(Case("line", fig, _points(fig, 0, x, y, (0, 3, 7, 10))))
 
     # -- scatter, with an extra per-point dimension -------------------------
     sx, sy = rng.uniform(0, 10, 25), rng.uniform(0, 5, 25)
     sc = rng.uniform(0, 1, 25)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.scatter(sx, sy, c=sc)
     cases.append(Case("scatter", fig,
                       _points(fig, 0, sx, sy, (0, 5, 17, 24),
@@ -91,7 +91,7 @@ def build_cases():
     # -- bar ----------------------------------------------------------------
     bx = np.arange(5, dtype=float)
     bh = np.array([3.0, 1.5, 4.25, 2.0, 5.5])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.bar(bx, bh)
     cases.append(Case("bar", fig,
                       _points(fig, 0, bx, bh, (0, 2, 4),
@@ -101,7 +101,7 @@ def build_cases():
     # -- stem ---------------------------------------------------------------
     tx = np.arange(8, dtype=float)
     ty = np.array([1.0, -2.0, 3.5, 0.5, -1.25, 2.0, 4.0, -0.75])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.stem(tx, ty)
     cases.append(Case("stem", fig, _points(fig, 0, tx, ty, (1, 6))))
 
@@ -109,7 +109,7 @@ def build_cases():
     ex = np.arange(6, dtype=float)
     ey = np.array([2.0, 3.0, 2.5, 4.0, 3.5, 5.0])
     eerr = np.array([0.2, 0.3, 0.1, 0.4, 0.25, 0.15])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.errorbar(ex, ey, yerr=eerr)
     cases.append(Case("errorbar", fig,
                       _points(fig, 0, ex, ey, (0, 3, 5),
@@ -118,7 +118,7 @@ def build_cases():
     # -- quiver -------------------------------------------------------------
     QX, QY = np.meshgrid(np.linspace(0, 4, 5), np.linspace(0, 3, 4))
     QU, QV = np.cos(QX), np.sin(QY)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.quiver(QX, QY, QU, QV)
     qx, qy, qu, qv = QX.ravel(), QY.ravel(), QU.ravel(), QV.ravel()
     cases.append(Case("quiver", fig,
@@ -129,7 +129,7 @@ def build_cases():
                       "arrows are picked at their tails (the grid nodes)"))
 
     # -- eventplot ----------------------------------------------------------
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.eventplot([np.array([1.0, 2.0, 5.0]), np.array([0.5, 3.5])])
     ev = pick_data(fig)[0]["series"][0]
     ev_x = [1.0, 2.0, 5.0, 0.5, 3.5]       # independent ground truth
@@ -141,7 +141,7 @@ def build_cases():
 
     # -- boxplot: the median is independent ground truth ---------------------
     bdata = [rng.normal(0, 1, 200), rng.normal(3, 2, 200), rng.normal(-2, 0.5, 200)]
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.boxplot(bdata)
     cases.append(Case("box", fig, [
         {"px": px(fig, 0, i + 1, float(np.median(bdata[i]))),
@@ -150,7 +150,7 @@ def build_cases():
         for i in (0, 1, 2)], "click each box's median line"))
 
     # -- violin -------------------------------------------------------------
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.violinplot([rng.normal(0, 1, 200), rng.normal(2, 1, 200)])
     vs = pick_data(fig)[0]["series"][1]
     cases.append(Case("violin", fig,
@@ -159,7 +159,7 @@ def build_cases():
 
     # -- fill_between: snaps to the band top --------------------------------
     fx = np.linspace(0, 6, 13)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.fill_between(fx, np.sin(fx), np.sin(fx) - 1.0)
     cases.append(Case("fill", fig,
                       _points(fig, 0, fx, np.sin(fx), (0, 6, 12),
@@ -168,7 +168,7 @@ def build_cases():
 
     # -- pcolormesh ---------------------------------------------------------
     MZ = np.arange(20, dtype=float).reshape(4, 5) * 1.5
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(6, dtype=float), np.arange(5, dtype=float), MZ)
     cases.append(Case("pcolormesh", fig, [
         {"px": px(fig, 0, col + 0.5, row + 0.5),
@@ -179,7 +179,7 @@ def build_cases():
 
     # -- imshow, origin='upper': array row 0 is drawn at the TOP -------------
     IA = np.arange(12, dtype=float).reshape(3, 4) * 2.0
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.imshow(IA, extent=(0, 4, 0, 3), origin="upper")
     img = []
     for arow, acol in [(0, 0), (2, 3), (1, 2)]:
@@ -193,7 +193,7 @@ def build_cases():
 
     # -- pie ----------------------------------------------------------------
     pvals, plabels = [40.0, 30.0, 20.0, 10.0], ["a", "b", "c", "d"]
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.pie(pvals, labels=plabels)
     tr = _transform(fig, 0)
     cx, cy = tr.px_left + tr.px_w / 2, tr.px_top + tr.px_h / 2
@@ -215,7 +215,7 @@ def build_cases():
     # -- log/log axes -------------------------------------------------------
     lx = np.array([1.0, 10.0, 100.0, 1000.0, 10000.0])
     ly = np.array([2.0, 20.0, 5.0, 500.0, 50.0])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot(lx, ly)
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -229,7 +229,7 @@ def build_cases():
     for label, inv_x, inv_y in [("inverted_y", False, True),
                                 ("inverted_x", True, False),
                                 ("inverted_both", True, True)]:
-        fig, ax = simpleplot.subplots()
+        fig, ax = plotpress.subplots()
         ax.plot(ix, iy)
         if inv_x:
             ax.invert_xaxis()
@@ -238,7 +238,7 @@ def build_cases():
         cases.append(Case(label, fig, _points(fig, 0, ix, iy, (0, 3, 5)),
                           "picking must follow the flipped axis"))
 
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot(lx, ly)
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -246,7 +246,7 @@ def build_cases():
     cases.append(Case("inverted_log", fig, _points(fig, 0, lx, ly, (0, 2, 4)),
                       "inversion composed with a log scale"))
 
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(6, dtype=float), np.arange(5, dtype=float), MZ)
     ax.invert_yaxis()
     cases.append(Case("inverted_mesh", fig, [
@@ -257,7 +257,7 @@ def build_cases():
         "mesh cell lookup on an inverted axis"))
 
     # -- two subplots: each click must resolve to its own axes --------------
-    fig, axs = simpleplot.subplots(1, 2)
+    fig, axs = plotpress.subplots(1, 2)
     axs[0].plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     axs[1].plot([0.0, 1.0, 2.0], [5.0, 3.0, 7.0])
     cases.append(Case("multi_axes", fig, [
@@ -270,7 +270,7 @@ def build_cases():
     # -- set_aspect shrinks the drawn box inside its allocation -------------
     axx = np.array([0.0, 1.0, 2.0, 3.0])
     axy = np.array([0.0, 2.0, 1.0, 3.0])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot(axx, axy)
     ax.set_aspect(1.0)
     cases.append(Case("aspect", fig, _points(fig, 0, axx, axy, (0, 1, 3)),

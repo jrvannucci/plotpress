@@ -1,4 +1,4 @@
-simpleplot
+plotpress
 ==========
 
 A **lightweight, dependency-light** plotting library that renders **SVG and
@@ -8,10 +8,10 @@ self-contained interactive HTML** through a **matplotlib-shaped API** -- with
 
 .. code-block:: python
 
-   import simpleplot
+   import plotpress
    import numpy as np
 
-   fig, ax = simpleplot.subplots()
+   fig, ax = plotpress.subplots()
    x = np.linspace(0, 4 * np.pi, 400)
    ax.plot(x, np.sin(x), label="sin")
    ax.plot(x, np.cos(x), label="cos", linestyle="--")
@@ -24,14 +24,14 @@ self-contained interactive HTML** through a **matplotlib-shaped API** -- with
 What it is for
 --------------
 
-simpleplot is **not a matplotlib replacement**, and it does not try to match
+plotpress is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or triangulated
 grids, a handful of font-metric families, and its polar / 3-D axes are projected onto the
 2-D core rather than a dedicated pipeline -- see :ref:`limitations`). It aims at
 a narrower, underserved spot: plotting where matplotlib's install footprint or
 global state gets in the way.
 
-Reach for simpleplot when you want to:
+Reach for plotpress when you want to:
 
 - **Ship plots from a constrained runtime** -- locked-down servers, minimal
   containers, Pyodide/WASM, or CI -- where a pure-Python + NumPy install with no

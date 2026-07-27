@@ -1,4 +1,4 @@
-"""Tests for the optional PyQt/PySide viewer (``simpleplot.qt``).
+"""Tests for the optional PyQt/PySide viewer (``plotpress.qt``).
 
 The Qt code path needs a binding + WebEngine, which CI does not install, so the
 GUI test skips there. The contract tests below run everywhere: they guard the
@@ -11,7 +11,7 @@ import pathlib
 import numpy as np
 import pytest
 
-import simpleplot
+import plotpress
 
 
 def _has_qt_binding():
@@ -26,39 +26,39 @@ def _has_qt_binding():
 
 
 def test_qt_widget_targets_a_real_marker_hook():
-    # SimplePlotWidget.markers() pulls picked markers via
-    # window.simpleplotGetMarkers(); that hook must exist in the interactive JS,
+    # PlotPressWidget.markers() pulls picked markers via
+    # window.plotpressGetMarkers(); that hook must exist in the interactive JS,
     # and qt.py must reference it (both checked without importing Qt).
-    from simpleplot._interactive import INTERACTIVE_JS
+    from plotpress._interactive import INTERACTIVE_JS
 
-    assert "window.simpleplotGetMarkers" in INTERACTIVE_JS
-    src = (pathlib.Path(simpleplot.__file__).parent / "qt.py").read_text(encoding="utf-8")
-    assert "simpleplotGetMarkers" in src
+    assert "window.plotpressGetMarkers" in INTERACTIVE_JS
+    src = (pathlib.Path(plotpress.__file__).parent / "qt.py").read_text(encoding="utf-8")
+    assert "plotpressGetMarkers" in src
 
 
 def test_qt_import_error_is_friendly_when_no_binding():
     if _has_qt_binding():
         pytest.skip("a Qt binding is installed; the no-binding path can't be exercised")
-    with pytest.raises(ImportError, match=r"simpleplot\[qt\]"):
-        importlib.import_module("simpleplot.qt")
+    with pytest.raises(ImportError, match=r"plotpress\[qt\]"):
+        importlib.import_module("plotpress.qt")
 
 
 def test_show_qt_is_lazy():
-    # Importing simpleplot must not require Qt; the method only pulls it in when
+    # Importing plotpress must not require Qt; the method only pulls it in when
     # called. Presence of the attribute is enough to assert the wiring.
-    assert hasattr(simpleplot.Figure, "show_qt")
+    assert hasattr(plotpress.Figure, "show_qt")
 
 
 @pytest.mark.skipif(not _has_qt_binding(), reason="no Qt binding with WebEngine installed")
-def test_simpleplot_widget_smoke():
+def test_plotpress_widget_smoke():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    import simpleplot.qt as spqt
+    import plotpress.qt as spqt
 
     app = spqt._QT.QApplication.instance() or spqt._QT.QApplication([])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(16, dtype=float).reshape(4, 4))
 
-    w = spqt.SimplePlotWidget(fig)
+    w = spqt.PlotPressWidget(fig)
     try:
         assert isinstance(w, spqt._QT.QWidget)
         assert isinstance(w.view, spqt._QT.QWebEngineView)

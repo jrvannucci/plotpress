@@ -11,7 +11,7 @@ wheels/
 *.egg-info/
 
 # Written at build time by versioningit; the git tag is the source of truth.
-simpleplot/_version.py
+plotpress/_version.py
 .eggs/
 
 # Test & coverage caches

@@ -1,6 +1,6 @@
 """Measure SVG vs interactive-HTML output for every gallery example.
 
-Runs each ``docs/examples/plot_*.py``, grabs the ``simpleplot.Figure`` it
+Runs each ``docs/examples/plot_*.py``, grabs the ``plotpress.Figure`` it
 builds, and times serialization to static SVG and to self-contained interactive
 HTML (best of N), recording the output sizes. Writes the results as an RST
 table to ``docs/performance.rst`` so the docs carry an up-to-date, reproducible
@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
-import simpleplot  # noqa: E402
+import plotpress  # noqa: E402
 
 EX_DIR = os.path.join(ROOT, "docs", "examples")
 OUT_RST = os.path.join(ROOT, "docs", "performance.rst")
@@ -42,7 +42,7 @@ def _best(fn, repeat=REPEAT):
 def _figure_from(path):
     """Execute an example and return the single Figure it created."""
     ns = runpy.run_path(path)
-    figs = [v for v in ns.values() if isinstance(v, simpleplot.Figure)]
+    figs = [v for v in ns.values() if isinstance(v, plotpress.Figure)]
     if len(figs) != 1:
         raise RuntimeError(f"{os.path.basename(path)}: expected 1 Figure, got {len(figs)}")
     return figs[0]

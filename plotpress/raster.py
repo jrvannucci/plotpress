@@ -3,7 +3,7 @@
 A second renderer that draws a Figure's primitives directly onto a Pillow canvas
 (supersampled, then downscaled for antialiasing). Pillow ships as a pure wheel
 on every platform, so PNG export needs no cairo/native SVG rasterizer. The
-geometry mirrors :mod:`simpleplot.svg` -- both consume the same transforms.
+geometry mirrors :mod:`plotpress.svg` -- both consume the same transforms.
 """
 
 from __future__ import annotations
@@ -143,7 +143,7 @@ def save_pdf(fig, path):
     except ImportError as e:
         raise RuntimeError(
             "PDF export needs svglib + reportlab (standard dependencies); "
-            "reinstall simpleplot to restore them"
+            "reinstall plotpress to restore them"
         ) from e
     drawing = svg2rlg(io.StringIO(fig.to_svg()))
     renderPDF.drawToFile(drawing, path)

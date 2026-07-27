@@ -6,7 +6,7 @@ Overlapping densities
 one, so shapes stay comparable across groups of different sizes.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(7)
 groups = {
@@ -15,7 +15,7 @@ groups = {
     "virginica": rng.normal(6.6, 0.64, 380),
 }
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 for name, values in groups.items():
     ax.kdeplot(values, fill=True, label=name)
 ax.set_xlabel("sepal length (cm)")

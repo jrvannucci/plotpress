@@ -4,7 +4,7 @@ API reference
 Top level
 ---------
 
-.. currentmodule:: simpleplot
+.. currentmodule:: plotpress
 
 .. autosummary::
 
@@ -18,24 +18,24 @@ Top level
 Figure
 ------
 
-.. autoclass:: simpleplot.figure.Figure
+.. autoclass:: plotpress.figure.Figure
    :members:
    :undoc-members:
 
-.. autofunction:: simpleplot.subplots
+.. autofunction:: plotpress.subplots
 
 Axes
 ----
 
-.. autoclass:: simpleplot.axes.Axes
+.. autoclass:: plotpress.axes.Axes
    :members:
    :undoc-members:
 
 Style & colors
 --------------
 
-.. autoclass:: simpleplot.style.Style
+.. autoclass:: plotpress.style.Style
    :members:
 
-.. autoclass:: simpleplot.colors.Normalize
+.. autoclass:: plotpress.colors.Normalize
    :members:

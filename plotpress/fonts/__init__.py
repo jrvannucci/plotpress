@@ -14,7 +14,7 @@ are Courier.
 
 Known limitation
 ----------------
-Because layout happens before anything draws the glyphs, simpleplot has to
+Because layout happens before anything draws the glyphs, plotpress has to
 *predict* how wide text will be, from the bundled tables only:
 
 * **Families outside those groups are measured as Helvetica.** Verdana, Tahoma,
@@ -29,7 +29,7 @@ Because layout happens before anything draws the glyphs, simpleplot has to
 Lifting the first limitation for arbitrary families means measuring real font
 files, which makes layout depend on which fonts happen to be installed -- the
 very thing these tables exist to avoid. It is therefore offered as an opt-in
-rather than refused: see :mod:`simpleplot.fonts.installed` and
+rather than refused: see :mod:`plotpress.fonts.installed` and
 ``Style(measure_installed_fonts=True)``.
 
 Module layout

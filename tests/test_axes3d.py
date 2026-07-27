@@ -7,13 +7,13 @@ otherwise go stale), and that surface faces are depth-sorted and colorbar-ready.
 import numpy as np
 import pytest
 
-import simpleplot
-from simpleplot.axes3d import Axes3D
-from simpleplot.artists import LineCollection, PolyCollection
+import plotpress
+from plotpress.axes3d import Axes3D
+from plotpress.artists import LineCollection, PolyCollection
 
 
 def _ax3d():
-    fig, ax = simpleplot.subplots(projection="3d")
+    fig, ax = plotpress.subplots(projection="3d")
     return fig, ax
 
 
@@ -120,7 +120,7 @@ def test_each_axis_gets_multiple_ticks_along_its_edge():
     # Regression for the "which axis does this number belong to?" ambiguity:
     # ticks must run along each edge (several per axis), not just sit on the two
     # shared corners, and each axis name must be present.
-    from simpleplot.artists import Text, LineCollection
+    from plotpress.artists import Text, LineCollection
     _, ax = _ax3d()
     ax.scatter([-3, 3], [-3, 3], [-0.5, 0.5], color="C0")
     ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("z")
@@ -149,9 +149,9 @@ def test_cycle_colors_are_stable_across_reprojection():
 
 def test_3d_renders_in_both_backends():
     pytest.importorskip("PIL")
-    from simpleplot.raster import figure_to_image
+    from plotpress.raster import figure_to_image
 
-    fig, ax = simpleplot.subplots(projection="3d")
+    fig, ax = plotpress.subplots(projection="3d")
     X, Y = np.meshgrid(np.linspace(-2, 2, 20), np.linspace(-2, 2, 20))
     ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="plasma")
     assert "<svg" in fig.to_svg()

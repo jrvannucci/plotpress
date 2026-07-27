@@ -380,7 +380,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
 
     # Artists: fixed clip to the axes rect, then a transformable zoom group that
     # per-axes data zoom remaps via one affine (old limits -> new limits).
-    body.append(f'<g clip-path="url(#{clip_id})"><g id="zoom{index}" class="simpleplot-zoom">')
+    body.append(f'<g clip-path="url(#{clip_id})"><g id="zoom{index}" class="plotpress-zoom">')
     for k, artist in enumerate(ax.artists):
         prims = artist_to_prims(artist, tr, index, k, size_scale=st.dpi / 72.0)
         if prims is not None:
@@ -493,7 +493,7 @@ def _emit_markers(p) -> str:
                 parts.append(
                     f'<path d="{dot(cx, cy)}" fill="none" stroke="{col}" '
                     f'stroke-width="{_fmt(dm)}" stroke-linecap="round"/>')
-    return (f'<g class="simpleplot-series"{idattr} data-label="{_esc(p.label)}"{op}>'
+    return (f'<g class="plotpress-series"{idattr} data-label="{_esc(p.label)}"{op}>'
             f'{"".join(parts)}</g>')
 
 
@@ -514,11 +514,11 @@ def _emit_prim(p) -> str:
             attrs += f' stroke-dasharray="{dash}"'
         if p.stroke_opacity < 1:
             attrs += f' stroke-opacity="{p.stroke_opacity}"'
-        return (f'<line class="simpleplot-series" data-label="{lbl}" '
+        return (f'<line class="plotpress-series" data-label="{lbl}" '
                 f'x1="{_fmt(p.p0[0])}" y1="{_fmt(p.p0[1])}" x2="{_fmt(p.p1[0])}" '
                 f'y2="{_fmt(p.p1[1])}" {attrs}/>')
     if isinstance(p, PRect):
-        return (f'<rect class="simpleplot-series" data-label="{lbl}" '
+        return (f'<rect class="plotpress-series" data-label="{lbl}" '
                 f'x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
                 f'height="{_fmt(p.h)}" fill="{p.fill}" fill-opacity="{p.fill_opacity}"/>')
     if isinstance(p, PSegments):
@@ -531,11 +531,11 @@ def _emit_prim(p) -> str:
             attrs += f' stroke-dasharray="{dash}"'
         if p.stroke_opacity < 1:
             attrs += f' stroke-opacity="{p.stroke_opacity}"'
-        return f'<g class="simpleplot-series" data-label="{lbl}" {attrs}>{lines}</g>'
+        return f'<g class="plotpress-series" data-label="{lbl}" {attrs}>{lines}</g>'
     if isinstance(p, PPolyBatch):
         edge = f'stroke="{p.edge}"' if p.edge else 'stroke="none"'
         op = f' fill-opacity="{p.alpha}"' if p.alpha < 1 else ""
-        out = [f'<g class="simpleplot-series" {edge} stroke-width="{p.edge_width}">']
+        out = [f'<g class="plotpress-series" {edge} stroke-width="{p.edge_width}">']
         for verts, fc in zip(p.polys, p.fills):
             coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in verts)
             out.append(f'<polygon points="{coords}" fill="{_prim_color(fc)}"{op}/>')
@@ -549,12 +549,12 @@ def _emit_prim(p) -> str:
                               if np.isfinite([x, y]).all())
             stroke = (f'stroke="{p.stroke}" stroke-width="{p.stroke_width}"'
                       if p.stroke else 'stroke="none"')
-            return (f'<polygon class="simpleplot-series"{idattr} data-label="{lbl}" '
+            return (f'<polygon class="plotpress-series"{idattr} data-label="{lbl}" '
                     f'points="{coords}" fill="{p.fill}" '
                     f'fill-opacity="{p.fill_opacity}" {stroke}/>')
         d = _path_d(p.subpaths, p.closed)
         if p.fill and not p.stroke:
-            return (f'<path class="simpleplot-series"{idattr} data-label="{lbl}" '
+            return (f'<path class="plotpress-series"{idattr} data-label="{lbl}" '
                     f'd="{d}" fill="{p.fill}" fill-opacity="{p.fill_opacity}" '
                     f'stroke="none"/>')
         attrs = (f'fill="none" stroke="{p.stroke}" stroke-width="{p.stroke_width}" '
@@ -564,7 +564,7 @@ def _emit_prim(p) -> str:
             attrs += f' stroke-dasharray="{dash}"'
         if p.stroke_opacity < 1:
             attrs += f' stroke-opacity="{p.stroke_opacity}"'
-        return (f'<path class="simpleplot-series"{idattr} data-label="{lbl}" '
+        return (f'<path class="plotpress-series"{idattr} data-label="{lbl}" '
                 f'd="{d}" {attrs}/>')
     raise TypeError(f"unknown primitive {type(p).__name__}")
 
@@ -584,7 +584,7 @@ def _render_frameline(art: FrameLine2D, tr, ai, k, body):
         attrs += f' stroke-opacity="{art.alpha}"'
     label = _esc(art.label) if art.label else ""
     body.append(
-        f'<path class="simpleplot-series simpleplot-frameline" id="s{ai}_{k}" '
+        f'<path class="plotpress-series plotpress-frameline" id="s{ai}_{k}" '
         f'data-label="{label}" d="{d}" {attrs}/>'
     )
 
@@ -633,7 +633,7 @@ def _render_bars(bars: Bars, tr, ai, k, body):
             f'height="{_fmt(abs(y1 - y0))}" fill="{bars.colors[i]}"{edge}/>'
         )
     body.append(
-        f'<g class="simpleplot-series" id="s{ai}_{k}" data-label="{label}"{op}>'
+        f'<g class="plotpress-series" id="s{ai}_{k}" data-label="{label}"{op}>'
         f'{"".join(rects)}</g>'
     )
 
@@ -1061,7 +1061,7 @@ def _render_legend(ax, st, px_left, px_top, px_w, px_h, body):
     bx, by = _legend_origin(ax, lay, px_left, px_top, px_w, px_h)
 
     body.append(
-        f'<g class="simpleplot-legend"><rect x="{_fmt(bx)}" y="{_fmt(by)}" '
+        f'<g class="plotpress-legend"><rect x="{_fmt(bx)}" y="{_fmt(by)}" '
         f'width="{_fmt(box_w)}" height="{_fmt(box_h)}" rx="3" fill="#ffffff" '
         f'fill-opacity="0.85" stroke="#cccccc" stroke-width="0.8"/>'
     )

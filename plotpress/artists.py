@@ -4,7 +4,7 @@ Artists are *data holders*, not renderers. ``ax.plot(...)`` just stashes arrays
 and style and returns immediately -- no drawing happens until the figure is
 serialized. This keeps construction cheap and keeps whole arrays intact for the
 vectorized NumPy rendering pass. All rendering logic lives in
-:mod:`simpleplot.svg` and :mod:`simpleplot.raster`.
+:mod:`plotpress.svg` and :mod:`plotpress.raster`.
 """
 
 from __future__ import annotations

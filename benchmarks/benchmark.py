@@ -1,4 +1,4 @@
-"""Standalone benchmark: simpleplot vs matplotlib, plot construction + SVG output.
+"""Standalone benchmark: plotpress vs matplotlib, plot construction + SVG output.
 
 Run: python benchmarks/benchmark.py [--repeat N]
 """
@@ -21,13 +21,13 @@ def main():
     args = parser.parse_args()
 
     have_mpl = scenarios.has_matplotlib()
-    print(f"simpleplot vs matplotlib -- best of {args.repeat} runs (lower is better)\n")
-    header = f"{'scenario':22} {'simpleplot (ms)':>12} {'matplotlib (ms)':>16} {'speedup':>9}"
+    print(f"plotpress vs matplotlib -- best of {args.repeat} runs (lower is better)\n")
+    header = f"{'scenario':22} {'plotpress (ms)':>12} {'matplotlib (ms)':>16} {'speedup':>9}"
     print(header)
     print("-" * len(header))
 
     for name, builders in scenarios.SCENARIOS.items():
-        et = scenarios.timeit(builders["simpleplot"], repeat=args.repeat) * 1e3
+        et = scenarios.timeit(builders["plotpress"], repeat=args.repeat) * 1e3
         if have_mpl:
             mt = scenarios.timeit(builders["mpl"], repeat=args.repeat) * 1e3
             speed = f"{mt / et:5.1f}x"
@@ -36,7 +36,7 @@ def main():
             print(f"{name:22} {et:12.1f} {'(n/a)':>16} {'-':>9}")
 
     if not have_mpl:
-        print("\n(matplotlib not installed -- install with: pip install simpleplot[bench])")
+        print("\n(matplotlib not installed -- install with: pip install plotpress[bench])")
 
 
 if __name__ == "__main__":

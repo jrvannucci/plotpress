@@ -6,7 +6,7 @@ Horizontal violins
 long category names readable. The inner marks follow the orientation.
 """
 import numpy as np
-import simpleplot
+import plotpress
 
 rng = np.random.default_rng(7)
 groups = [
@@ -15,7 +15,7 @@ groups = [
     rng.normal(6.6, 0.64, 300),
 ]
 
-fig, ax = simpleplot.subplots()
+fig, ax = plotpress.subplots()
 ax.violinplot(groups, orientation="horizontal", cut=2.0, inner="box")
 ax.set_yticks([1, 2, 3])
 ax.set_yticklabels(["setosa", "versicolor", "virginica"])

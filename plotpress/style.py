@@ -1,6 +1,6 @@
 """Per-figure styling. Replaces matplotlib's global ``rcParams``.
 
-Every :class:`~simpleplot.figure.Figure` owns its own :class:`Style` instance, so
+Every :class:`~plotpress.figure.Figure` owns its own :class:`Style` instance, so
 nothing here is global. Mutating one figure's style never affects another.
 """
 
@@ -35,7 +35,7 @@ class Style:
     # Text
     #
     # Layout reserves space for text using bundled advance widths (see
-    # simpleplot.fonts), because an SVG figure is laid out before anything draws
+    # plotpress.fonts), because an SVG figure is laid out before anything draws
     # the glyphs. Helvetica, Times, Courier and DejaVu Sans are bundled, along
     # with their metric-compatible clones, so those families are accurate. A
     # family outside them -- Verdana, Tahoma, Arial Black, Arial Narrow -- still
@@ -48,9 +48,9 @@ class Style:
     text_color: str = "#000000"
 
     # Measure the font files installed on this machine instead of the bundled
-    # tables. More faithful for families simpleplot cannot measure, at the cost
+    # tables. More faithful for families plotpress cannot measure, at the cost
     # of the guarantee that the same script lays out identically everywhere --
-    # which is why it is off. See simpleplot.fonts.installed.
+    # which is why it is off. See plotpress.fonts.installed.
     measure_installed_fonts: bool = False
 
     # Ticks

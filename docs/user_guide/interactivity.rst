@@ -66,7 +66,7 @@ kernel, use the native window:
 Sliders for N-dimensional data
 ------------------------------
 
-:meth:`~simpleplot.axes.Axes.plot_frames` renders 3-D data ``Y`` of shape
+:meth:`~plotpress.axes.Axes.plot_frames` renders 3-D data ``Y`` of shape
 ``(n_frames, n_points)`` and adds a **slider** (play / pause / step) over the
 extra dimension. ``slider_values`` labels it.
 

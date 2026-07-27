@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to simpleplot are documented here.
+All notable changes to plotpress are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -14,14 +14,14 @@ is derived from it at build time rather than written down anywhere in the source
 
 First public release.
 
-simpleplot renders SVG and self-contained interactive HTML through a
+plotpress renders SVG and self-contained interactive HTML through a
 matplotlib-shaped API, with no global state and no compiled extension.
 
 ### Added
 
 - **Figure/Axes core** with no `pyplot` and no global `rcParams`. A `Figure`
   owns its axes and its own `Style`; two figures never share mutable state.
-  `simpleplot.subplots()` mirrors `plt.subplots()` without touching globals.
+  `plotpress.subplots()` mirrors `plt.subplots()` without touching globals.
 - **Output surfaces**: static vector SVG, raster PNG (Pillow), vector PDF
   (svglib + reportlab), self-contained interactive HTML, inline SVG for
   Jupyter, a native pop-up window (`[gui]` extra), and a PyQt/PySide widget
@@ -61,12 +61,12 @@ matplotlib-shaped API, with no global state and no compiled extension.
 ### Known limitations
 
 Documented in full at
-<https://jrvannucci.github.io/simpleplot/user_guide/limitations.html>: font
+<https://jrvannucci.github.io/plotpress/user_guide/limitations.html>: font
 families outside the bundled metric groups, PNG as a second renderer rather
 than a rasterized SVG, approximate density estimates for large samples, 3-D and
 polar as projections onto the 2-D core, and no `streamplot`/`barbs`,
 triangulation, geographic projections, animation API, rich text or math
 rendering.
 
-[Unreleased]: https://github.com/jrvannucci/simpleplot/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/jrvannucci/simpleplot/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jrvannucci/plotpress/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jrvannucci/plotpress/releases/tag/v0.1.0

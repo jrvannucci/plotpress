@@ -3,13 +3,13 @@
 import numpy as np
 import pytest
 
-import simpleplot
-from simpleplot.artists import Line2D, QuadMesh, ScatterCollection
-from simpleplot.axes import Axes
+import plotpress
+from plotpress.artists import Line2D, QuadMesh, ScatterCollection
+from plotpress.axes import Axes
 
 
 def test_plot_single_and_pair_args():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     l1 = ax.plot([3, 4, 5])           # y only -> x = 0,1,2
     np.testing.assert_array_equal(l1.x, [0, 1, 2])
     l2 = ax.plot([0, 10], [1, 2])     # x, y
@@ -18,13 +18,13 @@ def test_plot_single_and_pair_args():
 
 
 def test_plot_requires_args():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     with pytest.raises(TypeError):
         ax.plot()
 
 
 def test_scatter_creates_collection_and_mappable():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     plain = ax.scatter([0, 1], [0, 1])
     assert isinstance(plain, ScatterCollection)
     assert not plain.mappable
@@ -35,7 +35,7 @@ def test_scatter_creates_collection_and_mappable():
 
 
 def test_pcolormesh_signatures():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     C = np.arange(12).reshape(3, 4).astype(float)
     m1 = ax.pcolormesh(C)
     assert m1.extent() == (0, 4, 0, 3)
@@ -49,7 +49,7 @@ def test_pcolormesh_signatures():
 
 
 def test_autoscale_from_data():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0, 10], [-5, 5])
     (xlo, xhi), (ylo, yhi) = ax._resolved_limits()
     # 5% padding on a span of 10 -> 0.5.
@@ -58,7 +58,7 @@ def test_autoscale_from_data():
 
 
 def test_explicit_limits_override_autoscale():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 10])
     ax.set_xlim(0, 5)
     ax.set_ylim(-1, 1)
@@ -69,7 +69,7 @@ def test_explicit_limits_override_autoscale():
 def test_one_sided_limits_autoscale_the_open_end():
     """A half-set limit used to be stored verbatim and blow up at render time
     with a bare float(None) TypeError from the transform."""
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 10])
     auto_hi = ax.get_xlim()[1]
 
@@ -87,14 +87,14 @@ def test_one_sided_limits_autoscale_the_open_end():
     lambda ax: ax.set_xlim(np.array([0, 5])),
 ])
 def test_set_xlim_accepts_pair_and_sequence_forms(call):
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 10])
     call(ax)
     assert ax.get_xlim() == (0, 5)
 
 
 def test_set_lim_with_both_ends_none_clears_to_autoscale():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 10])
     auto = ax.get_xlim()
     ax.set_xlim(0, 5)
@@ -103,7 +103,7 @@ def test_set_lim_with_both_ends_none_clears_to_autoscale():
 
 
 def test_one_sided_limit_renders():
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 10])
     ax.set_xlim(0, None)
     ax.set_ylim(None, 100)
@@ -111,7 +111,7 @@ def test_one_sided_limit_renders():
 
 
 def test_one_sided_limit_stays_local_to_its_axes_when_shared():
-    _, axes = simpleplot.subplots(1, 2, sharey=True)
+    _, axes = plotpress.subplots(1, 2, sharey=True)
     axes[0].plot([0, 5])
     axes[1].plot([0, 50])
     shared_hi = axes[0].get_ylim()[1]
@@ -128,7 +128,7 @@ def test_one_sided_limit_stays_local_to_its_axes_when_shared():
 def test_reversed_limits_render_like_matplotlib_inversion(setlim, scale):
     # set_xlim(hi, lo) reverses the axis in matplotlib. It used to crash the
     # linear tickers (math domain error) and silently drop all log ticks.
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([1, 10, 100], [1, 10, 100])
     setlim(ax)
     svg = fig.to_svg()
@@ -136,24 +136,24 @@ def test_reversed_limits_render_like_matplotlib_inversion(setlim, scale):
 
 
 def test_reversed_ticks_are_order_independent():
-    from simpleplot.ticker import log_ticks, nice_ticks
+    from plotpress.ticker import log_ticks, nice_ticks
     np.testing.assert_array_equal(nice_ticks(3, 0), nice_ticks(0, 3))
     np.testing.assert_array_equal(log_ticks(100, 1), log_ticks(1, 100))
     assert len(log_ticks(100, 1)) > 0     # not silently empty
 
 
 def test_mesh_autoscale_is_tight():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.pcolormesh(np.zeros((5, 5)))
     (xlo, xhi), _ = ax._resolved_limits()
     assert xlo == 0 and xhi == 5  # no padding for meshes
 
 
 def test_subplots_grid_shapes():
-    _, single = simpleplot.subplots()
+    _, single = plotpress.subplots()
     assert isinstance(single, Axes)
-    _, row = simpleplot.subplots(1, 3)
+    _, row = plotpress.subplots(1, 3)
     assert row.shape == (3,)
-    _, grid = simpleplot.subplots(2, 2)
+    _, grid = plotpress.subplots(2, 2)
     assert grid.shape == (2, 2)
     assert isinstance(grid[0, 0], Axes)

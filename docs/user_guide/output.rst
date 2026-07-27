@@ -22,7 +22,7 @@ A figure knows how to serialize itself -- no backend selection, no globals.
        fig.save("figure.html", interactive=True)
 
 ``fig.savefig(path, **kwargs)``
-    matplotlib-compatible alias for :meth:`~simpleplot.figure.Figure.save`.
+    matplotlib-compatible alias for :meth:`~plotpress.figure.Figure.save`.
 
 Strings and Jupyter
 -------------------
@@ -41,7 +41,7 @@ Native window
 
 ``fig.show(interactive=True, wait_for_extract=False)``
     Open the figure in a native pop-up window via pywebview / WebView2 (the
-    ``[gui]`` extra: ``pip install simpleplot[gui]``). Falls back to the default
+    ``[gui]`` extra: ``pip install plotpress[gui]``). Falls back to the default
     browser if pywebview is not installed.
 
     With ``wait_for_extract=True`` the call blocks until the user clicks

@@ -1,29 +1,29 @@
 """matplotlib / seaborn API-compatibility parity.
 
-simpleplot bills a *matplotlib-shaped* API. These tests pin the compatibility
+plotpress bills a *matplotlib-shaped* API. These tests pin the compatibility
 that matters for drop-in use:
 
-* coverage  -- simpleplot's Axes exposes the core matplotlib Axes methods;
+* coverage  -- plotpress's Axes exposes the core matplotlib Axes methods;
 * keywords  -- matplotlib's *keyword* names for first positional args work
                (``ax.hist(x=...)``, ``ax.set_title(label=...)``, etc.);
 * numbers   -- where matplotlib produces a well-defined value (histogram bins,
-               autoscaled limits, quartiles), simpleplot agrees;
+               autoscaled limits, quartiles), plotpress agrees;
 * seaborn   -- the seaborn-style helpers (kdeplot/ecdfplot/rugplot) match real
                seaborn's output shape.
 
 matplotlib and seaborn are optional (see the ``bench`` extra); every test that
 needs them ``importorskip``s, so a plain dependency-light run just skips them.
-The pure-simpleplot checks (keyword aliases, hist == ``np.histogram``) always
+The pure-plotpress checks (keyword aliases, hist == ``np.histogram``) always
 run and guard the parity fixes against regression.
 """
 import numpy as np
 import pytest
 
-import simpleplot
+import plotpress
 
 
 # ---------------------------------------------------------------------------
-# Coverage: the core matplotlib Axes methods simpleplot commits to.
+# Coverage: the core matplotlib Axes methods plotpress commits to.
 # ---------------------------------------------------------------------------
 CORE_AXES_METHODS = [
     # line / marker
@@ -53,7 +53,7 @@ CORE_AXES_METHODS = [
 
 @pytest.mark.parametrize("name", CORE_AXES_METHODS)
 def test_axes_method_exists(name):
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     assert callable(getattr(ax, name, None)), f"missing Axes.{name}"
 
 
@@ -64,7 +64,7 @@ def test_method_names_are_a_subset_of_matplotlib():
     import matplotlib
     matplotlib.use("Agg")
 
-    _, spax = simpleplot.subplots()
+    _, spax = plotpress.subplots()
     _, mpax = plt.subplots()
     sp = {n for n in dir(spax)
           if not n.startswith("_") and callable(getattr(spax, n))}
@@ -77,7 +77,7 @@ def test_method_names_are_a_subset_of_matplotlib():
 
 # ---------------------------------------------------------------------------
 # Keyword parity: matplotlib's keyword name for the first positional arg works.
-# These are pure-simpleplot regression guards for the parity fixes.
+# These are pure-plotpress regression guards for the parity fixes.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("call", [
     lambda ax: ax.hist(x=np.random.default_rng(0).standard_normal(50)),
@@ -90,14 +90,14 @@ def test_method_names_are_a_subset_of_matplotlib():
 ], ids=["hist", "boxplot", "pie", "imshow", "set_title",
         "set_xlabel", "set_ylabel"])
 def test_matplotlib_keyword_names(call):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     call(ax)
     fig.to_svg()  # must render
 
 
 def test_set_ticks_combined_labels_form():
     """matplotlib's ``set_xticks(ticks, labels)`` one-call form."""
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.plot([0, 1, 2], [0, 1, 0])
     ax.set_xticks([0, 1, 2], ["a", "b", "c"])
     ax.set_yticks([0, 1], ["lo", "hi"])
@@ -108,12 +108,12 @@ def test_set_ticks_combined_labels_form():
 def test_positional_calls_still_work():
     """Renaming params must not break positional callers."""
     rng = np.random.default_rng(0)
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.hist(rng.standard_normal(50))
     ax.boxplot([rng.standard_normal(50)])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.pie([1, 2, 3])
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     ax.imshow(rng.random((4, 4)))
     fig.to_svg()
 
@@ -124,7 +124,7 @@ def test_positional_calls_still_work():
 def test_hist_bins_equal_numpy():
     """hist bins/counts are exactly numpy's -- matplotlib's own basis."""
     d = np.random.default_rng(42).standard_normal(500)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     counts, edges, _ = ax.hist(d, bins=20)
     np_counts, np_edges = np.histogram(d, bins=20)
     assert np.array_equal(np.asarray(counts), np_counts)
@@ -133,7 +133,7 @@ def test_hist_bins_equal_numpy():
 
 def test_hist_respects_range():
     d = np.random.default_rng(42).standard_normal(500)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     counts, _, _ = ax.hist(d, bins=10, range=(-2, 2))
     np_counts, _ = np.histogram(d, bins=10, range=(-2, 2))
     assert np.array_equal(np.asarray(counts), np_counts)
@@ -146,11 +146,11 @@ def test_plot_autoscale_matches_matplotlib():
 
     x = np.linspace(0, 10, 100)
     y = np.sin(x)
-    _, spax = simpleplot.subplots()
+    _, spax = plotpress.subplots()
     spax.plot(x, y)
     _, mpax = plt.subplots()
     mpax.plot(x, y)
-    # matplotlib pads the data range ~5% on each side; simpleplot should match.
+    # matplotlib pads the data range ~5% on each side; plotpress should match.
     assert np.allclose(spax.get_xlim(), mpax.get_xlim(), atol=0.3)
     assert np.allclose(spax.get_ylim(), mpax.get_ylim(), atol=0.3)
     plt.close("all")
@@ -159,7 +159,7 @@ def test_plot_autoscale_matches_matplotlib():
 def test_plot_limits_enclose_data():
     x = np.linspace(0, 10, 100)
     y = np.sin(x)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot(x, y)
     (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
     assert x0 <= x.min() and x1 >= x.max()
@@ -167,7 +167,7 @@ def test_plot_limits_enclose_data():
 
 
 def test_bar_zero_baseline_and_span():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.bar([1, 2, 3], [10, 20, 30], width=0.8)
     x0, x1 = ax.get_xlim()
     assert x0 <= 0.6 and x1 >= 3.4          # bars are centered, width 0.8
@@ -184,22 +184,22 @@ def test_boxplot_median_matches_numpy():
     _, mpax = plt.subplots()
     mbp = mpax.boxplot([d])
     assert np.isclose(mbp["medians"][0].get_ydata()[0], med)
-    # simpleplot computes the same stats internally and must render.
-    fig, spax = simpleplot.subplots()
+    # plotpress computes the same stats internally and must render.
+    fig, spax = plotpress.subplots()
     spax.boxplot([d])
     assert "<" in fig.to_svg()
     plt.close("all")
 
 
 def test_errorbar_limits_include_error_extents():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.errorbar([1, 2, 3], [1, 2, 3], yerr=0.5)
     y0, y1 = ax.get_ylim()
     assert y0 <= 0.5 + 1e-9 and y1 >= 3.5 - 1e-9
 
 
 def test_logscale_clamps_positive():
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.plot([1, 10, 100], [1, 10, 100])
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -217,12 +217,12 @@ def test_kde_xrange_matches_seaborn():
     matplotlib.use("Agg")
 
     d = np.random.default_rng(0).standard_normal(500)
-    _, spax = simpleplot.subplots()
+    _, spax = plotpress.subplots()
     spax.kdeplot(d)
     _, mpax = plt.subplots()
     sns.kdeplot(d, ax=mpax)
     # KDE support extends past the data via the smoothing cut; the axis range
-    # simpleplot picks should track seaborn's within a small tolerance.
+    # plotpress picks should track seaborn's within a small tolerance.
     assert np.allclose(spax.get_xlim(), mpax.get_xlim(), atol=0.5)
     plt.close("all")
 
@@ -233,7 +233,7 @@ def test_kde_xrange_matches_seaborn():
     lambda ax: ax.rugplot(np.random.default_rng(0).standard_normal(200)),
 ], ids=["kdeplot", "ecdfplot", "rugplot"])
 def test_seaborn_style_helpers_render(call):
-    fig, ax = simpleplot.subplots()
+    fig, ax = plotpress.subplots()
     call(ax)
     assert len(fig.to_svg()) > 200
 
@@ -241,7 +241,7 @@ def test_seaborn_style_helpers_render(call):
 def test_ecdf_is_monotonic_zero_to_one():
     """An empirical CDF must rise monotonically across [0, 1]."""
     d = np.random.default_rng(0).standard_normal(300)
-    _, ax = simpleplot.subplots()
+    _, ax = plotpress.subplots()
     ax.ecdfplot(d)
     # the ecdf line artist should carry y-data spanning 0..1, non-decreasing.
     ys = None
