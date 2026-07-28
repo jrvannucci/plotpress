@@ -41,6 +41,33 @@ Colorbars
        m = ax.pcolormesh(x, y, Z)
        fig.colorbar(m, ax=ax)
 
+Figure-level legend
+-------------------
+
+``fig.legend(ax=None, loc="lower center", ncol=1, title=None, pad=0.01)``
+    One legend for the whole figure, drawn from every labelled artist. Labels
+    are **de-duplicated**, so a grid whose panels all plot the same series gets
+    one entry per series rather than one per panel.
+
+    .. code-block:: python
+
+       fig, axes = plotpress.subplots(2, 3)
+       for i, ax in enumerate(axes.ravel()):
+           ax.plot(x, signal[i], label="signal")
+           ax.plot(x, reference[i], label="reference")
+       fig.tight_layout()
+       fig.legend(loc="lower center", ncol=2)
+
+    ``loc`` is in **figure** coordinates. The outside placements --
+    ``"lower center"``, ``"upper center"``, ``"right"``/``"center right"`` and
+    ``"center left"`` -- reserve a band at that edge and shrink the subplot grid
+    to fit, so the legend never lands on a plot. Any other placement overlays
+    without reserving, the way an axes legend sits inside its own rect.
+
+    ``ax`` restricts which axes contribute entries; by default they all do.
+    Order relative to ``tight_layout`` does not matter -- the reservation is
+    re-applied whenever the grid is reflowed.
+
 Automatic layout
 ----------------
 
