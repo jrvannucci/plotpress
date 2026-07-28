@@ -59,3 +59,6 @@ examples/*.pdf
 
 # Claude Code
 .claude/
+
+# Interactive gallery figures, written into _static during the docs build.
+docs/_static/interactive/
