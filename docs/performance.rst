@@ -147,11 +147,11 @@ Best of 5 runs, one machine. Regenerate with ``python benchmarks/example_timings
      - 5 KiB
      - 0.8 ms
      - 55 KiB
-   * - ``plot_23_mesh_grid``
+   * - ``scale/plot_01_many_axes``
      - 500
      - 282.6 ms
      - 2.9 MiB
      - 649.1 ms
      - 11.0 MiB
 
-The ``plot_23_mesh_grid`` row is the deliberate stress case: 500 independent pcolormesh axes on one figure. Its interactive HTML is dominated by the 500 embedded mesh ``z`` grids; lower ``fig.to_html(pick_precision=...)`` (or ``fig.save(..., pick_precision=...)``) to trade readout precision for a smaller file.
+The ``scale/plot_01_many_axes`` row is the deliberate stress case: 500 independent pcolormesh axes on one figure. Its interactive HTML is dominated by the 500 embedded mesh ``z`` grids; lower ``fig.to_html(pick_precision=...)`` (or ``fig.save(..., pick_precision=...)``) to trade readout precision for a smaller file.

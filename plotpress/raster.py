@@ -585,8 +585,16 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
         _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     if ax._title:
-        draw.text((cx, T - 8 * S), ax._title, fill=_rgb(st.text_color),
-                  font=_font(st.title_size * S, st.font_family), anchor="mb")
+        # Pillow refuses a bottom/baseline anchor on multiline text, and the
+        # title is the only label that uses one -- so a "\n" in a title raised
+        # ValueError and took the whole PNG export with it, where every other
+        # label merely broke the line. Stack the lines by hand instead. A
+        # single-line title takes the same path and lands exactly where it did.
+        font = _font(st.title_size * S, st.font_family)
+        line_h = st.title_size * 1.2 * S
+        for i, line in enumerate(reversed(ax._title.split("\n"))):
+            draw.text((cx, T - 8 * S - i * line_h), line,
+                      fill=_rgb(st.text_color), font=font, anchor="mb")
 
 
 def _vtext(draw, text, x, y, fill, font):
