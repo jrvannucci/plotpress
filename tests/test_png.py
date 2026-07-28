@@ -56,3 +56,31 @@ def test_data_uri_prefix():
     img = np.zeros((2, 2, 4), np.uint8)
     uri = png_data_uri(img)
     assert uri.startswith("data:image/png;base64,")
+
+
+def test_multiline_title_does_not_break_png_export():
+    """A newline in a *title* used to raise ValueError out of Pillow and abort
+    the whole PNG export, while every other label merely broke the line -- the
+    title is the only one drawn with a bottom anchor, which Pillow refuses for
+    multiline text. Text stays single-line by design (see the limitations docs),
+    but a stray newline must degrade, not crash."""
+    import plotpress
+    from plotpress import raster
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    ax.set_title("first line\nsecond line")
+    assert raster.figure_to_image(fig, scale=1) is not None
+
+
+def test_multiline_labels_survive_png_export():
+    """The other label slots already coped; keep them that way."""
+    import plotpress
+    from plotpress import raster
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    ax.set_xlabel("x\nunits")
+    ax.set_ylabel("y\nunits")
+    ax.text(0.5, 0.5, "a\nb")
+    assert raster.figure_to_image(fig, scale=1) is not None

@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(".."))
 
 import plotpress  # noqa: E402
-from sphinx_gallery.sorting import FileNameSortKey  # noqa: E402
+from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
 project = "plotpress"
@@ -92,6 +92,19 @@ sphinx_gallery_conf = {
     # by *code length*, which buried the line-plot introduction two thirds of
     # the way down the page behind whatever example happened to be shortest.
     "within_subsection_order": FileNameSortKey,
+    # Sections run capability-first, with limitations last: a reader browsing
+    # the gallery should meet what the library does before what it does not.
+    # Alphabetical (the default) put limitations second, right behind the
+    # introductory plot types.
+    "subsection_order": ExplicitOrder([
+        "examples/mesh",
+        "examples/scale",
+        "examples/polar",
+        "examples/threed",
+        "examples/signal",
+        "examples/seaborn",
+        "examples/limitations",
+    ]),
     # Separator-agnostic so examples execute on Windows and POSIX alike.
     "filename_pattern": r"plot_",
     "image_scrapers": (_plotpress_scraper,),

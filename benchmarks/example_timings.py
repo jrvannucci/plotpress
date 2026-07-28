@@ -24,6 +24,11 @@ sys.path.insert(0, ROOT)
 import plotpress  # noqa: E402
 
 EX_DIR = os.path.join(ROOT, "docs", "examples")
+# The timings cover the main gallery plus the large-scale family. The other
+# subsections (mesh, signal, polar, ...) are deliberately left out -- they would
+# treble the runtime without adding a distinct shape of figure -- but "scale"
+# holds the 500-axes stress case, which is the row the table exists for.
+EX_SUBDIRS = ["scale"]
 OUT_RST = os.path.join(ROOT, "docs", "performance.rst")
 REPEAT = 5
 
@@ -54,9 +59,17 @@ def _kib(s: str) -> float:
 
 def measure():
     rows = []
-    names = sorted(f for f in os.listdir(EX_DIR) if f.startswith("plot_") and f.endswith(".py"))
-    for name in names:
-        fig = _figure_from(os.path.join(EX_DIR, name))
+    def _examples(directory, label):
+        return sorted((label + f, os.path.join(directory, f))
+                      for f in os.listdir(directory)
+                      if f.startswith("plot_") and f.endswith(".py"))
+
+    names = _examples(EX_DIR, "")
+    for sub in EX_SUBDIRS:
+        names += _examples(os.path.join(EX_DIR, sub), sub + "/")
+
+    for name, path in names:
+        fig = _figure_from(path)
         # Count real (non-colorbar) axes.
         n_axes = sum(0 if getattr(a, "_is_colorbar", False) else 1 for a in fig.axes)
 
@@ -71,7 +84,7 @@ def measure():
             "html_ms": html_s * 1e3,
             "html_kib": _kib(html),
         })
-        print(f"{name:28s} axes={n_axes:<4d} "
+        print(f"{name:34s} axes={n_axes:<4d} "
               f"svg={svg_s*1e3:7.1f}ms/{_kib(svg):8.1f}KiB  "
               f"html={html_s*1e3:7.1f}ms/{_kib(html):8.1f}KiB")
     return rows
@@ -117,7 +130,7 @@ def write_rst(rows):
         ]
     lines += [
         "",
-        "The ``plot_23_mesh_grid`` row is the deliberate stress case: 500"
+        "The ``scale/plot_01_many_axes`` row is the deliberate stress case: 500"
         " independent pcolormesh axes on one figure. Its interactive HTML is"
         " dominated by the 500 embedded mesh ``z`` grids; lower"
         " ``fig.to_html(pick_precision=...)`` (or ``fig.save(...,"
