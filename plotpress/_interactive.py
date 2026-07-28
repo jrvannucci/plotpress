@@ -352,12 +352,29 @@ INTERACTIVE_JS = r"""
     if (a !== 0 && (a < 1e-3 || a >= 1e5)) return expFmt(v, 0);
     return (Math.round(v * 1e6) / 1e6).toString();
   }
+  // Mirrors ticker.log_ticks: decades *inside* [lo, hi] only -- a tick outside
+  // the limits lands outside the axes box and is not clipped -- falling back to
+  // 1-2-5 and then linear ticks for ranges narrower than a decade (which a
+  // zoom reaches almost immediately).
   function jsLogTicks(lo, hi) {
     if (lo <= 0) lo = hi > 0 ? hi / 1000 : 1e-3;
-    var out = [];
-    for (var e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++)
-      out.push(Math.pow(10, e));
-    return out;
+    var e0 = Math.floor(Math.log10(lo)), e1 = Math.ceil(Math.log10(hi)), e, i;
+    function inside(vals) {
+      var keep = [];
+      for (var k = 0; k < vals.length; k++)
+        if (vals[k] >= lo * (1 - 1e-9) && vals[k] <= hi * (1 + 1e-9)) keep.push(vals[k]);
+      return keep;
+    }
+    var decades = [];
+    for (e = e0; e <= e1; e++) decades.push(Math.pow(10, e));
+    var out = inside(decades);
+    if (out.length >= 3) return out;
+    var fine = [], mant = [1, 2, 5];
+    for (e = e0; e <= e1; e++)
+      for (i = 0; i < 3; i++) fine.push(mant[i] * Math.pow(10, e));
+    fine.sort(function (a, b) { return a - b; });
+    out = inside(fine);
+    return out.length >= 2 ? out : jsNiceTicks(lo, hi, 5).ticks;
   }
   function allDistinct(a) {
     for (var i = 0; i < a.length; i++)

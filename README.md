@@ -44,6 +44,14 @@ install footprint or global state gets in the way.
 typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or the
 deep ecosystem that pandas, seaborn and scikit-learn plot into.
 
+Two galleries in the docs, on separate pages: a
+[plot-type reference](https://jrvannucci.github.io/plotpress/auto_examples/index.html)
+with one figure per method, and
+[real applications](https://jrvannucci.github.io/plotpress/auto_applications/index.html)
+— a hundred-odd worked figures built from the data real measurements produce,
+grouped by field, each explaining the axis, scale and colour choices the data
+forces. Every application figure is embedded live, with the interactive toolbar.
+
 ## What makes it different
 
 1. **No `pyplot`, no globals.** There is no "current figure/axes" and no global

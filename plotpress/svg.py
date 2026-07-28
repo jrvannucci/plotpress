@@ -624,10 +624,10 @@ def _render_bars(bars: Bars, tr, ai, k, body):
         p, ln, th, ba = bars.pos[i], bars.length[i], bars.thickness[i], bars.base[i]
         if bars.orientation == "vertical":
             x0, x1 = tr.x(p - th / 2), tr.x(p + th / 2)
-            y0, y1 = tr.y(ba), tr.y(ba + ln)
+            y0, y1 = tr.y_base(ba), tr.y_base(ba + ln)
         else:
             y0, y1 = tr.y(p - th / 2), tr.y(p + th / 2)
-            x0, x1 = tr.x(ba), tr.x(ba + ln)
+            x0, x1 = tr.x_base(ba), tr.x_base(ba + ln)
         rx, ry = min(x0, x1), min(y0, y1)
         rects.append(
             f'<rect x="{_fmt(rx)}" y="{_fmt(ry)}" width="{_fmt(abs(x1 - x0))}" '
@@ -642,7 +642,7 @@ def _render_bars(bars: Bars, tr, ai, k, body):
 def _render_stem(stem: Stem, tr, st, fig, body):
     xb = tr.x(stem.x)
     yb = tr.y(stem.y)
-    y0 = tr.y(stem.baseline)
+    y0 = tr.y_base(stem.baseline)
     lines = [f'<line x1="{_fmt(x)}" y1="{_fmt(y0)}" x2="{_fmt(x)}" y2="{_fmt(y)}"/>'
              for x, y in zip(xb, yb)]
     body.append(
@@ -671,13 +671,16 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
             )
     bars, cap = [], eb.capsize
     if eb.yerr is not None:
-        ylo, yhi = tr.y(eb.y - eb.yerr), tr.y(eb.y + eb.yerr)
+        # An error bar reaching below zero on a log axis has no pixel to land
+        # on; clamp the whisker to the frame rather than emitting NaN, which
+        # drops the whole bar and quietly understates the uncertainty.
+        ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
         for x, a, b in zip(xb, ylo, yhi):
             bars.append(f'<line x1="{_fmt(x)}" y1="{_fmt(a)}" x2="{_fmt(x)}" y2="{_fmt(b)}"/>')
             bars.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(a)}" x2="{_fmt(x + cap)}" y2="{_fmt(a)}"/>')
             bars.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(b)}" x2="{_fmt(x + cap)}" y2="{_fmt(b)}"/>')
     if eb.xerr is not None:
-        xlo, xhi = tr.x(eb.x - eb.xerr), tr.x(eb.x + eb.xerr)
+        xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
         for y, a, b in zip(yb, xlo, xhi):
             bars.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y)}" x2="{_fmt(b)}" y2="{_fmt(y)}"/>')
             bars.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y - cap)}" x2="{_fmt(a)}" y2="{_fmt(y + cap)}"/>')
@@ -685,8 +688,11 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
     if bars:
         body.append(f'<g stroke="{eb.color}" stroke-width="1">{"".join(bars)}</g>')
     r = eb.markersize / 2.0 * st.dpi / 72.0
+    # Skip points that do not map to a pixel -- a value at or below zero on a
+    # log axis, most often. Emitting cx/cy="nan" produces invalid SVG that some
+    # renderers reject outright rather than merely skipping the one marker.
     dots = [f'<circle cx="{_fmt(x)}" cy="{_fmt(y)}" r="{_fmt(r)}" fill="{eb.color}"/>'
-            for x, y in zip(xb, yb)]
+            for x, y in zip(xb, yb) if np.isfinite(x) and np.isfinite(y)]
     body.append("".join(dots))
 
 
@@ -986,9 +992,27 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
         )
     if ax._title:
         body.append(
-            f'<text x="{_fmt(cx)}" y="{_fmt(px_top - 8)}" text-anchor="middle" '
-            f'font-size="{st.title_size}" fill="{st.text_color}">{_esc(ax._title)}</text>'
+            f'<text x="{_fmt(cx)}" y="{_fmt(px_top - 8 - twiny_headroom(ax, st))}" '
+            f'text-anchor="middle" font-size="{st.title_size}" '
+            f'fill="{st.text_color}">{_esc(ax._title)}</text>'
         )
+
+
+def twiny_headroom(ax, st):
+    """Pixels a ``twiny`` overlay consumes above the axes box.
+
+    A ``twiny`` draws its ticks and axis label on top, in the same band the
+    title occupies. Without this the two land on each other -- and the twin is
+    usually the *reason* the title is worth reading, so overlapping them is
+    doubly unhelpful. ``tight_layout`` reserves the same band.
+    """
+    for other in ax.figure.axes:
+        if other._twin_of is ax and other._twin_shared == "y":
+            h = st.tick_size + st.tick_label_size + 4
+            if other._xlabel:
+                h += st.label_size + 6
+            return h
+    return 0.0
 
 
 def _max_ytick_width(ax, st):
@@ -1164,9 +1188,16 @@ def draw_legend(lay, st, bx, by, body):
                 f'height="10" fill="{color}" fill-opacity="{op}"/>'
             )
         else:
+            # Carry the artist's dash pattern into the swatch. Reference lines
+            # -- control limits, thresholds, fitted asymptotes -- are dashed or
+            # dotted precisely so they read as annotations rather than data, and
+            # a legend that draws them all solid throws that distinction away
+            # exactly where the reader goes to look it up.
+            dash = _DASH.get(getattr(a, "linestyle", "-"))
+            extra = f' stroke-dasharray="{dash}"' if dash else ""
             body.append(
                 f'<line x1="{_fmt(sx)}" y1="{_fmt(row_y)}" x2="{_fmt(sx + sample_w)}" '
-                f'y2="{_fmt(row_y)}" stroke="{color}" stroke-width="2"/>'
+                f'y2="{_fmt(row_y)}" stroke="{color}" stroke-width="2"{extra}/>'
             )
         body.append(
             f'<text x="{_fmt(sx + sample_w + pad)}" y="{_fmt(row_y + fs * 0.35)}" '

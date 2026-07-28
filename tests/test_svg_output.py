@@ -1,6 +1,7 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
 import math
+import re
 import os
 import time
 import xml.etree.ElementTree as ET
@@ -176,6 +177,56 @@ def test_fill_between_closed_path():
     ax.fill_between([0, 1, 2], [0, 1, 0], [1, 2, 1])
     paths = _parse(fig.to_svg()).findall(".//" + NS + "path")
     assert any(p.attrib["d"].endswith("Z") for p in paths)  # filled polygon
+
+
+@pytest.mark.parametrize("y1, y2", [
+    ([0, 1, 0], [1, 2, 1]),      # both arrays
+    ([0, 1, 0], 0.5),            # scalar upper bound
+    (0.5, [1, 2, 1]),            # scalar *lower* bound -- used to crash
+    (0.0, 1.0),                  # both scalar
+])
+def test_fill_between_broadcasts_either_bound(y1, y2):
+    fig, ax = plotpress.subplots()
+    ax.fill_between([0, 1, 2], y1, y2)
+    paths = _parse(fig.to_svg()).findall(".//" + NS + "path")
+    assert any(p.attrib["d"].endswith("Z") for p in paths)
+
+
+def _no_nan_geometry(fig):
+    """SVG with base64 payloads stripped contains no literal NaN coordinate."""
+    svg = re.sub(r"data:image/png;base64,[A-Za-z0-9+/=]+", "IMG", fig.to_svg())
+    return re.search(r"(?i)(?<![a-z0-9])nan(?![a-z0-9])", svg) is None
+
+
+def test_bars_render_on_a_log_axis():
+    """A bar sits on zero, which a log axis cannot map.
+
+    Transforming the baseline gave NaN, so the whole rectangle's geometry became
+    NaN and the series vanished -- a log-scaled histogram drew an empty panel.
+    """
+    fig, ax = plotpress.subplots()
+    ax.bar([1, 2, 3], [10, 100, 1000])
+    ax.set_yscale("log")
+    ax.set_ylim(1, 2000)
+    assert _no_nan_geometry(fig)
+    rects = _parse(fig.to_svg()).findall(".//" + NS + "g/" + NS + "rect")
+    assert len(rects) >= 3
+
+
+def test_empty_histogram_bins_on_a_log_axis():
+    fig, ax = plotpress.subplots()
+    ax.hist([0.0, 0.0, 0.05, 5.0], bins=12, density=True)
+    ax.set_yscale("log")
+    assert _no_nan_geometry(fig)
+
+
+def test_errorbar_below_zero_on_a_log_axis():
+    """Whiskers reaching past zero clamp to the frame; unmappable dots are dropped."""
+    fig, ax = plotpress.subplots()
+    ax.errorbar([1, 2, 3], [1.0, 0.1, 0.01], yerr=[0.5, 0.5, 0.5])
+    ax.set_yscale("log")
+    ax.set_ylim(1e-3, 10)
+    assert _no_nan_geometry(fig)
 
 
 def test_imshow_is_one_image():

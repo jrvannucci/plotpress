@@ -110,14 +110,56 @@ def test_one_sided_limit_renders():
     assert fig.to_svg().startswith("<svg")
 
 
-def test_one_sided_limit_stays_local_to_its_axes_when_shared():
+def test_hexbin_layout_is_independent_of_the_y_units():
+    """Rescaling y must not change the hex lattice.
+
+    Deriving the row count from the ratio of the data ranges made it scale with
+    the units, so plotting kilowatts against metres per second asked for
+    thousands of rows and every bin rendered as a sub-pixel dash.
+    """
+    rng = np.random.default_rng(0)
+    x, y = rng.normal(0, 1, 4000), rng.normal(0, 1, 4000)
+    counts = []
+    for scale in (1.0, 1e3, 1e-3):
+        _, ax = plotpress.subplots()
+        counts.append(len(ax.hexbin(x, y * scale, gridsize=30).verts))
+    assert len(set(counts)) == 1, counts
+
+
+def test_explicit_limit_propagates_across_a_share_group():
+    """sharey means shared *limits*, not just a shared autoscale.
+
+    Setting a limit on one panel and leaving its neighbours where they were is
+    how a shared grid silently comes apart -- and on the panels whose ticks are
+    hidden because they are shared, nothing on screen says so.
+    """
     _, axes = plotpress.subplots(1, 2, sharey=True)
     axes[0].plot([0, 5])
     axes[1].plot([0, 50])
     shared_hi = axes[0].get_ylim()[1]
     axes[0].set_ylim(0, None)
-    assert axes[0].get_ylim() == (0, shared_hi)   # pin applies here only
-    assert axes[1].get_ylim()[0] != 0             # ...not to the whole group
+    # The pinned end applies to the group; the open end keeps autoscaling.
+    assert axes[0].get_ylim() == (0, shared_hi)
+    assert axes[1].get_ylim() == (0, shared_hi)
+
+
+def test_explicit_limit_stays_local_without_sharing():
+    _, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 5])
+    axes[1].plot([0, 50])
+    axes[0].set_ylim(0, 2)
+    assert axes[0].get_ylim() == (0, 2)
+    assert axes[1].get_ylim() != (0, 2)
+
+
+def test_own_limit_wins_over_a_shared_sibling():
+    _, axes = plotpress.subplots(1, 2, sharex=True)
+    axes[0].plot([0, 5])
+    axes[1].plot([0, 50])
+    axes[0].set_xlim(0, 1)
+    axes[1].set_xlim(2, 3)
+    assert axes[0].get_xlim() == (0, 1)
+    assert axes[1].get_xlim() == (2, 3)
 
 
 @pytest.mark.parametrize("setlim, scale", [

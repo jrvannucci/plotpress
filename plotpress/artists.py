@@ -415,7 +415,12 @@ class Bars(Artist):
 class FillBetween(Artist):
     def __init__(self, x, y1, y2, color, alpha=0.4, label=None):
         self.x = np.asarray(x, float)
-        self.y1 = np.asarray(y1, float)
+        # Broadcast *both* bounds against x. Only y2 was, because its default
+        # is the scalar 0.0 -- so filling from a constant baseline up to a
+        # curve, ``fill_between(x, floor, series)``, crashed inside the
+        # transform with an unrelated-looking column_stack shape error, while
+        # the same call with the arguments the other way round worked.
+        self.y1 = np.broadcast_to(np.asarray(y1, float), self.x.shape).copy()
         self.y2 = np.broadcast_to(np.asarray(y2, float), self.x.shape).copy()
         self.color = color
         self.alpha = alpha

@@ -352,10 +352,10 @@ def _bars(bars, tr, S, draw):
         p, ln, th, ba = bars.pos[i], bars.length[i], bars.thickness[i], bars.base[i]
         if bars.orientation == "vertical":
             x0, x1 = float(tr.x(p - th / 2)), float(tr.x(p + th / 2))
-            y0, y1 = float(tr.y(ba)), float(tr.y(ba + ln))
+            y0, y1 = float(tr.y_base(ba)), float(tr.y_base(ba + ln))
         else:
             y0, y1 = float(tr.y(p - th / 2)), float(tr.y(p + th / 2))
-            x0, x1 = float(tr.x(ba)), float(tr.x(ba + ln))
+            x0, x1 = float(tr.x_base(ba)), float(tr.x_base(ba + ln))
         box = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
         outline = _rgb(bars.edgecolor) if bars.edgecolor else None
         draw.rectangle(box, fill=_rgba(bars.colors[i], bars.alpha), outline=outline,
@@ -363,7 +363,7 @@ def _bars(bars, tr, S, draw):
 
 
 def _stem(stem, tr, st, S, draw):
-    y0 = float(tr.y(stem.baseline))
+    y0 = float(tr.y_base(stem.baseline))
     xb, yb = tr.x(stem.x), tr.y(stem.y)
     for x, y in zip(xb, yb):
         draw.line([float(x), y0, float(x), float(y)], fill=_rgb(stem.linecolor),
@@ -383,14 +383,15 @@ def _errorbar(eb, tr, st, S, draw):
                   max(1, int(round(eb.linewidth * S))))
     cap = eb.capsize * S
     if eb.yerr is not None:
-        ylo, yhi = tr.y(eb.y - eb.yerr), tr.y(eb.y + eb.yerr)
+        ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
         for x, a, b in zip(xb, ylo, yhi):
             draw.line([x, a, x, b], fill=col, width=S)
             draw.line([x - cap, a, x + cap, a], fill=col, width=S)
             draw.line([x - cap, b, x + cap, b], fill=col, width=S)
     r = eb.markersize / 2.0 * st.dpi / 72.0 * S
     for x, y in zip(xb, yb):
-        draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
+        if np.isfinite(x) and np.isfinite(y):      # see svg._render_errorbar
+            draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
 
 
 def _eventplot(ev, tr, S, draw):
@@ -591,10 +592,13 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
         # ValueError and took the whole PNG export with it, where every other
         # label merely broke the line. Stack the lines by hand instead. A
         # single-line title takes the same path and lands exactly where it did.
+        from .svg import twiny_headroom
+
         font = _font(st.title_size * S, st.font_family)
         line_h = st.title_size * 1.2 * S
+        top = T - (8 + twiny_headroom(ax, st)) * S
         for i, line in enumerate(reversed(ax._title.split("\n"))):
-            draw.text((cx, T - 8 * S - i * line_h), line,
+            draw.text((cx, top - i * line_h), line,
                       fill=_rgb(st.text_color), font=font, anchor="mb")
 
 
@@ -703,7 +707,15 @@ def _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
                            for c in color[:3])
             draw.rectangle([sx, ry - 5 * S, sx + sample, ry + 5 * S], fill=swatch)
         else:
-            draw.line([sx, ry, sx + sample, ry], fill=color, width=max(1, int(round(2 * S))))
+            # Match svg.draw_legend: the swatch carries the artist's dash
+            # pattern, so a dashed reference line is not drawn as a solid one.
+            width = max(1, int(round(2 * S)))
+            dash = _DASH.get(getattr(a, "linestyle", "-"))
+            seg = [(sx, ry), (sx + sample, ry)]
+            if dash:
+                _dashed(draw, seg, color, width, tuple(d * S for d in dash))
+            else:
+                draw.line([sx, ry, sx + sample, ry], fill=color, width=width)
         draw.text((sx + sample + pad, ry), a.label, fill=_rgb(st.text_color),
                   font=font, anchor="lm")
 
