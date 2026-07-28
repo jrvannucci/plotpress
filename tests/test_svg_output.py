@@ -724,3 +724,41 @@ def test_pick_data_omits_oversized_series_and_meshes():
     pd = pick_data(fig, max_points=20000, max_mesh_cells=60000)
     assert pd.get(0, {"series": []})["series"] == [] or 0 not in pd
     assert pd.get(1, {"meshes": []})["meshes"] == [] or 1 not in pd
+
+
+def _mesh_alpha(draw):
+    """Alpha channel of the raster a mesh embeds into the SVG."""
+    import base64
+    import io
+    import re
+
+    from PIL import Image
+
+    fig, ax = plotpress.subplots(figsize=(5, 3))
+    draw(ax)
+    b64 = re.search(r'image/png;base64,([^"]+)"', fig.to_svg()).group(1)
+    return np.asarray(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGBA"))[:, :, 3]
+
+
+def test_rectangular_curvilinear_mesh_fills_its_raster():
+    """A 2-D mesh covering a rectangle must paint every pixel of its image.
+
+    _out_grid scaled by (out_w - 1), placing the boundary nodes on pixel
+    *centers* while the scan converter samples centers at index + 0.5 -- so the
+    far row and column fell outside the mesh and stayed transparent, drawing a
+    hairline gap along two edges of every curvilinear mesh.
+    """
+    edges_x = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
+    edges_y = np.array([0.0, 0.5, 1.0])
+    field = np.tile(np.arange(5.0), (2, 1))
+    X, Y = np.meshgrid(edges_x, edges_y)
+    assert (_mesh_alpha(lambda ax: ax.pcolormesh(X, Y, field, cmap="viridis")) == 0).sum() == 0
+
+
+def test_gouraud_mesh_fills_its_raster():
+    g = np.linspace(-3.0, 3.0, 24)
+    X, Y = np.meshgrid(g, g)
+    C = np.exp(-(X ** 2 + Y ** 2))
+    alpha = _mesh_alpha(
+        lambda ax: ax.pcolormesh(X, Y, C, cmap="viridis", shading="gouraud"))
+    assert (alpha == 0).sum() == 0
