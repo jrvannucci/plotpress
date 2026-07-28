@@ -157,3 +157,50 @@ def test_subplots_grid_shapes():
     _, grid = plotpress.subplots(2, 2)
     assert grid.shape == (2, 2)
     assert isinstance(grid[0, 0], Axes)
+
+
+# -- contour / contourf coordinate handling ---------------------------------
+
+def _peak_grid(n=30):
+    g = np.linspace(-3.0, 3.0, n)
+    X, Y = np.meshgrid(g, g)
+    return g, X, Y, np.exp(-(X ** 2 + Y ** 2))
+
+
+@pytest.mark.parametrize("method", ["contour", "contourf"])
+def test_contour_accepts_meshgrid_coordinates(method):
+    """Passing the same 2-D X/Y used for pcolormesh must work.
+
+    contour used to crash deep in the renderer -- _marching_squares indexes x/y
+    as 1-D vectors, so a 2-D x made _fmt try to format a whole row -- while
+    contourf silently accepted it. Overlaying isolines on a mesh is the obvious
+    thing to do, so both now take either form.
+    """
+    g, X, Y, Z = _peak_grid()
+    fig_1d, ax_1d = plotpress.subplots()
+    getattr(ax_1d, method)(g, g, Z, levels=6)
+    fig_2d, ax_2d = plotpress.subplots()
+    getattr(ax_2d, method)(X, Y, Z, levels=6)
+    assert fig_1d.to_svg() == fig_2d.to_svg()
+
+
+@pytest.mark.parametrize("method", ["contour", "contourf"])
+def test_contour_rejects_a_curvilinear_grid(method):
+    """Marching squares walks a rectilinear grid, and contourf only keeps the
+    extent -- so a warped mesh would be drawn into its bounding box. Refuse it
+    instead of rendering something subtly wrong."""
+    r = np.linspace(0.3, 1.0, 20)
+    th = np.linspace(0.0, 1.7 * np.pi, 20)
+    R, TH = np.meshgrid(r, th)
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="rectilinear"):
+        getattr(ax, method)(R * np.cos(TH), R * np.sin(TH), R)
+
+
+def test_contour_over_pcolormesh_renders():
+    """The scientific idiom the fix exists for: isolines on a colormapped field."""
+    g, X, Y, Z = _peak_grid()
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z, cmap="magma")
+    ax.contour(X, Y, Z, levels=5, colors="white")
+    assert "<svg" in fig.to_svg()
