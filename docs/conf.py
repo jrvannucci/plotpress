@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(".."))
 
 import plotpress  # noqa: E402
+from sphinx_gallery.sorting import FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
 project = "plotpress"
@@ -86,6 +87,11 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
 sphinx_gallery_conf = {
     "examples_dirs": "examples",
     "gallery_dirs": "auto_examples",
+    # Order thumbnails by file name. Every example is numbered (plot_01_...)
+    # precisely to fix the reading order, but sphinx-gallery defaults to sorting
+    # by *code length*, which buried the line-plot introduction two thirds of
+    # the way down the page behind whatever example happened to be shortest.
+    "within_subsection_order": FileNameSortKey,
     # Separator-agnostic so examples execute on Windows and POSIX alike.
     "filename_pattern": r"plot_",
     "image_scrapers": (_plotpress_scraper,),
