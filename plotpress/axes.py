@@ -611,7 +611,8 @@ class Axes:
             x = np.arange(Z.shape[1], dtype=float)
             y = np.arange(Z.shape[0], dtype=float)
         elif len(args) == 3:
-            x, y, Z = (np.asarray(a, float) for a in args)
+            Z = np.asarray(args[2], float)
+            x, y = _rectilinear_grid(args[0], args[1], "contour")
         else:
             raise TypeError("contour() takes Z or x, y, Z")
         if np.ndim(levels) == 0:
@@ -639,7 +640,11 @@ class Axes:
             x = np.arange(Z.shape[1], dtype=float)
             y = np.arange(Z.shape[0], dtype=float)
         elif len(args) == 3:
-            x, y, Z = (np.asarray(a, float) for a in args)
+            Z = np.asarray(args[2], float)
+            # contourf only needs the extent, so 2-D input never crashed here --
+            # it silently drew a curvilinear field into its bounding box. Share
+            # contour's check so both reject what neither can actually render.
+            x, y = _rectilinear_grid(args[0], args[1], "contourf")
         else:
             raise TypeError("contourf() takes Z or x, y, Z")
 
@@ -1157,6 +1162,34 @@ class Axes:
             else:
                 ry = pyl
         return rx, ry
+
+
+def _rectilinear_grid(x, y, who):
+    """1-D coordinate vectors from ``contour``-style ``x``/``y`` input.
+
+    ``meshgrid`` output is accepted, because passing the same ``X``/``Y`` to
+    ``pcolormesh`` and to ``contour`` is the natural way to draw isolines over a
+    field -- and ``pcolormesh`` genuinely wants the 2-D form. Marching squares
+    walks a rectilinear grid, though, so a truly curvilinear ``X``/``Y`` cannot
+    be honored: say so here rather than drawing something subtly wrong.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    if x.ndim == 2:
+        # meshgrid("xy") repeats the x vector down every row, and the y vector
+        # across every column.
+        if not np.allclose(x, x[:1], equal_nan=True):
+            raise ValueError(
+                f"{who}() needs a rectilinear grid, but every row of x differs. "
+                "Use pcolormesh for a curvilinear mesh.")
+        x = x[0]
+    if y.ndim == 2:
+        if not np.allclose(y, y[:, :1], equal_nan=True):
+            raise ValueError(
+                f"{who}() needs a rectilinear grid, but every column of y differs. "
+                "Use pcolormesh for a curvilinear mesh.")
+        y = y[:, 0]
+    return x, y
 
 
 def _bilinear_upsample(Z, max_side=480):
