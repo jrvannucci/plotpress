@@ -826,3 +826,81 @@ def test_figure_legend_renders_in_both_backends():
 def test_figure_legend_absent_without_the_call():
     fig, _ = _grid_with_labels()
     assert "plotpress-legend" not in fig.to_svg()
+
+
+# -- mesh orientation and inverted axes -------------------------------------
+
+def _mesh_image_box(draw):
+    """The x/y/width/height of the <image> a mesh emits."""
+    import re
+
+    fig, ax = plotpress.subplots(figsize=(4.0, 3.0))
+    draw(ax)
+    m = re.search(r'<image x="([-\d.]+)" y="([-\d.]+)" '
+                  r'width="([-\d.]+)" height="([-\d.]+)"', fig.to_svg())
+    assert m, "no <image> emitted"
+    return [float(v) for v in m.groups()]
+
+
+@pytest.mark.parametrize("invert", ["x", "y", "both"])
+def test_mesh_on_an_inverted_axis_has_a_positive_box(invert):
+    """An inverted axis reversed the transformed corners, so the emitted image
+    got a negative width or height. That is an error in SVG, so the element was
+    dropped and the mesh vanished -- every depth, pressure and travel-time plot
+    in the gallery rendered as bare axes."""
+    g = np.linspace(0.0, 4.0, 24)
+    Z = np.add.outer(g, g)
+
+    def draw(ax):
+        ax.pcolormesh(g, g, Z, cmap="viridis")
+        if invert in ("x", "both"):
+            ax.invert_xaxis()
+        if invert in ("y", "both"):
+            ax.invert_yaxis()
+
+    _, _, w, h = _mesh_image_box(draw)
+    assert w > 0 and h > 0
+
+
+def _row_brightness(yvec, invert):
+    """Mean pixel value near the top and bottom of a mesh whose value is its y."""
+    import io
+
+    from PIL import Image as PILImage
+
+    from plotpress import raster
+
+    x = np.linspace(0.0, 1.0, 16)
+    Z = np.repeat(np.asarray(yvec, float)[:, None], x.size, axis=1)
+    fig, ax = plotpress.subplots(figsize=(3.0, 3.0))
+    ax.pcolormesh(x, yvec, Z, cmap="viridis", vmin=0.0, vmax=100.0)
+    if invert:
+        ax.invert_yaxis()
+    ax.set_axis_off()
+    buf = io.BytesIO()
+    raster.figure_to_image(fig, scale=1).save(buf, format="PNG")
+    im = np.asarray(PILImage.open(io.BytesIO(buf.getvalue())).convert("RGB")).astype(int)
+    h = im.shape[0]
+    return im[int(h * 0.12)].mean(), im[int(h * 0.88)].mean()
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_mesh_row_order_follows_the_coordinate_not_the_array(descending):
+    """A y vector given high-to-low is legitimate -- pressure and depth axes are
+    routinely stored that way -- but the rasterizer assumed row 0 was ymax, so
+    the field came out mirrored against its own axis while the ticks stayed
+    put. Large y must render at the top either way."""
+    y = np.linspace(0.0, 100.0, 24)
+    if descending:
+        y = y[::-1].copy()
+    top, bottom = _row_brightness(y, invert=False)
+    assert top > bottom
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_inverting_the_axis_flips_the_mesh_with_it(descending):
+    y = np.linspace(0.0, 100.0, 24)
+    if descending:
+        y = y[::-1].copy()
+    top, bottom = _row_brightness(y, invert=True)
+    assert top < bottom

@@ -270,6 +270,21 @@ class QuadMesh(Artist):
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
         self.shading = shading
+        # A coordinate vector given high-to-low is perfectly legitimate --
+        # pressure, depth and wavelength axes are routinely stored descending --
+        # but everything downstream (extent, which keeps only min/max; the
+        # rasterizer, which assumes row 0 is ymax; the interactive pick arrays)
+        # reads them ascending, so the field came out mirrored against its own
+        # axis. Normalize once here, flipping the data with the coordinate so
+        # every cell keeps the position it was given.
+        if self.X is not None and self.X.ndim == 1 and self.X.size > 1 \
+                and self.X[0] > self.X[-1]:
+            self.X = np.ascontiguousarray(self.X[::-1])
+            self.C = np.ascontiguousarray(self.C[:, ::-1])
+        if self.Y is not None and self.Y.ndim == 1 and self.Y.size > 1 \
+                and self.Y[0] > self.Y[-1]:
+            self.Y = np.ascontiguousarray(self.Y[::-1])
+            self.C = np.ascontiguousarray(self.C[::-1, :])
         # Gouraud shades between node values, so it needs 2-D node coords; build
         # them from 1-D edges (or default indices) if necessary.
         if shading == "gouraud":

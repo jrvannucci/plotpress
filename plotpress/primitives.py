@@ -267,8 +267,20 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
 
     if isinstance(a, (QuadMesh, Image)):
         xmin, xmax, ymin, ymax = a.extent()
-        ix, iy = float(tr.x(xmin)), float(tr.y(ymax))
-        iw, ih = float(tr.x(xmax)) - ix, float(tr.y(ymin)) - iy
-        return [ImagePrim(a.rgba().astype(np.uint8), ix, iy, iw, ih)]
+        # Pixel corners of the data extent. On an inverted axis the transform
+        # reverses these, which used to yield a negative width or height --
+        # an error in SVG, so the browser dropped the element and the mesh
+        # simply did not appear. Normalize the rect and mirror the raster to
+        # match, which keeps every pixel over the data it came from.
+        x0, x1 = float(tr.x(xmin)), float(tr.x(xmax))
+        y0, y1 = float(tr.y(ymax)), float(tr.y(ymin))
+        rgba = a.rgba().astype(np.uint8)
+        if x1 < x0:
+            x0, x1 = x1, x0
+            rgba = rgba[:, ::-1]
+        if y1 < y0:
+            y0, y1 = y1, y0
+            rgba = rgba[::-1, :]
+        return [ImagePrim(np.ascontiguousarray(rgba), x0, y0, x1 - x0, y1 - y0)]
 
     return None

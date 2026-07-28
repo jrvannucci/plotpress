@@ -28,7 +28,10 @@ SHIFTS = [1.25, 2.10, 3.65, 4.20, 7.25, 7.80]
 COUPLED = [(0, 1), (2, 3), (4, 5), (1, 2)]     # bonded pairs
 
 
-def peak(x0, y0, amp, width=0.030):
+def peak(x0, y0, amp, width=0.10):
+    """A 2-D Gaussian peak. The width is set so a peak spans several grid
+    points -- a real linewidth here would be far narrower than one pixel of
+    this map, and would simply not be drawn."""
     return amp * np.exp(-((F1 - x0) ** 2 + (F2 - y0) ** 2) / (2 * width ** 2))
 
 
