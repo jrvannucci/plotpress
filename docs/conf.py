@@ -68,7 +68,7 @@ html_context = {
 # pick data (~130 KiB each here), so this is opt-in per section rather than
 # gallery-wide: switching on all 69 examples would add several megabytes of
 # mostly-redundant payload to the site.
-INTERACTIVE_SECTIONS = ("mesh",)
+INTERACTIVE_SECTIONS = ("usecases",)
 
 _INTERACTIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "_static", "interactive")
@@ -158,7 +158,7 @@ sphinx_gallery_conf = {
     # Alphabetical (the default) put limitations second, right behind the
     # introductory plot types.
     "subsection_order": ExplicitOrder([
-        "examples/mesh",
+        "examples/usecases",
         "examples/scale",
         "examples/polar",
         "examples/threed",
