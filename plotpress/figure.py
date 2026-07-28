@@ -173,10 +173,14 @@ class Figure:
             return self
         nrows, ncols = specs[0]._subplotspec[0], specs[0]._subplotspec[1]
 
-        left_px = bottom_px = top_px = right_px = 0.0
+        # The top band stacks: a twiny's ticks and label sit directly above the
+        # box, and the title goes above those. Taking the max of the two would
+        # reserve room for whichever is taller and then draw them on each other.
+        left_px = bottom_px = right_px = 0.0
+        title_px = twin_top_px = 0.0
         for ax in specs:
             if ax._title:
-                top_px = max(top_px, st.title_size + 8)
+                title_px = max(title_px, st.title_size + 8)
             if ax._axis_off:
                 continue
             (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
@@ -188,6 +192,26 @@ class Figure:
             ylabels = _resolve_tick_labels(ax._yticklabels, yt)
             ytw = max((st.text_width(l, st.tick_label_size) for l in ylabels),
                       default=0.0)
+            right_px = max(right_px, st.tick_label_size * 0.6)  # last x label overhang
+
+            # A twin draws its axis on the side *opposite* its parent, so its
+            # decorations belong to the other margin. Measuring them into the
+            # left/bottom bands padded the wrong side and left the twin's own
+            # tick labels and axis label to overflow -- off the canvas for a
+            # single axes, and into the next panel for a grid.
+            if ax._twin_of is not None:
+                if ax._twin_shared == "x":                   # twinx: y on the right
+                    rdec = st.tick_size + ytw + 4
+                    if ax._ylabel:
+                        rdec += st.label_size + 6
+                    right_px = max(right_px, rdec)
+                else:                                        # twiny: x on the top
+                    tdec = st.tick_size + st.tick_label_size + 4
+                    if ax._xlabel:
+                        tdec += st.label_size + 6
+                    twin_top_px = max(twin_top_px, tdec)
+                continue
+
             ldec = st.tick_size + ytw + 4
             if ax._ylabel:
                 ldec += st.label_size + 6
@@ -196,7 +220,8 @@ class Figure:
             if ax._xlabel:
                 bdec += st.label_size + 6
             bottom_px = max(bottom_px, bdec)
-            right_px = max(right_px, st.tick_label_size * 0.6)  # last x label overhang
+
+        top_px = title_px + twin_top_px
 
         # Figure-level titles/labels add their own bands.
         if self._suptitle:
@@ -211,7 +236,11 @@ class Figure:
         right = 1 - (right_px + edge) / Wpx
         bottom = (bottom_px + edge) / Hpx
         top = 1 - (top_px + edge) / Hpx
-        gap_w = left_px / Wpx                       # interior column gap
+        # An interior column gap has to hold the right-hand decorations of the
+        # column to its left as well as the left-hand ones of the column to its
+        # right -- the row gap has always summed both bands, and a twinx in a
+        # grid is what makes the missing term visible.
+        gap_w = (left_px + right_px) / Wpx          # interior column gap
         gap_h = (bottom_px + top_px) / Hpx          # interior row gap
         axw = (right - left - (ncols - 1) * gap_w) / max(ncols, 1)
         axh = (top - bottom - (nrows - 1) * gap_h) / max(nrows, 1)

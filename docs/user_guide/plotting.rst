@@ -34,7 +34,11 @@ Markers
 ``scatter(x, y, s=None, c=None, color=None, marker="o", label=None, alpha=1.0, cmap="viridis", norm=None, vmin=None, vmax=None)``
     Scattered points. Pass ``c`` (an array) with ``cmap`` to color points by a
     third variable; ``s`` is the marker diameter in points. Markers stay a
-    constant on-screen size under interactive zoom.
+    constant on-screen size under interactive zoom -- which is why only **round**
+    markers are drawn: they are emitted as round-capped zero-length strokes, and
+    a polygonal marker would have to scale with the zoom instead. ``marker`` is
+    accepted for matplotlib compatibility and warns for any other shape;
+    distinguish series by color, size or a label instead.
 
     .. code-block:: python
 

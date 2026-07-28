@@ -9,6 +9,7 @@ state anywhere.
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
@@ -18,7 +19,7 @@ from .artists import (
     Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span, Stem, Text, Violin,
     VLine,
 )
-from .colors import Normalize, apply_colormap, get_cmap
+from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
 from . import _spectral
 
 
@@ -189,7 +190,11 @@ class Axes:
         ``values`` is an optional ``{name: array}`` of extra per-point
         dimensions (e.g. ``z`` or a 4th value) surfaced by point picking; the
         color dimension ``c`` is included automatically.
+
+        Only round markers are drawn (see :func:`_warn_marker_shape`); any other
+        ``marker`` is accepted for matplotlib compatibility but warns.
         """
+        _warn_marker_shape(marker, "scatter")
         if norm is None and (vmin is not None or vmax is not None):
             norm = Normalize(vmin, vmax)
         coll = ScatterCollection(
@@ -384,7 +389,8 @@ class Axes:
     def errorbar(self, x, y, yerr=None, xerr=None, color=None, marker="o",
                  markersize=None, capsize=3.0, linestyle="-", linewidth=None,
                  label=None, alpha=1.0):
-        """Line/markers with error bars."""
+        """Line/markers with error bars. Only round markers are drawn."""
+        _warn_marker_shape(marker, "errorbar")
         eb = ErrorBar(
             x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
             marker=marker,
@@ -669,16 +675,24 @@ class Axes:
         self.artists.append(img)
         return img
 
-    def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None):
+    def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None,
+               norm=None, vmin=None, vmax=None):
         """Hexagonal 2-D binning of points ``x``/``y`` (colormapped counts).
 
         Returns a mappable collection of hexagons (works with ``fig.colorbar``).
+
+        ``norm``/``vmin``/``vmax`` normalize the counts exactly as they do for
+        ``pcolormesh`` and ``imshow``. Bin counts routinely span several decades
+        -- a density plot's peak can hold a thousand times what its tails do --
+        and a linear ramp then paints everything but the peak the same colour,
+        so ``norm=LogNorm()`` is often the difference between a readable density
+        map and two blobs.
         """
         x = np.asarray(x, float)
         y = np.asarray(y, float)
         verts, counts = _hexbin(x, y, gridsize, mincnt)
         lut = get_cmap(cmap)
-        norm = Normalize()
+        norm = resolve_norm(norm, vmin, vmax)
         if len(counts):
             norm.autoscale_none(counts)
         facecolors = apply_colormap(counts, lut, norm)[:, :3] if len(counts) else []
@@ -687,12 +701,18 @@ class Axes:
         self.artists.append(pc)
         return pc
 
-    def hist2d(self, x, y, bins=20, range=None, cmap="viridis"):
-        """2-D histogram rendered as an image. Returns ``(counts, image)``."""
+    def hist2d(self, x, y, bins=20, range=None, cmap="viridis", norm=None,
+               vmin=None, vmax=None):
+        """2-D histogram rendered as an image. Returns ``(counts, image)``.
+
+        Takes the same ``norm``/``vmin``/``vmax`` as :meth:`hexbin`, and for the
+        same reason: counts are rarely uniform enough for a linear ramp.
+        """
         counts, xe, ye = np.histogram2d(np.asarray(x, float), np.asarray(y, float),
                                         bins=bins, range=range)
         # counts is (nx, ny) indexed [xbin, ybin]; image rows are y, cols x.
-        im = self.imshow(counts.T, cmap=cmap, origin="lower",
+        im = self.imshow(counts.T, cmap=cmap, origin="lower", norm=norm,
+                         vmin=vmin, vmax=vmax,
                          extent=(xe[0], xe[-1], ye[0], ye[-1]))
         return counts, im
 
@@ -1057,12 +1077,24 @@ class Axes:
         self._yticklabels = None if labels is None else [str(s) for s in labels]
 
     def invert_xaxis(self):
-        """Reverse the x-axis direction (larger values to the left)."""
-        self._xinverted = not self._xinverted
+        """Reverse the x-axis direction (larger values to the left).
+
+        Applies to every axes sharing this x-axis. Direction is part of a shared
+        axis just as its limits are, and inverting one panel of a ``sharex``
+        column while its neighbours keep counting the other way produces a grid
+        that lines up numerically and reads backwards -- with no tick labels on
+        the inner panels to give it away.
+        """
+        for ax in (self._sharex_group or [self]):
+            ax._xinverted = not ax._xinverted
 
     def invert_yaxis(self):
-        """Reverse the y-axis direction (larger values at the bottom)."""
-        self._yinverted = not self._yinverted
+        """Reverse the y-axis direction (larger values at the bottom).
+
+        Applies to every axes sharing this y-axis; see :meth:`invert_xaxis`.
+        """
+        for ax in (self._sharey_group or [self]):
+            ax._yinverted = not ax._yinverted
 
     def twinx(self):
         """Return an overlaid axes sharing this x-axis, y-axis drawn on the right."""
@@ -1140,14 +1172,20 @@ class Axes:
         """Return ``((xmin, xmax), (ymin, ymax))``, autoscaling if unset.
 
         With ``sharex``/``sharey`` the autoscale spans every axes in the share
-        group so linked plots line up.
+        group, *and* an explicit ``set_xlim`` on any member applies to them all.
+        Sharing only the autoscale was not enough: calling ``set_xlim`` on one
+        panel of a ``sharex=True`` column moved that panel alone, so the grid
+        silently came apart along the axis it was built to share -- and the
+        panels whose ticks are hidden are exactly the ones where the reader
+        cannot see it happen.
         """
-        xlim, ylim = self._xlim, self._ylim
+        xgroup = self._sharex_group or [self]
+        ygroup = self._sharey_group or [self]
+        xlim = _group_limits(self, xgroup, "_xlim")
+        ylim = _group_limits(self, ygroup, "_ylim")
         if _both_set(xlim) and _both_set(ylim):
             return xlim, ylim
 
-        xgroup = self._sharex_group or [self]
-        ygroup = self._sharey_group or [self]
         axmin, axmax, mesh_x = self._group_bounds(xgroup, 0)
         aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
         px = _pad(axmin, axmax, self._xscale, tight=mesh_x)
@@ -1221,14 +1259,21 @@ def _hexbin(x, y, gridsize, mincnt):
     Uses the classic two-interleaved-grid method: each point goes to whichever
     of the two candidate centers (rectangular grid, and the same grid shifted by
     half a cell) is nearest -- which tiles the plane with hexagons.
+
+    The row count follows only ``gridsize``, as matplotlib's does, so the
+    hexagons come out regular in *fractional axes* space and therefore on
+    screen. Deriving it from the ratio of the data ranges instead made the bin
+    count scale with the choice of units: wind speed against power, in m/s and
+    kW, asked for three thousand rows across the axes and drew every bin as a
+    sub-pixel dash.
     """
     if x.size == 0 or y.size == 0:
         return [], np.empty(0, dtype=float)
     xmin, xmax = float(x.min()), float(x.max())
     ymin, ymax = float(y.min()), float(y.max())
     nx = max(int(gridsize), 1)
+    ny = max(int(nx / 1.732), 1)
     dx = (xmax - xmin) / nx or 1.0
-    ny = max(int(nx * (ymax - ymin) / (xmax - xmin) / 1.732) if xmax > xmin else 1, 1)
     dy = (ymax - ymin) / ny or 1.0
 
     sx = (x - xmin) / dx
@@ -1280,9 +1325,57 @@ def _norm_limits(lower, upper):
     return None if lo is None and hi is None else (lo, hi)
 
 
+#: Marker specifications that render as drawn. Markers are emitted as
+#: zero-length round-capped strokes so they keep a constant pixel size under the
+#: interactive zoom's group transform (see ``svg._emit_markers``); a polygonal
+#: marker would have to scale with the zoom, which is worse than being round.
+_ROUND_MARKERS = frozenset({"o", ".", "", None})
+
+
+def _warn_marker_shape(marker, who):
+    """Warn that a non-round ``marker`` will still be drawn as a dot.
+
+    ``marker`` is accepted for matplotlib compatibility, but only the round
+    shapes are rendered. Silently drawing a circle where the caller asked for a
+    cross is the worst option: shape often carries meaning -- censored versus
+    observed, pass versus fail -- and a figure that quietly collapses that
+    distinction is wrong in a way nothing on the page reveals.
+    """
+    if marker not in _ROUND_MARKERS:
+        warnings.warn(
+            f"{who}(marker={marker!r}) is not drawn: plotpress renders round "
+            "markers only, so this will appear as a dot. Distinguish the series "
+            "by color, size or a label instead.",
+            UserWarning, stacklevel=3)
+
+
 def _both_set(lim):
     """True when ``lim`` pins both ends (so no autoscaling is needed)."""
     return lim is not None and lim[0] is not None and lim[1] is not None
+
+
+def _group_limits(ax, group, attr):
+    """Merge an explicit limit across a share group, ``ax``'s own winning.
+
+    Each end is resolved independently, so ``set_xlim(0, None)`` on one panel
+    still lets the shared autoscale decide the other end for the whole group.
+    """
+    own = getattr(ax, attr)
+    if len(group) < 2 or _both_set(own):
+        return own
+    lo = None if own is None else own[0]
+    hi = None if own is None else own[1]
+    for other in group:
+        if other is ax:
+            continue
+        lim = getattr(other, attr)
+        if lim is None:
+            continue
+        if lo is None:
+            lo = lim[0]
+        if hi is None:
+            hi = lim[1]
+    return None if lo is None and hi is None else (lo, hi)
 
 
 def _fill_limits(lim, auto):

@@ -56,7 +56,9 @@ Highlights
 - **matplotlib-shaped API** so moving code either direction is mostly mechanical.
 
 See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
-"Plot types" reference.
+"Plot types" reference, and :ref:`real applications <applications>` for a
+hundred-odd figures built from the data real measurements produce, grouped by
+field.
 
 .. toctree::
    :maxdepth: 1
@@ -78,6 +80,12 @@ See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
    user_guide/viewing
    user_guide/interactivity
    user_guide/architecture
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Real applications
+
+   auto_applications/index
 
 .. toctree::
    :maxdepth: 2

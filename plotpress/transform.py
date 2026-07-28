@@ -65,3 +65,21 @@ class LinearTransform:
     def xy(self, x, y):
         """Return stacked ``(N, 2)`` pixel coordinates."""
         return np.column_stack([self.x(x), self.y(y)])
+
+    def x_base(self, x):
+        """Data x -> pixel x, clamped into the visible domain first.
+
+        For the *baseline* of a shape that is anchored to one, not for data.
+        A bar or a stem sits on zero by default, and zero has no place on a log
+        axis: mapping it gives NaN, the whole rectangle's geometry becomes NaN,
+        and the series silently disappears -- which is how a log-scaled
+        histogram renders as an empty panel. Clamping the anchor to the axis
+        edge draws the bar from the bottom of the frame, as matplotlib does.
+        """
+        return self.x(np.clip(x, *sorted((self.xmin, self.xmax)))
+                      if self.xscale == "log" else x)
+
+    def y_base(self, y):
+        """Data y -> pixel y, clamped into the visible domain. See :meth:`x_base`."""
+        return self.y(np.clip(y, *sorted((self.ymin, self.ymax)))
+                      if self.yscale == "log" else y)

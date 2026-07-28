@@ -48,10 +48,21 @@ def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
 
 
 def log_ticks(vmin: float, vmax: float) -> np.ndarray:
-    """Decade tick locations (powers of 10) spanning [vmin, vmax].
+    """Tick locations for a log axis, all lying **within** [vmin, vmax].
+
+    Decades where the range spans them. The containment matters: a tick outside
+    the limits transforms to a pixel outside the axes box, and nothing clips
+    tick labels -- so an out-of-range decade is drawn into whatever sits next to
+    the axes, typically the neighboring subplot. Autoscale margins alone are
+    enough to trigger it: data from 0.01 upward gets a limit just under 0.01,
+    which used to pull in a 0.001 tick a whole panel away.
+
+    Ranges narrower than a decade have no decade inside them, so they fall back
+    to 1-2-5 subdivisions and then to plain :func:`nice_ticks` -- an axis with
+    no labels at all is worse than one whose labels are not powers of ten.
 
     Order-independent (see :func:`nice_ticks`): a reversed log limit still gets
-    its decade ticks rather than silently rendering none.
+    its ticks rather than silently rendering none.
     """
     if vmin > vmax:
         vmin, vmax = vmax, vmin
@@ -61,11 +72,33 @@ def log_ticks(vmin: float, vmax: float) -> np.ndarray:
         vmin = max(vmax / 1000.0, 1e-300) if vmax > 0 else 1e-3
     lo = math.floor(math.log10(vmin))
     hi = math.ceil(math.log10(vmax))
-    if hi - lo > 12:  # avoid absurd counts for huge dynamic range
-        exps = np.linspace(lo, hi, 12)
-    else:
-        exps = np.arange(lo, hi + 1)
-    return np.power(10.0, exps)
+    # Huge dynamic range (a bit-error-rate axis spans seventeen decades): thin
+    # the decades out rather than interpolating between them. Every k-th decade
+    # keeps every label a round power of ten; a linear interpolation over the
+    # exponents produced ticks at 4.3e-17 and 1.9e-15, which is unreadable and
+    # not what a log axis is for.
+    step = max(1, int(math.ceil((hi - lo) / 12.0)))
+    exps = np.arange(lo, hi + 1, step)
+
+    def _inside(values):
+        # Relative tolerance: a decade that the limit sits on should survive the
+        # float dust of 10 ** floor(log10(v)).
+        return values[(values >= vmin * (1 - 1e-9)) & (values <= vmax * (1 + 1e-9))]
+
+    # Three decades is the point where powers of ten alone label an axis well.
+    # Two -- a range like 2 um to 120 um -- leaves a wide axis carrying "10" and
+    # "100" and nothing else, so subdivide instead.
+    ticks = _inside(np.power(10.0, exps))
+    if ticks.size >= 3:
+        return ticks
+
+    # Sub-decade range: 1-2-5 within each decade the range touches.
+    fine = np.concatenate([np.array([1.0, 2.0, 5.0]) * 10.0 ** e
+                           for e in np.arange(lo, hi + 1)])
+    fine = _inside(np.sort(fine))
+    if fine.size >= 2:
+        return fine
+    return nice_ticks(vmin, vmax)
 
 
 def format_tick(v: float) -> str:

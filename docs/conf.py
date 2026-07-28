@@ -63,20 +63,22 @@ html_context = {
 
 
 # -- sphinx-gallery: capture plotpress Figures as example images -------------
-# Gallery subsections whose examples also get a *live* interactive figure on
-# their page. Every interactive figure inlines the whole JS toolbar and its own
-# pick data (~130 KiB each here), so this is opt-in per section rather than
-# gallery-wide: switching on all 69 examples would add several megabytes of
-# mostly-redundant payload to the site.
-INTERACTIVE_SECTIONS = ("usecases",)
+# Examples that also get a *live* interactive figure on their page. Every
+# interactive figure inlines the whole JS toolbar and its own pick data (a few
+# hundred KiB each for a dense mesh), so this is opt-in rather than
+# gallery-wide: switching it on for the plot-type reference too would add
+# megabytes of mostly-redundant payload for figures that have nothing to
+# explore. The real-application gallery is the one worth exploring, so it gets
+# live figures throughout.
+_DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
+_INTERACTIVE_ROOT = os.path.join(_DOCS_DIR, "applications")
 
-_INTERACTIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "_static", "interactive")
+_INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
 
 
 def _wants_interactive(src_file):
-    """True if this example lives in a section configured for live figures."""
-    return os.path.basename(os.path.dirname(src_file)) in INTERACTIVE_SECTIONS
+    """True if this example lives under a gallery configured for live figures."""
+    return os.path.abspath(src_file).startswith(_INTERACTIVE_ROOT + os.sep)
 
 
 def _interactive_embed(fig, image_path):
@@ -98,8 +100,8 @@ def _interactive_embed(fig, image_path):
     width = int(round(fig.figsize[0] * dpi))
     # Room for the toolbar and any slider strip below the figure itself.
     height = int(round(fig.figsize[1] * dpi)) + 96
-    # Example pages are built at auto_examples/<section>/, two levels below the
-    # HTML root that _static sits in.
+    # Example pages are built at auto_applications/<section>/, two levels below
+    # the HTML root that _static sits in.
     src = "../../_static/interactive/" + name
     return "\n".join([
         ".. raw:: html",
@@ -145,9 +147,13 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     return rst
 
 
+# Two galleries, built from two source trees. ``examples`` is the plot-type
+# reference -- one figure per method, deliberately minimal. ``applications`` is
+# the real-application gallery, grouped by field, where the point is the
+# reasoning that leads to the figure rather than the call that draws it.
 sphinx_gallery_conf = {
-    "examples_dirs": "examples",
-    "gallery_dirs": "auto_examples",
+    "examples_dirs": ["examples", "applications"],
+    "gallery_dirs": ["auto_examples", "auto_applications"],
     # Order thumbnails by file name. Every example is numbered (plot_01_...)
     # precisely to fix the reading order, but sphinx-gallery defaults to sorting
     # by *code length*, which buried the line-plot introduction two thirds of
@@ -156,15 +162,31 @@ sphinx_gallery_conf = {
     # Sections run capability-first, with limitations last: a reader browsing
     # the gallery should meet what the library does before what it does not.
     # Alphabetical (the default) put limitations second, right behind the
-    # introductory plot types.
+    # introductory plot types. The application sections then run outward from
+    # the planet to the lab bench to the ledger, which is arbitrary but stable
+    # -- alphabetical would open on acoustics and scatter related fields apart.
     "subsection_order": ExplicitOrder([
-        "examples/usecases",
         "examples/scale",
         "examples/polar",
         "examples/threed",
         "examples/signal",
         "examples/seaborn",
         "examples/limitations",
+        "applications/earth",
+        "applications/space",
+        "applications/medical",
+        "applications/biology",
+        "applications/chemistry",
+        "applications/materials",
+        "applications/quantum",
+        "applications/semiconductor",
+        "applications/fluids",
+        "applications/acoustics",
+        "applications/energy",
+        "applications/transport",
+        "applications/manufacturing",
+        "applications/computing",
+        "applications/finance",
     ]),
     # Separator-agnostic so examples execute on Windows and POSIX alike.
     "filename_pattern": r"plot_",

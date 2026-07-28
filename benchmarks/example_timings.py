@@ -99,8 +99,12 @@ def write_rst(rows):
         "Performance",
         "===========",
         "",
-        "Every :ref:`gallery example <gallery>` serialized to static SVG and to"
-        " self-contained interactive HTML, with output sizes. Interactive HTML"
+        "Every example in the plot-type :ref:`reference gallery <gallery>`"
+        " serialized to static SVG and to self-contained interactive HTML, with"
+        " output sizes. (The :ref:`real applications <applications>` gallery is"
+        " not timed here: its figures are variations on the same shapes, and"
+        " timing another hundred of them would treble the runtime without"
+        " adding a row that says anything new.) Interactive HTML"
         " embeds the same SVG **plus** the per-axes data the toolbar needs for"
         " zoom / point-picking (the picked values, and mesh ``z`` grids), so it"
         " is larger and slower than SVG -- most for mesh-heavy figures.",
