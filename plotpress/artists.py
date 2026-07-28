@@ -316,8 +316,13 @@ class QuadMesh(Artist):
         else:
             out_w, out_h = max_side, max(1, int(round(max_side * aspect)))
         img = np.zeros((out_h, out_w, 4), np.uint8)
-        sx = (out_w - 1) / ((xmax - xmin) or 1.0)
-        sy = (out_h - 1) / ((ymax - ymin) or 1.0)
+        # Map the mesh onto pixel *edges*, not pixel centers. Scaling by
+        # out_w - 1 put the boundary nodes at indices 0 and out_w - 1, while the
+        # scan converter samples centers at index + 0.5 -- so the far row and
+        # column sampled just outside the mesh and were left transparent,
+        # showing as a hairline gap along two edges of every curvilinear mesh.
+        sx = out_w / ((xmax - xmin) or 1.0)
+        sy = out_h / ((ymax - ymin) or 1.0)
         PX = (self.X - xmin) * sx
         PY = (ymax - self.Y) * sy                  # flip: row 0 = ymax (top)
         return img, PX, PY

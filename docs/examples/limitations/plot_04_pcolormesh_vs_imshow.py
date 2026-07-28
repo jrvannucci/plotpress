@@ -16,10 +16,14 @@ boundaries fall at 1, 2, 4 and 8 while plotpress puts them at 3.2, 6.4, 9.6 and
 12.8.
 
 The middle panel shows the consequence: the field is drawn with the right colors
-in the wrong places. It also covers the wrong *extent* -- the mesh spans the
-range of the given centers rather than of the cells they stand for, so it stops
-short of the data's true bounds in both axes. Nothing warns about any of this,
-because a coordinate vector carries no flag saying whether it is uniform.
+in the wrong places, and it stops short of the data's true bounds, because the
+mesh spans the range of the given *centers* rather than of the cells they stand
+for. Nothing warns about it, because a coordinate vector carries no flag saying
+whether it is uniform.
+
+The same rule applies to ``y``. To keep the comparison about one variable, the
+``y`` coordinates below are chosen so that all three panels cover the same
+vertical band -- only the ``x`` treatment differs.
 
 **The fix is to pass 2-D coordinates.** Those are treated as cell corners and
 scan-converted, which honors whatever spacing they describe -- the right panel.
@@ -33,7 +37,10 @@ import plotpress
 # Five cells whose widths double: 1, 1, 2, 4, 8.
 edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
 centers = 0.5 * (edges[:-1] + edges[1:])
-y_centers = np.array([0.25, 0.75])
+# Chosen so the 1-D mesh spans the same 0..1 band as the other two panels: the
+# min..max rule applies to y as well, and letting it truncate here would confuse
+# a comparison that is about x.
+y_centers = np.array([0.0, 1.0])
 y_edges = np.array([0.0, 0.5, 1.0])
 
 # Varies only in x, so the cell boundaries are unmistakable.
