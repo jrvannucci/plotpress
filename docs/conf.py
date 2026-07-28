@@ -63,25 +63,86 @@ html_context = {
 
 
 # -- sphinx-gallery: capture plotpress Figures as example images -------------
+# Gallery subsections whose examples also get a *live* interactive figure on
+# their page. Every interactive figure inlines the whole JS toolbar and its own
+# pick data (~130 KiB each here), so this is opt-in per section rather than
+# gallery-wide: switching on all 69 examples would add several megabytes of
+# mostly-redundant payload to the site.
+INTERACTIVE_SECTIONS = ("mesh",)
+
+_INTERACTIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "_static", "interactive")
+
+
+def _wants_interactive(src_file):
+    """True if this example lives in a section configured for live figures."""
+    return os.path.basename(os.path.dirname(src_file)) in INTERACTIVE_SECTIONS
+
+
+def _interactive_embed(fig, image_path):
+    """Write ``fig`` as self-contained interactive HTML; return an RST raw block.
+
+    The figure goes in an ``<iframe>`` rather than being spliced into the page.
+    Each interactive figure carries its own copy of the toolbar script and its
+    own element ids, so several on one page -- or one alongside the theme's own
+    JavaScript -- would otherwise collide. An iframe gives each its own document
+    and costs nothing, since the HTML is already self-contained and makes no
+    external requests.
+    """
+    os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
+    name = os.path.splitext(os.path.basename(image_path))[0] + ".html"
+    with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
+        fh.write(fig.to_html(interactive=True))
+
+    dpi = fig.style.dpi
+    width = int(round(fig.figsize[0] * dpi))
+    # Room for the toolbar and any slider strip below the figure itself.
+    height = int(round(fig.figsize[1] * dpi)) + 96
+    # Example pages are built at auto_examples/<section>/, two levels below the
+    # HTML root that _static sits in.
+    src = "../../_static/interactive/" + name
+    return "\n".join([
+        ".. raw:: html",
+        "",
+        '   <div class="plotpress-interactive">',
+        "     <p><em>Live figure &mdash; pick a tool, then zoom, pan, "
+        "point-pick or annotate. Nothing is active until a tool is selected."
+        "</em></p>",
+        f'     <iframe src="{src}" width="{width}" height="{height}"',
+        '             loading="lazy" style="max-width:100%; border:1px solid #ddd;"',
+        '             title="Interactive figure"></iframe>',
+        "   </div>",
+        "",
+    ])
+
+
 def _plotpress_scraper(block, block_vars, gallery_conf):
     """Save any new ``plotpress.Figure`` created by an example to a PNG.
 
     Mirrors sphinx-gallery's matplotlib scraper, but scans the example's globals
     (plotpress has no global figure registry) and rasterizes via the built-in
-    Pillow backend.
+    Pillow backend. Examples in :data:`INTERACTIVE_SECTIONS` additionally get a
+    live interactive copy embedded below the static image -- the PNG stays,
+    because sphinx-gallery builds its thumbnails from it.
     """
     from sphinx_gallery.scrapers import figure_rst
 
     it = block_vars["image_path_iterator"]
     seen = block_vars.setdefault("_plotpress_seen", set())
-    paths = []
+    interactive = _wants_interactive(block_vars["src_file"])
+    paths, embeds = [], []
     for value in list(block_vars["example_globals"].values()):
         if isinstance(value, plotpress.Figure) and id(value) not in seen:
             seen.add(id(value))
             path = next(it)
             value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
-    return figure_rst(paths, gallery_conf["src_dir"])
+            if interactive:
+                embeds.append(_interactive_embed(value, path))
+    rst = figure_rst(paths, gallery_conf["src_dir"])
+    if embeds:
+        rst += "\n\n" + "\n".join(embeds)
+    return rst
 
 
 sphinx_gallery_conf = {
