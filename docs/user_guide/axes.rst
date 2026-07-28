@@ -48,9 +48,11 @@ Grid, legend, visibility
 ``grid(visible=True)``
     Toggle grid lines at the tick locations.
 
-``legend()``
-    Draw a legend from artists that were given a ``label=``. Placed in the
-    upper-right of the axes.
+``legend(loc="upper right", ncol=1, title=None)``
+    Draw a legend from artists that were given a ``label=``, placed inside this
+    axes. A ``twinx``/``twiny`` twin's artists are included too, so one call
+    covers both y axes. For a single legend spanning a whole grid, see
+    ``fig.legend`` in :doc:`figures`.
 
 ``set_axis_off()``
     Hide the spines, ticks, grid, and axis labels (the title is kept). Used

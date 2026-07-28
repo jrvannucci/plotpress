@@ -61,6 +61,7 @@ def figure_to_svg(fig, interactive: bool = False) -> str:
         _render_axes(ax, fig, W, H, i, defs, body)
 
     _render_figtexts(fig, W, H, body)
+    _render_figure_legend(fig, fig.style, W, H, body)
 
     header = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -1015,20 +1016,42 @@ _LEGEND_ANCHORS = {
 }
 
 
+def legend_entries(sources):
+    """Labelled artists across one or more axes, keeping the first of each label.
+
+    A figure-level legend usually spans panels that plot the *same* series, so
+    without the de-duplication the shared legend would just repeat itself once
+    per panel.
+    """
+    out, seen = [], set()
+    for ax in sources:
+        for a in ax.artists:
+            label = getattr(a, "label", None)
+            if label and label not in seen:
+                seen.add(label)
+                out.append(a)
+    return out
+
+
 def _legend_layout(ax, st):
+    """Compute legend geometry for an axes' own legend."""
+    return legend_box(
+        [a for a in ax.artists if getattr(a, "label", None)],
+        st, ax._legend_ncol, ax._legend_title)
+
+
+def legend_box(entries, st, ncol, title):
     """Compute legend geometry: entries, columns, cell size, box size."""
-    entries = [a for a in ax.artists if getattr(a, "label", None)]
     if not entries:
         return None
     fs = st.tick_label_size
     line_h = fs + 6
     sample_w = 22
     pad = 6
-    ncol = min(max(1, ax._legend_ncol), len(entries))
+    ncol = min(max(1, int(ncol)), len(entries))
     nrows = (len(entries) + ncol - 1) // ncol
     text_w = max(st.text_width(a.label, fs) for a in entries)
     col_w = sample_w + text_w + pad * 2
-    title = ax._legend_title
     title_h = line_h if title else 0
     box_w = col_w * ncol + pad
     if title:
@@ -1044,6 +1067,54 @@ def _legend_layout(ax, st):
     }
 
 
+# Which figure edge a figure-level legend reserves space against. "center" and
+# the corner placements overlay instead: there is no unambiguous edge to shrink
+# away from, and matplotlib's fig.legend overlays for those too.
+FIGURE_LEGEND_EDGE = {
+    "lower center": "bottom", "upper center": "top",
+    "right": "right", "center right": "right", "center left": "left",
+}
+
+
+def figure_legend_layout(fig):
+    """Legend geometry for ``fig.legend()``, or ``None`` if nothing is labelled."""
+    spec = fig._figure_legend
+    if spec is None:
+        return None
+    sources = spec["axes"] or [a for a in fig.axes if not a._is_colorbar]
+    return legend_box(legend_entries(sources), fig.style,
+                      spec["ncol"], spec["title"])
+
+
+def figure_legend_origin(spec, lay, W, H, pad_px):
+    """Top-left corner of the figure legend, in figure pixels."""
+    edge = FIGURE_LEGEND_EDGE.get(spec["loc"])
+    box_w, box_h = lay["box_w"], lay["box_h"]
+    if edge == "bottom":
+        return (W - box_w) / 2.0, H - pad_px - box_h
+    if edge == "top":
+        return (W - box_w) / 2.0, pad_px
+    if edge == "right":
+        return W - pad_px - box_w, (H - box_h) / 2.0
+    if edge == "left":
+        return pad_px, (H - box_h) / 2.0
+    # Overlaid: anchor inside the whole figure the way an axes legend anchors
+    # inside its own rect.
+    fx, fy = _LEGEND_ANCHORS.get(spec["loc"], (1.0, 0.0))
+    return (pad_px + fx * max(0.0, W - box_w - 2 * pad_px),
+            pad_px + fy * max(0.0, H - box_h - 2 * pad_px))
+
+
+def _render_figure_legend(fig, st, W, H, body):
+    lay = figure_legend_layout(fig)
+    if lay is None:
+        return
+    spec = fig._figure_legend
+    pad_px = spec["pad"] * min(W, H) + 4
+    bx, by = figure_legend_origin(spec, lay, W, H, pad_px)
+    draw_legend(lay, st, bx, by, body)
+
+
 def _legend_origin(ax, lay, px_left, px_top, px_w, px_h):
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
     bx = px_left + 6 + fx * max(0.0, px_w - lay["box_w"] - 12)
@@ -1055,10 +1126,15 @@ def _render_legend(ax, st, px_left, px_top, px_w, px_h, body):
     lay = _legend_layout(ax, st)
     if lay is None:
         return
+    bx, by = _legend_origin(ax, lay, px_left, px_top, px_w, px_h)
+    draw_legend(lay, st, bx, by, body)
+
+
+def draw_legend(lay, st, bx, by, body):
+    """Emit a legend box with its top-left corner at ``(bx, by)``."""
     fs, line_h, sample_w, pad = lay["fs"], lay["line_h"], lay["sample_w"], lay["pad"]
     ncol, col_w, title_h = lay["ncol"], lay["col_w"], lay["title_h"]
     box_w, box_h = lay["box_w"], lay["box_h"]
-    bx, by = _legend_origin(ax, lay, px_left, px_top, px_w, px_h)
 
     body.append(
         f'<g class="plotpress-legend"><rect x="{_fmt(bx)}" y="{_fmt(by)}" '

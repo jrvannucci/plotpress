@@ -52,6 +52,7 @@ class Figure:
 
         # Figure-level (global) text spanning all subplots.
         self._suptitle = None
+        self._figure_legend = None   # set by Figure.legend()
         self._supxlabel = None
         self._supylabel = None
 
@@ -223,6 +224,11 @@ class Figure:
             ax._rect = (left + col * (axw + gap_w),
                         bottom + (nrows - 1 - row) * (axh + gap_h), axw, axh)
 
+        # Same reasoning as the colorbar refit below: the rects above are full
+        # grid cells, so any band a figure legend had reserved is gone. Take it
+        # back first, so the colorbar then fits inside what is actually left.
+        _layout_figure_legend(self)
+
         # The rects above are full grid cells, which undoes any space a colorbar
         # had already taken -- leaving the bar stranded on top of its plot. Take
         # it back. Colorbars over axes this pass did not touch are left alone,
@@ -231,6 +237,38 @@ class Figure:
             if cax._is_colorbar and cax._cbar_parents:
                 if all(p in specs for p in cax._cbar_parents):
                     _layout_colorbar(cax)
+        return self
+
+    # -- figure-level legend ------------------------------------------------
+    def legend(self, ax=None, loc="lower center", ncol=1, title=None,
+               pad=0.01) -> "Figure":
+        """One legend for the whole figure, drawn from labelled artists.
+
+        The counterpart to :meth:`colorbar` over a list of axes: a grid whose
+        panels all plot the same series wants one legend, not the same entries
+        repeated in every panel. Labels are de-duplicated across the axes, so
+        each series appears once however many panels draw it.
+
+        ``ax`` selects which axes contribute (default: all of them).
+
+        ``loc`` names a placement in **figure** coordinates. The four outside
+        placements -- ``"lower center"``, ``"upper center"``, ``"right"`` and
+        ``"center left"`` (also ``"center right"``) -- reserve a band at that
+        edge and shrink the subplot grid to fit, so the legend never lands on a
+        plot. Any other name overlays without reserving, matching how an axes
+        legend sits inside its own rect.
+
+        Order relative to :meth:`tight_layout` does not matter -- the reservation
+        is re-applied whenever the grid is reflowed.
+        """
+        self._figure_legend = {
+            "axes": _flatten_axes(ax) if ax is not None else None,
+            "loc": loc,
+            "ncol": max(1, int(ncol)),
+            "title": title,
+            "pad": float(pad),
+        }
+        _layout_figure_legend(self)
         return self
 
     # -- colorbar -----------------------------------------------------------
@@ -472,6 +510,50 @@ def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
                 os.unlink(path)
         except OSError:
             pass          # vanished, or belongs to another user -- not ours to fix
+
+
+def _layout_figure_legend(fig):
+    """Shrink the subplot grid away from the edge a figure legend occupies.
+
+    Derived from the axes' *current* rects, like :func:`_layout_colorbar`, so
+    tight_layout can re-run it after reflowing. Placements with no unambiguous
+    edge overlay instead and reserve nothing.
+    """
+    from .svg import FIGURE_LEGEND_EDGE, figure_legend_layout
+
+    spec = fig._figure_legend
+    if spec is None:
+        return
+    edge = FIGURE_LEGEND_EDGE.get(spec["loc"])
+    if edge is None:
+        return
+    lay = figure_legend_layout(fig)
+    if lay is None:
+        return
+    specs = [ax for ax in fig.axes
+             if ax._subplotspec is not None and not ax._is_colorbar]
+    if not specs:
+        return
+
+    W = fig.figsize[0] * fig.style.dpi
+    H = fig.figsize[1] * fig.style.dpi
+    pad_px = spec["pad"] * min(W, H) + 4
+    if edge in ("bottom", "top"):
+        band = min((lay["box_h"] + 2 * pad_px) / H, 0.6)
+    else:
+        band = min((lay["box_w"] + 2 * pad_px) / W, 0.6)
+    keep = 1.0 - band
+
+    for ax in specs:
+        left, bottom, w, h = ax._rect
+        if edge == "bottom":
+            ax._rect = (left, band + bottom * keep, w, h * keep)
+        elif edge == "top":
+            ax._rect = (left, bottom * keep, w, h * keep)
+        elif edge == "right":
+            ax._rect = (left * keep, bottom, w * keep, h)
+        else:                                   # left
+            ax._rect = (band + left * keep, bottom, w * keep, h)
 
 
 def _layout_colorbar(cax):

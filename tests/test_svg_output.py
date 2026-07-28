@@ -762,3 +762,67 @@ def test_gouraud_mesh_fills_its_raster():
     alpha = _mesh_alpha(
         lambda ax: ax.pcolormesh(X, Y, C, cmap="viridis", shading="gouraud"))
     assert (alpha == 0).sum() == 0
+
+
+# -- figure-level legend ----------------------------------------------------
+
+def _grid_with_labels(nrows=2, ncols=2):
+    x = np.linspace(0.0, 10.0, 50)
+    fig, axes = plotpress.subplots(nrows, ncols, figsize=(8.0, 5.0))
+    for i, ax in enumerate(np.atleast_1d(axes).ravel()):
+        ax.plot(x, np.sin(x + i), label="sin")
+        ax.plot(x, np.cos(x + i), label="cos")
+    fig.tight_layout()
+    return fig, np.atleast_1d(axes).ravel()
+
+
+def test_figure_legend_deduplicates_labels_across_axes():
+    """Panels plotting the same series should contribute one entry, not one
+    each -- otherwise a shared legend just repeats itself per panel."""
+    from plotpress.svg import figure_legend_layout
+
+    fig, _ = _grid_with_labels()
+    fig.legend()
+    assert [e.label for e in figure_legend_layout(fig)["entries"]] == ["sin", "cos"]
+
+
+def test_figure_legend_reserves_space_at_its_edge():
+    fig, axes = _grid_with_labels()
+    before = [a._rect for a in axes]
+    fig.legend(loc="lower center")
+    after = [a._rect for a in axes]
+    assert all(n[3] < b[3] for b, n in zip(before, after))      # shorter
+    assert all(n[1] > b[1] for b, n in zip(before, after))      # pushed up
+
+
+def test_figure_legend_reservation_survives_a_reflow():
+    """tight_layout rebuilds full grid cells, which would otherwise drop the
+    band and leave the legend sitting on the bottom row."""
+    fig, axes = _grid_with_labels()
+    fig.legend(loc="lower center")
+    reserved = [a._rect for a in axes]
+    fig.tight_layout()
+    assert [a._rect for a in axes] == reserved
+
+
+def test_figure_legend_overlay_placements_reserve_nothing():
+    fig, axes = _grid_with_labels()
+    before = [a._rect for a in axes]
+    fig.legend(loc="upper right")
+    assert [a._rect for a in axes] == before
+    assert "sin" in fig.to_svg()
+
+
+def test_figure_legend_renders_in_both_backends():
+    from plotpress import raster
+
+    fig, _ = _grid_with_labels()
+    fig.legend(loc="lower center", ncol=2, title="Series")
+    svg = fig.to_svg()
+    assert "Series" in svg and svg.count(">sin<") == 1
+    assert raster.figure_to_image(fig, scale=1) is not None
+
+
+def test_figure_legend_absent_without_the_call():
+    fig, _ = _grid_with_labels()
+    assert "plotpress-legend" not in fig.to_svg()

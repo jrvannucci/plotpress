@@ -122,6 +122,7 @@ def figure_to_image(fig, scale=2):
     for ax in fig.axes:
         _raster_axes(ax, fig, W * S, H * S, S, draw, canvas)
     _raster_figtexts(fig, W * S, H * S, S, draw)
+    _raster_figure_legend(fig, fig.style, W * S, H * S, S, draw)
 
     if S > 1:
         canvas = canvas.resize((W, H), PILImage.LANCZOS)
@@ -643,6 +644,38 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
     bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
     by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
+    _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
+                        line_h, sample, pad, title, title_h, font, title_font)
+
+
+def _raster_figure_legend(fig, st, W, H, S, draw):
+    """The PNG counterpart of svg._render_figure_legend.
+
+    Geometry comes from the *shared* layout in svg.py rather than from Pillow's
+    own measurements, because figure.py already reserved a band of the canvas
+    using those numbers -- measuring again here could size the box to something
+    the reservation does not match.
+    """
+    from .svg import figure_legend_layout, figure_legend_origin
+
+    lay = figure_legend_layout(fig)
+    if lay is None:
+        return
+    spec = fig._figure_legend
+    pad_px = spec["pad"] * min(W / S, H / S) + 4
+    bx, by = figure_legend_origin(spec, lay, W / S, H / S, pad_px)
+    fs = lay["fs"] * S
+    _raster_draw_legend(
+        lay["entries"], st, S, draw, bx * S, by * S,
+        lay["box_w"] * S, lay["box_h"] * S, lay["ncol"], lay["col_w"] * S,
+        lay["line_h"] * S, lay["sample_w"] * S, lay["pad"] * S,
+        lay["title"], lay["title_h"] * S,
+        _font(fs, st.font_family), _font(fs, st.font_family, bold=True))
+
+
+def _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
+                        line_h, sample, pad, title, title_h, font, title_font):
+    """Paint a legend box whose geometry has already been decided."""
     draw.rectangle([bx, by, bx + box_w, by + box_h], fill=(255, 255, 255),
                    outline=(204, 204, 204))
     if title:
@@ -661,7 +694,14 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
             rr = 4 * S
             draw.ellipse([sx + sample / 2 - rr, ry - rr, sx + sample / 2 + rr, ry + rr], fill=color)
         elif isinstance(a, (Bars, FillBetween, Span, Polygon)):
-            draw.rectangle([sx, ry - 5 * S, sx + sample, ry + 5 * S], fill=color)
+            # SVG gives this swatch the artist's fill-opacity; composite the
+            # same alpha over the box's white background so the two backends
+            # agree on how a translucent fill reads in the legend.
+            alpha = getattr(a, "alpha", 1.0) if isinstance(
+                a, (FillBetween, Span, Polygon)) else 1.0
+            swatch = tuple(int(round(c * alpha + 255 * (1.0 - alpha)))
+                           for c in color[:3])
+            draw.rectangle([sx, ry - 5 * S, sx + sample, ry + 5 * S], fill=swatch)
         else:
             draw.line([sx, ry, sx + sample, ry], fill=color, width=max(1, int(round(2 * S))))
         draw.text((sx + sample + pad, ry), a.label, fill=_rgb(st.text_color),
