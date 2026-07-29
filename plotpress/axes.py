@@ -1126,9 +1126,11 @@ class Axes:
 
     def set_xlabel(self, xlabel):
         self._xlabel = xlabel
+        self.figure._layout_dirty = True
 
     def set_ylabel(self, ylabel):
         self._ylabel = ylabel
+        self.figure._layout_dirty = True
 
     def set_title(self, label, size=None, fontsize=None):
         """Set this axes' title. ``size`` overrides the style's title size.
@@ -1140,6 +1142,7 @@ class Axes:
         """
         self._title = label
         self._title_size = size if size is not None else fontsize
+        self.figure._layout_dirty = True
 
     def grid(self, visible=True):
         self._grid = bool(visible)

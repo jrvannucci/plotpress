@@ -276,3 +276,63 @@ def test_set_title_takes_a_size():
     assert ax._title_size == 7
     ax.set_title("default")
     assert ax._title_size is None
+
+
+def test_titles_set_after_tight_layout_still_get_room():
+    """A figure whose title reports its own build time has no other option.
+
+    tight_layout sizes its margins from the decorations that exist when it runs,
+    so anything set afterwards used to be drawn over the axes. Colorbars and
+    figure legends already re-apply their reservations; text now does too.
+    """
+    fig, axes = plotpress.subplots(2, 2, figsize=(8, 6))
+    for k, ax in enumerate(axes.ravel()):
+        ax.plot([0, 1], [0, k])
+    fig.tight_layout()
+    tops_before = [ax._rect[1] + ax._rect[3] for ax in axes.ravel()]
+
+    for k, ax in enumerate(axes.ravel()):
+        ax.set_title(f"panel {k}")
+    fig.suptitle("added last")
+    fig.to_svg()                                  # settles the deferred layout
+
+    tops_after = [ax._rect[1] + ax._rect[3] for ax in axes.ravel()]
+    # Every panel gave up height at the top to make room.
+    assert all(a < b for a, b in zip(tops_after, tops_before))
+
+
+def test_tight_layout_settles_only_once():
+    """Deferred, not eager: several hundred panels must not re-lay out per call."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.tight_layout()
+    ax.set_title("t")
+    assert fig._layout_dirty
+    fig.to_svg()
+    assert not fig._layout_dirty
+
+
+@pytest.mark.parametrize("nrows, ncols, pad", [(30, 30, 0.004), (20, 25, 0.02),
+                                               (12, 12, 0.006)])
+def test_dense_grid_stays_on_the_canvas(nrows, ncols, pad):
+    """A grid too dense for its decorations must shrink, not overflow.
+
+    tight_layout clamped the cell size to a floor while leaving the inter-axes
+    gap at full width, so the rows ran past the top edge -- the first nine rows
+    of a 30x30 grid were placed off the figure entirely.
+    """
+    fig, axes = plotpress.subplots(nrows, ncols, figsize=(22, 20))
+    for ax in axes.ravel():
+        ax.plot([0, 1], [0, 1])
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_title("t", size=6)
+    fig.tight_layout(pad=pad)
+    fig.suptitle("added after the fit")
+    fig.to_svg()
+
+    rects = [ax._rect for ax in axes.ravel()]
+    assert min(r[0] for r in rects) >= -1e-9
+    assert min(r[1] for r in rects) >= -1e-9
+    assert max(r[0] + r[2] for r in rects) <= 1.0 + 1e-9
+    assert max(r[1] + r[3] for r in rects) <= 1.0 + 1e-9

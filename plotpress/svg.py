@@ -50,6 +50,7 @@ def _esc(text) -> str:
 
 
 def figure_to_svg(fig, interactive: bool = False) -> str:
+    fig._settle_layout()
     dpi = fig.style.dpi
     W = fig.figsize[0] * dpi
     H = fig.figsize[1] * dpi
