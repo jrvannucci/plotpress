@@ -56,17 +56,43 @@ class Figure:
         self._supxlabel = None
         self._supylabel = None
 
+        # tight_layout is re-applied at render time if anything it measured has
+        # changed since -- see _settle_layout.
+        self._tight_pad = None
+        self._layout_dirty = False
+
+    def _settle_layout(self):
+        """Re-fit the subplot grid if a measured decoration changed since.
+
+        ``tight_layout`` sizes its margins from the titles and axis labels that
+        exist when it runs, so anything set afterwards got no space reserved and
+        was drawn over the axes -- which is exactly what a figure whose title
+        reports its own build time has to do, since the number does not exist
+        until the figure is built. Colorbars and figure legends already re-apply
+        their reservations for the same reason; this extends that to text.
+
+        Deferred to render rather than done eagerly on every setter: a grid of
+        several hundred panels would otherwise re-lay out once per
+        ``set_title``.
+        """
+        if self._layout_dirty and self._tight_pad is not None:
+            self._layout_dirty = False
+            self.tight_layout(self._tight_pad)
+
     def suptitle(self, text, size=None):
         """Set a global title centered across the whole figure."""
         self._suptitle = {"text": text, "size": size}
+        self._layout_dirty = True
 
     def supxlabel(self, text, size=None):
         """Set a global x label centered along the bottom of the figure."""
         self._supxlabel = {"text": text, "size": size}
+        self._layout_dirty = True
 
     def supylabel(self, text, size=None):
         """Set a global y label centered along the left of the figure."""
         self._supylabel = {"text": text, "size": size}
+        self._layout_dirty = True
 
     def _register_slider(self, unit, index, n, values, label, is_global, axes_key):
         """Register (or validate) a slider unit and its connection index."""
@@ -160,7 +186,12 @@ class Figure:
         Measures each axes' decorations with the bundled font metrics and
         re-lays-out the subplot grid. Safe to call before or after
         :meth:`colorbar`; any colorbar over this grid is re-fitted afterwards.
+        Also safe to call *before* the titles and axis labels exist: the fit is
+        re-applied at render time if any of them change (see
+        :meth:`_settle_layout`).
         """
+        self._tight_pad = float(pad)
+        self._layout_dirty = False
         from .svg import _resolve_tick_labels
         from .ticker import log_ticks, nice_ticks
 
@@ -242,10 +273,8 @@ class Figure:
         # grid is what makes the missing term visible.
         gap_w = (left_px + right_px) / Wpx          # interior column gap
         gap_h = (bottom_px + top_px) / Hpx          # interior row gap
-        axw = (right - left - (ncols - 1) * gap_w) / max(ncols, 1)
-        axh = (top - bottom - (nrows - 1) * gap_h) / max(nrows, 1)
-        axw = max(axw, 0.02)
-        axh = max(axh, 0.02)
+        axw, gap_w = _fit_cells(right - left, ncols, gap_w)
+        axh, gap_h = _fit_cells(top - bottom, nrows, gap_h)
 
         for ax in specs:
             idx = ax._subplotspec[2] - 1
@@ -659,6 +688,28 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex,
                         sharey=sharey, projection=projection)
     return fig, axes
+
+
+def _fit_cells(avail, n, gap, floor=0.02):
+    """Cell size and inter-cell gap that fit ``n`` cells into ``avail``.
+
+    The gap is what the decorations need; the cell is what is left over. When a
+    dense grid cannot afford both, the *gap* gives way first -- panels squeezed
+    together are still readable, and the alternative was worse than ugly: the
+    cell size alone was clamped to a floor while the gap kept its full width, so
+    the rows ran past the top of the canvas and the first nine rows of a 30x30
+    grid were simply not on the figure.
+
+    If even the floor does not fit, the cells shrink below it rather than
+    overflow. Tiny but present beats absent.
+    """
+    if n <= 1:
+        return max(avail, 1e-4), 0.0
+    cell = (avail - (n - 1) * gap) / n
+    if cell >= floor:
+        return cell, gap
+    gap = max(0.0, (avail - n * floor) / (n - 1))
+    return max((avail - (n - 1) * gap) / n, 1e-4), gap
 
 
 def _subplot_rect(nrows, ncols, index):

@@ -74,6 +74,18 @@ is derived from it at build time rather than written down anywhere in the source
   zero disappeared entirely rather than clamping to the frame. Anchors are now
   clipped into the visible domain, and points that genuinely cannot be mapped
   are skipped rather than emitted as `NaN` coordinates in the SVG.
+- Titles and axis labels set *after* `tight_layout` now get space reserved for
+  them. The fit was sized from the decorations that existed when it ran, so a
+  later `suptitle` was drawn straight over the top row of a grid -- and a figure
+  whose title reports its own build time has no other option, since the number
+  does not exist until the figure is built. Colorbars and figure legends already
+  re-applied their reservations; text now does too, deferred to render so a
+  several-hundred-panel grid does not re-lay out once per `set_title`.
+- A grid too dense for its decorations shrinks instead of overflowing the
+  canvas. `tight_layout` clamped the cell size to a floor while leaving the
+  inter-axes gap at full width, so the rows ran off the top edge: the first nine
+  rows of a 30x30 grid were placed outside the figure and simply never appeared.
+  The gap now gives way first.
 - An artist whose data is entirely `nan` no longer prints a RuntimeWarning. A
   fully masked frame is a real case -- an exposure that failed quality control, a
   channel that dropped out for the whole record -- and `errstate` did not

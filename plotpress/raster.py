@@ -112,6 +112,7 @@ def figure_to_image(fig, scale=2):
     """Render ``fig`` to a Pillow ``Image`` (RGB), supersampled by ``scale``."""
     from PIL import Image as PILImage, ImageDraw
 
+    fig._settle_layout()
     dpi = fig.style.dpi
     W = int(round(fig.figsize[0] * dpi))
     H = int(round(fig.figsize[1] * dpi))
