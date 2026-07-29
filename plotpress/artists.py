@@ -613,11 +613,26 @@ class Image(Artist):
         return (xmin, xmax, ymin, ymax)
 
 
+def auto_outline(color):
+    """A halo color that contrasts with ``color``: white behind dark ink, black
+    behind light. Picked from the text's own color rather than from the
+    background, because the whole point of a halo is that what the label sits on
+    is unknown at layout time -- a mesh cell, a filled band, another series."""
+    from .colors import to_hex
+
+    c = to_hex(color).lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+    luma = 0.299 * r + 0.587 * g + 0.114 * b
+    return "#ffffff" if luma < 140 else "#000000"
+
+
 class Text(Artist):
     """A text label anchored at data coordinates (``ax.text``)."""
 
     def __init__(self, x, y, text, color, size, ha="left", va="baseline",
-                 rotation=0.0):
+                 rotation=0.0, outline=None):
         self.x = float(x)
         self.y = float(y)
         self.text = text
@@ -626,6 +641,7 @@ class Text(Artist):
         self.ha = ha
         self.va = va
         self.rotation = float(rotation)
+        self.outline = auto_outline(color) if outline is None else outline
 
     def data_bounds(self):
         return None  # text does not drive autoscaling
@@ -635,7 +651,7 @@ class Annotation(Artist):
     """Text at ``xytext`` optionally pointing an arrow to ``xy`` (``ax.annotate``)."""
 
     def __init__(self, text, xy, xytext, color, size, ha="left", va="baseline",
-                 arrowprops=None):
+                 arrowprops=None, outline=None):
         self.text = text
         self.xy = (float(xy[0]), float(xy[1]))
         self.xytext = (float(xytext[0]), float(xytext[1])) if xytext else self.xy
@@ -644,6 +660,7 @@ class Annotation(Artist):
         self.ha = ha
         self.va = va
         self.arrowprops = arrowprops  # dict (e.g. {"color": ...}) or None
+        self.outline = auto_outline(color) if outline is None else outline
 
     def data_bounds(self):
         return None

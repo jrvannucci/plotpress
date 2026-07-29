@@ -23,6 +23,16 @@ is derived from it at build time rather than written down anywhere in the source
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
+- `text` and `annotate` draw a contrasting halo behind the glyphs by default --
+  white behind dark ink, black behind light -- so a label stays readable over
+  whatever it lands on. A label in the data area is placed before anyone knows
+  what will end up underneath it, and over a plain background the halo is
+  invisible. Pass `outline=False` to switch it off, or a colour to choose one.
+  Titles, axis labels and tick labels are unaffected.
+- An annotation's leader now starts at the edge of its text box nearest the
+  target, preferring the middle of an edge over a corner, rather than at the
+  text anchor. From the anchor the line set off straight across its own label
+  whenever the target lay back over the words.
 
 ### Fixed
 

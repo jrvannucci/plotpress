@@ -883,24 +883,35 @@ class Axes:
         return self.plot(*args, **kwargs)
 
     def text(self, x, y, s, color=None, fontsize=None, ha="left", va="baseline",
-             rotation=0.0):
-        """Draw text ``s`` at data coordinates ``(x, y)``."""
+             rotation=0.0, outline=None):
+        """Draw text ``s`` at data coordinates ``(x, y)``.
+
+        ``outline`` is a halo color drawn behind the glyphs so the label stays
+        readable over whatever it lands on. The default picks white or black by
+        the text's own luminance; pass ``False`` to switch it off, or a color to
+        choose your own. It only ever helps -- on a plain background the halo is
+        the background color and invisible -- and a label in the data area is
+        placed before anyone knows what will end up underneath it.
+        """
         t = Text(x, y, s, color=color or self.style.text_color,
                  size=self.style.font_size if fontsize is None else fontsize,
-                 ha=ha, va=va, rotation=rotation)
+                 ha=ha, va=va, rotation=rotation, outline=outline)
         self.artists.append(t)
         return t
 
     def annotate(self, text, xy, xytext=None, color=None, fontsize=None,
-                 ha="left", va="baseline", arrowprops=None):
+                 ha="left", va="baseline", arrowprops=None, outline=None):
         """Annotate the point ``xy`` with ``text`` placed at ``xytext``.
 
         Pass ``arrowprops={"color": ...}`` (or ``{}``) to draw an arrow from the
-        text to ``xy``.
+        text to ``xy``. The leader starts at the edge of the text's bounding box
+        nearest ``xy`` -- preferring the middle of an edge -- so it never sets
+        off across its own label. ``outline`` is the halo described in
+        :meth:`text`.
         """
         a = Annotation(text, xy, xytext, color=color or self.style.text_color,
                        size=self.style.font_size if fontsize is None else fontsize,
-                       ha=ha, va=va, arrowprops=arrowprops)
+                       ha=ha, va=va, arrowprops=arrowprops, outline=outline)
         self.artists.append(a)
         return a
 

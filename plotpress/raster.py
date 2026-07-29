@@ -327,16 +327,26 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip):
     elif isinstance(artist, Text):
         _text(draw, float(tr.x(artist.x)), float(tr.y(artist.y)), artist.text,
               _rgb(artist.color), _font(artist.size * S, st.font_family), artist.ha, artist.va,
-              artist.rotation)
+              artist.rotation, _rgb(artist.outline) if artist.outline else None,
+              artist.size * 0.15 * S)
     elif isinstance(artist, Annotation):
+        from .svg import leader_anchor, text_box
+
         tx, ty = float(tr.x(artist.xytext[0])), float(tr.y(artist.xytext[1]))
         if artist.arrowprops is not None:
             px, py = float(tr.x(artist.xy[0])), float(tr.y(artist.xy[1]))
             col = (artist.arrowprops.get("color", artist.color)
                    if isinstance(artist.arrowprops, dict) else artist.color)
-            _quiver_arrow(draw, tx, ty, px, py, _rgb(col), S)
+            # Same attachment rule as the SVG backend -- see svg.leader_anchor.
+            # The box is measured in unscaled pixels, so scale it to this canvas.
+            box = text_box(tx / S, ty / S, artist.text, artist.size,
+                           artist.ha, artist.va, st)
+            sx, sy = leader_anchor(box, (px / S, py / S))
+            _quiver_arrow(draw, sx * S, sy * S, px, py, _rgb(col), S)
         _text(draw, tx, ty, artist.text, _rgb(artist.color), _font(artist.size * S, st.font_family),
-              artist.ha, artist.va, 0.0)
+              artist.ha, artist.va, 0.0,
+              _rgb(artist.outline) if artist.outline else None,
+              artist.size * 0.15 * S)
 
 
 # -- primitives -------------------------------------------------------------
@@ -535,19 +545,31 @@ def _violin(v, tr, draw):
         draw.polygon(poly, fill=_rgba(v.color, 0.55), outline=_rgb(v.color))
 
 
-def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0):
+def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0,
+          outline=None, stroke=0.0):
+    """Draw text, optionally with a contrasting halo (see svg._text_svg).
+
+    Pillow's ``stroke_width`` paints the rim under the glyph exactly as SVG's
+    ``paint-order="stroke"`` does, so the two backends agree.
+    """
+    kw = {}
+    if outline and stroke >= 1.0:
+        kw = {"stroke_width": int(round(stroke)), "stroke_fill": outline}
     if rotation:
         from PIL import Image as PILImage, ImageDraw
 
         bbox = draw.textbbox((0, 0), s, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        tmp = PILImage.new("RGBA", (max(1, w + 4), max(1, h + 4)), (0, 0, 0, 0))
-        ImageDraw.Draw(tmp).text((2 - bbox[0], 2 - bbox[1]), s, fill=fill, font=font)
+        pad = 4 + int(round(stroke))
+        tmp = PILImage.new("RGBA", (max(1, w + 2 * pad), max(1, h + 2 * pad)),
+                           (0, 0, 0, 0))
+        ImageDraw.Draw(tmp).text((pad - bbox[0], pad - bbox[1]), s, fill=fill,
+                                 font=font, **kw)
         tmp = tmp.rotate(rotation, expand=True)  # PIL & matplotlib: CCW positive
         draw._image.alpha_composite(tmp, (int(x - tmp.width / 2), int(y - tmp.height / 2)))
         return
     anchor = _PIL_H.get(ha, "l") + _PIL_V.get(va, "s")
-    draw.text((x, y), s, fill=fill, font=font, anchor=anchor)
+    draw.text((x, y), s, fill=fill, font=font, anchor=anchor, **kw)
 
 
 def _quiver_arrow(draw, x0, y0, x1, y1, col, S):

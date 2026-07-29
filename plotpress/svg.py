@@ -410,7 +410,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif isinstance(artist, Text):
             _render_text(artist, tr, body)
         elif isinstance(artist, Annotation):
-            _render_annotation(artist, tr, body)
+            _render_annotation(artist, tr, st, body)
     body.append("</g></g>")   # close zoom group + clip group
 
     if not ax._axis_off and not is_twin:
@@ -739,38 +739,91 @@ _VA = {"baseline": "alphabetic", "bottom": "text-after-edge",
        "center": "central", "top": "hanging"}
 
 
-def _text_svg(x, y, text, color, size, ha, va, rotation=0.0):
+#: How far a text anchor sits from the box corner, as a fraction of the box.
+_HA_FRAC = {"left": 0.0, "center": -0.5, "right": -1.0}
+_VA_FRAC = {"baseline": -0.78, "bottom": -1.0, "center": -0.5, "top": 0.0}
+
+
+def text_box(x, y, text, size, ha, va, st):
+    """Pixel bounding box ``(x0, y0, x1, y1)`` of a label drawn at ``(x, y)``.
+
+    Measured with the same font metrics layout uses, so the box the leader
+    attaches to is the box the glyphs actually occupy.
+    """
+    lines = text.split("\n")
+    w = max((st.text_width(ln, size) for ln in lines), default=0.0)
+    h = size * 1.25 * len(lines)
+    x0 = x + _HA_FRAC.get(ha, 0.0) * w
+    y0 = y + _VA_FRAC.get(va, -0.78) * h
+    return x0, y0, x0 + w, y0 + h
+
+
+def leader_anchor(box, target, pad=3.0):
+    """Where a leader line should meet a label box on its way to ``target``.
+
+    Edge midpoints first, corners only as a fallback: a line that arrives at the
+    middle of the top edge reads as belonging to the whole label, while one that
+    stops at the text anchor -- which is what happens without this -- is drawn
+    straight through the words it is pointing away from.
+    """
+    x0, y0, x1, y1 = box
+    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    tx, ty = target
+    edges = [((cx, y0 - pad), 1.0),          # top centre
+             ((cx, y1 + pad), 1.0),          # bottom centre
+             ((x0 - pad, cy), 1.0),          # left centre
+             ((x1 + pad, cy), 1.0)]          # right centre
+    corners = [((x0 - pad, y0 - pad), 1.25), ((x1 + pad, y0 - pad), 1.25),
+               ((x0 - pad, y1 + pad), 1.25), ((x1 + pad, y1 + pad), 1.25)]
+    # The weight makes a corner win only when it is clearly nearer, so a target
+    # roughly above the label still gets the top-centre attachment.
+    return min(edges + corners,
+               key=lambda c: math.hypot(c[0][0] - tx, c[0][1] - ty) * c[1])[0]
+
+
+def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None):
     anchor = _HA.get(ha, "start")
     baseline = _VA.get(va, "alphabetic")
     rot = (f' transform="rotate({_fmt(-rotation)} {_fmt(x)} {_fmt(y)})"'
            if rotation else "")
+    # paint-order puts the halo stroke *under* the fill, so the glyph keeps its
+    # shape and only gains a rim. Without it the stroke thickens every letter.
+    halo = ("" if not outline else
+            f' stroke="{outline}" stroke-width="{_fmt(size * 0.30)}" '
+            'stroke-linejoin="round" paint-order="stroke"')
     return (f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
             f'dominant-baseline="{baseline}" font-size="{size}" '
-            f'fill="{color}"{rot}>{_esc(text)}</text>')
+            f'fill="{color}"{halo}{rot}>{_esc(text)}</text>')
 
 
 def _render_text(t: Text, tr, body):
     body.append(_text_svg(float(tr.x(t.x)), float(tr.y(t.y)), t.text, t.color,
-                          t.size, t.ha, t.va, t.rotation))
+                          t.size, t.ha, t.va, t.rotation, t.outline))
 
 
-def _render_annotation(an: Annotation, tr, body):
+def _render_annotation(an: Annotation, tr, st, body):
     tx, ty = float(tr.x(an.xytext[0])), float(tr.y(an.xytext[1]))
     if an.arrowprops is not None:
         px, py = float(tr.x(an.xy[0])), float(tr.y(an.xy[1]))
         color = (an.arrowprops.get("color", an.color)
                  if isinstance(an.arrowprops, dict) else an.color)
-        ang = math.atan2(py - ty, px - tx)
+        # Start the leader at the edge of the text box nearest the target, not
+        # at the text anchor -- from the anchor the line sets off across its own
+        # label whenever the target is up and to the left of it.
+        box = text_box(tx, ty, an.text, an.size, an.ha, an.va, st)
+        sx, sy = leader_anchor(box, (px, py))
+        ang = math.atan2(py - sy, px - sx)
         hl = 7.0
         h1 = (px - hl * math.cos(ang - 0.4), py - hl * math.sin(ang - 0.4))
         h2 = (px - hl * math.cos(ang + 0.4), py - hl * math.sin(ang + 0.4))
         body.append(
-            f'<path d="M{_fmt(tx)},{_fmt(ty)} L{_fmt(px)},{_fmt(py)} '
+            f'<path d="M{_fmt(sx)},{_fmt(sy)} L{_fmt(px)},{_fmt(py)} '
             f'M{_fmt(px)},{_fmt(py)} L{_fmt(h1[0])},{_fmt(h1[1])} '
             f'M{_fmt(px)},{_fmt(py)} L{_fmt(h2[0])},{_fmt(h2[1])}" '
             f'fill="none" stroke="{color}" stroke-width="1.2"/>'
         )
-    body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va))
+    body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va,
+                          0.0, an.outline))
 
 
 def _render_boxplot(bp: BoxPlot, tr, st, body):
