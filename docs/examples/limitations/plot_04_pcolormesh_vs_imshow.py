@@ -1,78 +1,51 @@
 """
-pcolormesh vs imshow: 1-D coordinates are assumed uniform
-=========================================================
+Non-uniform meshes resample, and the raster has a floor
+=======================================================
 
-On a uniform grid these two are not merely similar -- they emit **byte-identical**
-rasters at identical placement. Both rasterize the field to one embedded
-``<image>``, so ``pcolormesh(x, y, C)`` with evenly spaced ``x``/``y`` and
-``imshow(C, extent=...)`` are the same call by another name. Every gridded field
-in the gallery relies on that, and it is exact.
+``pcolormesh`` and ``imshow`` are the same call on a uniform grid: both
+rasterize the field to one embedded ``<image>``, and given evenly spaced
+coordinates they emit **byte-identical** rasters at identical placement. The
+difference is what they accept. ``imshow`` takes an ``extent`` and is uniform by
+construction; ``pcolormesh`` takes coordinates and honors whatever spacing they
+describe.
 
-The two part company when the coordinates are **not** evenly spaced, and that is
-the limitation. Given 1-D ``x``/``y``, plotpress spans ``min`` to ``max`` and
-divides it into equal cells -- it never inspects the spacing. matplotlib instead
-derives cell edges from the midpoints between centers, so on the grid below its
-boundaries fall at 1, 2, 4 and 8 while plotpress puts them at 3.2, 6.4, 9.6 and
-12.8.
+Honoring it costs something. The mesh is one image stretched linearly across the
+extent, so equal-width pixels cannot represent unequal cells -- plotpress
+resamples, assigning each output pixel the cell its center falls inside. The
+output is sized to resolve the *narrowest* cell, capped at 1024 pixels per axis.
 
-The middle panel shows the consequence: the field is drawn with the right colors
-in the wrong places, and it stops short of the data's true bounds, because the
-mesh spans the range of the given *centers* rather than of the cells they stand
-for. Nothing warns about it, because a coordinate vector carries no flag saying
-whether it is uniform.
+**Past that cap a cell thinner than one pixel cannot be drawn.** The left panel
+below has a width ratio of 40:1 and every cell survives. The right panel pushes
+one cell to 1/4000 of the span; it is narrower than a pixel of the raster and
+disappears, while its neighbours stay in the right places. Nothing warns about
+it, because at that ratio no single raster of any fixed size could show the cell
+and its neighbours at once.
 
-The same rule applies to ``y``. To keep the comparison about one variable, the
-``y`` coordinates below are chosen so that all three panels cover the same
-vertical band -- only the ``x`` treatment differs.
-
-**The fix is to pass 2-D coordinates.** Those are treated as cell corners and
-scan-converted, which honors whatever spacing they describe -- the right panel.
-Use it whenever the grid is logarithmic, adaptively refined, or otherwise
-irregular. If the grid really is uniform, prefer the 1-D form: it is the fast
-path and it is exact.
+If you need a decade-spanning axis drawn faithfully, use a log scale so the
+cells are uniform in the coordinate actually being rasterized, rather than a
+linear axis with geometrically spaced edges.
 """
 import numpy as np
 import plotpress
 
-# Five cells whose widths double: 1, 1, 2, 4, 8.
-edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
-centers = 0.5 * (edges[:-1] + edges[1:])
-# Chosen so the 1-D mesh spans the same 0..1 band as the other two panels: the
-# min..max rule applies to y as well, and letting it truncate here would confuse
-# a comparison that is about x.
-y_centers = np.array([0.0, 1.0])
+# Left: a 40:1 ratio, comfortably resolvable. Right: 4000:1, past the cap.
+MODERATE = np.array([0.0, 1.0, 2.0, 6.0, 16.0, 40.0])
+EXTREME = np.array([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+
+field = np.tile(np.arange(5.0), (2, 1))
 y_edges = np.array([0.0, 0.5, 1.0])
 
-# Varies only in x, so the cell boundaries are unmistakable.
-field = np.tile(np.arange(5.0), (2, 1))
-
-fig, axes = plotpress.subplots(1, 3, figsize=(12.5, 4.0))
-
-# Left: imshow is explicit about being uniform -- it takes an extent, not
-# coordinates, so nothing is lost in translation.
-axes[0].imshow(field, cmap="viridis", origin="lower",
-               extent=(edges[0], edges[-1], 0.0, 1.0))
-axes[0].set_title("imshow(extent=...): uniform by construction")
-
-# Middle: 1-D coordinates. plotpress divides min..max evenly, so the boundaries
-# land in the wrong place.
-axes[1].pcolormesh(centers, y_centers, field, cmap="viridis")
-axes[1].set_title("pcolormesh 1-D: spacing ignored")
-
-# Right: 2-D corner arrays. Spacing honored.
-X, Y = np.meshgrid(edges, y_edges)
-axes[2].pcolormesh(X, Y, field, cmap="viridis")
-axes[2].set_title("pcolormesh 2-D: spacing honored")
-
-# Dashed marks at the true cell edges, so the disagreement is measurable rather
-# than a matter of impression.
-for ax in axes:
+fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 3.8))
+for ax, edges, label in ((axes[0], MODERATE, "40:1 -- all five cells drawn"),
+                         (axes[1], EXTREME, "4000:1 -- the thin cell is lost")):
+    ax.pcolormesh(edges, y_edges, field, cmap="viridis", vmin=0.0, vmax=4.0)
     for e in edges[1:-1]:
         ax.axvline(e, color="#ffffff", linestyle="--", linewidth=1.2)
+    ratio = np.diff(edges).max() / np.diff(edges).min()
+    ax.set_title(f"{label}  (ratio {ratio:.0f}:1)")
     ax.set_xlim(edges[0], edges[-1])
     ax.set_ylim(0.0, 1.0)
     ax.set_yticks([])
-    ax.set_xticks(list(edges))
     ax.set_xlabel("x")
 
 fig.suptitle("Dashed lines mark the true cell edges")

@@ -42,7 +42,11 @@ def test_pcolormesh_signatures():
     x = np.linspace(0, 1, 4)
     y = np.linspace(0, 2, 3)
     m2 = ax.pcolormesh(x, y, C)
-    assert m2.extent() == (0.0, 1.0, 0.0, 2.0)
+    # x/y of the same length as C are cell *centers*, so the edges sit at the
+    # midpoints with half a cell mirrored outward -- matplotlib's
+    # shading="nearest". The extent is therefore half a cell wider on every side
+    # than the range of the centers, and agrees with matplotlib exactly.
+    assert m2.extent() == pytest.approx((-1 / 6, 1 + 1 / 6, -0.5, 2.5))
     assert isinstance(m2, QuadMesh)
     with pytest.raises(TypeError):
         ax.pcolormesh(x, y)  # 2 args is invalid
@@ -336,3 +340,70 @@ def test_dense_grid_stays_on_the_canvas(nrows, ncols, pad):
     assert min(r[1] for r in rects) >= -1e-9
     assert max(r[0] + r[2] for r in rects) <= 1.0 + 1e-9
     assert max(r[1] + r[3] for r in rects) <= 1.0 + 1e-9
+
+
+# -- non-uniform mesh coordinates -------------------------------------------
+
+def test_mesh_edges_match_matplotlib_for_centers_and_edges():
+    """The two coordinate conventions, and where the edges land.
+
+    A vector one longer than the cell count is edges; one of equal length is
+    cell centers, whose edges sit at the midpoints with half a cell mirrored
+    outward. plotpress used to keep only min/max of whatever it was handed and
+    divide that span evenly, which is right only for a uniform grid.
+    """
+    from plotpress.artists import QuadMesh
+
+    C = np.arange(10.0).reshape(2, 5)
+    edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
+    ye = np.array([0.0, 1.0, 2.0])
+
+    given_edges = QuadMesh(edges, ye, C)
+    assert given_edges.cell_edges()[0] == pytest.approx(edges)
+    assert given_edges.extent()[:2] == pytest.approx((0.0, 16.0))
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    given_centers = QuadMesh(centers, np.array([0.5, 1.5]), C)
+    mid = 0.5 * (centers[:-1] + centers[1:])
+    want = np.concatenate(([2 * centers[0] - mid[0]], mid, [2 * centers[-1] - mid[-1]]))
+    assert given_centers.cell_edges()[0] == pytest.approx(want)
+
+
+def test_non_uniform_cells_get_proportional_width():
+    """Each cell must occupy its own share of the image, not an equal share.
+
+    The mesh is drawn as one image stretched linearly across the extent, so
+    equal-width pixels put every boundary of a non-uniform grid in the wrong
+    place. Resampling assigns each pixel the cell its center falls in.
+    """
+    from plotpress.artists import QuadMesh
+    from plotpress.colors import apply_colormap
+
+    edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])      # widths 1,1,2,4,8
+    field = np.arange(5.0)[None, :]
+    mesh = QuadMesh(edges, np.array([0.0, 1.0]), field)
+
+    row = mesh.rgba()[0]
+    cell_colors = apply_colormap(field, mesh.lut, mesh.norm)[0].astype(int)
+    which = np.array([np.abs(cell_colors - c.astype(int)).sum(axis=1).argmin() for c in row])
+
+    span = edges[-1] - edges[0]
+    for k in range(5):
+        expected = (edges[k + 1] - edges[k]) / span
+        assert (which == k).mean() == pytest.approx(expected, abs=0.02)
+
+
+def test_uniform_mesh_keeps_the_one_pixel_per_cell_fast_path():
+    """A uniform grid is exact at one pixel per cell; don't resample it."""
+    from plotpress.artists import QuadMesh
+
+    C = np.arange(12.0).reshape(3, 4)
+    mesh = QuadMesh(np.linspace(0.0, 4.0, 5), np.linspace(0.0, 3.0, 4), C)
+    assert mesh.rgba().shape[:2] == (3, 4)
+
+
+def test_mesh_rejects_a_coordinate_length_that_is_neither():
+    from plotpress.artists import QuadMesh
+
+    with pytest.raises(ValueError, match="neither"):
+        QuadMesh(np.arange(9.0), np.arange(3.0), np.arange(12.0).reshape(3, 4))

@@ -261,6 +261,54 @@ def _fill_tri_gouraud(img, ax, ay, bx, by, cx, cy, ca, cb, cc):
     sub[inside] = np.clip(col[inside], 0, 255).astype(np.uint8)
 
 
+def _uniform(edges, rtol=1e-9):
+    """True if ``edges`` are evenly spaced (the fast, exact mesh path)."""
+    if edges.size < 3:
+        return True
+    d = np.diff(edges)
+    return bool(np.allclose(d, d[0], rtol=rtol, atol=0.0))
+
+
+def _resample_size(edges, n, max_side):
+    """Pixels needed along an axis so the *narrowest* cell survives resampling.
+
+    Sizing by cell count alone drops thin cells: a grid of five cells whose
+    smallest is a thousandth of the span needs far more than five pixels before
+    that cell claims one. Ask for enough to resolve the narrowest, then cap --
+    past the cap a cell thinner than one pixel is genuinely unrepresentable in a
+    single raster, which the limitations gallery shows.
+    """
+    widths = np.diff(edges)
+    finest = float(np.min(widths[widths > 0.0])) if np.any(widths > 0.0) else 0.0
+    span = float(edges[-1] - edges[0])
+    need = int(np.ceil(span / finest)) if finest > 0.0 else n
+    return int(min(max_side, max(need, n, 64)))
+
+
+def _edges_from(coord, n):
+    """``n + 1`` cell edges from a coordinate vector, or ``None`` for indices.
+
+    ``n + 1`` values are edges already. ``n`` values are cell centers, so the
+    edges sit at the midpoints between them, with the outermost half-cells
+    mirrored outward -- the same convention as matplotlib's
+    ``shading="nearest"``. Getting this wrong is not a cosmetic matter on a
+    non-uniform grid: it decides where every cell boundary lands.
+    """
+    if coord is None:
+        return np.arange(n + 1, dtype=float)
+    c = np.asarray(coord, dtype=float).ravel()
+    if c.size == n + 1:
+        return c
+    if c.size != n:
+        raise ValueError(
+            f"coordinate length {c.size} matches neither {n} cell centers "
+            f"nor {n + 1} cell edges")
+    if n == 1:
+        return np.array([c[0] - 0.5, c[0] + 0.5])
+    mid = 0.5 * (c[:-1] + c[1:])
+    return np.concatenate(([2.0 * c[0] - mid[0]], mid, [2.0 * c[-1] - mid[-1]]))
+
+
 class QuadMesh(Artist):
     """Color mesh, rasterized to a single embedded ``<image>``.
 
@@ -305,18 +353,30 @@ class QuadMesh(Artist):
         self.lut = get_cmap(cmap)
         self.norm = resolve_norm(norm, vmin, vmax)
         self.norm.autoscale_none(self.C)
+        if not self.curvilinear:
+            # Resolve the edges now so a coordinate length that is neither
+            # centers nor edges fails at the pcolormesh() call, not later inside
+            # the renderer where the traceback says nothing about the caller.
+            self.cell_edges()
+
+    def cell_edges(self):
+        """``(x_edges, y_edges)`` for the rectilinear grid: one more than cells.
+
+        ``None`` coordinates default to integer indices. A vector one longer
+        than the cell count is taken as edges directly; one of equal length is
+        taken as cell *centers* (matplotlib's ``shading="nearest"``), with edges
+        at the midpoints and half a cell extrapolated at each end. Curvilinear
+        meshes have no such vectors and are scan-converted instead.
+        """
+        ny, nx = self.C.shape
+        return (_edges_from(self.X, nx), _edges_from(self.Y, ny))
 
     def extent(self):
-        ny, nx = self.C.shape
-        if self.X is None:
-            xmin, xmax = 0, nx
-        else:
-            xmin, xmax = float(np.min(self.X)), float(np.max(self.X))
-        if self.Y is None:
-            ymin, ymax = 0, ny
-        else:
-            ymin, ymax = float(np.min(self.Y)), float(np.max(self.Y))
-        return xmin, xmax, ymin, ymax
+        if self.curvilinear:
+            return (float(np.min(self.X)), float(np.max(self.X)),
+                    float(np.min(self.Y)), float(np.max(self.Y)))
+        xe, ye = self.cell_edges()
+        return float(xe[0]), float(xe[-1]), float(ye[0]), float(ye[-1])
 
     def rgba(self):
         """Return the mesh as an RGBA uint8 image (row 0 = top = max y)."""
@@ -324,9 +384,33 @@ class QuadMesh(Artist):
             return self._rgba_gouraud()
         if self.curvilinear:
             return self._rgba_curvilinear()
-        rgba = apply_colormap(self.C, self.lut, self.norm)
-        # Image rows go top-down; data y increases upward -> flip vertically.
-        return np.flipud(rgba)
+        return self._rgba_rectilinear()
+
+    def _rgba_rectilinear(self, max_side=1024):
+        """Rectilinear mesh as an image, honoring non-uniform cell widths.
+
+        A uniform grid maps one cell to one pixel, which is exact and is the
+        overwhelmingly common case. A *non-uniform* grid cannot: the image is
+        stretched linearly across the extent, so equal-width pixels would put
+        every cell boundary in the wrong place. Resample instead -- assign each
+        output pixel the cell its center falls inside -- which costs one
+        ``searchsorted`` per axis and puts every boundary where the data says.
+        """
+        cell = apply_colormap(self.C, self.lut, self.norm)
+        xe, ye = self.cell_edges()
+        if _uniform(xe) and _uniform(ye):
+            # Image rows go top-down; data y increases upward -> flip.
+            return np.flipud(cell)
+
+        ny, nx = self.C.shape
+        out_w = nx if _uniform(xe) else _resample_size(xe, nx, max_side)
+        out_h = ny if _uniform(ye) else _resample_size(ye, ny, max_side)
+        xs = xe[0] + (np.arange(out_w) + 0.5) * (xe[-1] - xe[0]) / out_w
+        # Rows run top-down, so walk y from the top edge downward.
+        ys = ye[-1] - (np.arange(out_h) + 0.5) * (ye[-1] - ye[0]) / out_h
+        col = np.clip(np.searchsorted(xe, xs) - 1, 0, nx - 1)
+        row = np.clip(np.searchsorted(ye, ys) - 1, 0, ny - 1)
+        return cell[row[:, None], col[None, :]]
 
     def _out_grid(self, max_side):
         """Blank output image + node pixel coords (row 0 = ymax)."""
