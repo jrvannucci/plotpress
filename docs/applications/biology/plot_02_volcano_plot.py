@@ -69,6 +69,11 @@ for k, idx in enumerate(np.argsort(score)[-8:]):
             ha="left" if log2fc[idx] > 0 else "right",
             color="#d62728" if log2fc[idx] > 0 else "#1f77b4")
 
+# Labels are placed after the data, so the limits have to leave room for them:
+# the most extreme gene is exactly the one worth naming, and its label is the
+# one that runs off the edge.
+span = np.abs(log2fc[up | down]).max()
+ax.set_xlim(-span * 1.35, span * 1.35)
 ax.set_xlabel("log2 fold change  (treated / control)")
 ax.set_ylabel("-log10 p-value")
 ax.set_title("Volcano plot: effect size and significance thresholded together")

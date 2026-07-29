@@ -53,6 +53,11 @@ is derived from it at build time rather than written down anywhere in the source
   zero disappeared entirely rather than clamping to the frame. Anchors are now
   clipped into the visible domain, and points that genuinely cannot be mapped
   are skipped rather than emitted as `NaN` coordinates in the SVG.
+- The PNG backend clips artists to the axes, as the SVG backend's `clipPath`
+  already did. It accepted a clip rectangle and ignored it, so any data outside
+  the limits was painted across the rest of the figure -- over neighbouring
+  subplots, the axis labels and the legend -- in exactly the format the docs and
+  most saved figures use.
 - `hexbin` derives its row count from `gridsize` alone, as matplotlib does, so
   the lattice no longer depends on the choice of units. Deriving it from the
   ratio of the data ranges meant plotting kilowatts against metres per second

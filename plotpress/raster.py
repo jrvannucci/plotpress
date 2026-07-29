@@ -186,9 +186,12 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
             if T <= y <= T + Hp:
                 draw.line([L, y, L + Wp, y], fill=gc, width=gw)
 
-    clip = (L, T, L + Wp, T + Hp)
-    for artist in ax.artists:
-        _raster_artist(artist, tr, st, S, draw, canvas, clip)
+    # Artists go onto a scratch layer, and only the part of that layer inside
+    # the axes rect is composited back. This is the raster counterpart of the
+    # SVG backend's <clipPath>: without it the two backends disagree the moment
+    # any data falls outside the limits, and the PNG paints it across the rest
+    # of the figure -- over neighbouring subplots, labels and the legend.
+    _clip_artists(ax, tr, st, S, canvas, (L, T, Wp, Hp))
 
     if not ax._axis_off:
         if is_twin:
@@ -253,6 +256,38 @@ def _draw_prim(p, S, draw, canvas):
             dash = _DASH.get(p.linestyle)
             for sub in p.subpaths:
                 _polyline(draw, sub, _rgb(p.stroke), w, dash)
+
+
+def _clip_artists(ax, tr, st, S, canvas, rect):
+    """Draw ``ax``'s artists clipped to ``rect`` = (left, top, w, h) in pixels.
+
+    Pillow has no clip region, so the artists are drawn onto a transparent layer
+    the size of the canvas and only the rect is composited back. The layer is
+    cached on the canvas and cleared per axes rather than reallocated, because a
+    figure can carry hundreds of axes and a full-canvas RGBA allocation each
+    time dominates the render.
+    """
+    from PIL import Image as PILImage, ImageDraw
+
+    L, T, Wp, Hp = rect
+    box = (max(0, int(math.floor(L))), max(0, int(math.floor(T))),
+           min(canvas.size[0], int(math.ceil(L + Wp))),
+           min(canvas.size[1], int(math.ceil(T + Hp))))
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return
+
+    layer = getattr(canvas, "_plotpress_layer", None)
+    if layer is None or layer.size != canvas.size:
+        layer = PILImage.new("RGBA", canvas.size, (0, 0, 0, 0))
+        canvas._plotpress_layer = layer
+    ldraw = ImageDraw.Draw(layer)
+
+    for artist in ax.artists:
+        _raster_artist(artist, tr, st, S, ldraw, layer, rect)
+
+    canvas.alpha_composite(layer.crop(box), (box[0], box[1]))
+    # Clear only what was used, so the next axes starts from transparent.
+    layer.paste((0, 0, 0, 0), box)
 
 
 def _raster_artist(artist, tr, st, S, draw, canvas, clip):

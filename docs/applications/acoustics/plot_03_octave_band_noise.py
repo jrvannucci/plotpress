@@ -73,8 +73,11 @@ ax.plot(centres, limit, color="#2ca02c", linewidth=2.0, linestyle="--",
 ax.scatter(centres[exceeds], level[exceeds] + 2.5, s=7.0, color="#d62728",
            label=f"exceeds limit ({exceeds.sum()} bands)")
 
-ax.text(26.0, 10.0, f"A-weighted total = {total_dba:.0f} dBA -- within spec,\n"
-        f"but {exceeds.sum()} tonal bands are not", fontsize=9, color="#333333")
+# The bars stop well short of the top of the axes, so the headroom above the
+# high-frequency end is the one place a two-line note does not cross them.
+ax.text(22.0, 98.0, f"A-weighted total = {total_dba:.0f} dBA -- within spec,\n"
+        f"but {exceeds.sum()} tonal bands are not", fontsize=9,
+        color="#333333", ha="left", va="top")
 
 ax.set_xscale("log")
 ax.set_xlim(20.0, 12000.0)

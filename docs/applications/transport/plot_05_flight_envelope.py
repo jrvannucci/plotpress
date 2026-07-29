@@ -73,11 +73,11 @@ ax.plot(gust_v, 1.0 - gust_n, color="#ff7f0e", linestyle="--", linewidth=1.2)
 ax.scatter([V_A], [N_MAX], s=10.0, color="#111111")
 ax.annotate(f"manoeuvring speed Va = {V_A:.0f} m/s\n"
             "below: the wing stalls first\nabove: the airframe fails first",
-            xy=(V_A, N_MAX), xytext=(V_A + 12.0, 2.35),
+            xy=(V_A, N_MAX), xytext=(V_A - 46.0, 3.55),
             arrowprops={"color": "#111111"}, fontsize=9)
 
 ax.axhline(1.0, color="#888888", linestyle=":", linewidth=1.1)
-ax.text(112.0, 1.12, "1 g, level flight", fontsize=9, color="#666666")
+ax.text(2.0, 1.10, "1 g, level flight", fontsize=9, color="#666666")
 
 ax.set_xlim(0.0, 140.0)
 ax.set_ylim(-2.6, 4.6)

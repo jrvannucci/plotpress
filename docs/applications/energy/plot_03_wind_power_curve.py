@@ -78,10 +78,15 @@ ax.errorbar(centres, means, yerr=spreads, color="#d62728", marker="o",
 
 for v, name in [(CUT_IN, "cut-in"), (RATED, "rated"), (CUT_OUT, "cut-out")]:
     ax.axvline(v, color="#333333", linestyle=":", linewidth=1.1)
-    ax.text(v + 0.2, RATED_POWER * 1.12, name, fontsize=9, color="#333333")
+    # The last label is right-aligned: at cut-out the line is against the frame,
+    # so a left-aligned name runs off the edge.
+    inside = v < 0.9 * CUT_OUT
+    ax.text(v + (0.3 if inside else -0.3), RATED_POWER * 1.145, name,
+            fontsize=9, color="#333333", va="top",
+            ha="left" if inside else "right")
 
 ax.set_xlim(0.0, 26.0)
-ax.set_ylim(-60.0, RATED_POWER * 1.22)
+ax.set_ylim(-60.0, RATED_POWER * 1.16)
 ax.set_xlabel("hub-height wind speed (m/s)")
 ax.set_ylabel("active power (kW)")
 ax.set_title("Power curve: the binned estimate, over the cloud it came from")
