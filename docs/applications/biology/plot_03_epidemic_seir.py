@@ -64,9 +64,13 @@ ax2.set_ylabel("infectious (thousands)")
 ax2.set_ylim(0.0, None)
 
 peak = int(np.argmax(I))
+# The callout goes where the stack has already settled, not next to the peak:
+# beside it is solidly inside the removed band, and black on green is unreadable.
 ax2.annotate(f"peak {I[peak] / 1e3:.0f}k on day {t[peak]:.0f}",
-             xy=(t[peak], I[peak] / 1e3), xytext=(t[peak] + 90.0, I[peak] / 1e3),
-             arrowprops={"color": "#111111"}, fontsize=9)
+             xy=(t[peak], I[peak] / 1e3),
+             xytext=(t[peak] + 55.0, I[peak] / 1e3 * 0.90),
+             arrowprops={"color": "#ffffff"}, fontsize=9,
+             color="#ffffff")
 
 ax.set_xlim(0.0, DAYS)
 ax.set_ylim(0.0, POP / 1e6)

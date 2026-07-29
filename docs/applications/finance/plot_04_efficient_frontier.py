@@ -73,8 +73,25 @@ ax.plot(frontier_vol, frontier_ret, color="#d62728", linewidth=2.4,
         label="efficient frontier")
 ax.scatter(volatility, mean_return, s=9.0, color="#111111",
            label="individual assets")
-for name, v, r in zip(ASSETS, volatility, mean_return):
-    ax.text(v + 0.004, r, name, fontsize=8, color="#111111")
+# A marker sitting in the cloud cannot take a label beside it: the cloud runs
+# from near-black to bright yellow, so no single ink is readable across it.
+# Those get a leader out to clear space instead. Nudging the label a little way
+# off is the worst of both -- still on the cloud, and now far enough from its
+# marker that the reader has to guess which dot it belongs to.
+crowded = np.array([((np.abs(port_vol - v) < 0.008)
+                     & (np.abs(port_return - r) < 0.005)).sum() > 40
+                    for v, r in zip(volatility, mean_return)])
+# The strip below the cloud and left of the legend is the one reliably empty
+# part of the panel, so every leader ends there, stacked.
+led = 0
+for k, (name, v, r) in enumerate(zip(ASSETS, volatility, mean_return)):
+    if crowded[k]:
+        ax.annotate(name, xy=(v, r), xytext=(0.105, 0.0245 + 0.007 * led),
+                    fontsize=8, va="center", color="#111111",
+                    arrowprops={"color": "#666666"})
+        led += 1
+    else:
+        ax.text(v + 0.005, r, name, fontsize=8, va="center", color="#111111")
 
 tangency = int(np.argmax(sharpe))
 minvar = int(np.argmin(port_vol))

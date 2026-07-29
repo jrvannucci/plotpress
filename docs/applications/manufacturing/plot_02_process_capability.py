@@ -61,7 +61,8 @@ for ax, (name, mu, color) in zip(axes, CASES):
 
     for limit, tag in [(LSL, "LSL"), (USL, "USL")]:
         ax.axvline(limit, color="#000000", linewidth=2.0, linestyle="-")
-        ax.text(limit, 9.3, tag, ha="center", fontsize=9)
+        # Just above the axis, where neither the legend nor the curve reaches.
+        ax.text(limit, 0.35, tag, ha="center", fontsize=9)
     for edge in (mu - 3 * SIGMA, mu + 3 * SIGMA):
         ax.axvline(edge, color=color, linestyle=":", linewidth=1.2)
     ax.axvline(TARGET, color="#888888", linestyle="--", linewidth=1.1)

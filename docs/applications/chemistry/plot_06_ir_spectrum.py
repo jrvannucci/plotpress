@@ -73,6 +73,7 @@ for hi, lo, name, _ in REGIONS:
               color="#555555")
 
 ax_a.plot(wavenumber, absorbance, color="#d62728", linewidth=0.9)
+ax_a.set_ylim(-0.05, absorbance.max() * 1.28)
 ax_a.set_ylabel("absorbance")
 ax_a.set_xlabel("wavenumber (cm^-1)")
 ax_a.set_title("Absorbance: what obeys Beer's law, so what a concentration uses")
@@ -82,7 +83,7 @@ ax_a.set_title("Absorbance: what obeys Beer's law, so what a concentration uses"
 for centre, height, width, name in BANDS:
     if name:
         ax_a.annotate(name, xy=(centre, height),
-                      xytext=(centre - 430.0, min(height + 0.10, 1.72)),
+                      xytext=(centre - 430.0, height + 0.13),
                       ha="center", fontsize=8, color="#333333",
                       arrowprops={"color": "#888888"})
 

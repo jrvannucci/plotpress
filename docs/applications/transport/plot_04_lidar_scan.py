@@ -82,7 +82,7 @@ ax.set_theta_zero_location("N")
 ax.set_theta_direction(-1)
 
 # No-return beams: a rim band, not points at max range.
-ax.scatter(bearing[no_return], np.full(no_return.sum(), MAX_RANGE * 0.985),
+ax.scatter(bearing[no_return], np.full(no_return.sum(), MAX_RANGE * 0.94),
            s=3.0, color="#cccccc", label="no return (open / out of range)")
 returns = ax.scatter(bearing[~no_return], distance[~no_return], s=4.0,
                      c=intensity[~no_return], cmap="plasma", vmin=0.0, vmax=1.0,
@@ -90,7 +90,7 @@ returns = ax.scatter(bearing[~no_return], distance[~no_return], s=4.0,
 fig.colorbar(returns, ax=ax).set_title("return\nintensity")
 
 ax.set_rmax(MAX_RANGE)
-ax.set_rticks([3.0, 6.0, 9.0, 12.0])
+ax.set_rticks([3.0, 6.0, 9.0])   # 12 would sit under the rim band
 ax.set_title("Lidar sweep: plotted where it was measured, in range and bearing")
 ax.legend(loc="lower right")
 fig.tight_layout()

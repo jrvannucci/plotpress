@@ -74,10 +74,13 @@ for g, color in IRRADIANCE:
                 color="#333333", linestyle=":", linewidth=1.2)
         ax.plot([0, v_oc, v_oc], [i_ph, i_ph, 0], color="#888888",
                 linestyle=":", linewidth=1.0)
+        # Close to the point it names, in the gap between two curves -- a
+        # callout parked in the far corner needs an arrow across the whole plot
+        # to reach back, and that arrow crosses everything on the way.
         ax.annotate(f"MPP {power[mpp]:.0f} W\nfill factor {fill:.2f}",
                     xy=(voltage[mpp], current[mpp]),
-                    xytext=(6.0, 4.2), arrowprops={"color": "#333333"},
-                    fontsize=9)
+                    xytext=(voltage[mpp] - 9.0, current[mpp] - 2.4),
+                    arrowprops={"color": "#333333"}, fontsize=9)
 
 ax.set_xlim(0.0, 40.0)
 ax.set_ylim(0.0, 11.0)

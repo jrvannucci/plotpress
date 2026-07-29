@@ -60,15 +60,16 @@ for temp, k, deficit, color in CELLS:
     if below.size:
         n_eol = int(cycles[below[0]])
         ax.scatter([n_eol], [EOL], s=8.0, color=color)
-        # Label on whichever side has room: a cell that reaches end of life
-        # early has no canvas to its left.
+        # Both callouts sit on the one clear band below every curve. They all
+        # point at the same horizontal line, so placing each beside its own
+        # crossing put them on top of each other and on the traces.
         ax.annotate(f"{n_eol} cycles", xy=(n_eol, EOL),
-                    xytext=(n_eol + (180 if n_eol < 600 else -420), EOL - 0.055),
+                    xytext=(600.0 if n_eol < 600 else 1150.0, 0.715),
                     color=color, fontsize=9, arrowprops={"color": color})
     else:
-        ax.text(1500.0, capacity[-1] + 0.012,
-                f"still above {EOL:.0%} after {cycles[-1]} cycles", fontsize=9,
-                color=color)
+        ax.text(1980.0, EOL - 0.028,
+                f"{temp} degC: still above {EOL:.0%} at {cycles[-1]} cycles",
+                fontsize=9, color=color, ha="right")
 
 ax.axhline(EOL, color="#333333", linestyle=":", linewidth=1.4,
            label="end of life (80%)")

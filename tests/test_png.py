@@ -4,6 +4,7 @@ import struct
 import zlib
 
 import numpy as np
+import pytest
 
 from plotpress.png import encode_png, png_data_uri
 
@@ -84,3 +85,28 @@ def test_multiline_labels_survive_png_export():
     ax.set_ylabel("y\nunits")
     ax.text(0.5, 0.5, "a\nb")
     assert raster.figure_to_image(fig, scale=1) is not None
+
+
+def test_png_clips_artists_to_the_axes():
+    """The raster backend must clip like the SVG backend's <clipPath>.
+
+    Without it the two disagree the moment data falls outside the limits, and
+    the PNG paints it across the rest of the figure -- over neighbouring
+    subplots, the axis labels and the legend.
+    """
+    pytest.importorskip("PIL")
+
+    import plotpress
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots(figsize=(4, 3))
+    x = np.linspace(0, 10, 300)
+    ax.plot(x, np.sin(x) * 5.0)          # five times taller than the view
+    ax.set_ylim(-1, 1)
+
+    im = np.array(figure_to_image(fig, scale=1).convert("RGB"))
+    series = np.abs(im - np.array([31, 119, 180])).max(axis=2) < 60
+    rows = np.nonzero(series.any(axis=1))[0]
+    assert rows.size, "series not drawn at all"
+    # Nothing may reach the top or bottom edge of the canvas.
+    assert rows.min() > 2 and rows.max() < im.shape[0] - 3
