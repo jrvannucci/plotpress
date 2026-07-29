@@ -1,11 +1,18 @@
 """
-What interactivity costs, and how to pay less
+Interactivity costs more than the figure does
 =============================================
 
 An interactive figure is self-contained: the toolbar's JavaScript is inlined and
 so is the data it needs to answer a point-pick, because the file must work from
-``file://`` and under a strict CSP with no outside requests. That data is the
-whole cost, and for a mesh it is the ``z`` grid at full precision.
+``file://`` and under a strict CSP with no outside requests. That is a deliberate
+constraint and it has a price, which this figure measures: for a mesh the
+inlined ``z`` grid dwarfs the drawing, and the interactive file is several times
+the static one at every setting.
+
+There is no way to have the first property without the second. Fetching the pick
+data on demand would make the file small and would also make it stop working
+from a filesystem, inside a notebook, or behind a CSP -- which are the cases the
+format exists for.
 
 Full precision is almost never wanted. A readout of ``-0.4271639823974515`` is
 seventeen significant figures of a quantity measured to three, and every one of
