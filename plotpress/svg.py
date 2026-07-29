@@ -1044,9 +1044,10 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
             f'transform="rotate(-90 {_fmt(x)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
         )
     if ax._title:
+        size = ax._title_size or st.title_size
         body.append(
             f'<text x="{_fmt(cx)}" y="{_fmt(px_top - 8 - twiny_headroom(ax, st))}" '
-            f'text-anchor="middle" font-size="{st.title_size}" '
+            f'text-anchor="middle" font-size="{size}" '
             f'fill="{st.text_color}">{_esc(ax._title)}</text>'
         )
 

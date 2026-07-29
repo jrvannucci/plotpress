@@ -39,6 +39,7 @@ ENV/
 docs/_build/
 docs/auto_examples/
 docs/auto_applications/
+docs/auto_scale/
 docs/sg_execution_times.rst
 
 # Editors / IDEs

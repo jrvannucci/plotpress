@@ -24,6 +24,24 @@ class Artist:
         raise NotImplementedError
 
 
+def finite_range(a):
+    """``(min, max)`` over the finite entries of ``a``; ``(nan, nan)`` if none.
+
+    An artist whose data is entirely ``nan`` is a real case rather than a
+    mistake -- a fully masked frame, a channel that dropped out for the whole
+    record, a rug placed as a fraction of the axes. NumPy's ``nanmin`` emits a
+    RuntimeWarning on an all-NaN slice, which ``errstate`` does not suppress
+    because it is a warning and not a floating-point condition, so drawing such
+    a figure printed noise to stderr. Autoscaling already ignores a non-finite
+    bound, so returning NaN is the answer the caller wants.
+    """
+    a = np.asarray(a, dtype=float)
+    finite = a[np.isfinite(a)]
+    if finite.size == 0:
+        return np.nan, np.nan
+    return finite.min(), finite.max()
+
+
 class Line2D(Artist):
     def __init__(self, x, y, color, linewidth, linestyle="-", label=None, alpha=1.0,
                  values=None):
@@ -41,11 +59,7 @@ class Line2D(Artist):
     def data_bounds(self):
         if self.x.size == 0:
             return None
-        with np.errstate(invalid="ignore"):
-            return (
-                np.nanmin(self.x), np.nanmax(self.x),
-                np.nanmin(self.y), np.nanmax(self.y),
-            )
+        return finite_range(self.x) + finite_range(self.y)
 
 
 class FrameLine2D(Artist):
@@ -75,11 +89,7 @@ class FrameLine2D(Artist):
     def data_bounds(self):
         if self.Y.size == 0:
             return None
-        with np.errstate(invalid="ignore"):
-            return (
-                np.nanmin(self.X), np.nanmax(self.X),
-                np.nanmin(self.Y), np.nanmax(self.Y),
-            )
+        return finite_range(self.X) + finite_range(self.Y)
 
 
 class VLine(Artist):
@@ -201,11 +211,7 @@ class ScatterCollection(Artist):
     def data_bounds(self):
         if self.x.size == 0:
             return None
-        with np.errstate(invalid="ignore"):
-            return (
-                np.nanmin(self.x), np.nanmax(self.x),
-                np.nanmin(self.y), np.nanmax(self.y),
-            )
+        return finite_range(self.x) + finite_range(self.y)
 
 
 def _in_tri(px, py, ax, ay, bx, by, cx, cy):
@@ -496,8 +502,7 @@ class Rug(Artist):
     def data_bounds(self):
         if self.x.size == 0:
             return None
-        with np.errstate(invalid="ignore"):
-            lo, hi = np.nanmin(self.x), np.nanmax(self.x)
+        lo, hi = finite_range(self.x)
         # NaN opts out of the perpendicular axis -- the rug is positioned there
         # as a fraction of the axes, so it must not influence autoscaling.
         if self.side == "left":

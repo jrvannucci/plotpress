@@ -246,3 +246,33 @@ def test_contour_over_pcolormesh_renders():
     ax.pcolormesh(g, g, Z, cmap="magma")
     ax.contour(X, Y, Z, levels=5, colors="white")
     assert "<svg" in fig.to_svg()
+
+
+def test_all_nan_data_does_not_warn():
+    """A fully masked artist is a real case, not a mistake.
+
+    A detector exposure that failed QC, a channel that dropped out for the whole
+    record. NumPy's nanmin warns on an all-NaN slice, and errstate does not
+    suppress it because it is a warning rather than a floating-point condition,
+    so drawing one of these printed noise to stderr.
+    """
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fig, ax = plotpress.subplots()
+        ax.plot([0, 1, 2], [np.nan] * 3)
+        ax.scatter([np.nan] * 4, [np.nan] * 4)
+        ax.pcolormesh(np.full((8, 8), np.nan))
+        assert fig.to_svg().startswith("<svg")
+
+
+def test_set_title_takes_a_size():
+    """A 900-panel grid needs a title a few points high, without a Style copy."""
+    _, ax = plotpress.subplots()
+    ax.set_title("small", size=5)
+    assert ax._title_size == 5
+    ax.set_title("mpl spelling", fontsize=7)
+    assert ax._title_size == 7
+    ax.set_title("default")
+    assert ax._title_size is None

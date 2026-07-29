@@ -147,11 +147,21 @@ class Normalize:
         self.vmax = vmax
 
     def autoscale_none(self, A):
+        """Fill unset limits from the data, tolerating a fully masked field.
+
+        A frame where every cell is ``nan`` is a real case, not a mistake -- a
+        detector exposure that failed quality control, a tile with no coverage,
+        one panel of a stack that a shared norm still has to accept. NumPy's
+        ``nanmin`` warns on an all-NaN slice and returns NaN, which then
+        propagated into the transform; fall back to a unit range instead, since
+        there is nothing to scale and every cell will be drawn transparent.
+        """
         A = np.asarray(A, dtype=float)
+        finite = A[np.isfinite(A)] if A.size else A
         if self.vmin is None:
-            self.vmin = float(np.nanmin(A))
+            self.vmin = float(finite.min()) if finite.size else 0.0
         if self.vmax is None:
-            self.vmax = float(np.nanmax(A))
+            self.vmax = float(finite.max()) if finite.size else 1.0
 
     def __call__(self, A):
         A = np.asarray(A, dtype=float)

@@ -180,7 +180,7 @@ class Figure:
         title_px = twin_top_px = 0.0
         for ax in specs:
             if ax._title:
-                title_px = max(title_px, st.title_size + 8)
+                title_px = max(title_px, (ax._title_size or st.title_size) + 8)
             if ax._axis_off:
                 continue
             (xmin, xmax), (ymin, ymax) = ax._resolved_limits()

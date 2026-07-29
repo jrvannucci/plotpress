@@ -651,8 +651,9 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
         # single-line title takes the same path and lands exactly where it did.
         from .svg import twiny_headroom
 
-        font = _font(st.title_size * S, st.font_family)
-        line_h = st.title_size * 1.2 * S
+        size = ax._title_size or st.title_size
+        font = _font(size * S, st.font_family)
+        line_h = size * 1.2 * S
         top = T - (8 + twiny_headroom(ax, st)) * S
         for i, line in enumerate(reversed(ax._title.split("\n"))):
             draw.text((cx, top - i * line_h), line,

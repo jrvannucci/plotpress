@@ -147,13 +147,16 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     return rst
 
 
-# Two galleries, built from two source trees. ``examples`` is the plot-type
-# reference -- one figure per method, deliberately minimal. ``applications`` is
-# the real-application gallery, grouped by field, where the point is the
-# reasoning that leads to the figure rather than the call that draws it.
+# Three galleries, from three source trees. ``examples`` is the plot-type
+# reference -- one figure per method, deliberately minimal. ``scale`` is the
+# large-figure gallery, where build time and file size are the subject rather
+# than a footnote, so its examples are slow by design and belong off the
+# reference page. ``applications`` is the real-application gallery, grouped by
+# field, where the point is the reasoning that leads to the figure rather than
+# the call that draws it.
 sphinx_gallery_conf = {
-    "examples_dirs": ["examples", "applications"],
-    "gallery_dirs": ["auto_examples", "auto_applications"],
+    "examples_dirs": ["examples", "scale", "applications"],
+    "gallery_dirs": ["auto_examples", "auto_scale", "auto_applications"],
     # Order thumbnails by file name. Every example is numbered (plot_01_...)
     # precisely to fix the reading order, but sphinx-gallery defaults to sorting
     # by *code length*, which buried the line-plot introduction two thirds of
@@ -166,7 +169,6 @@ sphinx_gallery_conf = {
     # the planet to the lab bench to the ledger, which is arbitrary but stable
     # -- alphabetical would open on acoustics and scatter related fields apart.
     "subsection_order": ExplicitOrder([
-        "examples/scale",
         "examples/polar",
         "examples/threed",
         "examples/signal",

@@ -23,6 +23,17 @@ is derived from it at build time rather than written down anywhere in the source
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
+- **Large-scale gallery** on its own page, grown from one example to eleven: a
+  million-point line, half a million scatter points, a 2.25-million-cell mesh, a
+  thousand series on one axes, nine hundred axes on one canvas, two shared-
+  colorbar grids, the interactive payload against `pick_precision`, vector
+  overlays on a rasterized field, how output size scales with the data, and a
+  head-to-head against matplotlib measured on the machine that builds the docs.
+  Examples now come before applications in the sidebar.
+- `set_title` takes `size` (and `fontsize`, as matplotlib spells it). A
+  small-multiples grid of several hundred panels needs a title a few points
+  high, and the alternative was a whole `Style` copy that changes every other
+  title too.
 - `text` and `annotate` draw a contrasting halo behind the glyphs by default --
   white behind dark ink, black behind light -- so a label stays readable over
   whatever it lands on. A label in the data area is placed before anyone knows
@@ -63,6 +74,11 @@ is derived from it at build time rather than written down anywhere in the source
   zero disappeared entirely rather than clamping to the frame. Anchors are now
   clipped into the visible domain, and points that genuinely cannot be mapped
   are skipped rather than emitted as `NaN` coordinates in the SVG.
+- An artist whose data is entirely `nan` no longer prints a RuntimeWarning. A
+  fully masked frame is a real case -- an exposure that failed quality control, a
+  channel that dropped out for the whole record -- and `errstate` did not
+  suppress NumPy's all-NaN warning because it is a warning rather than a
+  floating-point condition.
 - The PNG backend clips artists to the axes, as the SVG backend's `clipPath`
   already did. It accepted a clip rectangle and ignored it, so any data outside
   the limits was painted across the rest of the figure -- over neighbouring
