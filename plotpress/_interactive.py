@@ -19,7 +19,7 @@ others):
 Legend entries remain clickable to toggle series regardless of mode.
 """
 
-INTERACTIVE_JS = r"""
+_JS_SOURCE = r"""
 (function () {
   var svg = document.getElementById('plotpress-svg');
   if (!svg) return;
@@ -1152,3 +1152,30 @@ INTERACTIVE_JS = r"""
   });
 })();
 """
+
+
+def _strip(source: str) -> str:
+    """Drop comment-only lines, blank lines, and leading indentation.
+
+    The whole toolbar is inlined into *every* interactive figure, so these
+    bytes are paid once per figure rather than once per page -- 47 KiB of
+    source became the single largest fixed component of an interactive HTML
+    file.
+
+    Deliberately conservative: newlines are kept, because JavaScript's
+    automatic semicolon insertion makes joining lines unsafe, and a line is
+    only treated as a comment when its *stripped* form begins with ``//``,
+    which cannot occur inside a string here -- the source contains no template
+    literals and no line-continued strings, so no string spans a line break.
+    Identifier renaming is left to a real minifier if it is ever wanted.
+    """
+    out = []
+    for line in source.splitlines():
+        s = line.strip()
+        if not s or s.startswith("//"):
+            continue
+        out.append(s)
+    return "\n".join(out)
+
+
+INTERACTIVE_JS = _strip(_JS_SOURCE)

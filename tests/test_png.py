@@ -6,7 +6,7 @@ import zlib
 import numpy as np
 import pytest
 
-from plotpress.png import encode_png, png_data_uri
+from plotpress.png import _encode_rgba, encode_png, png_data_uri
 
 
 def _decode_png(data):
@@ -39,15 +39,23 @@ def _decode_png(data):
 
 
 def test_roundtrip_rgba():
+    """The RGBA path, exercised directly.
+
+    encode_png now prefers indexed colour for images that fit in 256 entries,
+    which a 7x5 test image does -- so go at the truecolour encoder itself,
+    which is what _decode_png here understands and what >256-colour images
+    still take.
+    """
     rng = np.random.default_rng(0)
     img = rng.integers(0, 256, size=(7, 5, 4), dtype=np.uint8)
-    decoded = _decode_png(encode_png(img))
+    decoded = _decode_png(_encode_rgba(np.ascontiguousarray(img), 7, 5))
     np.testing.assert_array_equal(decoded, img)
 
 
 def test_rgb_input_gets_opaque_alpha():
     img = np.array([[[10, 20, 30]]], dtype=np.uint8)
-    decoded = _decode_png(encode_png(img))
+    rgba = np.concatenate([img, np.full((1, 1, 1), 255, np.uint8)], axis=2)
+    decoded = _decode_png(_encode_rgba(np.ascontiguousarray(rgba), 1, 1))
     assert decoded.shape == (1, 1, 4)
     assert decoded[0, 0, 3] == 255
     np.testing.assert_array_equal(decoded[0, 0, :3], [10, 20, 30])
@@ -110,3 +118,61 @@ def test_png_clips_artists_to_the_axes():
     assert rows.size, "series not drawn at all"
     # Nothing may reach the top or bottom edge of the canvas.
     assert rows.min() > 2 and rows.max() < im.shape[0] - 3
+
+
+# -- indexed colour ---------------------------------------------------------
+
+def _pillow_decode(data):
+    """Decode with Pillow, which understands palettes and tRNS."""
+    import io
+
+    from PIL import Image
+
+    return np.asarray(Image.open(io.BytesIO(data)).convert("RGBA"))
+
+
+def _color_type(data):
+    """The IHDR colour-type byte: 3 = indexed, 6 = RGBA."""
+    return data[8 + 4 + 4 + 9]
+
+
+def test_colormapped_image_is_stored_indexed():
+    """Mesh colours come from a 256-entry LUT, so any mesh fits a palette.
+
+    One byte per pixel plus a small palette instead of four bytes per pixel,
+    and the raster travels inside the interactive HTML -- so this lands on the
+    file size a reader actually downloads.
+    """
+    rng = np.random.default_rng(0)
+    lut = rng.integers(0, 256, (256, 3), dtype=np.uint8)
+    idx = rng.integers(0, 256, (60, 80))
+    rgba = np.concatenate([lut[idx], np.full((60, 80, 1), 255, np.uint8)], axis=2)
+
+    encoded = encode_png(rgba)
+    assert _color_type(encoded) == 3
+    np.testing.assert_array_equal(_pillow_decode(encoded), rgba)
+    assert len(encoded) < len(_encode_rgba(np.ascontiguousarray(rgba), 60, 80))
+
+
+def test_indexed_preserves_transparency():
+    """nan cells are transparent, so the palette needs a tRNS chunk."""
+    rng = np.random.default_rng(1)
+    lut = rng.integers(0, 256, (64, 3), dtype=np.uint8)
+    idx = rng.integers(0, 64, (30, 40))
+    rgba = np.concatenate([lut[idx], np.full((30, 40, 1), 255, np.uint8)], axis=2)
+    rgba[:8, :, 3] = 0
+
+    encoded = encode_png(rgba)
+    assert _color_type(encoded) == 3
+    assert b"tRNS" in encoded
+    np.testing.assert_array_equal(_pillow_decode(encoded), rgba)
+
+
+def test_too_many_colours_falls_back_to_rgba():
+    """A Gouraud mesh interpolates between nodes, so it blows the palette."""
+    rng = np.random.default_rng(2)
+    rgba = rng.integers(0, 256, (40, 40, 4), dtype=np.uint8)
+
+    encoded = encode_png(rgba)
+    assert _color_type(encoded) == 6
+    np.testing.assert_array_equal(_pillow_decode(encoded), rgba)
