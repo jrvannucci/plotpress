@@ -3,3 +3,4 @@ sphinx-gallery>=0.15
 sphinx-rtd-theme>=2.0
 numpy>=1.21
 pillow>=9
+matplotlib>=3.5

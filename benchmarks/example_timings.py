@@ -24,11 +24,12 @@ sys.path.insert(0, ROOT)
 import plotpress  # noqa: E402
 
 EX_DIR = os.path.join(ROOT, "docs", "examples")
-# The timings cover the main gallery plus the large-scale family. The other
-# subsections (mesh, signal, polar, ...) are deliberately left out -- they would
-# treble the runtime without adding a distinct shape of figure -- but "scale"
-# holds the 500-axes stress case, which is the row the table exists for.
-EX_SUBDIRS = ["scale"]
+# The timings cover the plot-type reference plus the large-scale gallery, which
+# now lives in its own tree. The reference's other subsections (signal, polar,
+# 3-D, ...) are deliberately left out -- they would treble the runtime without
+# adding a distinct shape of figure -- while "scale" holds the stress cases the
+# table exists for.
+SCALE_DIR = os.path.join(ROOT, "docs", "scale")
 OUT_RST = os.path.join(ROOT, "docs", "performance.rst")
 REPEAT = 5
 
@@ -65,8 +66,7 @@ def measure():
                       if f.startswith("plot_") and f.endswith(".py"))
 
     names = _examples(EX_DIR, "")
-    for sub in EX_SUBDIRS:
-        names += _examples(os.path.join(EX_DIR, sub), sub + "/")
+    names += _examples(SCALE_DIR, "scale/")
 
     for name, path in names:
         fig = _figure_from(path)

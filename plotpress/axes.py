@@ -122,6 +122,7 @@ class Axes:
         self._xlabel = ""
         self._ylabel = ""
         self._title = ""
+        self._title_size = None    # None -> the style's title_size
         self._grid = False
         self._color_idx = 0
 
@@ -1129,8 +1130,16 @@ class Axes:
     def set_ylabel(self, ylabel):
         self._ylabel = ylabel
 
-    def set_title(self, label):
+    def set_title(self, label, size=None, fontsize=None):
+        """Set this axes' title. ``size`` overrides the style's title size.
+
+        Worth having per-axes rather than only on the style: a small-multiples
+        grid of several hundred panels needs a title a few points high, and the
+        alternative -- a whole ``Style`` copy per figure -- changes every other
+        title too. ``fontsize`` is accepted as matplotlib spells it.
+        """
         self._title = label
+        self._title_size = size if size is not None else fontsize
 
     def grid(self, visible=True):
         self._grid = bool(visible)
