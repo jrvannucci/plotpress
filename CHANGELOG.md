@@ -29,7 +29,13 @@ is derived from it at build time rather than written down anywhere in the source
   colorbar grids, the interactive payload against `pick_precision`, vector
   overlays on a rasterized field, how output size scales with the data, and a
   head-to-head against matplotlib measured on the machine that builds the docs.
-  Examples now come before applications in the sidebar.
+  Examples now come before applications in the sidebar. A **Where it runs out**
+  section at the foot of that page measures the costs of the same design
+  decisions: scatter output that grows with the data and never flattens, mesh
+  cells that stop reaching the screen past one per output pixel, the size of a
+  self-contained interactive file, and contour output, which has no ceiling at
+  all -- a noisy 800-square field produces 76 MiB of SVG where the identical
+  call on a smooth one produces 328 KiB.
 - `set_title` takes `size` (and `fontsize`, as matplotlib spells it). A
   small-multiples grid of several hundred panels needs a title a few points
   high, and the alternative was a whole `Style` copy that changes every other

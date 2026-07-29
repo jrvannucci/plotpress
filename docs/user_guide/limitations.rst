@@ -7,7 +7,10 @@ Every one of these is a consequence of a deliberate design choice -- SVG-first
 rendering, no compiled extension, no global state. They are documented here so
 you can tell in advance whether a trade-off affects your use, rather than
 discovering it in a figure. Worked examples with measurements live in the
-:ref:`limitations gallery <limitations_gallery>`.
+:ref:`limitations gallery <limitations_gallery>`, and the ones about *size* --
+where scatter stops scaling, where extra mesh cells stop reaching the screen,
+what interactivity costs, and why contour output has no ceiling -- are measured
+at :ref:`the foot of the large-scale gallery <scale_limits_gallery>`.
 
 .. _limitation-font-metrics:
 

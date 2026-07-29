@@ -169,6 +169,7 @@ sphinx_gallery_conf = {
     # the planet to the lab bench to the ledger, which is arbitrary but stable
     # -- alphabetical would open on acoustics and scatter related fields apart.
     "subsection_order": ExplicitOrder([
+        "scale/limitations",
         "examples/polar",
         "examples/threed",
         "examples/signal",

@@ -22,3 +22,9 @@ of them, because it is a far larger library with more to configure. Where
 plotpress is faster it is almost always for the same structural reason -- fewer
 Python objects and fewer output nodes -- and the comparison example says which
 cases those are.
+
+The same decisions have costs, and they are measured in the **Where it runs
+out** section at the foot of this page rather than left for you to discover:
+scatter output that grows with the data and never flattens, mesh cells that stop
+reaching the screen past one per pixel, the size of a self-contained interactive
+file, and contour output that has no ceiling at all.
