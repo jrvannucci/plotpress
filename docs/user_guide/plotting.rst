@@ -169,13 +169,22 @@ painter's-algorithm surface -- see :ref:`the 3-D caveats <limitation-3d>`.
 Text and annotations
 --------------------
 
-``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0)``
+``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0, outline=None)``
     Text anchored at data coordinates. ``ha`` in ``left/center/right``; ``va``
     in ``baseline/center/top/bottom``.
 
-``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None)``
+    ``outline`` is a halo drawn behind the glyphs so the label survives landing
+    on a series, a mesh cell or a filled band -- which is decided long after the
+    label is placed. The default picks white behind dark ink and black behind
+    light; over a plain background it is invisible. ``outline=False`` switches
+    it off, and a colour chooses your own. Titles, axis labels and tick labels
+    never get one: they sit outside the data area.
+
+``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None, outline=None)``
     Text at ``xytext`` optionally pointing an arrow to ``xy`` (pass
-    ``arrowprops={"color": ...}`` or ``{}`` to draw the arrow).
+    ``arrowprops={"color": ...}`` or ``{}`` to draw the arrow). The leader
+    leaves the text's bounding box at the point nearest ``xy``, preferring the
+    middle of an edge, so it never crosses the label it belongs to.
 
 Animated data (sliders)
 -----------------------

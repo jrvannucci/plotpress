@@ -955,3 +955,74 @@ def test_inverting_the_axis_flips_the_mesh_with_it(descending):
         y = y[::-1].copy()
     top, bottom = _row_brightness(y, invert=True)
     assert top < bottom
+
+
+def test_text_gets_a_contrasting_halo_by_default():
+    """Labels in the data area are placed before anyone knows what is under them.
+
+    The halo is painted under the fill (``paint-order``) so the glyph keeps its
+    shape, and its color follows the text's luminance: white behind dark ink,
+    black behind light.
+    """
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.5, 0.5, "dark", color="#111111")
+    ax.text(0.5, 0.6, "light", color="#ffffff")
+    svg = fig.to_svg()
+    dark = re.search(r'<text[^>]*>dark</text>', svg).group(0)
+    light = re.search(r'<text[^>]*>light</text>', svg).group(0)
+    assert 'paint-order="stroke"' in dark and 'stroke="#ffffff"' in dark
+    assert 'stroke="#000000"' in light
+
+
+def test_text_halo_can_be_switched_off():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "plain", outline=False)
+    assert "paint-order" not in re.search(r'<text[^>]*>plain</text>',
+                                          fig.to_svg()).group(0)
+
+
+def test_axis_furniture_has_no_halo():
+    """Only user-placed labels get one; titles and ticks sit off the data."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_title("a title")
+    svg = fig.to_svg()
+    assert "paint-order" not in re.search(r'<text[^>]*>a title</text>',
+                                          svg).group(0)
+
+
+@pytest.mark.parametrize("target, expect", [
+    ((160, 40), "top"),          # straight above -> top edge centre
+    ((160, 400), "bottom"),
+    ((10, 215), "left"),
+    ((400, 215), "right"),
+])
+def test_leader_attaches_to_the_nearest_edge_centre(target, expect):
+    """A leader from the text anchor sets off across its own label."""
+    from plotpress.svg import leader_anchor
+
+    box = (100.0, 200.0, 220.0, 230.0)
+    x, y = leader_anchor(box, target)
+    cx, cy = 160.0, 215.0
+    got = {"top": y < 200 and abs(x - cx) < 1,
+           "bottom": y > 230 and abs(x - cx) < 1,
+           "left": x < 100 and abs(y - cy) < 1,
+           "right": x > 220 and abs(y - cy) < 1}
+    assert got[expect], (x, y)
+
+
+def test_annotation_leader_starts_off_the_text():
+    fig, ax = plotpress.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.annotate("a fairly long label", xy=(9, 9), xytext=(1, 1),
+                arrowprops={"color": "#d62728"})
+    svg = fig.to_svg()
+    leader = [p for p in _parse(svg).findall(".//" + NS + "path")
+              if p.get("stroke") == "#d62728"][0]
+    start = leader.get("d").split("L")[0].lstrip("M").split(",")
+    text = _parse(svg).findall(".//" + NS + "text")
+    anchor = [(t.get("x"), t.get("y")) for t in text if t.text.startswith("a fairly")][0]
+    # The leader must not begin at the text anchor itself.
+    assert (start[0], start[1]) != anchor
