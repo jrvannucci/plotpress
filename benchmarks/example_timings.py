@@ -60,17 +60,30 @@ def _kib(s: str) -> float:
     return len(s.encode("utf-8")) / 1024.0
 
 
+def _gallery_ref(gallery, filename):
+    """The sphinx-gallery cross-reference target for one example page.
+
+    sphinx-gallery labels every generated page ``sphx_glr_<gallery_dir>_<file>``,
+    so the timings table can link each row straight at the figure it measured
+    instead of naming a file the reader then has to go and find.
+    """
+    return f"sphx_glr_auto_{gallery}_{filename}"
+
+
 def measure():
     rows = []
-    def _examples(directory, label):
-        return sorted((label + f, os.path.join(directory, f))
+    def _examples(directory, label, gallery):
+        # ``gallery`` is the sphinx-gallery output dir this example lands in,
+        # which is what its cross-reference target is built from -- see
+        # _gallery_ref below.
+        return sorted((label + f, os.path.join(directory, f), gallery)
                       for f in os.listdir(directory)
                       if f.startswith("plot_") and f.endswith(".py"))
 
-    names = _examples(EX_DIR, "")
-    names += _examples(SCALE_DIR, "scale/")
+    names = _examples(EX_DIR, "", "examples")
+    names += _examples(SCALE_DIR, "scale/", "scale")
 
-    for name, path in names:
+    for name, path, gallery in names:
         fig = _figure_from(path)
         # Count real (non-colorbar) axes.
         n_axes = sum(0 if getattr(a, "_is_colorbar", False) else 1 for a in fig.axes)
@@ -80,6 +93,7 @@ def measure():
 
         rows.append({
             "name": name[:-3],                     # strip .py
+            "ref": _gallery_ref(gallery, os.path.basename(path)),
             "axes": n_axes,
             "svg_ms": svg_s * 1e3,
             "svg_kib": _kib(svg),
@@ -189,7 +203,7 @@ def write_rst(rows, comparison=None):
     ]
     for r in rows:
         lines += [
-            f"   * - ``{r['name']}``",
+            f"   * - :ref:`{r['name']} <{r['ref']}>`",
             f"     - {r['axes']}",
             f"     - {r['svg_ms']:.1f} ms",
             f"     - {_fmt_kib(r['svg_kib'])}",
