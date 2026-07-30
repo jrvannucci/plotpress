@@ -23,6 +23,8 @@ sys.path.insert(0, ROOT)
 
 import plotpress  # noqa: E402
 
+from benchmarks import scenarios  # noqa: E402
+
 EX_DIR = os.path.join(ROOT, "docs", "examples")
 # The timings cover the plot-type reference plus the large-scale gallery, which
 # now lives in its own tree. The reference's other subsections (signal, polar,
@@ -90,11 +92,66 @@ def measure():
     return rows
 
 
+def compare(repeat=REPEAT):
+    """Time the shared scenarios on every library present."""
+    libs = [("plotpress", True), ("matplotlib", scenarios.has_matplotlib()),
+            ("xy", scenarios.has_xy())]
+    present = [name for name, ok in libs if ok]
+    rows = []
+    for scenario, builders in scenarios.SCENARIOS.items():
+        row = {"scenario": scenario}
+        for name, key in (("plotpress", "plotpress"), ("matplotlib", "mpl"), ("xy", "xy")):
+            if name in present and key in builders:
+                row[name] = scenarios.timeit(builders[key], repeat=repeat) * 1e3
+        rows.append(row)
+        print("  " + scenario.ljust(22)
+              + "  ".join(f"{k} {row[k]:8.1f}ms" for k in present if k in row))
+    return present, rows
+
+
+def write_comparison(present, rows):
+    """RST for the cross-library table."""
+    lines = [
+        "Against other libraries",
+        "-----------------------",
+        "",
+        "The same four figures built and serialized to SVG by each library, using"
+        " its own idiomatic API and no global state on any side. matplotlib goes"
+        " through the object-oriented ``FigureCanvasSVG`` rather than ``pyplot``;"
+        " xy renders headlessly through ``Chart.to_svg()``. xy facets by a data"
+        " column rather than by an arbitrary grid, so its 8x8 case is 64 groups of"
+        " one long-form table -- the idiomatic equivalent, not a handicap.",
+        "",
+        "These measure **time to produce a static file**, which is the axis"
+        " plotpress optimizes. It is not the axis xy optimizes: its Rust core"
+        " decimates by screen resolution for *interactive* exploration of large"
+        " data, and a single static render does not exercise that.",
+        "",
+        ".. list-table::",
+        "   :header-rows: 1",
+        f"   :widths: 30 {' '.join(['16'] * len(present))}",
+        "",
+        "   * - Scenario",
+    ]
+    lines += [f"     - {name}" for name in present]
+    for r in rows:
+        lines.append(f"   * - ``{r['scenario']}``")
+        for name in present:
+            v = r.get(name)
+            lines.append(f"     - {v:.1f} ms" if v is not None else "     - --")
+    absent = [n for n in ("matplotlib", "xy") if n not in present]
+    lines += [""]
+    if absent:
+        lines += [f"Not installed when this table was generated: "
+                  f"{', '.join('``%s``' % a for a in absent)}.", ""]
+    return lines
+
+
 def _fmt_kib(kib: float) -> str:
     return f"{kib/1024:.1f} MiB" if kib >= 1024 else f"{kib:.0f} KiB"
 
 
-def write_rst(rows):
+def write_rst(rows, comparison=None):
     lines = [
         "Performance",
         "===========",
@@ -111,6 +168,13 @@ def write_rst(rows):
         "",
         f"Best of {REPEAT} runs, one machine. Regenerate with"
         " ``python benchmarks/example_timings.py``.",
+        "",
+    ]
+    if comparison:
+        lines += comparison
+    lines += [
+        "Per-example output",
+        "------------------",
         "",
         ".. list-table::",
         "   :header-rows: 1",
@@ -148,5 +212,8 @@ def write_rst(rows):
 
 if __name__ == "__main__":
     warnings.simplefilter("ignore")   # ignore Pillow size warnings (not raised here)
+    print("cross-library comparison:")
+    present, comp_rows = compare()
+    print("\nper-example output:")
     rows = measure()
-    write_rst(rows)
+    write_rst(rows, comparison=write_comparison(present, comp_rows))

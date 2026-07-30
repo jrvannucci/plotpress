@@ -1,6 +1,7 @@
-"""Shared benchmark scenarios comparing plotpress vs matplotlib.
+"""Shared benchmark scenarios comparing plotpress, matplotlib and xy.
 
-Each scenario provides an ``plotpress`` builder and a matplotlib (``mpl``) builder.
+Each scenario provides a ``plotpress`` builder, a matplotlib (``mpl``) builder
+and, where the API allows an equivalent, an ``xy`` builder.
 Both do the same work: construct the figure *and serialize it to SVG*, so we
 measure the whole "make the plot" cost, not just object creation.
 
@@ -24,6 +25,15 @@ _RNG = np.random.default_rng(1234)
 def has_matplotlib() -> bool:
     try:
         import matplotlib  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def has_xy() -> bool:
+    """xy ships per-platform wheels, so it is simply absent on some machines."""
+    try:
+        import xy  # noqa: F401
         return True
     except Exception:
         return False
@@ -127,9 +137,46 @@ def _mpl_many_axes():
     return _mpl_savefig(fig)
 
 
+# --------------------------------------------------------------------------
+# xy builders (Rust core + WebGL client; to_svg() renders headlessly)
+# --------------------------------------------------------------------------
+# xy facets by a data column rather than by an arbitrary grid of axes, so the
+# 8x8 case is expressed as 64 groups of one long-form table. That is the
+# idiomatic equivalent, not a handicap.
+_FACET = {
+    "x": np.tile(_GRID_X, 64),
+    "y": np.tile(_GRID_Y, 64),
+    "panel": np.repeat(np.arange(64), _GRID_X.size),
+}
+
+
+def _xy_line():
+    import xy
+    return xy.chart(xy.line(_X_100K, _Y_100K)).to_svg()
+
+
+def _xy_scatter():
+    import xy
+    return xy.chart(xy.scatter(_SCAT_X, _SCAT_Y, size=4)).to_svg()
+
+
+def _xy_mesh():
+    import xy
+    return xy.chart(xy.heatmap(_MESH), xy.colorbar()).to_svg()
+
+
+def _xy_many_axes():
+    import xy
+    return xy.facet_chart(xy.line("x", "y"), data=_FACET, by="panel", cols=8).to_svg()
+
+
 SCENARIOS = {
-    "line_100k_points": {"plotpress": _plotpress_line, "mpl": _mpl_line},
-    "scatter_5k_points": {"plotpress": _plotpress_scatter, "mpl": _mpl_scatter},
-    "pcolormesh_300x300": {"plotpress": _plotpress_mesh, "mpl": _mpl_mesh},
-    "many_axes_8x8_grid": {"plotpress": _plotpress_many_axes, "mpl": _mpl_many_axes},
+    "line_100k_points": {"plotpress": _plotpress_line, "mpl": _mpl_line,
+                         "xy": _xy_line},
+    "scatter_5k_points": {"plotpress": _plotpress_scatter, "mpl": _mpl_scatter,
+                          "xy": _xy_scatter},
+    "pcolormesh_300x300": {"plotpress": _plotpress_mesh, "mpl": _mpl_mesh,
+                           "xy": _xy_mesh},
+    "many_axes_8x8_grid": {"plotpress": _plotpress_many_axes, "mpl": _mpl_many_axes,
+                           "xy": _xy_many_axes},
 }
