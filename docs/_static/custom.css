@@ -1,0 +1,51 @@
+/* Layout tweaks over sphinx_rtd_theme, so tables fit instead of scrolling.
+ *
+ * Two theme defaults combine badly for this project. The content column is
+ * pinned at 800px, and table cells are set to `white-space: nowrap`, so any
+ * table wider than the column can never wrap -- it gets a horizontal
+ * scrollbar instead. The performance page has a six-column table that needs
+ * 756px inside a 696px column, and the gallery pages embed 800px-wide
+ * interactive figures.
+ */
+
+/* Give the content column room. Not `none`: unbounded lines are hard to read
+ * on a wide monitor, and prose is most of the page. 1100px fits the widest
+ * table and the interactive iframes with margin to spare. */
+.wy-nav-content {
+    max-width: 1100px;
+}
+
+/* Let table cells wrap. This is the change that actually removes the
+ * scrollbar -- widening the column alone only postpones it to the next table
+ * that grows a column. */
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+    white-space: normal;
+}
+
+/* Tables then use the width available rather than sizing to their content,
+ * so column widths honour the `:widths:` given in the directive. */
+.wy-table-responsive > table,
+.rst-content table.docutils {
+    width: 100%;
+}
+
+/* Keep long identifiers -- example names, cross-references -- from forcing a
+ * column wider than its share once wrapping is allowed. */
+.rst-content table.docutils td code,
+.rst-content table.docutils td a {
+    overflow-wrap: anywhere;
+}
+
+/* Interactive gallery figures: never let one push the page sideways. */
+.plotpress-interactive iframe {
+    max-width: 100%;
+}
+
+/* Below the theme's tablet breakpoint the sidebar collapses and the content
+ * spans the viewport, so drop the cap rather than fight it. */
+@media screen and (max-width: 768px) {
+    .wy-nav-content {
+        max-width: none;
+    }
+}
