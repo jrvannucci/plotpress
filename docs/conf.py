@@ -58,7 +58,7 @@ html_theme_options = {
 # "Edit on GitHub" / source links in the RTD theme header.
 html_context = {
     "display_github": True,
-    "github_user": "plotpress",
+    "github_user": "jrvannucci",
     "github_repo": "plotpress",
     "github_version": "main",
     "conf_py_path": "/docs/",
