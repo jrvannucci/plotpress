@@ -29,7 +29,7 @@ from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
-from .ticker import format_ticks, log_ticks, nice_ticks
+from .ticker import format_ticks, log_ticks, minor_ticks, nice_ticks
 from .transform import LinearTransform
 
 _DASH = {"-": None, "--": "6,4", ":": "1,3", "-.": "6,3,1,3"}
@@ -107,6 +107,26 @@ def _render_figtexts(fig, W, H, body):
             f'font-size="{size}" fill="{st.text_color}" '
             f'transform="rotate(-90 {_fmt(x)} {_fmt(y)})">{_esc(t["text"])}</text>'
         )
+    for t in fig._fig_texts:
+        _render_fig_text(t, st, W, H, body)
+
+
+_HA_ANCHOR = {"left": "start", "center": "middle", "right": "end"}
+# Baseline offsets approximating each va, matching the vertical-centering trick
+# already used for tick labels (y + fs*0.35) rather than true font metrics.
+_VA_DY = {"top": 0.8, "center": 0.35, "bottom": 0.0, "baseline": 0.0}
+
+
+def _render_fig_text(t, st, W, H, body):
+    """One ``fig.text()`` entry, at figure-fraction coordinates."""
+    size = t["size"] or st.font_size
+    color = t["color"] or st.text_color
+    x, y = t["x"] * W, (1.0 - t["y"]) * H + _VA_DY.get(t["va"], 0.0) * size
+    anchor = _HA_ANCHOR.get(t["ha"], "start")
+    body.append(
+        f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
+        f'font-size="{size}" fill="{color}">{_esc(t["s"])}</text>'
+    )
 
 
 def axes_metadata(fig):
@@ -120,7 +140,7 @@ def axes_metadata(fig):
     H = fig.figsize[1] * dpi
     meta = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar:
+        if ax._is_colorbar or not ax._visible:
             continue
         (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
         px_left, px_top, px_w, px_h = _effective_rect(
@@ -137,6 +157,7 @@ def axes_metadata(fig):
             "xinv": bool(ax._xinverted), "yinv": bool(ax._yinverted),
             # Whether ticks are user-fixed (don't auto-recompute on zoom).
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
+            "xside": ax._xtick_side, "yside": ax._ytick_side,
         }
     return meta
 
@@ -186,7 +207,7 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
 
     data = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar:
+        if ax._is_colorbar or not ax._visible:
             continue
         series, meshes, pies = [], [], []
         for art in ax.artists:
@@ -346,16 +367,22 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         f'width="{_fmt(px_w)}" height="{_fmt(px_h)}"/></clipPath>'
     )
 
+    if not ax._visible:
+        return
+
     if ax._is_colorbar:
         _render_colorbar(ax, tr, *alloc, clip_id, body)
         return
 
     is_twin = ax._twin_of is not None
-    # Axes background (twins overlay their parent, so they draw none).
-    if not is_twin:
+    is_secondary = ax._secondary_of is not None
+    overlay = is_twin or is_secondary
+    # Axes background (twins/secondaries overlay their parent, so neither
+    # draws one).
+    if not overlay:
         body.append(
             f'<rect x="{_fmt(px_left)}" y="{_fmt(px_top)}" width="{_fmt(px_w)}" '
-            f'height="{_fmt(px_h)}" fill="{st.axes_facecolor}"/>'
+            f'height="{_fmt(px_h)}" fill="{ax.get_facecolor()}"/>'
         )
 
     xticks = (ax._xticks if ax._xticks is not None else
@@ -366,18 +393,37 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # Grid + ticks live in one group so client-side per-axes zoom can rebuild
     # them from new limits (see _interactive.py).
     body.append(f'<g id="ticks{index}">')
-    if ax._grid and not ax._axis_off and not is_twin:
+    if ax._grid and not ax._axis_off and not overlay:
         _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body)
     if not ax._axis_off:
         if is_twin:
             _render_twin_ticks(ax, st, tr, xticks, yticks,
                                px_left, px_top, px_w, px_h, body)
+        elif is_secondary:
+            # No data of its own -- draw only the mirrored dimension's ticks,
+            # on whichever side tick_top()/tick_right() (reused here) picked.
+            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            is_x = ax._secondary_dim == "x"
+            xlabels = _resolve_tick_labels(ax._xticklabels, xticks) if is_x else []
+            ylabels = _resolve_tick_labels(ax._yticklabels, yticks) if not is_x else []
+            _render_ticks(tst, tr, xticks if is_x else [], yticks if not is_x else [],
+                          xlabels, ylabels, px_left, px_top, px_w, px_h, body,
+                          xside=ax._xtick_side, yside=ax._ytick_side)
         else:
             xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
             ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
             tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
             _render_ticks(tst, tr, xticks, yticks, xlabels, ylabels,
-                          px_left, px_top, px_w, px_h, body)
+                          px_left, px_top, px_w, px_h, body,
+                          xside=ax._xtick_side, yside=ax._ytick_side)
+            if ax._minor_ticks_on:
+                mst = (tst.copy(**ax._minor_tick_overrides)
+                      if ax._minor_tick_overrides else tst)
+                xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
+                yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
+                _render_minor_ticks(mst, tr, xminor, yminor,
+                                    px_left, px_top, px_w, px_h, body,
+                                    xside=ax._xtick_side, yside=ax._ytick_side)
     body.append("</g>")
 
     # Artists: fixed clip to the axes rect, then a transformable zoom group that
@@ -414,8 +460,11 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_annotation(artist, tr, st, body)
     body.append("</g></g>")   # close zoom group + clip group
 
-    if not ax._axis_off and not is_twin:
-        _render_spines(st, px_left, px_top, px_w, px_h, body)
+    if not ax._axis_off and not overlay:
+        _render_spines(ax, px_left, px_top, px_w, px_h, body)
+    # A twin's axis label is drawn inline by _render_twin_ticks; a secondary
+    # axis has no such bespoke renderer, so it goes through the generic (now
+    # tick-side-aware) label placement below, same as an ordinary axes.
     if not is_twin:
         _render_labels(ax, st, px_left, px_top, px_w, px_h, body)
 
@@ -995,54 +1044,112 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
 
 
 def _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
-                  px_left, px_top, px_w, px_h, body):
+                  px_left, px_top, px_w, px_h, body,
+                  xside="bottom", yside="left"):
     ts, tw = st.tick_size, st.tick_width
     fs = st.tick_label_size
     marks, labels = [], []
-    y_axis = px_top + px_h
+    x_axis = px_top if xside == "top" else px_top + px_h
+    xsign = -1 if xside == "top" else 1
+    y_axis = px_left if yside == "left" else px_left + px_w
+    ysign = -1 if yside == "left" else 1
 
     for xt, lab in zip(xticks, xlabels):
         x = tr.x(xt)
-        marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(y_axis)}" x2="{_fmt(x)}" y2="{_fmt(y_axis + ts)}"/>')
+        marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
+                     f'y2="{_fmt(x_axis + xsign * ts)}"/>')
+        ly = x_axis + xsign * ts + (fs if xside == "bottom" else -3)
         labels.append(
-            f'<text x="{_fmt(x)}" y="{_fmt(y_axis + ts + fs)}" text-anchor="middle" '
+            f'<text x="{_fmt(x)}" y="{_fmt(ly)}" text-anchor="middle" '
             f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
         )
     for yt, lab in zip(yticks, ylabels):
         y = tr.y(yt)
-        marks.append(f'<line x1="{_fmt(px_left - ts)}" y1="{_fmt(y)}" x2="{_fmt(px_left)}" y2="{_fmt(y)}"/>')
+        marks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
+                     f'x2="{_fmt(y_axis + ysign * ts)}" y2="{_fmt(y)}"/>')
+        anchor = "end" if yside == "left" else "start"
+        lx = y_axis + ysign * ts + (-2 if yside == "left" else 2)
         labels.append(
-            f'<text x="{_fmt(px_left - ts - 2)}" y="{_fmt(y + fs * 0.35)}" text-anchor="end" '
+            f'<text x="{_fmt(lx)}" y="{_fmt(y + fs * 0.35)}" text-anchor="{anchor}" '
             f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
         )
     body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
     body.append("".join(labels))
 
 
-def _render_spines(st, px_left, px_top, px_w, px_h, body):
-    body.append(
-        f'<rect x="{_fmt(px_left)}" y="{_fmt(px_top)}" width="{_fmt(px_w)}" '
-        f'height="{_fmt(px_h)}" fill="none" stroke="{st.spine_color}" '
-        f'stroke-width="{st.spine_width}"/>'
-    )
+def _render_minor_ticks(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
+                        xside="bottom", yside="left"):
+    """Unlabeled minor tick marks, drawn shorter than the major ones."""
+    ts, tw = st.tick_size * 0.6, st.tick_width
+    marks = []
+    x_axis = px_top if xside == "top" else px_top + px_h
+    xsign = -1 if xside == "top" else 1
+    y_axis = px_left if yside == "left" else px_left + px_w
+    ysign = -1 if yside == "left" else 1
+
+    for xt in xticks:
+        x = tr.x(xt)
+        marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
+                     f'y2="{_fmt(x_axis + xsign * ts)}"/>')
+    for yt in yticks:
+        y = tr.y(yt)
+        marks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
+                     f'x2="{_fmt(y_axis + ysign * ts)}" y2="{_fmt(y)}"/>')
+    body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
+
+
+def _render_spines(ax, px_left, px_top, px_w, px_h, body):
+    """Draw the axes box outline, one ``<line>`` per visible side.
+
+    Each :class:`~plotpress.axes.Spine` resolves its own color/width (falling
+    back to the figure style), independent of the other three sides.
+    """
+    st = ax.style
+    x0, y0, x1, y1 = px_left, px_top, px_left + px_w, px_top + px_h
+    edges = {
+        "top": (x0, y0, x1, y0), "bottom": (x0, y1, x1, y1),
+        "left": (x0, y0, x0, y1), "right": (x1, y0, x1, y1),
+    }
+    for side, (ex0, ey0, ex1, ey1) in edges.items():
+        spine = ax.spines[side]
+        if not spine.get_visible():
+            continue
+        color = spine._color if spine._color is not None else st.spine_color
+        width = spine._linewidth if spine._linewidth is not None else st.spine_width
+        body.append(
+            f'<line x1="{_fmt(ex0)}" y1="{_fmt(ey0)}" x2="{_fmt(ex1)}" y2="{_fmt(ey1)}" '
+            f'stroke="{color}" stroke-width="{width}"/>'
+        )
 
 
 def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
     cx = px_left + px_w / 2.0
+    ts, fs = st.tick_size, st.tick_label_size
     if ax._xlabel and not ax._axis_off:
-        y = px_top + px_h + st.tick_size + st.tick_label_size + st.label_size + 4
+        if ax._xlabel_y_override is not None:
+            y = ax._xlabel_y_override
+        elif ax._xtick_side == "top":
+            y = px_top - ts - fs - st.label_size
+        else:
+            y = px_top + px_h + ts + fs + st.label_size + 4
         body.append(
             f'<text x="{_fmt(cx)}" y="{_fmt(y)}" text-anchor="middle" '
             f'font-size="{st.label_size}" fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
         )
     if ax._ylabel and not ax._axis_off:
-        # Push the rotated label left of the widest y tick label.
-        x = px_left - st.tick_size - _max_ytick_width(ax, st) - st.label_size - 4
         cy = px_top + px_h / 2.0
+        if ax._ylabel_x_override is not None:
+            x, angle = ax._ylabel_x_override, -90
+        elif ax._ytick_side == "right":
+            x = px_left + px_w + ts + _max_ytick_width(ax, st) + st.label_size + 4
+            angle = 90
+        else:
+            x = px_left - ts - _max_ytick_width(ax, st) - st.label_size - 4
+            angle = -90
         body.append(
             f'<text x="{_fmt(x)}" y="{_fmt(cy)}" text-anchor="middle" '
             f'font-size="{st.label_size}" fill="{st.text_color}" '
-            f'transform="rotate(-90 {_fmt(x)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
+            f'transform="rotate({angle} {_fmt(x)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
         )
     if ax._title:
         size = ax._title_size or st.title_size
@@ -1054,20 +1161,31 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
 
 
 def twiny_headroom(ax, st):
-    """Pixels a ``twiny`` overlay consumes above the axes box.
+    """Pixels of tick decoration above the axes box that the title must clear.
 
-    A ``twiny`` draws its ticks and axis label on top, in the same band the
-    title occupies. Without this the two land on each other -- and the twin is
+    Three sources draw there: a ``twiny`` overlay's ticks/label, a
+    ``secondary_xaxis('top')``'s ticks/label, and this axes' own ticks after
+    ``tick_top()`` -- all drawn on top, in the same band the title occupies.
+    Without this the title lands on top of them, and any of the three is
     usually the *reason* the title is worth reading, so overlapping them is
     doubly unhelpful. ``tight_layout`` reserves the same band.
     """
+    h = 0.0
+    if ax._xtick_side == "top" and not ax._axis_off:
+        h = st.tick_size + st.tick_label_size + 4
+        if ax._xlabel:
+            h += st.label_size + 6
     for other in ax.figure.axes:
-        if other._twin_of is ax and other._twin_shared == "y":
-            h = st.tick_size + st.tick_label_size + 4
+        is_twiny = other._twin_of is ax and other._twin_shared == "y"
+        is_secondary_top = (other._secondary_of is ax
+                            and other._secondary_dim == "x"
+                            and other._xtick_side == "top")
+        if is_twiny or is_secondary_top:
+            th = st.tick_size + st.tick_label_size + 4
             if other._xlabel:
-                h += st.label_size + 6
-            return h
-    return 0.0
+                th += st.label_size + 6
+            h = max(h, th)
+    return h
 
 
 def _max_ytick_width(ax, st):
@@ -1275,7 +1393,7 @@ def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body):
         f'<image x="{_fmt(px_left)}" y="{_fmt(px_top)}" width="{_fmt(px_w)}" '
         f'height="{_fmt(px_h)}" preserveAspectRatio="none" href="{uri}"/>'
     )
-    _render_spines(ax.style, px_left, px_top, px_w, px_h, body)
+    _render_spines(ax, px_left, px_top, px_w, px_h, body)
 
     st = ax.style
     _, fracs, tlabels = colorbar_ticks(norm)

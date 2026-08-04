@@ -533,6 +533,473 @@ def test_image_autoscale_is_tight(method, kw):
         assert xlo == pytest.approx(x.min()) and xhi == pytest.approx(x.max())
 
 
+# -- spines, facecolor, visibility, lifecycle -------------------------------
+def test_spines_visibility_and_per_side_color():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_color("#123456")
+    ax.spines["left"].set_linewidth(3.0)
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    # Spines are the only <line> elements carrying their own "stroke" attr --
+    # everything else (ticks, grid) wraps its lines in a <g stroke=...> group.
+    spine_lines = [el for el in root.iter(f"{ns}line") if "stroke" in el.attrib]
+    assert len(spine_lines) == 3                       # top hidden
+    assert {el.get("stroke") for el in spine_lines} >= {"#123456"}
+    assert any(el.get("stroke-width") == "3.0" for el in spine_lines)
+    assert ax.spines["top"].get_visible() is False
+    assert ax.spines["right"].get_color() == "#123456"
+    assert ax.spines["bottom"].get_color() == ax.style.spine_color  # untouched
+
+
+def test_set_facecolor_is_per_axes():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    axes[0].set_facecolor("#ff00ff")
+    svg = fig.to_svg()
+    assert 'fill="#ff00ff"' in svg
+    assert axes[1].get_facecolor() == axes[1].style.axes_facecolor  # untouched
+
+
+def test_set_visible_hides_content_but_keeps_grid_cell():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    rect_before = axes[1]._rect
+    axes[1].set_visible(False)
+    assert axes[1].get_visible() is False
+    # A hidden axes draws nothing and is excluded from point-picking metadata...
+    from plotpress.svg import axes_metadata
+    meta = axes_metadata(fig)
+    assert 1 not in meta and 0 in meta
+    # ...but still occupies its grid cell (unchanged rect).
+    assert axes[1]._rect == rect_before
+
+
+def test_axes_remove_detaches_from_figure_and_share_group():
+    fig, axes = plotpress.subplots(1, 2, sharex=True)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    axes[1].remove()
+    assert axes[1] not in fig.axes
+    assert axes[1] not in axes[0]._sharex_group
+
+
+def test_axes_cla_resets_state_but_keeps_position():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_title("hi")
+    ax.set_xlim(2, 3)
+    rect = ax._rect
+    ax.cla()
+    assert ax.get_title() == ""
+    assert ax.artists == []
+    assert ax._xlim is None
+    assert ax._rect == rect
+    assert ax in fig.axes
+
+
+# -- getters ------------------------------------------------------------
+def test_getters_mirror_setters():
+    fig, ax = plotpress.subplots()
+    ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_title("t")
+    ax.set_xscale("log"); ax.plot([1, 10], [1, 2])
+    assert ax.get_xlabel() == "x" and ax.get_ylabel() == "y" and ax.get_title() == "t"
+    assert ax.get_xscale() == "log" and ax.get_yscale() == "linear"
+    assert len(ax.get_xticks()) > 0 and len(ax.get_yticks()) > 0
+
+
+# -- minor ticks / tick side -------------------------------------------------
+def test_minorticks_on_adds_extra_marks():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 10])
+    svg_before = fig.to_svg()
+    ax.minorticks_on()
+    svg_after = fig.to_svg()
+    assert len(svg_after) > len(svg_before)
+    ax.minorticks_off()
+    assert fig.to_svg() == svg_before
+
+
+def test_tick_top_and_right_move_tick_position():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.tick_top()
+    ax.tick_right()
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    spine_lines = [el for el in root.iter(f"{ns}line") if "stroke" in el.attrib]
+    top = next(el for el in spine_lines
+              if float(el.get("y1")) == float(el.get("y2")) and
+              float(el.get("y1")) < 100)  # the top edge sits near the figure top
+    assert top is not None  # spines are unaffected by tick side (sanity)
+    assert ax._xtick_side == "top" and ax._ytick_side == "right"
+
+
+# -- sharex/sharey post-hoc, label_outer -------------------------------------
+def test_tick_top_title_clears_the_moved_ticks():
+    """Regression: tick_top() moves ticks into the title's band; the title
+    must reserve room for them instead of being drawn on top."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.tick_top()
+    ax.set_title("t")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    texts = [el for el in root.iter(f"{ns}text")]
+    title_y = float(next(el for el in texts if el.text == "t").get("y"))
+    tick_label_y = max(float(el.get("y")) for el in texts if el.text == "0")
+    assert title_y < tick_label_y   # smaller y = higher on the page = above
+
+
+def test_secondary_xaxis_title_clears_its_ticks_and_label():
+    """Regression: twiny_headroom (which the title's y-position is computed
+    from) checked for an attached twin but not an attached secondary_xaxis,
+    so a title on the parent axes overlapped the secondary's top ticks/label."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_title("t")
+    sec = ax.secondary_xaxis("top", label="secondary")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    texts = list(root.iter(f"{ns}text"))
+    title_y = float(next(e for e in texts if e.text == "t").get("y"))
+    label_y = float(next(e for e in texts if e.text == "secondary").get("y"))
+    assert title_y < label_y   # smaller y = higher on the page = above
+
+
+def test_sharex_sharey_posthoc_merge_groups():
+    fig, ax1 = plotpress.subplots()
+    fig2, ax2 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 5])
+    ax2.plot([0, 1], [0, 500])
+    ax1.sharex(ax2)
+    assert ax1._sharex_group is ax2._sharex_group
+    assert ax1.get_xlim() == ax2.get_xlim()
+
+
+def test_label_outer_hides_interior_labels_only():
+    fig, axg = plotpress.subplots(2, 2)
+    for a in axg.ravel():
+        a.plot([0, 1], [0, 1])
+    axg[0, 0].label_outer()   # top-left: not bottom row, is left column
+    assert axg[0, 0]._xticklabels == []
+    assert axg[0, 0]._yticklabels is None
+    axg[1, 1].label_outer()   # bottom-right: is bottom row, not left column
+    assert axg[1, 1]._xticklabels is None
+    assert axg[1, 1]._yticklabels == []
+
+
+# -- persistent margins / autoscale ------------------------------------------
+def test_margins_persist_across_new_data():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 5])
+    ax.margins(0.1)
+    x0, x1 = ax.get_xlim()
+    assert x0 < 0 and x1 > 10
+    ax.plot([0, 100], [0, 5])   # more data after margins() -- must still pad
+    x0b, x1b = ax.get_xlim()
+    assert x0b < 0 and x1b > 100
+    assert ax.get_xmargin() == pytest.approx(0.1)
+
+
+def test_autoscale_freeze_and_reenable():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 5])
+    ax.autoscale(enable=False, axis="x")
+    frozen = ax.get_xlim()
+    ax.plot([0, 1000], [0, 5])
+    assert ax.get_xlim() == frozen        # frozen: new data doesn't move it
+    ax.autoscale(enable=True, axis="x")
+    assert ax.get_xlim() != frozen        # re-enabled: picks up the new data
+
+
+# -- axis() convenience, set_prop_cycle --------------------------------------
+def test_axis_convenience():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.axis("off")
+    assert ax._axis_off is True
+    ax.axis("on")
+    assert ax._axis_off is False
+    ax.axis("equal")
+    assert ax._aspect == 1.0
+    result = ax.axis([0, 5, -1, 1])
+    assert result == (0, 5, -1, 1)
+    assert ax.get_xlim() == (0, 5) and ax.get_ylim() == (-1, 1)
+
+
+def test_set_prop_cycle_is_per_axes_not_shared_style():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].set_prop_cycle(["#111111", "#222222"])
+    l0 = axes[0].plot([0, 1], [0, 1])
+    l1 = axes[1].plot([0, 1], [0, 1])   # untouched axes keeps the default cycle
+    assert l0.color == "#111111"
+    assert l1.color == axes[1].style.color_cycle[0]
+    assert axes[0].style.color_cycle == axes[1].style.color_cycle  # style untouched
+
+
+# -- Phase 2: figure-level layout --------------------------------------
+def test_set_size_inches_and_dpi():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.set_size_inches(8, 5)
+    fig.set_dpi(150)
+    assert fig.get_size_inches() == (8.0, 5.0)
+    assert fig.get_dpi() == 150.0
+    svg = fig.to_svg()
+    assert 'width="1200"' in svg and 'height="750"' in svg   # 8*150, 5*150
+
+
+def test_set_size_inches_refits_after_tight_layout():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.tight_layout()
+    rect_before = ax._rect
+    fig.set_size_inches(20, 2)   # very different aspect -- margins must rescale
+    fig.to_svg()                  # forces _settle_layout()
+    assert ax._rect != rect_before
+
+
+def test_gridspec_row_span():
+    fig = plotpress.Figure(figsize=(6, 6))
+    gs = fig.add_gridspec(2, 2)
+    top = fig.add_subplot(gs[0, :])
+    bl = fig.add_subplot(gs[1, 0])
+    br = fig.add_subplot(gs[1, 1])
+    for ax in (top, bl, br):
+        ax.plot([0, 1], [0, 1])
+    fig.tight_layout()
+    # The spanning axes covers the same left/right extent as the two below it.
+    assert top._rect[0] == pytest.approx(bl._rect[0])
+    assert top._rect[0] + top._rect[2] == pytest.approx(br._rect[0] + br._rect[2])
+    # The two bottom cells don't overlap and are each narrower than the span.
+    assert bl._rect[0] + bl._rect[2] <= br._rect[0] + 1e-9
+    assert bl._rect[2] < top._rect[2]
+
+
+def test_gridspec_rejects_stepped_slice():
+    fig = plotpress.Figure()
+    gs = fig.add_gridspec(4, 4)
+    with pytest.raises(ValueError):
+        gs[::2, 0]
+
+
+def test_subplots_adjust_moves_grid_and_is_partial():
+    fig, axes = plotpress.subplots(2, 2)
+    for a in axes.ravel():
+        a.plot([0, 1], [0, 1])
+    fig.subplots_adjust(left=0.3)
+    left_after_first = axes[0, 0]._rect[0]
+    assert left_after_first == pytest.approx(0.3)
+    fig.subplots_adjust(wspace=0.6)          # partial call: left=0.3 must persist
+    assert axes[0, 0]._rect[0] == pytest.approx(0.3)
+
+
+def test_subplots_adjust_and_tight_layout_are_mutually_exclusive():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.tight_layout()
+    fig.subplots_adjust(left=0.3)
+    assert fig._tight_pad is None    # tight_layout's pending re-fit is cleared
+    ax.set_title("t")                # would normally trigger a tight_layout re-fit
+    fig.to_svg()
+    assert ax._rect[0] == pytest.approx(0.3)   # subplots_adjust's margin held
+
+
+def test_align_ylabels_matches_widest_tick_label():
+    # Stacked in one column: this is the case align_ylabels is for.
+    fig, (a1, a2) = plotpress.subplots(2, 1)
+    a1.plot([0, 1], [0, 100000])   # wide tick labels
+    a1.set_ylabel("y1")
+    a2.plot([0, 1], [0, 1])
+    a2.set_ylabel("y2")
+    assert a1._ylabel_x_override is None
+    fig.align_ylabels()
+    assert a1._ylabel_x_override == a2._ylabel_x_override
+    assert "y1" in fig.to_svg() and "y2" in fig.to_svg()
+
+
+def test_align_labels_scoped_to_column_or_row():
+    """align_ylabels only pulls together axes in the same column (stacked
+    rows); side-by-side axes in different columns must not collapse onto the
+    same override -- each keeps its own natural, unaligned position."""
+    fig, (a1, a2) = plotpress.subplots(1, 2)
+    a1.plot([0, 1], [0, 100000])
+    a1.set_ylabel("y1")
+    a2.plot([0, 1], [0, 1])
+    a2.set_ylabel("y2")
+    fig.align_ylabels()
+    assert a1._ylabel_x_override != a2._ylabel_x_override
+
+
+def test_align_labels_survives_tight_layout_relayout():
+    """Regression: align_ylabels' override must track the *current* layout,
+    not freeze the value from whenever it was first computed -- otherwise a
+    later tight_layout()/subplots_adjust() (which moves every axes' rect)
+    leaves the override pointing at a position that no longer matches either
+    panel's actual box.
+    """
+    # Stacked in one column, so both panels' y labels are in the same group.
+    fig, (a1, a2) = plotpress.subplots(2, 1)
+    a1.plot([0, 1], [0, 100000]); a1.set_ylabel("y1")
+    a2.plot([0, 1], [0, 1]); a2.set_ylabel("y2")
+    fig.tight_layout(pad=0.02)
+    fig.align_ylabels()
+    small_pad_override = a1._ylabel_x_override
+    assert a1._ylabel_x_override == a2._ylabel_x_override
+
+    fig.tight_layout(pad=0.15)   # a much bigger pad moves every axes' rect
+    # Without the re-apply, both would still read small_pad_override.
+    assert a1._ylabel_x_override != small_pad_override
+    assert a1._ylabel_x_override == a2._ylabel_x_override
+
+    # Side by side in one row: both panels' x labels are in the same group.
+    fig2, (b1, b2) = plotpress.subplots(1, 2)
+    b1.plot([0, 1], [0, 1]); b1.set_xlabel("x1")
+    b2.plot([0, 1], [0, 1]); b2.set_xlabel("x2")
+    fig2.align_xlabels()
+    assert b1._xlabel_y_override == b2._xlabel_y_override
+
+
+def test_delaxes_and_clf():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.delaxes(ax)
+    assert ax not in fig.axes
+
+    fig2, axes2 = plotpress.subplots(1, 2)
+    for a in axes2:
+        a.plot([0, 1], [0, 1])
+    fig2.suptitle("hi")
+    fig2.clf()
+    assert fig2.axes == []
+    assert fig2._suptitle is None
+    assert fig2.figsize == (6.4, 4.8)   # figsize/style survive clf()
+
+
+def test_figure_text_positions_by_fraction():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.text(0.5, 0.5, "watermark", ha="center", va="center", color="#ff0000")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    el = next(e for e in root.iter(f"{ns}text") if e.text == "watermark")
+    assert el.get("fill") == "#ff0000"
+    assert el.get("text-anchor") == "middle"
+
+
+def test_figure_text_renders_in_raster():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.text(0.1, 0.1, "corner note")
+    figure_to_image(fig, scale=1)   # must not raise
+
+
+# -- Phase 3: secondary/inset axes, set_position ----------------------------
+def test_secondary_xaxis_mirrors_parent_xlim():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 5])
+    sec = ax.secondary_xaxis("top", label="mirrored")
+    assert sec.get_xlim() == ax.get_xlim()
+    ax.set_xlim(2, 8)             # parent moves...
+    assert sec.get_xlim() == (2, 8)   # ...secondary follows, unconditionally
+    assert sec._xtick_side == "top"
+    svg = fig.to_svg()
+    assert "mirrored" in svg
+
+
+def test_secondary_yaxis_mirrors_parent_ylim():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 500])
+    sec = ax.secondary_yaxis("right")
+    assert sec.get_ylim() == ax.get_ylim()
+    assert sec._ytick_side == "right"
+    assert sec._secondary_of is ax and sec._secondary_dim == "y"
+
+
+def test_secondary_axis_draws_only_its_own_dimension():
+    """A secondary axis has no data of its own -- it must draw ticks for its
+    mirrored dimension only, never a background rect or spines (which would
+    obscure the parent it overlays)."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_facecolor("#123456")   # distinguishes the axes bg from the figure bg
+    ax.secondary_xaxis("top")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    # Exactly one background rect (the parent's) -- the secondary draws none.
+    fills = [el.get("fill") for el in root.iter(f"{ns}rect")]
+    assert fills.count("#123456") == 1
+    # One set of 4 spine lines (the parent's box) -- the secondary draws none.
+    spine_lines = [el for el in root.iter(f"{ns}line") if "stroke" in el.attrib]
+    assert len(spine_lines) == 4
+
+
+def test_tick_top_moves_xlabel_too():
+    """Regression: tick_top()/tick_right() must move the axis *label* along
+    with the ticks, not just the tick marks -- found while building
+    secondary_xaxis, which relies on the same side-aware label placement."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("moved")
+    ax.tick_top()
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    label = next(e for e in root.iter(f"{ns}text") if e.text == "moved")
+    (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+    from plotpress.svg import _effective_rect, _pixel_rect
+    px_left, px_top, px_w, px_h = _effective_rect(
+        ax, *_pixel_rect(ax, 640, 480), (xmin, xmax), (ymin, ymax))
+    assert float(label.get("y")) < px_top    # above the box, not below it
+
+
+def test_inset_axes_tracks_parent_through_relayout():
+    fig, axes = plotpress.subplots(1, 2)
+    ax = axes[0]
+    ax.plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    inset = ax.inset_axes([0.6, 0.6, 0.3, 0.3])
+    inset.plot([0, 1], [0, 1])
+    assert inset._inset_parent is ax
+    fig.tight_layout()   # moves ax's rect -- inset must be re-derived from it
+    pl, pb, pw, ph = ax._rect
+    ex_left = pl + 0.6 * pw
+    ex_bottom = pb + 0.6 * ph
+    assert inset._rect[0] == pytest.approx(ex_left)
+    assert inset._rect[1] == pytest.approx(ex_bottom)
+    assert inset._subplotspec is None   # not itself a grid member
+
+
+def test_set_position_opts_out_of_tight_layout():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_position((0.3, 0.3, 0.4, 0.4))
+    assert ax.get_position() == (0.3, 0.3, 0.4, 0.4)
+    assert ax._subplotspec is None
+    fig.tight_layout()
+    assert ax._rect == (0.3, 0.3, 0.4, 0.4)   # untouched: no longer a grid member
+
+
 def test_hexbin_conserves_point_counts():
     """Every point lands in exactly one hexagon, so with mincnt=1 the counts
     sum to the number of points (guards the vectorized cell tally)."""

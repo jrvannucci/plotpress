@@ -173,6 +173,9 @@ sphinx_gallery_conf = {
     # -- alphabetical would open on acoustics and scatter related fields apart.
     "subsection_order": ExplicitOrder([
         "scale/limitations",
+        "examples/axes_features",
+        "examples/figure_layout",
+        "examples/advanced_axes",
         "examples/polar",
         "examples/threed",
         "examples/signal",

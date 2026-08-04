@@ -20,6 +20,7 @@ from .artists import (
     VLine,
 )
 from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
+from .ticker import log_ticks, nice_ticks
 from . import _spectral
 
 
@@ -99,6 +100,64 @@ def _binned_gaussian_kde(data, grid, bw, n):
     return np.convolve(weights, kernel, mode="same") / (n * dx)
 
 
+class Spine:
+    """One side of an axes' box outline (top/bottom/left/right).
+
+    ``None`` for ``color``/``linewidth`` means "use the figure style's
+    ``spine_color``/``spine_width``" -- matches the ``_tick_overrides``
+    convention of a sentinel meaning "inherit" rather than baking the current
+    style value in at construction time.
+    """
+
+    def __init__(self, axes, side):
+        self._axes = axes
+        self.side = side
+        self._visible = True
+        self._color = None
+        self._linewidth = None
+
+    def set_visible(self, visible):
+        self._visible = bool(visible)
+
+    def get_visible(self):
+        return self._visible
+
+    def set_color(self, color):
+        self._color = color
+
+    def get_color(self):
+        return self._color if self._color is not None else self._axes.style.spine_color
+
+    set_edgecolor = set_color
+    get_edgecolor = get_color
+
+    def set_linewidth(self, width):
+        self._linewidth = width
+
+    def get_linewidth(self):
+        return (self._linewidth if self._linewidth is not None
+                else self._axes.style.spine_width)
+
+
+class Spines(dict):
+    """Dict-like container of an axes' four :class:`Spine` objects."""
+
+
+def _merge_share_group(a, b, attr):
+    """Union two axes' share groups (post-hoc ``sharex``/``sharey``).
+
+    Every member of both former groups must end up pointing at the *same*
+    list object -- ``_resolved_limits``/``invert_xaxis`` etc. all assume that,
+    so a partial reassignment would silently split the group.
+    """
+    ga = getattr(a, attr) or [a]
+    gb = getattr(b, attr) or [b]
+    merged = ga if ga is gb else list(dict.fromkeys(ga + gb))
+    for ax in merged:
+        setattr(ax, attr, merged)
+    return merged
+
+
 class Axes:
     def __init__(self, figure, rect):
         self.figure = figure
@@ -118,19 +177,36 @@ class Axes:
         self._sharey_group = None
         self._twin_of = None        # parent axes when this is a twinx/twiny overlay
         self._twin_shared = None    # 'x' (twinx) or 'y' (twiny)
+        self._secondary_of = None   # parent axes when this is a secondary_xaxis/yaxis
+        self._secondary_dim = None  # 'x' or 'y' -- which dimension is mirrored
+        self._inset_parent = None   # parent axes when this is an inset_axes
+        self._inset_bounds = None   # (x0, y0, w, h) in the parent's own fractions
         self._tick_overrides = {}   # per-axes tick style (Style field -> value)
+        self._minor_ticks_on = False
+        self._minor_tick_overrides = {}
+        self._xtick_side = "bottom"
+        self._ytick_side = "left"
         self._xlabel = ""
         self._ylabel = ""
+        self._xlabel_y_override = None   # figure pixels; set by Figure.align_xlabels
+        self._ylabel_x_override = None   # figure pixels; set by Figure.align_ylabels
         self._title = ""
         self._title_size = None    # None -> the style's title_size
         self._grid = False
         self._color_idx = 0
+        self._color_cycle_override = None  # per-axes prop cycle; style.color_cycle is shared
 
         self._xscale = "linear"
         self._yscale = "linear"
         self._aspect = None        # None='auto'; 1.0='equal'; float=y/x ratio
         self._axis_off = False
-        self._subplotspec = None   # (nrows, ncols, index) for tight_layout
+        self._visible = True
+        self._facecolor = None     # None -> the style's axes_facecolor
+        self._xmargin = 0.05
+        self._ymargin = 0.05
+        self._subplotspec = None   # SubplotSpec (figure.py) for tight_layout
+        self.spines = Spines((side, Spine(self, side))
+                             for side in ("top", "bottom", "left", "right"))
 
         # Colorbar bookkeeping. On a colorbar axes, _cbar_parents/_fraction/_pad
         # record the space it stole, so tight_layout can re-apply it.
@@ -142,10 +218,22 @@ class Axes:
 
     # -- style / color cycle ------------------------------------------------
     def _next_color(self):
-        cycle = self.style.color_cycle
+        cycle = (self._color_cycle_override if self._color_cycle_override is not None
+                 else self.style.color_cycle)
         color = cycle[self._color_idx % len(cycle)]
         self._color_idx += 1
         return color
+
+    def set_prop_cycle(self, color):
+        """Set this axes' own color cycle, independent of the figure's.
+
+        ``ax.style`` is the *same object* as ``ax.figure.style`` (not a
+        per-axes copy), so this stores the override on the axes rather than
+        mutating ``self.style.color_cycle`` -- that would leak the override to
+        every other axes on the figure.
+        """
+        self._color_cycle_override = list(color)
+        self._color_idx = 0
 
     def _resolve_color(self, color):
         """None -> next cycle color; ``'C0'``..``'CN'`` -> that cycle entry."""
@@ -920,6 +1008,83 @@ class Axes:
         """Hide the spines, ticks, grid, and axis labels (keep the title)."""
         self._axis_off = True
 
+    def set_axis_on(self):
+        """Undo :meth:`set_axis_off`."""
+        self._axis_off = False
+
+    def axis(self, *args, **kwargs):
+        """matplotlib's overloaded ``axis()`` convenience.
+
+        ``axis('off')``/``axis('on')`` toggle the whole axis decoration;
+        ``axis('equal')`` sets a 1:1 aspect ratio; ``axis([xmin, xmax, ymin,
+        ymax])`` sets both limits at once; with no arguments, returns the
+        current ``(xmin, xmax, ymin, ymax)``. Always returns that 4-tuple.
+        """
+        if args:
+            arg = args[0]
+            if arg == "off":
+                self.set_axis_off()
+            elif arg == "on":
+                self.set_axis_on()
+            elif arg in ("equal", "scaled"):
+                self.set_aspect("equal")
+            else:
+                xmin, xmax, ymin, ymax = arg
+                self.set_xlim(xmin, xmax)
+                self.set_ylim(ymin, ymax)
+        (x0, x1), (y0, y1) = self.get_xlim(), self.get_ylim()
+        return (x0, x1, y0, y1)
+
+    def set_facecolor(self, color):
+        """Set this axes' own background color (independent of the figure)."""
+        self._facecolor = color
+
+    def get_facecolor(self):
+        return self._facecolor if self._facecolor is not None else self.style.axes_facecolor
+
+    def set_visible(self, visible):
+        """Show/hide this axes. A hidden axes still reserves its grid cell."""
+        self._visible = bool(visible)
+
+    def get_visible(self):
+        return self._visible
+
+    def remove(self):
+        """Detach this axes from its figure.
+
+        Also drops it from any ``sharex``/``sharey`` group it belonged to
+        (those lists are shared by reference with every sibling, so removing
+        from them in place -- not reassigning -- detaches from all of them at
+        once). Colorbar/legend space this axes' neighbors ceded to it is not
+        automatically reclaimed; call ``tight_layout()`` again for that.
+        """
+        if self in self.figure.axes:
+            self.figure.axes.remove(self)
+        if self._sharex_group is not None and self in self._sharex_group:
+            self._sharex_group.remove(self)
+        if self._sharey_group is not None and self in self._sharey_group:
+            self._sharey_group.remove(self)
+
+    def cla(self):
+        """Reset this axes to a freshly-created state, keeping its position.
+
+        Re-runs the constructor (so subclasses like ``PolarAxes``/``Axes3D``
+        reset their own extra state too) without duplicating the attribute
+        list here, then restores the figure position and grid membership that
+        the constructor doesn't know about.
+
+        Known limitation: this does not detach ``self`` from a sibling's
+        ``_sharex_group``/``_sharey_group`` -- that list is shared by
+        reference, and a cleared axes contributing no data is autoscale-
+        neutral, but it can still receive a shared explicit limit from a
+        sibling's ``set_xlim``/``set_ylim``.
+        """
+        subplotspec = self._subplotspec
+        type(self).__init__(self, self.figure, self._rect)
+        self._subplotspec = subplotspec
+
+    clear = cla
+
     def axvline(self, x, color=None, linewidth=None, linestyle="--",
                 label=None, alpha=1.0):
         """Draw a vertical line at data coordinate ``x`` (like matplotlib)."""
@@ -1015,26 +1180,61 @@ class Axes:
         self._ylim = _norm_limits(bottom, top)
         return self._ylim
 
-    def tick_params(self, axis="both", labelsize=None, length=None, width=None,
-                    color=None, labelcolor=None):
+    def tick_params(self, axis="both", which="major", labelsize=None, length=None,
+                    width=None, color=None, labelcolor=None):
         """Style this axes' tick marks and labels (a subset of matplotlib's).
 
         ``labelsize`` (tick-label font), ``length``/``width`` (tick marks),
         ``color`` (mark color), ``labelcolor`` (label color). The ``axis``
         argument is accepted for compatibility but applies to both axes.
+        ``which`` selects ``"major"``, ``"minor"``, or ``"both"``; minor ticks
+        have no labels, so ``labelsize``/``labelcolor`` only ever affect major
+        ticks.
         """
-        ov = self._tick_overrides
-        if labelsize is not None:
-            ov["tick_label_size"] = labelsize
-        if length is not None:
-            ov["tick_size"] = length
-        if width is not None:
-            ov["tick_width"] = width
-        if color is not None:
-            ov["spine_color"] = color        # tick-mark color (box spine unchanged)
-        if labelcolor is not None:
-            ov["text_color"] = labelcolor
+        if which in ("major", "both"):
+            ov = self._tick_overrides
+            if labelsize is not None:
+                ov["tick_label_size"] = labelsize
+            if length is not None:
+                ov["tick_size"] = length
+            if width is not None:
+                ov["tick_width"] = width
+            if color is not None:
+                ov["spine_color"] = color    # tick-mark color (box spine unchanged)
+            if labelcolor is not None:
+                ov["text_color"] = labelcolor
+        if which in ("minor", "both"):
+            mov = self._minor_tick_overrides
+            if length is not None:
+                mov["tick_size"] = length
+            if width is not None:
+                mov["tick_width"] = width
+            if color is not None:
+                mov["spine_color"] = color
         return self
+
+    def minorticks_on(self):
+        """Draw unlabeled minor tick marks between the major ones."""
+        self._minor_ticks_on = True
+
+    def minorticks_off(self):
+        self._minor_ticks_on = False
+
+    def tick_bottom(self):
+        """Draw x-axis ticks/labels along the bottom edge (the default)."""
+        self._xtick_side = "bottom"
+
+    def tick_top(self):
+        """Draw x-axis ticks/labels along the top edge."""
+        self._xtick_side = "top"
+
+    def tick_left(self):
+        """Draw y-axis ticks/labels along the left edge (the default)."""
+        self._ytick_side = "left"
+
+    def tick_right(self):
+        """Draw y-axis ticks/labels along the right edge."""
+        self._ytick_side = "right"
 
     def set_xbound(self, lower, upper):
         """Set the x data limits (alias of :meth:`set_xlim`)."""
@@ -1045,19 +1245,49 @@ class Axes:
         return self.set_ylim(lower, upper)
 
     def margins(self, m=None, x=None, y=None):
-        """Add fractional padding around the autoscaled data (like matplotlib).
+        """Set fractional padding around the autoscaled data (like matplotlib).
 
-        ``margins(0.1)`` pads both axes 10%; per-axis via ``x=``/``y=``.
+        ``margins(0.1)`` pads both axes 10%; per-axis via ``x=``/``y=``. This is
+        a *persistent* setting -- unlike a one-shot ``set_xlim`` nudge, it keeps
+        re-applying as the resolved data limits change (e.g. after more data is
+        plotted), because it's consumed inside :func:`_pad` on every autoscale
+        resolve rather than baked into ``_xlim``/``_ylim`` here.
         """
         mx = x if x is not None else m
         my = y if y is not None else m
+        if mx is not None:
+            self._xmargin = mx
+        if my is not None:
+            self._ymargin = my
+        return self
+
+    def set_xmargin(self, m):
+        self._xmargin = m
+
+    def set_ymargin(self, m):
+        self._ymargin = m
+
+    def get_xmargin(self):
+        return self._xmargin
+
+    def get_ymargin(self):
+        return self._ymargin
+
+    def autoscale(self, enable=True, axis="both", tight=None):
+        """Re-enable (or freeze) autoscaling on ``axis`` (``'x'``/``'y'``/``'both'``).
+
+        ``enable=False`` freezes the axis at its current resolved limits.
+        ``tight=True`` also zeroes that axis' margin.
+        """
         (x0, x1), (y0, y1) = self._resolved_limits()
-        if mx:
-            dx = (x1 - x0) * mx
-            self.set_xlim(x0 - dx, x1 + dx)
-        if my:
-            dy = (y1 - y0) * my
-            self.set_ylim(y0 - dy, y1 + dy)
+        if axis in ("x", "both"):
+            self._xlim = None if enable else (x0, x1)
+            if tight:
+                self._xmargin = 0.0
+        if axis in ("y", "both"):
+            self._ylim = None if enable else (y0, y1)
+            if tight:
+                self._ymargin = 0.0
         return self
 
     def set_xticks(self, ticks, labels=None):
@@ -1108,6 +1338,32 @@ class Axes:
         for ax in (self._sharey_group or [self]):
             ax._yinverted = not ax._yinverted
 
+    def sharex(self, other):
+        """Link this axes' x-limits/autoscale to ``other``'s, after the fact.
+
+        Unlike ``plotpress.subplots(sharex=True)`` (set up at grid-creation
+        time), this merges two already-existing axes' share groups.
+        """
+        _merge_share_group(self, other, "_sharex_group")
+
+    def sharey(self, other):
+        """Link this axes' y-limits/autoscale to ``other``'s, after the fact."""
+        _merge_share_group(self, other, "_sharey_group")
+
+    def label_outer(self):
+        """Hide tick labels except on the bottom row / left column of its grid.
+
+        No-op for an axes that isn't part of an ``add_subplot``/``subplots``
+        grid (``_subplotspec is None``).
+        """
+        if self._subplotspec is None:
+            return
+        spec = self._subplotspec
+        if spec.row1 != spec.nrows - 1:
+            self.set_xticklabels([])
+        if spec.col0 != 0:
+            self.set_yticklabels([])
+
     def twinx(self):
         """Return an overlaid axes sharing this x-axis, y-axis drawn on the right."""
         tw = self.figure.add_axes(self._rect)
@@ -1123,6 +1379,72 @@ class Axes:
         tw._twin_shared = "y"
         tw._subplotspec = self._subplotspec
         return tw
+
+    def secondary_xaxis(self, location="top", label=None):
+        """Return an axis mirroring this axes' x-limits (same units).
+
+        Unlike :meth:`twiny`, a secondary axis draws no data of its own -- it
+        just tracks this axes' x-limits wherever they end up, drawn along
+        ``location`` (``'top'`` or ``'bottom'``). Custom unit-conversion
+        (matplotlib's ``functions=``) is not supported; use :meth:`twiny` if
+        the second axis needs independent data.
+        """
+        sec = self.figure.add_axes(self._rect)
+        sec._secondary_of = self
+        sec._secondary_dim = "x"
+        sec._xtick_side = location
+        sec._subplotspec = self._subplotspec
+        if label is not None:
+            sec.set_xlabel(label)
+        return sec
+
+    def secondary_yaxis(self, location="right", label=None):
+        """Return an axis mirroring this axes' y-limits (same units).
+
+        See :meth:`secondary_xaxis`; ``location`` is ``'left'`` or ``'right'``.
+        """
+        sec = self.figure.add_axes(self._rect)
+        sec._secondary_of = self
+        sec._secondary_dim = "y"
+        sec._ytick_side = location
+        sec._subplotspec = self._subplotspec
+        if label is not None:
+            sec.set_ylabel(label)
+        return sec
+
+    def inset_axes(self, bounds, projection=None):
+        """Add a small axes inset within this one.
+
+        ``bounds = (x0, y0, w, h)`` are fractions of *this axes'* box, not the
+        figure's -- ``[0.6, 0.6, 0.35, 0.35]`` puts a inset in the upper-right
+        corner. Tracks this axes through later ``tight_layout``/
+        ``subplots_adjust`` calls (it is not itself a grid member).
+        """
+        x0, y0, w, h = bounds
+        pl, pb, pw, ph = self._rect
+        rect = (pl + x0 * pw, pb + y0 * ph, w * pw, h * ph)
+        ax = self.figure.add_axes(rect, projection=projection)
+        ax._inset_parent = self
+        ax._inset_bounds = tuple(bounds)
+        return ax
+
+    def set_position(self, pos):
+        """Move this axes to an explicit ``(left, bottom, width, height)``
+        (figure fractions), opting it out of grid auto-layout: a later
+        ``tight_layout``/``subplots_adjust`` will no longer reposition it,
+        matching matplotlib.
+        """
+        self._rect = tuple(float(v) for v in pos)
+        self._subplotspec = None
+
+    def get_position(self):
+        """This axes' ``(left, bottom, width, height)`` in figure fractions.
+
+        Returns the nominal rect, not the ``set_aspect``-adjusted box used at
+        render time (matching matplotlib's own ``get_position()``/
+        ``apply_aspect()`` split).
+        """
+        return self._rect
 
     def set_xlabel(self, xlabel):
         self._xlabel = xlabel
@@ -1172,6 +1494,35 @@ class Axes:
     def get_ylim(self):
         return self._resolved_limits()[1]
 
+    def get_xlabel(self):
+        return self._xlabel
+
+    def get_ylabel(self):
+        return self._ylabel
+
+    def get_title(self):
+        return self._title
+
+    def get_xscale(self):
+        return self._xscale
+
+    def get_yscale(self):
+        return self._yscale
+
+    def get_xticks(self):
+        """The resolved x tick locations (explicit if set, else auto "nice" ticks)."""
+        (xmin, xmax), _ = self._resolved_limits()
+        if self._xticks is not None:
+            return self._xticks
+        return log_ticks(xmin, xmax) if self._xscale == "log" else nice_ticks(xmin, xmax)
+
+    def get_yticks(self):
+        """The resolved y tick locations (explicit if set, else auto "nice" ticks)."""
+        _, (ymin, ymax) = self._resolved_limits()
+        if self._yticks is not None:
+            return self._yticks
+        return log_ticks(ymin, ymax) if self._yscale == "log" else nice_ticks(ymin, ymax)
+
     @staticmethod
     def _group_bounds(axes_list, ix):
         """Data (lo, hi) for dimension ``ix`` (0=x, 2=y) across a set of axes."""
@@ -1201,7 +1552,13 @@ class Axes:
         silently came apart along the axis it was built to share -- and the
         panels whose ticks are hidden are exactly the ones where the reader
         cannot see it happen.
+
+        A secondary axis has no data of its own and mirrors *both* of its
+        parent's dimensions wholesale, regardless of which one it actually
+        draws -- there is nothing of its own to reconcile against.
         """
+        if self._secondary_of is not None:
+            return self._secondary_of._resolved_limits()
         xgroup = self._sharex_group or [self]
         ygroup = self._sharey_group or [self]
         xlim = _group_limits(self, xgroup, "_xlim")
@@ -1211,8 +1568,8 @@ class Axes:
 
         axmin, axmax, mesh_x = self._group_bounds(xgroup, 0)
         aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
-        px = _pad(axmin, axmax, self._xscale, tight=mesh_x)
-        py = _pad(aymin, aymax, self._yscale, tight=mesh_y)
+        px = _pad(axmin, axmax, self._xscale, tight=mesh_x, frac=self._xmargin)
+        py = _pad(aymin, aymax, self._yscale, tight=mesh_y, frac=self._ymargin)
         # A one-sided limit takes the autoscaled value for the end left open.
         rx, ry = _fill_limits(xlim, px), _fill_limits(ylim, py)
         # A twin overlay inherits the shared axis' limits from its parent.

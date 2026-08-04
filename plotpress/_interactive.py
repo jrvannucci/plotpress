@@ -421,11 +421,14 @@ _JS_SOURCE = r"""
     var m = CUR[key];
     var xr = axisTicks(m.xmin, m.xmax, m.xscale);
     var yr = axisTicks(m.ymin, m.ymax, m.yscale);
-    var ts = STYLE.tick_size, fs = STYLE.tick_label_size, yb = m.y + m.h, parts = [];
+    var ts = STYLE.tick_size, fs = STYLE.tick_label_size, parts = [];
+    var xTop = om.xside === 'top', yRight = om.yside === 'right';
+    var xAxis = xTop ? m.y : m.y + m.h, xSign = xTop ? -1 : 1;
+    var yAxis = yRight ? m.x + m.w : m.x, ySign = yRight ? 1 : -1;
     if (om.grid) {
       var gl = [];
       xr.ticks.forEach(function (xt) { var px = toPixel(m, xt, m.ymin).x;
-        gl.push('<line x1="' + px.toFixed(2) + '" y1="' + m.y.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + yb.toFixed(2) + '"/>'); });
+        gl.push('<line x1="' + px.toFixed(2) + '" y1="' + m.y.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (m.y + m.h).toFixed(2) + '"/>'); });
       yr.ticks.forEach(function (yt) { var py = toPixel(m, m.xmin, yt).y;
         gl.push('<line x1="' + m.x.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (m.x + m.w).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>'); });
       parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + STYLE.grid_alpha + '">' + gl.join('') + '</g>');
@@ -433,13 +436,15 @@ _JS_SOURCE = r"""
     var marks = [], labels = [];
     xr.ticks.forEach(function (xt, i) {
       var px = toPixel(m, xt, m.ymin).x;
-      marks.push('<line x1="' + px.toFixed(2) + '" y1="' + yb.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (yb + ts).toFixed(2) + '"/>');
-      labels.push('<text x="' + px.toFixed(2) + '" y="' + (yb + ts + fs).toFixed(2) + '" text-anchor="middle" font-size="' + fs + '" fill="' + STYLE.text + '">' + xr.labels[i] + '</text>');
+      var ly = xAxis + xSign * ts + (xTop ? -3 : fs);
+      marks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * ts).toFixed(2) + '"/>');
+      labels.push('<text x="' + px.toFixed(2) + '" y="' + ly.toFixed(2) + '" text-anchor="middle" font-size="' + fs + '" fill="' + STYLE.text + '">' + xr.labels[i] + '</text>');
     });
     yr.ticks.forEach(function (yt, i) {
       var py = toPixel(m, m.xmin, yt).y;
-      marks.push('<line x1="' + (m.x - ts).toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + m.x.toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
-      labels.push('<text x="' + (m.x - ts - 2).toFixed(2) + '" y="' + (py + fs * 0.35).toFixed(2) + '" text-anchor="end" font-size="' + fs + '" fill="' + STYLE.text + '">' + yr.labels[i] + '</text>');
+      var lx = yAxis + ySign * ts + (yRight ? 2 : -2);
+      marks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * ts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
+      labels.push('<text x="' + lx.toFixed(2) + '" y="' + (py + fs * 0.35).toFixed(2) + '" text-anchor="' + (yRight ? 'start' : 'end') + '" font-size="' + fs + '" fill="' + STYLE.text + '">' + yr.labels[i] + '</text>');
     });
     parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + marks.join('') + '</g>');
     parts.push(labels.join(''));

@@ -101,6 +101,52 @@ def log_ticks(vmin: float, vmax: float) -> np.ndarray:
     return nice_ticks(vmin, vmax)
 
 
+def minor_ticks(major: np.ndarray, vmin: float, vmax: float,
+                scale: str = "linear") -> np.ndarray:
+    """Unlabeled minor tick locations between/around ``major``, within [vmin, vmax].
+
+    Linear: subdivides the major step by a count keyed off its leading digit
+    (1->5, 2->4, 5->5), matching :func:`nice_ticks`'s 1-2-5 convention, so
+    minor ticks land on round subdivisions of whatever step ``nice_ticks``
+    chose. Log: the 2..9 sub-decade marks within each decade the range spans.
+    """
+    if vmin > vmax:
+        vmin, vmax = vmax, vmin
+    if scale == "log":
+        if vmin <= 0:
+            vmin = max(vmax / 1000.0, 1e-300) if vmax > 0 else 1e-3
+        lo = math.floor(math.log10(vmin))
+        hi = math.ceil(math.log10(vmax))
+        fine = np.concatenate([np.arange(2, 10) * 10.0 ** e
+                               for e in np.arange(lo, hi + 1)])
+        fine = fine[(fine >= vmin) & (fine <= vmax)]
+        return np.sort(fine)
+
+    major = np.asarray(major, dtype=float)
+    if major.size < 2:
+        return np.empty(0, dtype=float)
+    step = float(major[1] - major[0])
+    if step == 0:
+        return np.empty(0, dtype=float)
+    mag = 10 ** math.floor(math.log10(abs(step)))
+    lead = round(abs(step) / mag)
+    n = {1: 5, 2: 4, 5: 5}.get(lead, 5)
+    substep = step / n
+    # Walk outward from the first major tick, in both directions, so minor
+    # ticks land exactly on subdivisions of the major grid rather than an
+    # independent grid that may not line up with it.
+    ticks = []
+    k = math.floor((vmin - major[0]) / substep) - 1
+    kmax = math.ceil((vmax - major[0]) / substep) + 1
+    for i in range(int(k), int(kmax) + 1):
+        v = major[0] + i * substep
+        if vmin - substep * 1e-6 <= v <= vmax + substep * 1e-6:
+            # Skip points coincident with a major tick.
+            if not np.any(np.abs(major - v) < abs(substep) * 1e-6):
+                ticks.append(v)
+    return np.array(sorted(ticks), dtype=float)
+
+
 def format_tick(v: float) -> str:
     """Format a tick value compactly (fixed or scientific as appropriate)."""
     if v == 0:
