@@ -69,7 +69,13 @@ def test_method_names_are_a_subset_of_matplotlib():
     sp = {n for n in dir(spax)
           if not n.startswith("_") and callable(getattr(spax, n))}
     mpl = {n for n in dir(mpax) if not n.startswith("_")}
-    intentional_extras = {"kdeplot", "ecdfplot", "rugplot", "plot_frames"}
+    intentional_extras = {
+        "kdeplot", "ecdfplot", "rugplot", "plot_frames",
+        # matplotlib puts these on ax.xaxis/ax.yaxis; plotpress has no XAxis/
+        # YAxis wrapper objects (flat Axes methods are the whole API), so they
+        # live directly on Axes instead.
+        "tick_top", "tick_bottom", "tick_left", "tick_right",
+    }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")
     assert not unexpected, f"non-matplotlib method names: {sorted(unexpected)}"

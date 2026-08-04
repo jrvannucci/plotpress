@@ -153,6 +153,23 @@ def save_pdf(fig, path):
 
 
 # -- axes -------------------------------------------------------------------
+def _raster_spines(ax, L, T, Wp, Hp, S, draw):
+    """Per-side box outline -- the raster counterpart of ``svg._render_spines``."""
+    st = ax.style
+    edges = {
+        "top": (L, T, L + Wp, T), "bottom": (L, T + Hp, L + Wp, T + Hp),
+        "left": (L, T, L, T + Hp), "right": (L + Wp, T, L + Wp, T + Hp),
+    }
+    for side, (x0, y0, x1, y1) in edges.items():
+        spine = ax.spines[side]
+        if not spine.get_visible():
+            continue
+        color = spine._color if spine._color is not None else st.spine_color
+        width = spine._linewidth if spine._linewidth is not None else st.spine_width
+        draw.line([x0, y0, x1, y1], fill=_rgb(color),
+                  width=max(1, int(round(width * S))))
+
+
 def _raster_axes(ax, fig, W, H, S, draw, canvas):
     st = ax.style
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
@@ -162,20 +179,25 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
     tr = LinearTransform(xlim_t, ylim_t, (L, T, Wp, Hp),
                          xscale=ax._xscale, yscale=ax._yscale)
 
+    if not ax._visible:
+        return
+
     if ax._is_colorbar:
         _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas)
         return
 
     is_twin = ax._twin_of is not None
-    if not is_twin:
-        draw.rectangle([L, T, L + Wp, T + Hp], fill=_rgb(st.axes_facecolor))
+    is_secondary = ax._secondary_of is not None
+    overlay = is_twin or is_secondary
+    if not overlay:
+        draw.rectangle([L, T, L + Wp, T + Hp], fill=_rgb(ax.get_facecolor()))
 
     xticks = (ax._xticks if ax._xticks is not None else
               (log_ticks(xmin, xmax) if ax._xscale == "log" else nice_ticks(xmin, xmax)))
     yticks = (ax._yticks if ax._yticks is not None else
               (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
 
-    if ax._grid and not ax._axis_off and not is_twin:
+    if ax._grid and not ax._axis_off and not overlay:
         gc = _rgba(st.grid_color, st.grid_alpha)
         gw = max(1, int(round(st.grid_width * S)))
         for xt in xticks:
@@ -197,11 +219,25 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
     if not ax._axis_off:
         if is_twin:
             _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
+        elif is_secondary:
+            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            is_x = ax._secondary_dim == "x"
+            _raster_ticks(ax, tst, tr, xticks if is_x else [], yticks if not is_x else [],
+                         L, T, Wp, Hp, S, draw,
+                         xside=ax._xtick_side, yside=ax._ytick_side)
         else:
             tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
-            _raster_ticks(ax, tst, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
-            draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(st.spine_color),
-                           width=max(1, int(round(st.spine_width * S))))
+            _raster_ticks(ax, tst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+                         xside=ax._xtick_side, yside=ax._ytick_side)
+            if ax._minor_ticks_on:
+                from .ticker import minor_ticks
+                mst = (tst.copy(**ax._minor_tick_overrides)
+                      if ax._minor_tick_overrides else tst)
+                xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
+                yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
+                _raster_minor_ticks(mst, tr, xminor, yminor, L, T, Wp, Hp, S, draw,
+                                   xside=ax._xtick_side, yside=ax._ytick_side)
+            _raster_spines(ax, L, T, Wp, Hp, S, draw)
     if not is_twin:
         _raster_labels(ax, st, L, T, Wp, Hp, S, draw)
     if ax._show_legend:
@@ -584,22 +620,53 @@ def _quiver_arrow(draw, x0, y0, x1, y1, col, S):
 
 
 # -- furniture --------------------------------------------------------------
-def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
+def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+                  xside="bottom", yside="left"):
     ts = st.tick_size * S
     col = _rgb(st.spine_color)
     fs = st.tick_label_size * S
     font = _font(fs, st.font_family)
-    yb = T + Hp
+    tw = max(1, int(round(st.tick_width * S)))
     xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
     ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+    x_top = xside == "top"
+    x_axis = T if x_top else T + Hp
+    x_sign = -1 if x_top else 1
+    y_right = yside == "right"
+    y_axis = L + Wp if y_right else L
+    y_sign = 1 if y_right else -1
     for xt, lab in zip(xticks, xlabels):
         x = float(tr.x(xt))
-        draw.line([x, yb, x, yb + ts], fill=col, width=max(1, int(round(st.tick_width * S))))
-        draw.text((x, yb + ts + 1), lab, fill=_rgb(st.text_color), font=font, anchor="ma")
+        draw.line([x, x_axis, x, x_axis + x_sign * ts], fill=col, width=tw)
+        ly = x_axis + x_sign * (ts + 1)
+        draw.text((x, ly), lab, fill=_rgb(st.text_color), font=font,
+                  anchor=("md" if x_top else "ma"))
     for yt, lab in zip(yticks, ylabels):
         y = float(tr.y(yt))
-        draw.line([L - ts, y, L, y], fill=col, width=max(1, int(round(st.tick_width * S))))
-        draw.text((L - ts - 2, y), lab, fill=_rgb(st.text_color), font=font, anchor="rm")
+        draw.line([y_axis, y, y_axis + y_sign * ts, y], fill=col, width=tw)
+        lx = y_axis + y_sign * (ts + 2)
+        draw.text((lx, y), lab, fill=_rgb(st.text_color), font=font,
+                  anchor=("lm" if y_right else "rm"))
+
+
+def _raster_minor_ticks(st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+                        xside="bottom", yside="left"):
+    """Unlabeled minor tick marks -- the raster counterpart of the SVG one."""
+    ts = st.tick_size * 0.6 * S
+    col = _rgb(st.spine_color)
+    tw = max(1, int(round(st.tick_width * S)))
+    x_top = xside == "top"
+    x_axis = T if x_top else T + Hp
+    x_sign = -1 if x_top else 1
+    y_right = yside == "right"
+    y_axis = L + Wp if y_right else L
+    y_sign = 1 if y_right else -1
+    for xt in xticks:
+        x = float(tr.x(xt))
+        draw.line([x, x_axis, x, x_axis + x_sign * ts], fill=col, width=tw)
+    for yt in yticks:
+        y = float(tr.y(yt))
+        draw.line([y_axis, y, y_axis + y_sign * ts, y], fill=col, width=tw)
 
 
 def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
@@ -633,15 +700,28 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
 
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
     cx = L + Wp / 2.0
+    ts, fs = st.tick_size, st.tick_label_size
     if ax._xlabel and not ax._axis_off:
-        y = T + Hp + (st.tick_size + st.tick_label_size + st.label_size + 4) * S
+        # Overrides (align_xlabels) are stamped in 1x figure-pixel space, like
+        # the SVG backend's -- scale to this backend's supersampled space.
+        if ax._xlabel_y_override is not None:
+            y = ax._xlabel_y_override * S
+        elif ax._xtick_side == "top":
+            y = T - (ts + fs + st.label_size) * S
+        else:
+            y = T + Hp + (ts + fs + st.label_size + 4) * S
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
                   font=_font(st.label_size * S, st.font_family), anchor="mm")
     if ax._ylabel and not ax._axis_off:
         # Mirror svg._render_labels exactly: clear the *measured* tick labels.
         # Substituting the tick font size for their width put this up to ~9px
         # from where the SVG draws it, jammed against the figure edge.
-        lx = L - (st.tick_size + _max_ytick_width(ax, st) + st.label_size + 4) * S
+        if ax._ylabel_x_override is not None:
+            lx = ax._ylabel_x_override * S
+        elif ax._ytick_side == "right":
+            lx = L + Wp + (ts + _max_ytick_width(ax, st) + st.label_size + 4) * S
+        else:
+            lx = L - (ts + _max_ytick_width(ax, st) + st.label_size + 4) * S
         _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     if ax._title:
@@ -795,6 +875,12 @@ def _raster_figtexts(fig, W, H, S, draw):
         t = fig._supylabel
         size = (t.get("size") or st.label_size * 1.2) * S
         _vtext(draw, t["text"], 6 * S + size / 2, H / 2, _rgb(st.text_color), _font(size, st.font_family))
+    for t in fig._fig_texts:
+        size = (t["size"] or st.font_size) * S
+        x, y = t["x"] * W, (1.0 - t["y"]) * H
+        anchor = _PIL_H.get(t["ha"], "l") + _PIL_V.get(t["va"], "s")
+        draw.text((x, y), t["s"], fill=_rgb(t["color"] or st.text_color),
+                  font=_font(size, st.font_family), anchor=anchor)
 
 
 def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):

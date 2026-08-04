@@ -20,6 +20,78 @@ from .polar import PolarAxes
 from .style import Style
 from .svg import figure_to_svg
 
+# Distinguishes "align_xlabels/ylabels never called" from "called with the
+# default axes=None" (meaning "all axes, re-resolved each time") -- both would
+# otherwise collapse to the same falsy None and the re-apply on relayout
+# below would never fire for the (most common) no-argument call.
+_ALIGN_UNSET = object()
+
+
+class SubplotSpec:
+    """A (possibly multi-cell) placement within an ``nrows`` x ``ncols`` grid.
+
+    ``row0``/``row1``/``col0``/``col1`` are inclusive, 0-based cell bounds --
+    a single-cell spec (the ordinary ``add_subplot(nrows, ncols, index)``
+    case) has ``row0 == row1`` and ``col0 == col1``. This is the one
+    representation :meth:`Figure.tight_layout` and :meth:`Figure.subplots_adjust`
+    place from, whether the axes came from a plain grid or a :class:`GridSpec`
+    slice.
+    """
+
+    def __init__(self, nrows, ncols, row0, row1, col0, col1):
+        self.nrows, self.ncols = nrows, ncols
+        self.row0, self.row1, self.col0, self.col1 = row0, row1, col0, col1
+
+
+def _cell_subplotspec(nrows, ncols, index) -> SubplotSpec:
+    """``SubplotSpec`` for a single 1-based cell ``index`` (legacy add_subplot)."""
+    idx = index - 1
+    row, col = idx // ncols, idx % ncols
+    return SubplotSpec(nrows, ncols, row, row, col, col)
+
+
+def _slice_span(sel, n):
+    """Inclusive 0-based ``(lo, hi)`` bounds from a ``GridSpec`` index or slice."""
+    if isinstance(sel, slice):
+        if sel.step not in (None, 1):
+            raise ValueError("GridSpec only supports contiguous spans (step=1)")
+        lo, hi, _ = sel.indices(n)
+        if hi <= lo:
+            raise ValueError("GridSpec slice selects no rows/columns")
+        return lo, hi - 1
+    idx = sel if sel >= 0 else sel + n
+    return idx, idx
+
+
+class GridSpec:
+    """A grid layout descriptor supporting row/column spans.
+
+    ``fig.add_gridspec(2, 3)[0, :2]`` returns a :class:`SubplotSpec` covering
+    the first two columns of row 0; pass that to :meth:`Figure.add_subplot` in
+    place of ``(nrows, ncols, index)``.
+
+    ``left``/``right``/``top``/``bottom``/``wspace``/``hspace`` are accepted
+    for signature familiarity with matplotlib's ``GridSpec``, but are not
+    (yet) honored by :meth:`Figure.tight_layout`/:meth:`Figure.subplots_adjust`
+    -- both still size one uniform grid per figure. Use
+    ``fig.subplots_adjust(...)`` for margin control instead.
+    """
+
+    def __init__(self, figure, nrows, ncols, left=None, right=None, top=None,
+                bottom=None, wspace=None, hspace=None):
+        self.figure = figure
+        self.nrows = nrows
+        self.ncols = ncols
+        self.left, self.right = left, right
+        self.top, self.bottom = top, bottom
+        self.wspace, self.hspace = wspace, hspace
+
+    def __getitem__(self, key) -> SubplotSpec:
+        rows, cols = key if isinstance(key, tuple) else (key, slice(None))
+        r0, r1 = _slice_span(rows, self.nrows)
+        c0, c1 = _slice_span(cols, self.ncols)
+        return SubplotSpec(self.nrows, self.ncols, r0, r1, c0, c1)
+
 
 def _axes_class(projection):
     """Resolve a ``projection`` name to its Axes class."""
@@ -55,11 +127,24 @@ class Figure:
         self._figure_legend = None   # set by Figure.legend()
         self._supxlabel = None
         self._supylabel = None
+        self._fig_texts = []         # set by Figure.text(); each a dict of kwargs
 
         # tight_layout is re-applied at render time if anything it measured has
         # changed since -- see _settle_layout.
         self._tight_pad = None
         self._layout_dirty = False
+
+        # subplots_adjust's own margins, applied instead of a measured
+        # tight_layout fit. Defaults match _subplot_rect's literals, so a
+        # partial subplots_adjust(wspace=...) call only changes what it names.
+        self._subplot_params = {"left": 0.125, "right": 0.9, "top": 0.88,
+                                "bottom": 0.11, "wspace": 0.2, "hspace": 0.2}
+
+        # Axes lists last passed to align_xlabels/align_ylabels, so
+        # tight_layout/subplots_adjust can re-apply the alignment after they
+        # reflow the grid (the same staleness problem colorbars/legends solve).
+        self._align_x_axes = _ALIGN_UNSET
+        self._align_y_axes = _ALIGN_UNSET
 
     def _settle_layout(self):
         """Re-fit the subplot grid if a measured decoration changed since.
@@ -93,6 +178,59 @@ class Figure:
         """Set a global y label centered along the left of the figure."""
         self._supylabel = {"text": text, "size": size}
         self._layout_dirty = True
+
+    def text(self, x, y, s, ha="left", va="baseline", fontsize=None, color=None):
+        """Draw text at figure-fraction coordinates ``(x, y)`` -- ``(0, 0)`` is
+        the bottom-left corner, ``(1, 1)`` the top-right, independent of any
+        axes' data coordinates.
+        """
+        self._fig_texts.append({
+            "x": float(x), "y": float(y), "s": s, "ha": ha, "va": va,
+            "size": fontsize, "color": color,
+        })
+
+    def set_size_inches(self, w, h=None):
+        """Resize the figure. Accepts ``(w, h)`` or two separate arguments."""
+        if h is None:
+            w, h = w
+        self.figsize = (float(w), float(h))
+        if self._tight_pad is not None:
+            self._layout_dirty = True   # re-fit: tight_layout bakes absolute pixels
+
+    def get_size_inches(self):
+        return self.figsize
+
+    def set_dpi(self, dpi):
+        self.style.dpi = float(dpi)
+        if self._tight_pad is not None:
+            self._layout_dirty = True
+
+    def get_dpi(self):
+        return self.style.dpi
+
+    def delaxes(self, ax):
+        """Remove ``ax`` from this figure (delegates to :meth:`Axes.remove`)."""
+        ax.remove()
+
+    def clf(self):
+        """Clear the figure: drop every axes and figure-level decoration.
+
+        Keeps ``figsize``/``style`` -- use a new :class:`Figure` for those.
+        """
+        self.axes = []
+        self._sliders = {}
+        self._slider_index_n = {}
+        self._suptitle = None
+        self._figure_legend = None
+        self._supxlabel = None
+        self._supylabel = None
+        self._fig_texts = []
+        self._tight_pad = None
+        self._layout_dirty = False
+        self._align_x_axes = _ALIGN_UNSET
+        self._align_y_axes = _ALIGN_UNSET
+
+    clear = clf
 
     def _register_slider(self, unit, index, n, values, label, is_global, axes_key):
         """Register (or validate) a slider unit and its connection index."""
@@ -134,12 +272,33 @@ class Figure:
     def add_subplot(self, nrows=1, ncols=1, index=1, projection=None) -> Axes:
         """Add the ``index``-th axes (1-based) of an ``nrows`` x ``ncols`` grid.
 
+        ``nrows`` may instead be a :class:`SubplotSpec` from
+        ``fig.add_gridspec(...)[...]``, for an axes spanning multiple rows/
+        columns -- its initial rect covers only the span's top-left cell;
+        call :meth:`tight_layout`/:meth:`subplots_adjust` afterward to size it
+        to the full span.
+
         ``projection`` accepts the same values as :meth:`add_axes`
         (``'polar'`` / ``'3d'``).
         """
+        if isinstance(nrows, SubplotSpec):
+            spec = nrows
+            placeholder = spec.row0 * spec.ncols + spec.col0 + 1
+            ax = self.add_axes(_subplot_rect(spec.nrows, spec.ncols, placeholder),
+                               projection=projection)
+            ax._subplotspec = spec
+            return ax
         ax = self.add_axes(_subplot_rect(nrows, ncols, index), projection=projection)
-        ax._subplotspec = (nrows, ncols, index)
+        ax._subplotspec = _cell_subplotspec(nrows, ncols, index)
         return ax
+
+    def add_gridspec(self, nrows=1, ncols=1, **kwargs) -> GridSpec:
+        """Return a :class:`GridSpec` for slicing into row/column spans.
+
+        ``fig.add_subplot(fig.add_gridspec(2, 2)[0, :])`` spans both columns
+        of the top row.
+        """
+        return GridSpec(self, nrows, ncols, **kwargs)
 
     def subplots(self, nrows=1, ncols=1, squeeze=True, sharex=False, sharey=False,
                  projection=None):
@@ -155,7 +314,7 @@ class Figure:
                 index = r * ncols + c + 1
                 ax = self.add_axes(_subplot_rect(nrows, ncols, index),
                                    projection=projection)
-                ax._subplotspec = (nrows, ncols, index)
+                ax._subplotspec = _cell_subplotspec(nrows, ncols, index)
                 grid[r, c] = ax
 
         axlist = grid.ravel().tolist()
@@ -202,7 +361,7 @@ class Figure:
                  if ax._subplotspec is not None and not ax._is_colorbar]
         if not specs:
             return self
-        nrows, ncols = specs[0]._subplotspec[0], specs[0]._subplotspec[1]
+        nrows, ncols = specs[0]._subplotspec.nrows, specs[0]._subplotspec.ncols
 
         # The top band stacks: a twiny's ticks and label sit directly above the
         # box, and the title goes above those. Taking the max of the two would
@@ -243,14 +402,24 @@ class Figure:
                     twin_top_px = max(twin_top_px, tdec)
                 continue
 
+            # tick_top()/tick_right() move an axes' own ticks off the default
+            # bottom/left edge, so their decoration band moves with them --
+            # into the same top/right bands a twin's opposite-side ticks use,
+            # rather than the bottom/left band the default side would need.
             ldec = st.tick_size + ytw + 4
             if ax._ylabel:
                 ldec += st.label_size + 6
-            left_px = max(left_px, ldec)
+            if ax._ytick_side == "right":
+                right_px = max(right_px, ldec)
+            else:
+                left_px = max(left_px, ldec)
             bdec = st.tick_size + st.tick_label_size + 4
             if ax._xlabel:
                 bdec += st.label_size + 6
-            bottom_px = max(bottom_px, bdec)
+            if ax._xtick_side == "top":
+                twin_top_px = max(twin_top_px, bdec)
+            else:
+                bottom_px = max(bottom_px, bdec)
 
         top_px = title_px + twin_top_px
 
@@ -276,25 +445,160 @@ class Figure:
         axw, gap_w = _fit_cells(right - left, ncols, gap_w)
         axh, gap_h = _fit_cells(top - bottom, nrows, gap_h)
 
-        for ax in specs:
-            idx = ax._subplotspec[2] - 1
-            row, col = idx // ncols, idx % ncols
-            ax._rect = (left + col * (axw + gap_w),
-                        bottom + (nrows - 1 - row) * (axh + gap_h), axw, axh)
+        _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h)
+        self._finish_grid_relayout(specs)
+        return self
 
-        # Same reasoning as the colorbar refit below: the rects above are full
-        # grid cells, so any band a figure legend had reserved is gone. Take it
-        # back first, so the colorbar then fits inside what is actually left.
+    def _finish_grid_relayout(self, specs):
+        """Shared tail of :meth:`tight_layout`/:meth:`subplots_adjust`.
+
+        Both rewrite every grid axes' ``_rect`` from scratch, which undoes
+        whatever a figure legend or colorbar had already stolen from it, and
+        leaves any ``align_xlabels``/``align_ylabels`` override pointing at
+        stale pixel offsets. Reapply all three, in this order: alignment must
+        measure the *final* (already-shrunk) boxes, so it runs last.
+        """
+        # Take back the figure-legend band first, so a colorbar then fits
+        # inside what is actually left (same ordering colorbar needs below).
         _layout_figure_legend(self)
 
-        # The rects above are full grid cells, which undoes any space a colorbar
-        # had already taken -- leaving the bar stranded on top of its plot. Take
-        # it back. Colorbars over axes this pass did not touch are left alone,
-        # since their parents are still carrying the original steal.
+        # Colorbars over axes this pass did not touch are left alone, since
+        # their parents are still carrying the original steal.
         for cax in self.axes:
             if cax._is_colorbar and cax._cbar_parents:
                 if all(p in specs for p in cax._cbar_parents):
                     _layout_colorbar(cax)
+
+        # Insets are positioned as a fraction of their parent's rect, which
+        # the reflow above may have just moved -- re-derive rather than let
+        # them drift from where their parent ended up.
+        for iax in self.axes:
+            if iax._inset_parent is not None:
+                _layout_inset(iax)
+
+        if self._align_x_axes is not _ALIGN_UNSET:
+            self.align_xlabels(self._align_x_axes)
+        if self._align_y_axes is not _ALIGN_UNSET:
+            self.align_ylabels(self._align_y_axes)
+
+    def subplots_adjust(self, left=None, right=None, top=None, bottom=None,
+                        wspace=None, hspace=None):
+        """Directly set the subplot grid's margins (matplotlib's own knobs).
+
+        Only the given kwargs change; the others keep their last value
+        (initially matplotlib's own defaults). Mutually exclusive with
+        :meth:`tight_layout` -- both rewrite every grid axes' rect from
+        scratch, so whichever is called last wins; this also clears
+        ``tight_layout``'s pending re-fit so :meth:`_settle_layout` doesn't
+        undo it on the next render.
+        """
+        sp = self._subplot_params
+        for key, val in (("left", left), ("right", right), ("top", top),
+                         ("bottom", bottom), ("wspace", wspace), ("hspace", hspace)):
+            if val is not None:
+                sp[key] = float(val)
+        self._tight_pad = None
+        self._layout_dirty = False
+
+        specs = [ax for ax in self.axes
+                 if ax._subplotspec is not None and not ax._is_colorbar]
+        if not specs:
+            return self
+        nrows, ncols = specs[0]._subplotspec.nrows, specs[0]._subplotspec.ncols
+
+        avail_w = sp["right"] - sp["left"]
+        avail_h = sp["top"] - sp["bottom"]
+        axw = avail_w / (ncols + sp["wspace"] * (ncols - 1))
+        axh = avail_h / (nrows + sp["hspace"] * (nrows - 1))
+        gap_w, gap_h = axw * sp["wspace"], axh * sp["hspace"]
+
+        _place_spec_rects(specs, nrows, ncols, sp["left"], sp["bottom"],
+                          axw, axh, gap_w, gap_h)
+        self._finish_grid_relayout(specs)
+        return self
+
+    def align_xlabels(self, axes=None):
+        """Align the x-axis labels of ``axes`` (default: all) to one baseline.
+
+        Panels with different tick-label widths otherwise put their x label at
+        different heights below the box. Only axes side by side in the same
+        *row* (matching ``SubplotSpec`` row span) are aligned with each other
+        -- like matplotlib, this does not pull together labels in different
+        rows, which sit under different boxes at different y positions and
+        have no shared "depth" worth matching. Axes with no ``_subplotspec``
+        (a custom ``add_axes`` layout) form one fallback group together.
+        Re-applied automatically after :meth:`tight_layout`/
+        :meth:`subplots_adjust` reflow the grid.
+        """
+        from .svg import _effective_rect, _pixel_rect
+
+        self._align_x_axes = axes
+        axlist = [a for a in (axes if axes is not None else self.axes)
+                 if a._xlabel and not a._axis_off]
+        if not axlist:
+            return self
+        st = self.style
+        W = self.figsize[0] * st.dpi
+        H = self.figsize[1] * st.dpi
+
+        def row_key(ax):
+            spec = ax._subplotspec
+            return None if spec is None else (spec.row0, spec.row1)
+
+        for group in _group_by(axlist, row_key):
+            ys = []
+            for ax in group:
+                (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+                _, px_top, _, px_h = _effective_rect(
+                    ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
+                ys.append(px_top + px_h + st.tick_size + st.tick_label_size
+                         + st.label_size + 4)
+            y = max(ys)
+            for ax in group:
+                ax._xlabel_y_override = y
+        return self
+
+    def align_ylabels(self, axes=None):
+        """Align the y-axis labels of ``axes`` (default: all) to one column.
+
+        See :meth:`align_xlabels`: this aligns the *leftmost* position any
+        panel's y label needs, but only among axes stacked in the same
+        *column* (matching ``SubplotSpec`` column span) -- panels in
+        different columns sit under different boxes and are not pulled
+        together.
+        """
+        from .svg import _effective_rect, _max_ytick_width, _pixel_rect
+
+        self._align_y_axes = axes
+        axlist = [a for a in (axes if axes is not None else self.axes)
+                 if a._ylabel and not a._axis_off]
+        if not axlist:
+            return self
+        st = self.style
+        W = self.figsize[0] * st.dpi
+        H = self.figsize[1] * st.dpi
+
+        def col_key(ax):
+            spec = ax._subplotspec
+            return None if spec is None else (spec.col0, spec.col1)
+
+        for group in _group_by(axlist, col_key):
+            xs = []
+            for ax in group:
+                (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+                px_left, _, _, _ = _effective_rect(
+                    ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
+                xs.append(px_left - st.tick_size - _max_ytick_width(ax, st)
+                         - st.label_size - 4)
+            x = min(xs)
+            for ax in group:
+                ax._ylabel_x_override = x
+        return self
+
+    def align_labels(self, axes=None):
+        """Align both x and y axis labels; see :meth:`align_xlabels`/:meth:`align_ylabels`."""
+        self.align_xlabels(axes)
+        self.align_ylabels(axes)
         return self
 
     # -- figure-level legend ------------------------------------------------
@@ -570,6 +874,22 @@ def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
             pass          # vanished, or belongs to another user -- not ours to fix
 
 
+def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):
+    """Write each axes' ``_rect`` from its ``SubplotSpec`` span and a uniform
+    cell size/gap, shared by :meth:`Figure.tight_layout` and
+    :meth:`Figure.subplots_adjust` (they differ only in how ``axw``/``axh``/
+    ``gap_w``/``gap_h`` were derived -- measured pixels vs. matplotlib's
+    fraction-of-cell ``wspace``/``hspace``).
+    """
+    for ax in specs:
+        spec = ax._subplotspec
+        x0 = left + spec.col0 * (axw + gap_w)
+        x1 = left + spec.col1 * (axw + gap_w) + axw
+        y0 = bottom + (nrows - 1 - spec.row1) * (axh + gap_h)
+        y1 = bottom + (nrows - 1 - spec.row0) * (axh + gap_h) + axh
+        ax._rect = (x0, y0, x1 - x0, y1 - y0)
+
+
 def _layout_figure_legend(fig):
     """Shrink the subplot grid away from the edge a figure legend occupies.
 
@@ -612,6 +932,19 @@ def _layout_figure_legend(fig):
             ax._rect = (left * keep, bottom, w * keep, h)
         else:                                   # left
             ax._rect = (band + left * keep, bottom, w * keep, h)
+
+
+def _layout_inset(iax):
+    """Re-derive an ``inset_axes``' rect from its parent's *current* rect.
+
+    Mirrors :func:`_layout_colorbar`'s reasoning: bounds are fractions of the
+    parent's box, recorded once at ``inset_axes()`` time, but the parent's box
+    moves whenever the grid reflows -- re-deriving here is what keeps the
+    inset from drifting off it.
+    """
+    x0, y0, w, h = iax._inset_bounds
+    pl, pb, pw, ph = iax._inset_parent._rect
+    iax._rect = (pl + x0 * pw, pb + y0 * ph, w * pw, h * ph)
 
 
 def _layout_colorbar(cax):
@@ -665,6 +998,21 @@ def _json_payload(obj) -> str:
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
     )
+
+
+def _group_by(items, key):
+    """Partition ``items`` into groups sharing the same ``key(item)``, in
+    first-seen order (plain equality grouping, not requiring sorted input).
+    """
+    groups = {}
+    order = []
+    for item in items:
+        k = key(item)
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append(item)
+    return [groups[k] for k in order]
 
 
 def _flatten_axes(ax):
