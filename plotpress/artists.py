@@ -309,6 +309,26 @@ def _edges_from(coord, n):
     return np.concatenate(([2.0 * c[0] - mid[0]], mid, [2.0 * c[-1] - mid[-1]]))
 
 
+def _as_rectilinear_1d(X, Y):
+    """``(x, y)`` 1-D vectors if 2-D ``X``/``Y`` are secretly rectilinear.
+
+    ``X, Y = np.meshgrid(x, y)`` then ``pcolormesh(X, Y, Z)`` is a common,
+    perfectly ordinary way to build a rectilinear grid -- but it arrives as
+    2-D coordinates, indistinguishable in shape from a genuinely curvilinear
+    grid. Every row of ``X`` and every column of ``Y`` being constant is the
+    tell: collapsing to the equivalent 1-D vectors lets the caller route
+    through the vectorized rectilinear path (cheap at any resolution)
+    instead of curvilinear scan-conversion's per-cell Python loop, which is
+    the same grid, correctly rendered, orders of magnitude slower for no
+    reason. Returns ``None`` for a grid that is actually curvilinear.
+    """
+    if not np.allclose(X, X[:1], equal_nan=True):
+        return None
+    if not np.allclose(Y, Y[:, :1], equal_nan=True):
+        return None
+    return X[0].copy(), Y[:, 0].copy()
+
+
 class QuadMesh(Artist):
     """Color mesh, rasterized to a single embedded ``<image>``.
 
@@ -316,6 +336,11 @@ class QuadMesh(Artist):
     fast path) or **2-D** node coordinates for a *curvilinear* grid, which is
     scan-converted to the image in pure NumPy. The data extent
     is taken from their min/max.
+
+    2-D ``X``/``Y`` that are actually rectilinear -- the common
+    ``np.meshgrid(x, y)`` pattern -- are detected and collapsed back to 1-D
+    (see :func:`_as_rectilinear_1d`), so that shape alone doesn't force the
+    slow curvilinear path onto a grid that never needed it.
     """
 
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
@@ -324,6 +349,11 @@ class QuadMesh(Artist):
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
         self.shading = shading
+        if self.X is not None and self.Y is not None \
+                and self.X.ndim == 2 and self.Y.ndim == 2:
+            collapsed = _as_rectilinear_1d(self.X, self.Y)
+            if collapsed is not None:
+                self.X, self.Y = collapsed
         # A coordinate vector given high-to-low is perfectly legitimate --
         # pressure, depth and wavelength axes are routinely stored descending --
         # but everything downstream (extent, which keeps only min/max; the

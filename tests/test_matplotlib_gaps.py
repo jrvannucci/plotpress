@@ -411,6 +411,27 @@ def test_rectilinear_pcolormesh_uses_fast_path():
     assert m.rgba().shape == (5, 5, 4)              # no upsizing, direct colormap
 
 
+def test_meshgrid_shaped_rectilinear_pcolormesh_uses_fast_path():
+    """Regression: ``X, Y = np.meshgrid(x, y)`` then ``pcolormesh(X, Y, Z)`` is
+    a common, perfectly rectilinear grid, but its coordinates arrive 2-D --
+    indistinguishable in shape from a genuinely curvilinear grid. Without
+    detecting this, every such call fell into curvilinear scan-conversion's
+    per-cell Python loop, ~1000x slower than the vectorized rectilinear path
+    for the identical grid passed as 1-D vectors."""
+    x = np.linspace(0.0, 10.0, 60)
+    y = np.linspace(0.0, 5.0, 40)
+    X, Y = np.meshgrid(x, y)
+    Z = np.sin(X) * np.cos(Y)
+
+    fig, ax = plotpress.subplots()
+    m = ax.pcolormesh(X, Y, Z, cmap="viridis")
+    assert m.curvilinear is False
+    assert m.X.ndim == 1 and m.Y.ndim == 1
+    np.testing.assert_allclose(m.X, x)
+    np.testing.assert_allclose(m.Y, y)
+    assert m.rgba().shape == (40, 60, 4)            # direct colormap, no scan conversion
+
+
 def test_gouraud_shading_smoothly_interpolates():
     g = np.linspace(0, 1, 12)
     X, Y = np.meshgrid(g, g)

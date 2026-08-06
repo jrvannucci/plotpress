@@ -24,11 +24,39 @@ Example
 >>> fig.save("out.svg")
 """
 
-from .colors import (
-    LogNorm, Normalize, PowerNorm, SymLogNorm, available_colormaps, get_cmap,
-)
-from .figure import Figure, subplots
-from .style import Style
+import importlib
+
+# name -> (submodule, attribute). Every one of these pulls in NumPy
+# transitively (through .colors or .figure), which is most of what
+# `import plotpress` costs. Resolving them lazily on first access -- rather
+# than importing eagerly here -- keeps a bare `import plotpress` cheap for
+# callers who only need __version__ or are introspecting the package.
+_LAZY_ATTRS = {
+    "Figure": (".figure", "Figure"),
+    "subplots": (".figure", "subplots"),
+    "Style": (".style", "Style"),
+    "Normalize": (".colors", "Normalize"),
+    "LogNorm": (".colors", "LogNorm"),
+    "PowerNorm": (".colors", "PowerNorm"),
+    "SymLogNorm": (".colors", "SymLogNorm"),
+    "get_cmap": (".colors", "get_cmap"),
+    "available_colormaps": (".colors", "available_colormaps"),
+}
+
+
+def __getattr__(name):
+    try:
+        module_name, attr_name = _LAZY_ATTRS[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    value = getattr(importlib.import_module(module_name, __name__), attr_name)
+    globals()[name] = value  # cache: __getattr__ only runs once per name
+    return value
+
+
+def __dir__():
+    return sorted(__all__)
+
 
 def _detect_version() -> str:
     """The installed version, however this copy of plotpress is being run.
