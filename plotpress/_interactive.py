@@ -13,6 +13,13 @@ others):
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all.
+* **Annotate Point** -- like Point Pick, but prompts for text and locks a
+  user-written note to that datum instead of the auto-generated readout;
+  still steppable by arrow key and still tracks pan/zoom.
+* **Annotate Free** -- drop a user-written note anywhere on the figure, not
+  locked to any datum -- including the margins or the gap between subplots.
+  Inside an axes it still tracks that axes' data coordinate; outside one it
+  just stays at its fixed figure position.
 * **Reset** -- restore *all* plots' views and deselect (back to inert default).
   In Span/Zoom mode, double-clicking a single plot resets only that plot.
 
@@ -117,7 +124,8 @@ _JS_SOURCE = r"""
     { mode: 'span', label: 'Span' },
     { mode: 'zoom', label: 'Zoom' },
     { mode: 'pick', label: 'Point Pick' },
-    { mode: 'note', label: 'Annotate' },
+    { mode: 'note-point', label: 'Annotate Point' },
+    { mode: 'note-free', label: 'Annotate Free' },
     { mode: 'reset', label: 'Reset' },
     { action: 'extract', label: 'Extract' },
   ];
@@ -151,7 +159,7 @@ _JS_SOURCE = r"""
     svg.style.cursor =
       mode === 'span' ? 'grab' :
       mode === 'zoom' ? 'crosshair' :
-      mode === 'note' ? 'text' : 'default';   // pick / none => arrow
+      (mode === 'note-point' || mode === 'note-free') ? 'text' : 'default';
   }
   setMode(null);  // start inert with an arrow cursor
 
@@ -282,9 +290,15 @@ _JS_SOURCE = r"""
   var PICK = pickEl ? JSON.parse(pickEl.textContent) : {};
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
 
+  // Highest index (most recently added) first, so an axes nested inside a
+  // larger one -- an inset, or a twin/secondary overlaid on its parent --
+  // wins the hit test. Ascending order always resolved to whichever axes was
+  // created first, which for an inset meant its *parent*, making the inset
+  // itself permanently unreachable by click, wheel, or drag.
   function axesAt(p) {
-    for (var k in CUR) {
-      var m = CUR[k];
+    var keys = Object.keys(CUR).map(Number).sort(function (a, b) { return b - a; });
+    for (var idx = 0; idx < keys.length; idx++) {
+      var k = String(keys[idx]), m = CUR[k];
       if (p.x >= m.x && p.x <= m.x + m.w && p.y >= m.y && p.y <= m.y + m.h) {
         return { i: k, m: m };
       }
@@ -486,7 +500,7 @@ _JS_SOURCE = r"""
       var anchor = pinAnchor(pin);
       if (anchor) {
         var a = resolve(anchor, +pin.dataset.index);
-        if (a) layoutPin(pin, a.px, a.py, a.label);
+        if (a) layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
       } else if (pin.dataset.x !== undefined && CUR[key]) {
         var q = toPixel(CUR[key], +pin.dataset.x, +pin.dataset.y);
         layoutPin(pin, q.x, q.y, pin.querySelector('text').textContent);
@@ -494,8 +508,53 @@ _JS_SOURCE = r"""
     });
   }
 
+  // A twin/secondary axes occupies the exact same pixel rect as its parent,
+  // so only one of them is ever the axesAt() hit -- whichever one changed
+  // must push its new limits onto the other(s), or the pair visually comes
+  // apart: one moves under the drag, the other stays frozen at its initial
+  // view. A twin shares only its `twin_shared` dimension (its other axis is
+  // independent, real data); a secondary axis has no data of its own and
+  // mirrors both dimensions unconditionally. Normalizing to a single "root"
+  // axes first (the plain axes a twin/secondary is attached to) means a drag
+  // that happens to hit the twin/secondary itself -- possible now that
+  // axesAt() prefers the most-recently-added match -- still fans out to every
+  // sibling instead of only updating one leg of the link.
+  function syncLinked(key) {
+    var m = META[key];
+    if (!m) return;
+    var root = key, rc = CUR[key];
+    if (m.twin_of !== null && m.twin_of !== undefined && CUR[String(m.twin_of)]) {
+      root = String(m.twin_of);
+      var pc = CUR[root];
+      if (m.twin_shared === 'x') { pc.xmin = rc.xmin; pc.xmax = rc.xmax; }
+      else if (m.twin_shared === 'y') { pc.ymin = rc.ymin; pc.ymax = rc.ymax; }
+      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root);
+      rc = pc;
+    } else if (m.secondary_of !== null && m.secondary_of !== undefined &&
+              CUR[String(m.secondary_of)]) {
+      root = String(m.secondary_of);
+      var pc2 = CUR[root];
+      pc2.xmin = rc.xmin; pc2.xmax = rc.xmax; pc2.ymin = rc.ymin; pc2.ymax = rc.ymax;
+      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root);
+      rc = pc2;
+    }
+    for (var k in META) {
+      if (k === key || k === root) continue;
+      var mo = META[k], dst = CUR[k];
+      if (String(mo.twin_of) === root) {
+        if (mo.twin_shared === 'x') { dst.xmin = rc.xmin; dst.xmax = rc.xmax; }
+        else if (mo.twin_shared === 'y') { dst.ymin = rc.ymin; dst.ymax = rc.ymax; }
+        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k);
+      } else if (String(mo.secondary_of) === root) {
+        dst.xmin = rc.xmin; dst.xmax = rc.xmax; dst.ymin = rc.ymin; dst.ymax = rc.ymax;
+        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k);
+      }
+    }
+  }
+
   function refreshAxes(key) {
     applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
+    syncLinked(key);
   }
   function zoomAxesAt(key, px, py, factor) {
     var c = CUR[key], e = edges(c);
@@ -512,6 +571,10 @@ _JS_SOURCE = r"""
     if (g) g.removeAttribute('transform');
     rebuildTicks(key);
     relayoutPins(key);
+    // Otherwise double-clicking just the parent of a pan-desynced twin/
+    // secondary snaps the parent back but leaves the other one stranded at
+    // whatever view it last drifted to.
+    syncLinked(key);
   }
   function resetAxes() { Object.keys(META).forEach(resetAxesOne); }
 
@@ -533,18 +596,73 @@ _JS_SOURCE = r"""
     return best;
   }
 
+  // Index of the edge bucket containing v (edges.length - 1 buckets, i.e. one
+  // per cell) -- a plain linear scan, since a capped mesh has at most a few
+  // hundred edges per axis. Dividing the extent evenly instead of searching
+  // the real edges is only correct for a uniform grid; pcolormesh/contour
+  // both explicitly allow non-uniform spacing.
+  function bucketIndex(edges, v) {
+    var n = edges.length - 1;
+    if (v <= edges[0]) return 0;
+    if (v >= edges[n]) return n - 1;
+    for (var i = 0; i < n; i++) {
+      if (v >= edges[i] && v <= edges[i + 1]) return i;
+    }
+    return n - 1;
+  }
+
+  // A cell's center in data space, for placing a marker / reading it back.
+  // A curvilinear mesh has no separable edges -- xc/yc give every cell's
+  // center directly (see plotpress.svg._curvilinear_centers). A contour's
+  // "cells" are really point samples: xcoord/ycoord (when present) are the
+  // exact sample coordinates, which for non-uniform spacing generally isn't
+  // the same as the midpoint of its implied edges.
+  function meshCellCenter(mesh, idx) {
+    var nx = mesh.shape[1];
+    if (mesh.curvilinear) return { x: mesh.xc[idx], y: mesh.yc[idx] };
+    var row = Math.floor(idx / nx), col = idx % nx;
+    if (mesh.xcoord) return { x: mesh.xcoord[col], y: mesh.ycoord[row] };
+    var xe = mesh.xedges, ye = mesh.yedges;
+    return { x: (xe[col] + xe[col + 1]) / 2, y: (ye[row] + ye[row + 1]) / 2 };
+  }
+
   // Mesh cell under a data coordinate -> anchor ref (steppable by cell).
-  function meshAt(key, dx, dy) {
+  // `p` (pixel point) is only needed for a curvilinear mesh's nearest-center
+  // search, which has to compare in pixel space the same way nearestPoint()
+  // does for a scatter series -- data-space distance would be meaningless
+  // whenever x and y are in different units/scales.
+  function meshAt(key, dx, dy, p) {
     var pd = PICK[key];
     if (!pd) return null;
+    var m = CUR[key];
     for (var t = 0; t < pd.meshes.length; t++) {
       var mesh = pd.meshes[t], e = mesh.extent;
-      if (dx >= e[0] && dx <= e[1] && dy >= e[2] && dy <= e[3]) {
-        var nx = mesh.shape[1], ny = mesh.shape[0];
-        var col = Math.min(nx - 1, Math.max(0, Math.floor((dx - e[0]) / (e[1] - e[0]) * nx)));
-        var row = Math.min(ny - 1, Math.max(0, Math.floor((dy - e[2]) / (e[3] - e[2]) * ny)));
-        return { kind: 'mesh', axes: key, mesh: t, index: row * nx + col };
+      // Test containment in *pixel* space, with a couple pixels of slack: a
+      // click aimed at the mesh's boundary (its edge is exactly where a user
+      // would click to hit the outermost cell) can round-trip through
+      // toData() landing a hair outside the extent in data space -- fine
+      // there, since a data-space epsilon that's meaningful for a [0, 1]
+      // axis is meaningless for a [0, 1e6] one, but wrong in pixel space,
+      // where "a hair" is the same couple of pixels regardless of scale.
+      var c0 = toPixel(m, e[0], e[2]), c1 = toPixel(m, e[1], e[3]);
+      var px0 = Math.min(c0.x, c1.x) - 2, px1 = Math.max(c0.x, c1.x) + 2;
+      var py0 = Math.min(c0.y, c1.y) - 2, py1 = Math.max(c0.y, c1.y) + 2;
+      if (p.x < px0 || p.x > px1 || p.y < py0 || p.y > py1) continue;
+      dx = Math.min(e[1], Math.max(e[0], dx));
+      dy = Math.min(e[3], Math.max(e[2], dy));
+      if (mesh.curvilinear) {
+        var best = -1, bd = Infinity;
+        for (var c = 0; c < mesh.xc.length; c++) {
+          var q = toPixel(m, mesh.xc[c], mesh.yc[c]);
+          var dd = (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y);
+          if (dd < bd) { bd = dd; best = c; }
+        }
+        if (best < 0) continue;
+        return { kind: 'mesh', axes: key, mesh: t, index: best };
       }
+      var nx = mesh.shape[1];
+      var col = bucketIndex(mesh.xedges, dx), row = bucketIndex(mesh.yedges, dy);
+      return { kind: 'mesh', axes: key, mesh: t, index: row * nx + col };
     }
     return null;
   }
@@ -678,14 +796,12 @@ _JS_SOURCE = r"""
     if (anchor.kind === 'mesh') {
       var mesh = PICK[anchor.axes] && PICK[anchor.axes].meshes[anchor.mesh];
       if (!mesh) return null;
-      var e = mesh.extent, nx = mesh.shape[1], ny = mesh.shape[0];
+      var nx = mesh.shape[1], ny = mesh.shape[0];
       var idx = Math.max(0, Math.min(nx * ny - 1, index));
-      var row = Math.floor(idx / nx), col = idx % nx;
-      var xc = e[0] + (col + 0.5) / nx * (e[1] - e[0]);
-      var yc = e[2] + (row + 0.5) / ny * (e[3] - e[2]);
-      var q = toPixel(CUR[anchor.axes], xc, yc);
-      return { px: q.x, py: q.y, index: idx, label: 'x=' + fmt(xc) + ', y=' +
-               fmt(yc) + ', ' + (mesh.name || 'z') + '=' + fmt(mesh.z[idx]) };
+      var cc = meshCellCenter(mesh, idx);
+      var q = toPixel(CUR[anchor.axes], cc.x, cc.y);
+      return { px: q.x, py: q.y, index: idx, label: 'x=' + fmt(cc.x) + ', y=' +
+               fmt(cc.y) + ', ' + (mesh.name || 'z') + '=' + fmt(mesh.z[idx]) };
     }
     var s = seriesOf(anchor);
     if (!s) return null;
@@ -747,12 +863,17 @@ _JS_SOURCE = r"""
              ptype: pin.dataset.ptype };
   }
 
-  function addAnchoredPin(anchor, index) {
+  // `text`, when given, overrides the auto-generated "x=.., y=.." readout --
+  // an "Annotate Point" note locked to this anchor. It has to be threaded
+  // through stepPin/relayoutPins too, or the very first re-layout (a step, a
+  // pan, a zoom) would stomp the user's text back to the plain readout.
+  function addAnchoredPin(anchor, index, text) {
     var a = resolve(anchor, index);
     if (!a) return;
-    var g = addPin(a.px, a.py, a.label);
+    var g = addPin(a.px, a.py, text !== undefined ? text : a.label);
     g.dataset.kind = anchor.kind;
     g.dataset.index = a.index;
+    if (text !== undefined) { g.dataset.customLabel = text; g.classList.add('plotpress-note'); }
     if (anchor.kind === 'frame') {
       g.dataset.frameId = anchor.id; g.dataset.frameUnit = anchor.unit;
     } else if (anchor.kind === 'mesh') {
@@ -765,6 +886,10 @@ _JS_SOURCE = r"""
     }
   }
 
+  function pinLabel(pin, autoLabel) {
+    return pin.dataset.customLabel !== undefined ? pin.dataset.customLabel : autoLabel;
+  }
+
   // Move a marker to a neighbouring point/cell (arrow keys).
   function stepPin(pin, dir) {
     var anchor = pinAnchor(pin);
@@ -772,7 +897,7 @@ _JS_SOURCE = r"""
     var a = resolve(anchor, neighbor(anchor, +pin.dataset.index, dir));
     if (!a) return;
     pin.dataset.index = a.index;
-    layoutPin(pin, a.px, a.py, a.label);
+    layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
   }
 
   // ---- extract markers --------------------------------------------------
@@ -784,15 +909,12 @@ _JS_SOURCE = r"""
       rec.axes = +anchor.axes; rec.kind = 'pie'; rec.index = idx;
       rec.value = pie.values[idx]; rec.fraction = pie.fracs[idx];
       if (pie.labels) rec.label = pie.labels[idx];
-      return rec;
-    }
-    if (anchor && anchor.kind === 'mesh') {
+    } else if (anchor && anchor.kind === 'mesh') {
       var mesh = PICK[anchor.axes].meshes[anchor.mesh];
-      var idx = +pin.dataset.index, nx = mesh.shape[1], ny = mesh.shape[0], e = mesh.extent;
-      var row = Math.floor(idx / nx), col = idx % nx;
+      var idx = +pin.dataset.index;
+      var cc = meshCellCenter(mesh, idx);
       rec.axes = +anchor.axes; rec.kind = 'mesh'; rec.index = idx;
-      rec.x = e[0] + (col + 0.5) / nx * (e[1] - e[0]);
-      rec.y = e[2] + (row + 0.5) / ny * (e[3] - e[2]);
+      rec.x = cc.x; rec.y = cc.y;
       rec[mesh.name || 'z'] = mesh.z[idx];
     } else if (anchor) {
       var s = seriesOf(anchor), j = +pin.dataset.index;
@@ -802,12 +924,29 @@ _JS_SOURCE = r"""
     } else if (pin.dataset.annotation) {
       rec.kind = 'annotation';
       rec.text = pin.querySelector('text').textContent;
-      if (pin.dataset.axes !== undefined) rec.axes = +pin.dataset.axes;
-      rec.x = +pin.dataset.x; rec.y = +pin.dataset.y;
+      if (pin.dataset.axes !== undefined) {
+        rec.axes = +pin.dataset.axes;
+        rec.x = +pin.dataset.x; rec.y = +pin.dataset.y;
+      } else {
+        // Dropped outside any axes (an "Annotate Free" note in the figure's
+        // margins or between panels) -- there is no data coordinate to give
+        // it, only a fixed figure pixel position.
+        rec.px = +pin.dataset.px; rec.py = +pin.dataset.py;
+      }
     } else {
       rec.kind = 'free';
       if (pin.dataset.axes !== undefined) rec.axes = +pin.dataset.axes;
       rec.x = +pin.dataset.x; rec.y = +pin.dataset.y;
+    }
+    // An "Annotate Point" note's user text rides alongside its anchor's own
+    // structured fields (x/y/z/...) set above, rather than replacing them.
+    if (pin.dataset.customLabel !== undefined) rec.text = pin.dataset.customLabel;
+    // Identify the source panel by name, not just its bare index -- omitted
+    // when that axes has no title set, so an untitled figure's export stays
+    // uncluttered.
+    if (rec.axes !== undefined) {
+      var am = META[rec.axes];
+      if (am && am.title) rec.axes_title = am.title;
     }
     return rec;
   }
@@ -912,60 +1051,88 @@ _JS_SOURCE = r"""
     return best;
   }
 
-  // Annotate mode: click to drop a user-typed text note anchored to the data.
-  function addNote(e) {
+  // The same target Point Pick resolves a click to (a point/frame vertex
+  // within POINT_THRESHOLD px, else a mesh cell, else a pie wedge, else a
+  // point regardless of distance) -- factored out so "Annotate Point" can
+  // lock a note to exactly what a plain pick would have landed on. Returns
+  // a steppable anchor ref; ``null`` if there's simply nothing pickable
+  // there (the caller may fall back to a geometric readout); or the string
+  // ``'blocked'`` for the one case that must produce nothing at all, not a
+  // fallback -- a pie axes only has its wedges to pick, so a click that
+  // misses every one of them is a genuine miss, not "no data nearby".
+  function resolvePickTarget(e) {
     var p = toUser(e), a = axesAt(p);
-    if (!a) return;
+    if (!a) return null;
+    var m = a.m;
+    var np = nearestPoint(a.i, m, p);
+    var fp = nearestFrameVertex(a.i, m, p);
+    var d = toData(m, p.x, p.y);
+    var mesh = meshAt(a.i, d.x, d.y, p);
+    var pieHit = pieAt(a.i, p);
+
+    var cand = null;
+    if (np) cand = { d: np.d, ref: np.ref };
+    if (fp && (!cand || fp.d < cand.d)) cand = { d: fp.d, ref: fp.ref };
+
+    var pd = PICK[a.i];
+    if (pd && pd.pies && pd.pies.length && !pieHit && !mesh &&
+        (!cand || Math.sqrt(cand.d) > POINT_THRESHOLD)) {
+      return 'blocked';
+    }
+    if (cand && Math.sqrt(cand.d) <= POINT_THRESHOLD) return cand.ref;
+    if (mesh) return mesh;
+    if (pieHit) return pieHit;
+    if (cand) return cand.ref;
+    return null;
+  }
+
+  // Annotate Point: lock a user-typed note to the nearest pickable datum,
+  // exactly like Point Pick -- steppable by arrow key, tracks pan/zoom.
+  function addPointNote(e) {
+    var ref = resolvePickTarget(e);
+    if (!ref || ref === 'blocked') return;   // nothing to lock to
     var text = window.prompt('Annotation text:');
     if (!text) return;
-    var d = toData(a.m, p.x, p.y);
+    addAnchoredPin(ref, ref.index, text);
+  }
+
+  // Annotate Free: drop a note anywhere on the whole figure, including the
+  // margins or the gap between subplots -- not locked to any datum. Inside
+  // an axes it still tracks that axes' data coordinate (so it pans/zooms
+  // with the plot it was drawn over, like the old single "Annotate" did);
+  // outside any axes there is no data coordinate, so it just stays put at
+  // its figure pixel position, which nothing in the interactive view moves.
+  function addFreeNote(e) {
+    var p = toUser(e);
+    var text = window.prompt('Annotation text:');
+    if (!text) return;
+    var a = axesAt(p);
     var g = addPin(p.x, p.y, text);
     g.classList.add('plotpress-note');
-    g.dataset.x = d.x; g.dataset.y = d.y; g.dataset.axes = a.i;
     g.dataset.annotation = '1';
+    if (a) {
+      var d = toData(a.m, p.x, p.y);
+      g.dataset.x = d.x; g.dataset.y = d.y; g.dataset.axes = a.i;
+    } else {
+      g.dataset.px = p.x; g.dataset.py = p.y;
+    }
   }
 
   svg.addEventListener('click', function (e) {
     if (moved) return;
     if (e.target.closest('.plotpress-legend') || e.target.closest('.plotpress-pin')) return;
-    if (mode === 'note') { addNote(e); return; }
+    if (mode === 'note-free') { addFreeNote(e); return; }
+    if (mode === 'note-point') { addPointNote(e); return; }
     if (mode !== 'pick') return;
+    var ref = resolvePickTarget(e);
+    if (ref === 'blocked') return;
+    if (ref) { addAnchoredPin(ref, ref.index); return; }
     var p = toUser(e), a = axesAt(p);
     if (!a) return;
-    var m = a.m;
-    var np = nearestPoint(a.i, m, p);
-    var fp = nearestFrameVertex(a.i, m, p);
-    var d = toData(m, p.x, p.y);
-    var mesh = meshAt(a.i, d.x, d.y);
-    var pieHit = pieAt(a.i, p);
-
-    // Nearest of embedded static points vs animated frame vertices.
-    var cand = null;
-    if (np) cand = { d: np.d, ref: np.ref };
-    if (fp && (!cand || fp.d < cand.d)) cand = { d: fp.d, ref: fp.ref };
-
-    // On a pie axes only the wedges are pickable: a click that misses them (and
-    // has nothing else nearby) makes no marker.
-    var pd = PICK[a.i];
-    if (pd && pd.pies && pd.pies.length && !pieHit && !mesh &&
-        (!cand || Math.sqrt(cand.d) > POINT_THRESHOLD)) {
-      return;
-    }
-
-    if (cand && Math.sqrt(cand.d) <= POINT_THRESHOLD) {
-      addAnchoredPin(cand.ref, cand.ref.index);
-    } else if (mesh) {
-      addAnchoredPin(mesh, mesh.index);          // mesh cell (steppable by cell)
-    } else if (pieHit) {
-      addAnchoredPin(pieHit, pieHit.index);      // pie wedge (steppable by wedge)
-    } else if (cand) {
-      addAnchoredPin(cand.ref, cand.ref.index);
-    } else {
-      var v = nearestVertex(a.i, p) || p;              // large-series fallback
-      var dd = toData(m, v.x, v.y);
-      var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y));
-      g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
-    }
+    var v = nearestVertex(a.i, p) || p;              // large-series fallback
+    var dd = toData(a.m, v.x, v.y);
+    var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y));
+    g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
   });
 
   // ---- slider(s) over extra data dimensions -----------------------------

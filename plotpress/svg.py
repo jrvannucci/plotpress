@@ -11,13 +11,14 @@ extension; the library installs everywhere pip does.
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, Image, Line2D, Pie, Polygon, QuadMesh, Quiver,
-    ScatterCollection, Span, Stem, Text, Violin,
+    ScatterCollection, Span, Stem, Text, Violin, _edges_from,
 )
 from .colors import colorbar_ticks
 from .png import png_data_uri
@@ -133,14 +134,25 @@ def axes_metadata(fig):
     """Per-axes pixel rect + data limits, for client-side point picking.
 
     Keyed by the axes index (matching the ``s<index>_<k>`` ids on rendered
-    series). Colorbar axes are excluded -- they are not data plots.
+    series). Colorbar axes are excluded -- they are not data plots. So is a
+    3-D axes: pan/zoom/point-pick all reason about one affine map between a
+    *fixed* data range and pixels, but a 3-D axes' "data" is already a
+    camera-projected snapshot at a specific elev/azim -- zooming it stretches
+    the projection into a shape no real camera angle produces, and a picked
+    point reports meaningless projected coordinates instead of the original
+    (x, y, z). Leaving it out of this payload is what makes ``axesAt()`` (the
+    JS hit-test) treat the whole 3-D panel as outside any interactive axes,
+    so the toolbar simply does nothing there instead of producing a wrong
+    answer. The panel itself still renders fully -- this only affects
+    interactivity in the HTML export.
     """
     dpi = fig.style.dpi
     W = fig.figsize[0] * dpi
     H = fig.figsize[1] * dpi
+    idx_of = {id(a): i for i, a in enumerate(fig.axes)}
     meta = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar or not ax._visible:
+        if ax._is_colorbar or not ax._visible or ax._is_3d:
             continue
         (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
         px_left, px_top, px_w, px_h = _effective_rect(
@@ -158,6 +170,21 @@ def axes_metadata(fig):
             # Whether ticks are user-fixed (don't auto-recompute on zoom).
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
+            # Surfaced on extracted points as axes_title, so a multi-panel
+            # export identifies which panel a marker came from by name
+            # instead of just a bare index.
+            "title": ax._title,
+            # A twin/secondary axes fully overlaps its parent's pixel rect, so
+            # they can never both be reached by a click -- the client instead
+            # resolves one and propagates the limit change to the other(s)
+            # here, keeping their views in sync. `None` when there is no link,
+            # or when the linked axes isn't itself in this payload (e.g. it
+            # was hidden) -- see `_interactive.py`'s `syncLinked`.
+            "twin_of": idx_of.get(id(ax._twin_of)) if ax._twin_of is not None else None,
+            "twin_shared": ax._twin_shared,
+            "secondary_of": (idx_of.get(id(ax._secondary_of))
+                             if ax._secondary_of is not None else None),
+            "secondary_dim": ax._secondary_dim,
         }
     return meta
 
@@ -187,14 +214,58 @@ def _round_list(a):
     return _rl(a, 6)
 
 
+def _downsample_grid(z, max_cells):
+    """Block-average ``z`` down to at most ``max_cells`` cells.
+
+    A mesh/contour too large to embed at full resolution used to be dropped
+    from the pick payload entirely, so a click reported bare x/y with no data
+    value -- exactly the case a "third dimension" plot type exists for.
+    Block-averaging keeps every pick answerable (a real, spatially
+    representative value) while still bounding the embedded HTML size,
+    mirroring how huge line series are min/max-decimated before embedding
+    rather than dropped (see primitives._decimate_minmax).
+    """
+    ny, nx = z.shape
+    if ny * nx <= max_cells:
+        return z
+    factor = math.ceil(math.sqrt((ny * nx) / max_cells))
+    new_ny = max(1, math.ceil(ny / factor))
+    new_nx = max(1, math.ceil(nx / factor))
+    pad_ny, pad_nx = new_ny * factor - ny, new_nx * factor - nx
+    zp = np.pad(z, ((0, pad_ny), (0, pad_nx)), mode="edge")
+    blocked = zp.reshape(new_ny, factor, new_nx, factor)
+    # A block that's entirely NaN (masked/missing data, e.g. land in an ocean
+    # field) is a real, expected input -- nanmean's "Mean of empty slice"
+    # warning about it is noise, not a bug to surface on every such figure.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmean(blocked, axis=(1, 3))
+
+
+def _curvilinear_centers(X, Y, ny, nx):
+    """Each cell's center: the average of its 4 corner nodes.
+
+    ``X``/``Y`` are the ``(ny+1, nx+1)``-ish node grid a curvilinear mesh
+    scan-converts from (see ``QuadMesh._rgba_curvilinear``); a warped mesh has
+    no separable 1-D edge vectors the way a rectilinear one does, so picking
+    it needs an explicit per-cell coordinate instead.
+    """
+    cx = (X[:ny, :nx] + X[:ny, 1:nx + 1] + X[1:ny + 1, :nx] + X[1:ny + 1, 1:nx + 1]) / 4.0
+    cy = (Y[:ny, :nx] + Y[:ny, 1:nx + 1] + Y[1:ny + 1, :nx] + Y[1:ny + 1, 1:nx + 1]) / 4.0
+    return cx, cy
+
+
 def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
     """Per-axes data payload for point picking (values incl. z and beyond).
 
     For point series (line/scatter) embeds x, y and any extra named dimensions
-    (``pick_values`` such as ``c`` or ``z``). For meshes embeds the z grid so a
-    clicked cell reports its value. Series/meshes exceeding the size caps are
-    omitted (picking falls back to a geometry-based x/y readout for those), so
-    the HTML stays lean.
+    (``pick_values`` such as ``c`` or ``z``). For meshes/contours embeds the z
+    grid so a clicked cell reports its value -- block-averaged down to
+    ``max_mesh_cells`` for a grid over the cap, so even a huge mesh always
+    answers a pick with a real value instead of falling back to a bare x/y
+    readout. Point series over ``max_points`` are still omitted outright (that
+    fallback -- nearest-vertex geometry -- has no missing-value problem to
+    solve), so the HTML stays lean.
 
     ``precision`` sets the decimal places the embedded arrays are rounded to.
     Lower values shrink the payload (the mesh z grids dominate it); 6 keeps
@@ -207,7 +278,7 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
 
     data = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar or not ax._visible:
+        if ax._is_colorbar or not ax._visible or ax._is_3d:
             continue
         series, meshes, pies = [], [], []
         for art in ax.artists:
@@ -286,18 +357,44 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                                    "vals": {"width": _round_list(hw * 2.0)}})
             elif isinstance(art, Contour):
                 # Pick like a pcolormesh: report the field value z at the grid
-                # cell under the cursor (arrow keys step cell-by-cell).
-                ny, nx = art.Z.shape
-                if ny * nx <= max_mesh_cells:
-                    meshes.append({
-                        "extent": [round(float(art.x.min()), 6),
-                                   round(float(art.x.max()), 6),
-                                   round(float(art.y.min()), 6),
-                                   round(float(art.y.max()), 6)],
-                        "shape": [int(ny), int(nx)],
-                        "z": _round_list(art.Z),  # row 0 = ymin, like QuadMesh
-                        "name": "z",
-                    })
+                # cell under the cursor (arrow keys step cell-by-cell). A grid
+                # over the cap is downsampled, not dropped -- see
+                # _downsample_grid. `art.x`/`art.y` are sample coordinates
+                # (matplotlib contour explicitly allows non-uniform spacing),
+                # not necessarily evenly spaced, so the client needs the real
+                # cell boundaries -- not "shape cells spanning the extent
+                # evenly", which was silently wrong for any non-uniform grid
+                # (and subtly off even for a uniform one, by treating point
+                # samples as if they were cells).
+                ny0, nx0 = art.Z.shape
+                z = _downsample_grid(art.Z, max_mesh_cells)
+                ny, nx = z.shape
+                xmin, xmax = float(art.x.min()), float(art.x.max())
+                ymin, ymax = float(art.y.min()), float(art.y.max())
+                entry = {
+                    "extent": [round(xmin, 6), round(xmax, 6),
+                               round(ymin, 6), round(ymax, 6)],
+                    "shape": [int(ny), int(nx)],
+                    "z": _round_list(z),  # row 0 = ymin, like QuadMesh
+                    "name": "z",
+                }
+                if (ny, nx) == (ny0, nx0):
+                    # Edges (for bucketing a click into the right sample's
+                    # Voronoi-like span) and the exact sample coordinates
+                    # (for display) are different things here: unlike a true
+                    # mesh cell, a contour sample's own coordinate generally
+                    # isn't the midpoint between its implied edges once the
+                    # spacing is non-uniform, so reporting the edge midpoint
+                    # would label the point with a value that isn't in the
+                    # data.
+                    entry["xedges"] = _round_list(_edges_from(art.x, nx))
+                    entry["yedges"] = _round_list(_edges_from(art.y, ny))
+                    entry["xcoord"] = _round_list(art.x)
+                    entry["ycoord"] = _round_list(art.y)
+                else:
+                    entry["xedges"] = _round_list(np.linspace(xmin, xmax, nx + 1))
+                    entry["yedges"] = _round_list(np.linspace(ymin, ymax, ny + 1))
+                meshes.append(entry)
             elif isinstance(art, FillBetween):
                 if 0 < art.x.size <= max_points:
                     hi = np.maximum(art.y1, art.y2)
@@ -310,19 +407,64 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                 if is_img and art.A.ndim != 2:
                     continue  # RGB image: no scalar to report
                 grid = art.A if is_img else art.C
-                ny, nx = grid.shape
-                if ny * nx > max_mesh_cells:
-                    continue
+                curvilinear = isinstance(art, QuadMesh) and art.curvilinear
+                if curvilinear:
+                    # A curvilinear mesh's node arrays have no fixed size
+                    # contract with C beyond "at least as large" -- X/Y the
+                    # same shape as C (centers, not corners) is common and
+                    # valid. _rgba_curvilinear clamps to however many whole
+                    # cells the two actually provide together; picking has to
+                    # match that exactly, or _curvilinear_centers indexes
+                    # X/Y past their real width and numpy's elementwise add
+                    # raises a shape-mismatch error building the centers.
+                    ny0 = min(grid.shape[0], art.X.shape[0] - 1)
+                    nx0 = min(grid.shape[1], art.X.shape[1] - 1)
+                    grid = grid[:ny0, :nx0]
+                else:
+                    ny0, nx0 = grid.shape
                 xmin, xmax, ymin, ymax = art.extent()
                 # Store z row-major with row 0 = ymin so a clicked cell maps back.
-                z = np.flipud(grid) if (is_img and art.origin == "upper") else grid
-                meshes.append({
+                z0 = np.flipud(grid) if (is_img and art.origin == "upper") else grid
+                # A grid over the cap is downsampled, not dropped -- a click
+                # still answers with a real (if coarser) value instead of
+                # falling back to a bare x/y readout. See _downsample_grid.
+                z = _downsample_grid(z0, max_mesh_cells)
+                ny, nx = z.shape
+                entry = {
                     "extent": [round(xmin, 6), round(xmax, 6),
                                round(ymin, 6), round(ymax, 6)],
                     "shape": [int(ny), int(nx)],
                     "z": _round_list(z),
                     "name": "z",
-                })
+                    "curvilinear": bool(curvilinear),
+                }
+                if curvilinear:
+                    # No separable 1-D edges on a warped grid -- picking
+                    # matches the click to the nearest cell *center* instead
+                    # of bucketing it into a rectangular extent division
+                    # (which was wrong: it reported whichever cell the click
+                    # fell into on a *uniform* grid overlaid on the extent,
+                    # unrelated to where the warped cells actually are).
+                    cx, cy = _curvilinear_centers(art.X, art.Y, ny0, nx0)
+                    if (ny, nx) != (ny0, nx0):
+                        cx, cy = _downsample_grid(cx, max_mesh_cells), _downsample_grid(cy, max_mesh_cells)
+                    entry["xc"], entry["yc"] = _round_list(cx), _round_list(cy)
+                else:
+                    # Non-uniform rectilinear spacing (matplotlib explicitly
+                    # allows uneven pcolormesh edges) needs the real
+                    # boundaries too -- an evenly-divided extent silently
+                    # picked the wrong cell for anything but a uniform grid.
+                    if (ny, nx) == (ny0, nx0) and not is_img:
+                        xe, ye = art.cell_edges()
+                    else:
+                        # Downsampling coarsens to a uniform block grid, and a
+                        # plain Image is already a uniform raster over its
+                        # extent -- an evenly spaced division is exact here,
+                        # not an approximation.
+                        xe = np.linspace(xmin, xmax, nx + 1)
+                        ye = np.linspace(ymin, ymax, ny + 1)
+                    entry["xedges"], entry["yedges"] = _round_list(xe), _round_list(ye)
+                meshes.append(entry)
             elif isinstance(art, Pie):
                 pies.append({
                     "startangle": float(art.startangle),
