@@ -747,8 +747,9 @@ class Figure:
         """Display in a native pop-up window (via pywebview if installed).
 
         Returns the list of markers the user extracted in the window (each a
-        dict of values: ``x``, ``y``, any extra dims, ``axes``, ``kind``), or
-        an empty list if none were extracted.
+        dict of values: ``x``, ``y``, any extra dims, ``axes`` (index),
+        ``axes_title`` (if that axes has one), ``kind``), or an empty list if
+        none were extracted.
 
         With ``wait_for_extract=True`` the call becomes an interactive point-
         picking session: the kernel blocks, the user drops markers and clicks

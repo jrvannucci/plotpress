@@ -156,3 +156,53 @@ def test_3d_renders_in_both_backends():
     ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="plasma")
     assert "<svg" in fig.to_svg()
     figure_to_image(fig, scale=1)          # raster must not raise
+
+
+# -- interactive HTML: 3-D has no interactive metadata -----------------------
+# Pan/zoom/point-pick all reason about one affine map between a *fixed* data
+# range and pixels. A 3-D axes' "data" is already a camera-projected snapshot
+# at a specific elev/azim -- zooming it stretches the projection into a shape
+# no real camera angle produces, and a picked point reports meaningless
+# projected coordinates instead of the original (x, y, z). Excluding it from
+# axes_metadata/pick_data is what makes the JS hit-test (axesAt in
+# _interactive.py) treat the whole 3-D panel as outside any interactive axes,
+# so the toolbar does nothing there rather than producing a wrong answer.
+def test_3d_axes_excluded_from_interactive_metadata():
+    from plotpress.svg import axes_metadata, pick_data
+
+    fig, ax = plotpress.subplots(projection="3d")
+    X, Y = np.meshgrid(np.linspace(-2, 2, 20), np.linspace(-2, 2, 20))
+    ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="plasma")
+    assert axes_metadata(fig) == {}
+    assert pick_data(fig) == {}
+
+
+def test_2d_axes_still_get_interactive_metadata_alongside_3d():
+    """A figure mixing 2-D and 3-D axes keeps interactivity for the 2-D one."""
+    from plotpress.svg import axes_metadata
+
+    fig = plotpress.Figure()
+    ax2d = fig.add_subplot(1, 2, 1)
+    ax2d.plot([0, 1], [0, 1])
+    ax3d = fig.add_subplot(1, 2, 2, projection="3d")
+    ax3d.plot([0, 1], [0, 1], [0, 1])
+
+    meta = axes_metadata(fig)
+    i2d = fig.axes.index(ax2d)
+    i3d = fig.axes.index(ax3d)
+    assert i2d in meta
+    assert i3d not in meta
+
+
+def test_interactive_html_zoom_is_a_noop_over_3d_axes():
+    """End-to-end: the exported HTML's own toolbar has nothing to act on for
+    the 3-D panel (no 'zoom<i>' element key present in its metadata)."""
+    import re
+
+    fig, ax = plotpress.subplots(projection="3d")
+    X, Y = np.meshgrid(np.linspace(-2, 2, 10), np.linspace(-2, 2, 10))
+    ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)))
+    html = fig.to_html(interactive=True)
+    meta_json = re.search(
+        r'id="plotpress-meta">(.*?)</script>', html, re.S).group(1)
+    assert meta_json.strip() == "{}"

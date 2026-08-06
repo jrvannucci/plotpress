@@ -191,6 +191,100 @@ def build_cases():
     cases.append(Case("imshow", fig, img,
                       "A[0, 0] must read at the top-left cell, not bottom-left"))
 
+    # -- pcolormesh, non-uniform rectilinear spacing -------------------------
+    # Regression: picking bucketed a click into an evenly-divided extent,
+    # which only agreed with the real cell boundaries for a uniform grid.
+    NX = np.array([0.0, 1.0, 2.0, 3.0, 50.0])    # last column much wider
+    NY = np.array([0.0, 1.0, 2.0, 30.0])          # last row much taller
+    NZ = np.arange(12.0).reshape(3, 4)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    ax.pcolormesh(NX, NY, NZ)
+    nonuni = []
+    for row, col in [(0, 0), (2, 3), (1, 2)]:
+        ccx = (NX[col] + NX[col + 1]) / 2.0
+        ccy = (NY[row] + NY[row + 1]) / 2.0
+        nonuni.append({"px": px(fig, 0, ccx, ccy),
+                       "expect": {"kind": "mesh", "axes": 0, "index": row * 4 + col,
+                                  "z": float(NZ[row, col]),
+                                  "x": round(ccx, 6), "y": round(ccy, 6)}})
+    cases.append(Case("pcolormesh_nonuniform", fig, nonuni,
+                      "non-uniform cell widths must use the real edges, not "
+                      "an evenly divided extent"))
+
+    # -- pcolormesh, curvilinear (warped) grid -------------------------------
+    n = 10
+    r = np.linspace(0.3, 1, n)
+    th = np.linspace(0, 1.5 * math.pi, n)
+    R, TH = np.meshgrid(r, th)
+    CX, CY = R * np.cos(TH), R * np.sin(TH)
+    CZ = np.arange((n - 1) * (n - 1), dtype=float).reshape(n - 1, n - 1)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    m = ax.pcolormesh(CX, CY, CZ, cmap="plasma")
+    assert m.curvilinear
+    curvi = []
+    for i, j in [(2, 2), (5, 5), (7, 3)]:
+        ccx = float((CX[i, j] + CX[i, j + 1] + CX[i + 1, j] + CX[i + 1, j + 1]) / 4.0)
+        ccy = float((CY[i, j] + CY[i, j + 1] + CY[i + 1, j] + CY[i + 1, j + 1]) / 4.0)
+        curvi.append({"px": px(fig, 0, ccx, ccy),
+                      "expect": {"kind": "mesh", "axes": 0, "index": i * (n - 1) + j,
+                                 "z": float(CZ[i, j]),
+                                 "x": round(ccx, 6), "y": round(ccy, 6)}})
+    cases.append(Case("pcolormesh_curvilinear", fig, curvi,
+                      "a warped grid must pick via nearest cell center, not "
+                      "a rectangular extent division"))
+
+    # -- pcolormesh, curvilinear with X/Y the same shape as C -----------------
+    # Regression: a warped X/Y sized like a *center* per cell (matching C
+    # exactly, via np.meshgrid) rather than one-more-than-C per axis (node
+    # corners) is a common, valid pattern -- the renderer already clamps to
+    # however many whole cells the two arrays provide (see
+    # QuadMesh._rgba_curvilinear). Picking didn't replicate that clamp, so
+    # building cell centers indexed one column past X's actual width raised
+    # a numpy shape-mismatch error on every figure using this pattern (e.g.
+    # a polar radar/sonar scan built from meshgrid(range, azimuth)).
+    n_az, n_rng = 8, 6
+    az = np.radians(np.linspace(0.0, 315.0, n_az))
+    rr = np.linspace(1.0, 6.0, n_rng)
+    RR, AZ2 = np.meshgrid(rr, az)
+    SX, SY = RR * np.cos(AZ2), RR * np.sin(AZ2)
+    SZ = np.arange(n_az * n_rng, dtype=float).reshape(n_az, n_rng)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    m = ax.pcolormesh(SX, SY, SZ, cmap="plasma")
+    assert m.curvilinear and SX.shape == SZ.shape
+    ny0 = min(SZ.shape[0], SX.shape[0] - 1)
+    nx0 = min(SZ.shape[1], SX.shape[1] - 1)
+    same_shape = []
+    for i, j in [(0, 0), (3, 2), (6, 4)]:
+        ccx = float((SX[i, j] + SX[i, j + 1] + SX[i + 1, j] + SX[i + 1, j + 1]) / 4.0)
+        ccy = float((SY[i, j] + SY[i, j + 1] + SY[i + 1, j] + SY[i + 1, j + 1]) / 4.0)
+        same_shape.append({"px": px(fig, 0, ccx, ccy),
+                           "expect": {"kind": "mesh", "axes": 0, "index": i * nx0 + j,
+                                      "z": float(SZ[i, j]),
+                                      "x": round(ccx, 6), "y": round(ccy, 6)}})
+    cases.append(Case("pcolormesh_curvilinear_same_shape_xy", fig, same_shape,
+                      "X/Y the same shape as C (centers, not +1-sized node "
+                      "corners) must not crash pick_data with a shape "
+                      "mismatch, and must clamp exactly like the renderer"))
+
+    # -- contour, non-uniform sample spacing ---------------------------------
+    # A contour's "cells" are point samples, not spans -- the reported x/y
+    # must be the exact sample coordinate, not the midpoint of its implied
+    # (edges-based) span, which only coincides for uniform spacing.
+    cx_ = np.array([0.0, 1.0, 2.0, 3.0, 50.0])
+    cy_ = np.array([0.0, 1.0, 2.0, 30.0])
+    CZg = np.arange(20.0).reshape(4, 5)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    ax.contour(cx_, cy_, CZg)
+    cnonuni = []
+    for row, col in [(0, 0), (2, 3), (3, 4)]:
+        cnonuni.append({"px": px(fig, 0, cx_[col], cy_[row]),
+                        "expect": {"kind": "mesh", "axes": 0, "index": row * 5 + col,
+                                   "z": float(CZg[row, col]),
+                                   "x": float(cx_[col]), "y": float(cy_[row])}})
+    cases.append(Case("contour_nonuniform", fig, cnonuni,
+                      "a non-uniformly-sampled contour must report the exact "
+                      "sample coordinate, not a derived edge midpoint"))
+
     # -- pie ----------------------------------------------------------------
     pvals, plabels = [40.0, 30.0, 20.0, 10.0], ["a", "b", "c", "d"]
     fig, ax = plotpress.subplots()
@@ -275,5 +369,16 @@ def build_cases():
     ax.set_aspect(1.0)
     cases.append(Case("aspect", fig, _points(fig, 0, axx, axy, (0, 1, 3)),
                       "picking must use the box-adjusted rect, not the allocation"))
+
+    # -- inset axes: nested inside its parent's box, but a distinct axes ----
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 10.0])              # outer data spans the box
+    inset = ax.inset_axes([0.5, 0.5, 0.4, 0.4])    # sits inside the parent
+    ix, iy = np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 0.0])
+    inset.plot(ix, iy)
+    inset_i = fig.axes.index(inset)
+    cases.append(Case("inset_axes", fig, _points(fig, inset_i, ix, iy, (0, 1, 2)),
+                      "a click inside an inset must resolve to the inset, not the "
+                      "enclosing parent axes underneath it"))
 
     return cases

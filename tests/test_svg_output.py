@@ -365,6 +365,18 @@ def test_axes_metadata_for_picking():
                 "xscale", "yscale", "xinv", "yinv"} <= set(entry)
 
 
+def test_axes_metadata_carries_title_for_extract():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[0].set_title("Sensor A")
+    axes[1].plot([0, 1], [1, 0])   # no title
+    meta = axes_metadata(fig)
+    assert meta[0]["title"] == "Sensor A"
+    assert meta[1]["title"] == ""
+
+
 def _meta_to_pixel(entry, dx, dy):
     """Data -> pixel exactly as the client's toPixel() does, from metadata alone.
 
@@ -462,6 +474,89 @@ def test_pick_data_includes_z_c_and_extra_dims():
     # Line: tagged kind + attached z per vertex.
     assert pd[2]["series"][0]["kind"] == "line"
     assert pd[2]["series"][0]["vals"]["z"] == [5.0, 6.0]
+
+
+def test_downsample_grid_preserves_small_grids_and_shrinks_large_ones():
+    from plotpress.svg import _downsample_grid
+
+    small = np.arange(12.0).reshape(3, 4)
+    assert _downsample_grid(small, max_cells=60000) is small  # untouched
+
+    large = np.arange(300 * 300, dtype=float).reshape(300, 300)
+    down = _downsample_grid(large, max_cells=60000)
+    assert down.size <= 60000
+    # A monotonic ramp downsamples to a coarser monotonic ramp -- the block
+    # average preserves the overall trend, not just cell count.
+    assert down[0, 0] < down[-1, -1]
+
+
+def test_downsample_grid_with_masked_region_does_not_warn():
+    """Regression: a block that's entirely NaN (e.g. land in an ocean field,
+    or any masked/missing region) must not raise numpy's "Mean of empty
+    slice" RuntimeWarning -- that's expected input, not a bug to surface on
+    every large masked figure."""
+    import warnings as _warnings
+
+    from plotpress.svg import _downsample_grid
+
+    large = np.full((300, 300), 1.0)
+    large[:150, :150] = np.nan     # one whole quadrant masked out
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")   # any warning fails the test
+        down = _downsample_grid(large, max_cells=60000)
+    assert down.size <= 60000
+    assert np.isnan(down).any()     # the masked region stays NaN
+    assert not np.isnan(down).all()  # the rest of the grid still has data
+
+
+def test_contour_over_mesh_cap_still_reports_a_value():
+    """Regression: a contour/mesh larger than max_mesh_cells used to be
+    dropped from the pick payload entirely, so a click on a large field
+    reported bare x/y with no data value -- exactly the case a "third
+    dimension" plot type exists for."""
+    from plotpress.svg import pick_data
+
+    g = np.linspace(-3, 3, 300)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(np.hypot(X, Y))
+
+    fig, ax = plotpress.subplots()
+    ax.contour(X, Y, Z)
+    pd = pick_data(fig, max_mesh_cells=60000)
+    meshes = pd[0]["meshes"]
+    assert len(meshes) == 1
+    ny, nx = meshes[0]["shape"]
+    assert ny * nx <= 60000
+    assert len(meshes[0]["z"]) == ny * nx
+    assert any(v != 0 for v in meshes[0]["z"])   # real data, not a placeholder
+
+
+def test_curvilinear_pick_data_handles_xy_shaped_like_c():
+    """Regression: a curvilinear pcolormesh's X/Y the same shape as C (one
+    center per cell, via np.meshgrid) rather than one-more-per-axis (node
+    corners) is common and valid -- e.g. a polar radar scan built from
+    meshgrid(range, azimuth). pick_data used the unclamped shape to build
+    cell centers, indexing X/Y one column past their real width and raising
+    a numpy shape-mismatch error building every such figure's interactive
+    HTML."""
+    from plotpress.svg import pick_data
+
+    az = np.radians(np.linspace(0.0, 315.0, 8))
+    rr = np.linspace(1.0, 6.0, 6)
+    RR, AZ = np.meshgrid(rr, az)
+    X, Y = RR * np.cos(AZ), RR * np.sin(AZ)
+    Z = np.arange(X.size, dtype=float).reshape(X.shape)
+    assert X.shape == Z.shape
+
+    fig, ax = plotpress.subplots()
+    m = ax.pcolormesh(X, Y, Z, cmap="viridis")
+    assert m.curvilinear
+    fig.to_html(interactive=True)   # must not raise
+
+    mesh = pick_data(fig)[0]["meshes"][0]
+    ny, nx = mesh["shape"]
+    assert ny == 7 and nx == 5      # clamped to min(shape, X.shape - 1), like the renderer
+    assert len(mesh["xc"]) == len(mesh["yc"]) == len(mesh["z"]) == ny * nx
 
 
 def test_round_list_matches_python_rounding():
@@ -766,15 +861,24 @@ def test_html_payloads_cannot_break_out_of_their_script_block():
         assert evil in json.dumps(json.loads(html[start:end]))
 
 
-def test_pick_data_omits_oversized_series_and_meshes():
+def test_pick_data_omits_oversized_series_but_downsamples_oversized_meshes():
+    """Point series over the cap have no missing-value problem to solve (the
+    client falls back to nearest-vertex geometry), so they're omitted
+    outright. A mesh over the cap still needs to answer a click with a real
+    value, so it's block-averaged down to fit instead of being dropped."""
     from plotpress.svg import pick_data
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot(np.arange(30000.0), np.arange(30000.0))  # over max_points
-    axes[1].pcolormesh(np.zeros((300, 300)))              # over max_mesh_cells
+    axes[1].pcolormesh(np.arange(300 * 300, dtype=float).reshape(300, 300))
     pd = pick_data(fig, max_points=20000, max_mesh_cells=60000)
     assert pd.get(0, {"series": []})["series"] == [] or 0 not in pd
-    assert pd.get(1, {"meshes": []})["meshes"] == [] or 1 not in pd
+
+    meshes = pd[1]["meshes"]
+    assert len(meshes) == 1
+    ny, nx = meshes[0]["shape"]
+    assert ny * nx <= 60000                # downsampled to fit the cap
+    assert len(meshes[0]["z"]) == ny * nx  # a real, usable value grid
 
 
 def _mesh_alpha(draw):
