@@ -377,6 +377,18 @@ def test_axes_metadata_carries_title_for_extract():
     assert meta[1]["title"] == ""
 
 
+def test_axes_metadata_carries_minor_ticks_flag():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[0].minorticks_on()
+    axes[1].plot([0, 1], [1, 0])
+    meta = axes_metadata(fig)
+    assert meta[0]["minor"] is True
+    assert meta[1]["minor"] is False
+
+
 def _meta_to_pixel(entry, dx, dy):
     """Data -> pixel exactly as the client's toPixel() does, from metadata alone.
 

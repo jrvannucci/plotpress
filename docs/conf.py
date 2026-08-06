@@ -121,6 +121,81 @@ def _interactive_embed(fig, image_path):
     ])
 
 
+def _write_usage_demo(fig, name, caption):
+    """Write ``fig`` as a live interactive demo for the hand-written usage
+    guide; return nothing -- writes both the demo HTML and an RST snippet
+    ``usage.rst`` pulls in with ``.. include::``.
+
+    ``usage.rst`` has no sphinx-gallery scraper pass to hook into (that only
+    runs over ``examples_dirs``), so its demos are generated directly here,
+    once, when Sphinx loads this config -- before any page is read. The
+    embed markup itself mirrors :func:`_interactive_embed`, just with a
+    caption and a shallower relative path (``usage.html`` sits one directory
+    up from a gallery page, not two).
+    """
+    os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
+    with open(os.path.join(_INTERACTIVE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
+        fh.write(fig.to_html(interactive=True))
+    dpi = fig.style.dpi
+    width = int(round(fig.figsize[0] * dpi))
+    height = int(round(fig.figsize[1] * dpi)) + 96
+    rst = "\n".join([
+        ".. raw:: html",
+        "",
+        '   <div class="plotpress-interactive">',
+        f"     <p><em>{caption}</em></p>",
+        f'     <iframe src="_static/interactive/{name}.html" width="{width}" height="{height}"',
+        '             loading="lazy" style="max-width:100%; border:1px solid #ddd;"',
+        '             title="Interactive figure"></iframe>',
+        "   </div>",
+        "",
+    ])
+    with open(os.path.join(_INTERACTIVE_DIR, name + ".rst.inc"), "w", encoding="utf-8") as fh:
+        fh.write(rst)
+
+
+def _build_usage_demos():
+    """The three live figures embedded in docs/usage.rst's interactivity
+    section -- one per toolbar capability the prose there describes."""
+    import numpy as np
+
+    fig1, ax1 = plotpress.subplots(figsize=(6, 4))
+    x = np.linspace(0, 10, 200)
+    ax1.plot(x, np.sin(x), label="sin")
+    sx = np.linspace(0, 10, 25)
+    ax1.scatter(sx, np.cos(sx), s=20, label="cos",
+               values={"phase": sx % (2 * np.pi)})
+    ax1.set_xlabel("x"); ax1.set_ylabel("y"); ax1.legend()
+    _write_usage_demo(
+        fig1, "usage_pan_zoom_pick",
+        "Span to pan, Zoom to zoom (wheel or box-drag), Point Pick to read a "
+        "value -- the scatter series also carries a phase value, surfaced "
+        "when a marker is picked.")
+
+    fig2, ax2 = plotpress.subplots(figsize=(6, 4))
+    x2 = np.linspace(0, 10, 300)
+    ax2.plot(x2, np.sin(x2) * np.exp(-x2 / 12))
+    ax2.set_xlabel("x"); ax2.set_ylabel("y")
+    _write_usage_demo(
+        fig2, "usage_annotate",
+        "Annotate Point locks a note to the nearest datum -- try the peak; "
+        "Annotate Free drops one anywhere on the figure, including outside "
+        "the axes.")
+
+    fig3, ax3 = plotpress.subplots(figsize=(6, 4))
+    xf = np.linspace(0, 2 * np.pi, 100)
+    frames = np.array([np.sin(xf + phase)
+                       for phase in np.linspace(0, 2 * np.pi, 24, endpoint=False)])
+    ax3.plot_frames(xf, frames, slider_label="phase")
+    ax3.set_xlabel("x"); ax3.set_ylabel("y")
+    _write_usage_demo(
+        fig3, "usage_frames",
+        "plot_frames adds a play/pause/step slider over an extra dimension.")
+
+
+_build_usage_demos()
+
+
 def _plotpress_scraper(block, block_vars, gallery_conf):
     """Save any new ``plotpress.Figure`` created by an example to a PNG.
 

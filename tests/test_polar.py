@@ -100,6 +100,30 @@ def test_scatter_and_fill_project_too():
     assert poly in ax.artists
 
 
+def test_plot_and_scatter_carry_theta_r_for_picking():
+    """Regression: point-picking on a polar plot reported the projected
+    Cartesian (x, y) -- meaningless read back on a polar chart -- instead of
+    the (theta, r) the caller actually plotted."""
+    _, ax = _polar()
+    theta = np.linspace(0, 2 * np.pi, 20)
+    r = np.linspace(1.0, 5.0, 20)
+    line = ax.plot(theta, r)
+    coll = ax.scatter(theta, r)
+    for art in (line, coll):
+        np.testing.assert_allclose(art.pick_values["theta"], theta)
+        np.testing.assert_allclose(art.pick_values["r"], r)
+
+    fig, ax2 = plotpress.subplots(projection="polar")
+    ax2.plot(theta, r)
+    from plotpress.svg import pick_data
+    series = pick_data(fig)[0]["series"]
+    with_theta = [s for s in series if "theta" in s["vals"]]
+    assert len(with_theta) == 1
+    # pick_data rounds to 6 decimals for the embedded payload.
+    np.testing.assert_allclose(with_theta[0]["vals"]["theta"], theta, atol=1e-6)
+    np.testing.assert_allclose(with_theta[0]["vals"]["r"], r, atol=1e-6)
+
+
 def test_polar_renders_in_both_backends():
     pytest.importorskip("PIL")
     from plotpress.raster import figure_to_image

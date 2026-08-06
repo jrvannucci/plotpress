@@ -110,6 +110,39 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     assert n == 0, "a click in the margin created %d marker(s)" % n
 
 
+def test_minor_ticks_reposition_on_zoom(page, tmp_path):
+    """Regression: rebuildTicks() only recomputed major ticks on pan/zoom;
+    minorticks_on()'s marks stayed frozen at their initial positions instead
+    of tracking the new, narrower range."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 10.0])
+    ax.minorticks_on()
+    path = tmp_path / "minor_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    before = page.evaluate(
+        "() => document.getElementById('ticks0').querySelectorAll('line').length")
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
+    box = page.eval_on_selector(
+        "#plotpress-svg",
+        "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
+    page.mouse.move(box["x"] + box["w"] / 2, box["y"] + box["h"] / 2)
+    for _ in range(15):
+        page.mouse.wheel(0, -100)   # negative deltaY zooms in
+
+    after = page.evaluate(
+        "() => document.getElementById('ticks0').querySelectorAll('line').length")
+    assert after != before, (
+        "tick mark count did not change after zoom -- minor ticks are frozen")
+
+
 def _drag_pan(page, x0, y0, x1, y1):
     """Simulate a real "Span"-mode drag between two SVG user-space points."""
     return page.evaluate(

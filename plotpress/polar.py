@@ -61,17 +61,30 @@ class PolarAxes(Axes):
     # -- plotting (project, then delegate to the Cartesian core) ------------
     def plot(self, theta, r, **kwargs):
         """Plot ``r`` versus ``theta`` (radians) as a polar line."""
+        theta = np.asarray(theta, dtype=float)
+        r = np.asarray(r, dtype=float)
         x, y = self._project(theta, r)
         self._track_r(r)
-        line = super().plot(x, y, **kwargs)
+        # Carried as pick_values so point-picking reports the polar
+        # coordinates the caller actually plotted, not the Cartesian (x, y)
+        # they got projected to for drawing -- which is what the interactive
+        # HTML reports for anything else built on the Cartesian core, and
+        # meaningless read back on a polar chart.
+        values = {"theta": theta, "r": r}
+        values.update(kwargs.pop("values", None) or {})
+        line = super().plot(x, y, values=values, **kwargs)
         self._rebuild_frame()
         return line
 
     def scatter(self, theta, r, **kwargs):
         """Scatter ``r`` versus ``theta`` (radians)."""
+        theta = np.asarray(theta, dtype=float)
+        r = np.asarray(r, dtype=float)
         x, y = self._project(theta, r)
         self._track_r(r)
-        coll = super().scatter(x, y, **kwargs)
+        values = {"theta": theta, "r": r}
+        values.update(kwargs.pop("values", None) or {})
+        coll = super().scatter(x, y, values=values, **kwargs)
         self._rebuild_frame()
         return coll
 

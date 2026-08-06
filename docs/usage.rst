@@ -66,13 +66,25 @@ active until a tool is selected:
 * **Zoom** -- wheel or box-drag to zoom *one* axes in data space (ticks recompute).
 * **Point Pick** -- click to read the nearest data value; arrow keys step along
   the series; right-click deletes. Reports extra dims (``z``, ``c``, ...).
-* **Annotate** -- click to drop a text note anchored to the data.
+
+.. include:: _static/interactive/usage_pan_zoom_pick.rst.inc
+
+* **Annotate Point** -- like Point Pick, but prompts for text and locks a
+  user-written note to that datum instead of the auto-generated readout;
+  still steppable by arrow key and still tracks pan/zoom.
+* **Annotate Free** -- drop a user-written note anywhere on the figure, not
+  locked to any datum -- including the margins or the gap between subplots.
+
+.. include:: _static/interactive/usage_annotate.rst.inc
+
 * **Reset** / **Extract** -- restore the view, or copy/download all markers and
   annotations as CSV/JSON (or hand them back to the kernel with
   ``fig.show(wait_for_extract=True)``).
 
 3-D data via ``ax.plot_frames(...)`` adds a play/pause/step **slider** over the
 extra dimension.
+
+.. include:: _static/interactive/usage_frames.rst.inc
 
 Log scales, aspect, layout
 --------------------------
