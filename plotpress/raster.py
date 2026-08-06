@@ -220,22 +220,26 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
         if is_twin:
             _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw)
         elif is_secondary:
-            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+            yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
             is_x = ax._secondary_dim == "x"
-            _raster_ticks(ax, tst, tr, xticks if is_x else [], yticks if not is_x else [],
+            _raster_ticks(ax, xst, yst, tr, xticks if is_x else [], yticks if not is_x else [],
                          L, T, Wp, Hp, S, draw,
                          xside=ax._xtick_side, yside=ax._ytick_side)
         else:
-            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
-            _raster_ticks(ax, tst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+            xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+            yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
+            _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
                          xside=ax._xtick_side, yside=ax._ytick_side)
             if ax._minor_ticks_on:
                 from .ticker import minor_ticks
-                mst = (tst.copy(**ax._minor_tick_overrides)
-                      if ax._minor_tick_overrides else tst)
+                mxst = (xst.copy(**ax._minor_tick_overrides["x"])
+                       if ax._minor_tick_overrides["x"] else xst)
+                myst = (yst.copy(**ax._minor_tick_overrides["y"])
+                       if ax._minor_tick_overrides["y"] else yst)
                 xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
                 yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
-                _raster_minor_ticks(mst, tr, xminor, yminor, L, T, Wp, Hp, S, draw,
+                _raster_minor_ticks(mxst, myst, tr, xminor, yminor, L, T, Wp, Hp, S, draw,
                                    xside=ax._xtick_side, yside=ax._ytick_side)
             _raster_spines(ax, L, T, Wp, Hp, S, draw)
     if not is_twin:
@@ -620,13 +624,18 @@ def _quiver_arrow(draw, x0, y0, x1, y1, col, S):
 
 
 # -- furniture --------------------------------------------------------------
-def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+def _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
                   xside="bottom", yside="left"):
-    ts = st.tick_size * S
-    col = _rgb(st.spine_color)
-    fs = st.tick_label_size * S
-    font = _font(fs, st.font_family)
-    tw = max(1, int(round(st.tick_width * S)))
+    xts = xst.tick_size * S
+    xcol = _rgb(xst.spine_color)
+    xfs = xst.tick_label_size * S
+    xfont = _font(xfs, xst.font_family)
+    xtw = max(1, int(round(xst.tick_width * S)))
+    yts = yst.tick_size * S
+    ycol = _rgb(yst.spine_color)
+    yfs = yst.tick_label_size * S
+    yfont = _font(yfs, yst.font_family)
+    ytw = max(1, int(round(yst.tick_width * S)))
     xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
     ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
     x_top = xside == "top"
@@ -637,24 +646,27 @@ def _raster_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     y_sign = 1 if y_right else -1
     for xt, lab in zip(xticks, xlabels):
         x = float(tr.x(xt))
-        draw.line([x, x_axis, x, x_axis + x_sign * ts], fill=col, width=tw)
-        ly = x_axis + x_sign * (ts + 1)
-        draw.text((x, ly), lab, fill=_rgb(st.text_color), font=font,
+        draw.line([x, x_axis, x, x_axis + x_sign * xts], fill=xcol, width=xtw)
+        ly = x_axis + x_sign * (xts + 1)
+        draw.text((x, ly), lab, fill=_rgb(xst.text_color), font=xfont,
                   anchor=("md" if x_top else "ma"))
     for yt, lab in zip(yticks, ylabels):
         y = float(tr.y(yt))
-        draw.line([y_axis, y, y_axis + y_sign * ts, y], fill=col, width=tw)
-        lx = y_axis + y_sign * (ts + 2)
-        draw.text((lx, y), lab, fill=_rgb(st.text_color), font=font,
+        draw.line([y_axis, y, y_axis + y_sign * yts, y], fill=ycol, width=ytw)
+        lx = y_axis + y_sign * (yts + 2)
+        draw.text((lx, y), lab, fill=_rgb(yst.text_color), font=yfont,
                   anchor=("lm" if y_right else "rm"))
 
 
-def _raster_minor_ticks(st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
+def _raster_minor_ticks(xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
                         xside="bottom", yside="left"):
     """Unlabeled minor tick marks -- the raster counterpart of the SVG one."""
-    ts = st.tick_size * 0.6 * S
-    col = _rgb(st.spine_color)
-    tw = max(1, int(round(st.tick_width * S)))
+    xts = xst.tick_size * 0.6 * S
+    xcol = _rgb(xst.spine_color)
+    xtw = max(1, int(round(xst.tick_width * S)))
+    yts = yst.tick_size * 0.6 * S
+    ycol = _rgb(yst.spine_color)
+    ytw = max(1, int(round(yst.tick_width * S)))
     x_top = xside == "top"
     x_axis = T if x_top else T + Hp
     x_sign = -1 if x_top else 1
@@ -663,10 +675,10 @@ def _raster_minor_ticks(st, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     y_sign = 1 if y_right else -1
     for xt in xticks:
         x = float(tr.x(xt))
-        draw.line([x, x_axis, x, x_axis + x_sign * ts], fill=col, width=tw)
+        draw.line([x, x_axis, x, x_axis + x_sign * xts], fill=xcol, width=xtw)
     for yt in yticks:
         y = float(tr.y(yt))
-        draw.line([y_axis, y, y_axis + y_sign * ts, y], fill=col, width=tw)
+        draw.line([y_axis, y, y_axis + y_sign * yts, y], fill=ycol, width=ytw)
 
 
 def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):

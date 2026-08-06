@@ -117,24 +117,30 @@ class Spine:
         self._linewidth = None
 
     def set_visible(self, visible):
+        """Show or hide this side of the box outline."""
         self._visible = bool(visible)
 
     def get_visible(self):
+        """Whether this side of the box outline is drawn."""
         return self._visible
 
     def set_color(self, color):
+        """Set this side's color; ``None`` reverts to the figure style's default."""
         self._color = color
 
     def get_color(self):
+        """This side's color, falling back to the figure style's ``spine_color``."""
         return self._color if self._color is not None else self._axes.style.spine_color
 
     set_edgecolor = set_color
     get_edgecolor = get_color
 
     def set_linewidth(self, width):
+        """Set this side's line width; ``None`` reverts to the figure style's default."""
         self._linewidth = width
 
     def get_linewidth(self):
+        """This side's line width, falling back to the figure style's ``spine_width``."""
         return (self._linewidth if self._linewidth is not None
                 else self._axes.style.spine_width)
 
@@ -181,9 +187,9 @@ class Axes:
         self._secondary_dim = None  # 'x' or 'y' -- which dimension is mirrored
         self._inset_parent = None   # parent axes when this is an inset_axes
         self._inset_bounds = None   # (x0, y0, w, h) in the parent's own fractions
-        self._tick_overrides = {}   # per-axes tick style (Style field -> value)
+        self._tick_overrides = {"x": {}, "y": {}}   # per-axis tick style (Style field -> value)
         self._minor_ticks_on = False
-        self._minor_tick_overrides = {}
+        self._minor_tick_overrides = {"x": {}, "y": {}}
         self._xtick_side = "bottom"
         self._ytick_side = "left"
         self._xlabel = ""
@@ -1193,32 +1199,37 @@ class Axes:
         """Style this axes' tick marks and labels (a subset of matplotlib's).
 
         ``labelsize`` (tick-label font), ``length``/``width`` (tick marks),
-        ``color`` (mark color), ``labelcolor`` (label color). The ``axis``
-        argument is accepted for compatibility but applies to both axes.
-        ``which`` selects ``"major"``, ``"minor"``, or ``"both"``; minor ticks
-        have no labels, so ``labelsize``/``labelcolor`` only ever affect major
-        ticks.
+        ``color`` (mark color), ``labelcolor`` (label color). ``axis`` selects
+        ``"x"``, ``"y"``, or ``"both"`` (default) -- each axis keeps its own
+        override, so ``tick_params(axis='x', color='red')`` recolors only the
+        x ticks. ``which`` selects ``"major"``, ``"minor"``, or ``"both"``;
+        minor ticks have no labels, so ``labelsize``/``labelcolor`` only ever
+        affect major ticks.
         """
-        if which in ("major", "both"):
-            ov = self._tick_overrides
-            if labelsize is not None:
-                ov["tick_label_size"] = labelsize
-            if length is not None:
-                ov["tick_size"] = length
-            if width is not None:
-                ov["tick_width"] = width
-            if color is not None:
-                ov["spine_color"] = color    # tick-mark color (box spine unchanged)
-            if labelcolor is not None:
-                ov["text_color"] = labelcolor
-        if which in ("minor", "both"):
-            mov = self._minor_tick_overrides
-            if length is not None:
-                mov["tick_size"] = length
-            if width is not None:
-                mov["tick_width"] = width
-            if color is not None:
-                mov["spine_color"] = color
+        if axis not in ("x", "y", "both"):
+            raise ValueError("axis must be 'x', 'y', or 'both'")
+        axes = ("x", "y") if axis == "both" else (axis,)
+        for a in axes:
+            if which in ("major", "both"):
+                ov = self._tick_overrides[a]
+                if labelsize is not None:
+                    ov["tick_label_size"] = labelsize
+                if length is not None:
+                    ov["tick_size"] = length
+                if width is not None:
+                    ov["tick_width"] = width
+                if color is not None:
+                    ov["spine_color"] = color    # tick-mark color (box spine unchanged)
+                if labelcolor is not None:
+                    ov["text_color"] = labelcolor
+            if which in ("minor", "both"):
+                mov = self._minor_tick_overrides[a]
+                if length is not None:
+                    mov["tick_size"] = length
+                if width is not None:
+                    mov["tick_width"] = width
+                if color is not None:
+                    mov["spine_color"] = color
         return self
 
     def minorticks_on(self):
@@ -1455,10 +1466,12 @@ class Axes:
         return self._rect
 
     def set_xlabel(self, xlabel):
+        """Set the x-axis label."""
         self._xlabel = xlabel
         self.figure._layout_dirty = True
 
     def set_ylabel(self, ylabel):
+        """Set the y-axis label."""
         self._ylabel = ylabel
         self.figure._layout_dirty = True
 
@@ -1475,6 +1488,7 @@ class Axes:
         self.figure._layout_dirty = True
 
     def grid(self, visible=True):
+        """Show or hide the gridlines at the major tick positions."""
         self._grid = bool(visible)
 
     def legend(self, loc="upper right", ncol=1, title=None):

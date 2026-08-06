@@ -30,8 +30,16 @@ Strings and Jupyter
 ``fig.to_svg()``
     Return the SVG document as a string.
 
-``fig.to_html(interactive=True, wait_extract=False)``
-    Return a self-contained interactive HTML string.
+``fig.to_html(interactive=True, wait_extract=False, pick_precision=6, pick_max_mesh_cells=60000, pick_max_points=20000)``
+    Return a self-contained interactive HTML string. ``pick_precision`` sets
+    the decimal places embedded per point-pick value; ``pick_max_mesh_cells``/
+    ``pick_max_points`` cap how much of each mesh's/series' own data is
+    embedded for picking, *per artist* -- so a figure with many mesh-bearing
+    axes does not multiply the default cap by the axes count. A mesh over the
+    cap is block-averaged down to it rather than dropped, so a click still
+    answers with a real, if coarser, value; a series over the point cap falls
+    back to a geometry-only x/y readout. ``fig.save(..., interactive=True)``
+    accepts the same three kwargs.
 
 ``fig._repr_svg_()``
     Inline SVG rendering in Jupyter (used automatically).

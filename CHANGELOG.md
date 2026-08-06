@@ -50,6 +50,27 @@ is derived from it at build time rather than written down anywhere in the source
   target, preferring the middle of an edge over a corner, rather than at the
   text anchor. From the anchor the line set off straight across its own label
   whenever the target lay back over the words.
+- **Matplotlib-parity axes/figure manipulation**: `ax.spines` (per-side
+  `visible`/`color`/`linewidth`), `set_facecolor`/`get_facecolor`,
+  `set_visible`/`get_visible`, `remove()`, `cla()`/`clear()`, matplotlib-
+  mirroring getters (`get_xlabel`, `get_title`, `get_xticks`, ...),
+  `minorticks_on`/`off`, `tick_top`/`bottom`/`left`/`right`, post-hoc
+  `sharex()`/`sharey()`, `label_outer()`, persistent `margins()`/
+  `set_xmargin`/`autoscale()`, `axis()`, and `set_prop_cycle()`. On the figure
+  side: `set_size_inches`/`set_dpi`, `subplots_adjust`, `GridSpec` row/column
+  spans (`fig.add_subplot(gs[0, :2])`), `align_xlabels`/`align_ylabels`/
+  `align_labels`, `delaxes()`, `clf()`/`clear()`, `fig.text()`, and
+  `secondary_xaxis`/`secondary_yaxis`/`inset_axes`.
+- `pick_max_mesh_cells`/`pick_max_points` on `to_html()`/`save()`, bounding
+  the interactive payload for figures with many mesh-bearing axes instead of
+  only trading off per-number precision.
+- Point picking now covers every remaining artist kind that had none:
+  `fill()`'s polygon, `hlines()`/`vlines()`'s segments, and `broken_barh()`/
+  `hexbin()`'s bounding boxes -- `hexbin` also now surfaces its raw bin count
+  on pick instead of only the colormapped RGB.
+- `import plotpress` resolves `Figure`/`subplots`/`Style`/colormap helpers
+  lazily on first access instead of eagerly, keeping a bare `import plotpress`
+  cheap for callers who only need `__version__`.
 
 ### Fixed
 
@@ -106,6 +127,36 @@ is derived from it at build time rather than written down anywhere in the source
   the lattice no longer depends on the choice of units. Deriving it from the
   ratio of the data ranges meant plotting kilowatts against metres per second
   asked for three thousand rows and drew every bin as a sub-pixel dash.
+- A ~1000x `pcolormesh` slowdown: 2-D `X`/`Y` that are secretly rectilinear
+  (e.g. `np.meshgrid` output, every row of `X` and column of `Y` constant) now
+  route through the vectorized rectilinear path instead of curvilinear
+  scan-conversion's per-cell Python loop (6.16s -> 0.009s on a 200x200 grid).
+- Point picking on non-uniform or curvilinear `pcolormesh`/`contour` meshes
+  matched the wrong cell -- the client bucketed a click by dividing the mesh's
+  extent evenly, which only agreed with the real cell boundaries on a uniform
+  grid. The payload now carries the actual edges (or per-cell centers for a
+  curvilinear mesh).
+- An inset axes was permanently unreachable by click/wheel/drag: the hit test
+  always resolved to whichever axes was added first (its parent), so the
+  inset itself never received the click.
+- Twin and secondary axes desynced from their parent on interactive pan/zoom/
+  reset -- only the actually-clicked axes' view updated, leaving the other
+  frozen, since the two occupy the same pixel rect.
+- `cla()`/`clear()` now detaches from a `sharex`/`sharey` group before
+  resetting, instead of leaving stale membership that could still receive a
+  sibling's `set_xlim`/`set_ylim`.
+- Minor ticks now reposition during interactive pan/zoom/reset; they
+  previously stayed frozen at their initial positions.
+- Polar axes now attach the original `(theta, r)` as pick values on the
+  projected line/scatter artist, so picking reports what was actually
+  plotted instead of the projected Cartesian `(x, y)`.
+- `Axes.tick_params(axis=...)` now actually filters which axis it restyles --
+  `axis='x'`/`'y'` previously restyled both axes' ticks regardless.
+- `set_xscale`/`set_yscale` now raise a clear error on `PolarAxes`/`Axes3D`
+  instead of silently accepting an unhandled `'log'` scale and drawing the
+  same figure as if it had never been called.
+- `GridSpec(left=, right=, top=, bottom=, wspace=, hspace=)` are now honored
+  (applied as the figure's own margins) instead of being silently ignored.
 
 ### Changed
 
@@ -113,6 +164,9 @@ is derived from it at build time rather than written down anywhere in the source
   than a round marker. Only round markers are drawn; accepting the argument and
   silently substituting a dot loses distinctions the shape was carrying, such as
   censored versus observed, with nothing on the figure to reveal it.
+- Annotate is now two separate tools instead of one: **Annotate Point** locks
+  a note to the nearest pickable datum, and **Annotate Free** drops it
+  anywhere on the figure in figure-fraction coordinates.
 
 ## [0.1.0] - 2026-07-26
 

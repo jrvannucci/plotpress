@@ -96,6 +96,20 @@ class PolarAxes(Axes):
         self._rebuild_frame()
         return poly
 
+    def set_xscale(self, scale):
+        """Only ``'linear'`` -- the polar projection has no log-axis support."""
+        if scale != "linear":
+            raise NotImplementedError(
+                "PolarAxes does not support non-linear scales (got %r)" % scale)
+        self._xscale = scale
+
+    def set_yscale(self, scale):
+        """Only ``'linear'`` -- the polar projection has no log-axis support."""
+        if scale != "linear":
+            raise NotImplementedError(
+                "PolarAxes does not support non-linear scales (got %r)" % scale)
+        self._yscale = scale
+
     # -- polar limits / grid API -------------------------------------------
     def set_rmax(self, rmax):
         self._rmax = float(rmax)
