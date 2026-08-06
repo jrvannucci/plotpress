@@ -39,6 +39,11 @@ At a glance
      - ``fig.show_qt()`` or ``plotpress.qt.PlotPressWidget``
      - **yes**
      - ``[qt]``
+   * - Other GUI toolkit (wx, Tk, ...)
+     - ``figure_to_image(fig)`` (static) or ``fig.to_html()`` in a web-view
+       widget (interactive)
+     - depends on the widget
+     - the toolkit itself
    * - Embedded
      - drop ``fig.to_svg()`` / ``fig.to_html()`` into your own page
      - optional
@@ -153,6 +158,135 @@ customization) and loads the document from a temporary file, so even large,
 mesh-heavy figures render (``QWebEngineView.setHtml`` alone caps at ~2 MB). Pass
 ``pick_precision=`` to shrink the embedded point-pick data for big figures, just
 as with :meth:`~plotpress.Figure.to_html`.
+
+In other desktop GUI toolkits
+------------------------------
+
+``plotpress.qt`` is the one toolkit with a dedicated module, but the two
+things it does -- render a static image, or drop the interactive HTML into a
+web-view widget -- work the same way in any GUI toolkit that has (or can get)
+one. Two building blocks cover every case:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 40 30
+
+   * - You want
+     - Call
+     - Gives you
+   * - A static image, in memory
+     - ``plotpress.raster.figure_to_image(fig)``
+     - a Pillow ``Image`` -- ``.save(buf, format="PNG")`` for raw bytes, no
+       disk round-trip
+   * - The full interactive toolbar
+     - ``fig.to_html(interactive=True)``
+     - a self-contained HTML string -- feed it to any web-view widget
+
+A static image needs nothing beyond the toolkit's own image widget. The
+interactive toolbar needs a widget that can run JavaScript -- typically
+labelled "web view" or "browser" in each toolkit -- and, as with Qt's
+``QWebEngineView`` (see above), it is worth loading the HTML from a **temp
+file** rather than handing it to an in-memory "set this HTML string" call:
+several toolkits' web-view backends silently truncate or choke on large
+strings, and a mesh-heavy figure's embedded pick data routinely exceeds that.
+``plotpress.qt`` does this already; the same pattern is shown for wxPython
+below.
+
+wxPython
+~~~~~~~~
+
+``wx.html2.WebView`` wraps the platform's native web engine (WebView2 on
+Windows, WebKit on macOS/GTK) and runs the toolbar's JS the same way
+``QWebEngineView`` does:
+
+.. code-block:: python
+
+   import os
+   import tempfile
+   import wx
+   import wx.html2
+
+   class PlotPanel(wx.Panel):
+       def __init__(self, parent, figure):
+           super().__init__(parent)
+           self.view = wx.html2.WebView.New(self)
+           sizer = wx.BoxSizer(wx.VERTICAL)
+           sizer.Add(self.view, 1, wx.EXPAND)
+           self.SetSizer(sizer)
+           self._temp_path = None
+           self.set_figure(figure)
+
+       def set_figure(self, figure, interactive=True):
+           if self._temp_path:
+               try:
+                   os.remove(self._temp_path)
+               except OSError:
+                   pass
+           fd, path = tempfile.mkstemp(suffix=".html", prefix="plotpress_")
+           with os.fdopen(fd, "w", encoding="utf-8") as f:
+               f.write(figure.to_html(interactive=interactive))
+           self._temp_path = path
+           self.view.LoadURL("file://" + path)
+
+   app = wx.App()
+   frame = wx.Frame(None, title="plotpress")
+   panel = PlotPanel(frame, fig)
+   frame.Show()
+   app.MainLoop()
+
+For a static (non-interactive) panel instead, skip the web view entirely:
+
+.. code-block:: python
+
+   import io
+   from plotpress.raster import figure_to_image
+
+   buf = io.BytesIO()
+   figure_to_image(fig).save(buf, format="PNG")
+   bitmap = wx.Bitmap(wx.Image(io.BytesIO(buf.getvalue())))
+   wx.StaticBitmap(frame, bitmap=bitmap)
+
+Tkinter
+~~~~~~~
+
+Tkinter has no built-in, well-supported web-view widget, so the reliable
+default is a **static image** via the standard library's own ``PhotoImage``
+(Tk 8.6+ loads PNG directly -- no Pillow needed on the Tk side, only to
+*produce* the PNG):
+
+.. code-block:: python
+
+   import io
+   import tkinter as tk
+   from plotpress.raster import figure_to_image
+
+   buf = io.BytesIO()
+   figure_to_image(fig).save(buf, format="PNG")
+
+   root = tk.Tk()
+   photo = tk.PhotoImage(data=buf.getvalue())   # keep a reference -- Tk drops
+   label = tk.Label(root, image=photo)          # unreferenced PhotoImages
+   label.pack()
+   root.mainloop()
+
+For the interactive toolbar, Tkinter's third-party web-view packages (e.g.
+``tkinterweb``) vary in how much of the JS they run -- test the toolbar you
+actually need before relying on one. The simplest option that is *guaranteed*
+to run every feature is popping the figure into its own native window from a
+button callback, using the same webview stack ``fig.show()`` already wraps:
+
+.. code-block:: python
+
+   button = tk.Button(root, text="Open interactive view", command=fig.show)
+
+Any other toolkit
+~~~~~~~~~~~~~~~~~~
+
+The same two-tier choice applies everywhere: check whether the toolkit has an
+embeddable web/browser widget (Kivy, for instance, has third-party
+``kivy_garden`` webview components); if not, ``figure_to_image(fig)`` into
+whatever image widget it offers is the zero-dependency fallback that always
+works, at the cost of the toolbar.
 
 Embedded in your own page or app
 --------------------------------

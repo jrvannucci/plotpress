@@ -21,21 +21,21 @@ These measure **time to produce a static file**, which is the axis plotpress opt
      - matplotlib
      - xy
    * - ``line_100k_points``
-     - 10.6 ms
-     - 64.7 ms
-     - 3.1 ms
+     - 8.9 ms
+     - 44.5 ms
+     - 2.5 ms
    * - ``scatter_5k_points``
-     - 15.6 ms
-     - 153.4 ms
-     - 24.8 ms
+     - 15.5 ms
+     - 120.6 ms
+     - 22.4 ms
    * - ``pcolormesh_300x300``
-     - 10.9 ms
-     - 6802.2 ms
-     - 19.0 ms
+     - 9.2 ms
+     - 5833.5 ms
+     - 16.3 ms
    * - ``many_axes_8x8_grid``
-     - 46.5 ms
-     - 1864.2 ms
-     - 66.9 ms
+     - 37.4 ms
+     - 1402.8 ms
+     - 61.8 ms
 
 Per-example output
 ------------------
@@ -52,267 +52,267 @@ Per-example output
      - HTML size
    * - :ref:`plot_01_line <sphx_glr_auto_examples_plot_01_line.py>`
      - 1
-     - 1.2 ms
+     - 1.1 ms
      - 9 KiB
-     - 1.9 ms
-     - 59 KiB
+     - 1.5 ms
+     - 61 KiB
    * - :ref:`plot_02_scatter <sphx_glr_auto_examples_plot_02_scatter.py>`
      - 1
-     - 2.0 ms
-     - 35 KiB
-     - 2.4 ms
-     - 87 KiB
+     - 1.8 ms
+     - 36 KiB
+     - 2.3 ms
+     - 89 KiB
    * - :ref:`plot_03_bar <sphx_glr_auto_examples_plot_03_bar.py>`
      - 1
      - 0.3 ms
      - 3 KiB
      - 0.5 ms
-     - 45 KiB
+     - 47 KiB
    * - :ref:`plot_04_barh <sphx_glr_auto_examples_plot_04_barh.py>`
      - 1
      - 0.3 ms
      - 3 KiB
      - 0.4 ms
-     - 45 KiB
+     - 47 KiB
    * - :ref:`plot_05_stem <sphx_glr_auto_examples_plot_05_stem.py>`
      - 1
      - 0.3 ms
      - 5 KiB
      - 0.4 ms
-     - 48 KiB
+     - 50 KiB
    * - :ref:`plot_06_step <sphx_glr_auto_examples_plot_06_step.py>`
      - 1
      - 0.3 ms
      - 3 KiB
-     - 0.5 ms
-     - 45 KiB
+     - 0.4 ms
+     - 47 KiB
    * - :ref:`plot_07_fill_between <sphx_glr_auto_examples_plot_07_fill_between.py>`
      - 1
      - 1.4 ms
      - 11 KiB
-     - 2.0 ms
-     - 62 KiB
+     - 1.8 ms
+     - 64 KiB
    * - :ref:`plot_08_stackplot <sphx_glr_auto_examples_plot_08_stackplot.py>`
      - 1
-     - 0.7 ms
+     - 0.6 ms
      - 4 KiB
-     - 0.9 ms
-     - 47 KiB
+     - 0.7 ms
+     - 49 KiB
    * - :ref:`plot_09_hist <sphx_glr_auto_examples_plot_09_hist.py>`
      - 1
      - 0.6 ms
      - 5 KiB
-     - 0.8 ms
-     - 48 KiB
+     - 0.7 ms
+     - 50 KiB
    * - :ref:`plot_10_boxplot <sphx_glr_auto_examples_plot_10_boxplot.py>`
      - 1
      - 0.3 ms
      - 5 KiB
-     - 0.5 ms
-     - 47 KiB
+     - 0.4 ms
+     - 49 KiB
    * - :ref:`plot_11_errorbar <sphx_glr_auto_examples_plot_11_errorbar.py>`
      - 1
-     - 0.5 ms
+     - 0.4 ms
      - 5 KiB
      - 0.5 ms
-     - 47 KiB
+     - 49 KiB
    * - :ref:`plot_12_violin <sphx_glr_auto_examples_plot_12_violin.py>`
      - 1
-     - 1.7 ms
+     - 1.4 ms
      - 10 KiB
-     - 2.4 ms
-     - 60 KiB
+     - 1.9 ms
+     - 62 KiB
    * - :ref:`plot_13_eventplot <sphx_glr_auto_examples_plot_13_eventplot.py>`
      - 1
-     - 1.4 ms
+     - 1.2 ms
      - 16 KiB
-     - 2.4 ms
-     - 62 KiB
+     - 1.6 ms
+     - 63 KiB
    * - :ref:`plot_14_hist2d <sphx_glr_auto_examples_plot_14_hist2d.py>`
      - 1
-     - 1.0 ms
+     - 0.7 ms
      - 6 KiB
-     - 1.5 ms
-     - 58 KiB
+     - 1.1 ms
+     - 59 KiB
    * - :ref:`plot_15_pie <sphx_glr_auto_examples_plot_15_pie.py>`
      - 1
      - 0.1 ms
      - 1 KiB
      - 0.1 ms
-     - 44 KiB
+     - 46 KiB
    * - :ref:`plot_16_imshow <sphx_glr_auto_examples_plot_16_imshow.py>`
      - 1
-     - 2.1 ms
+     - 1.4 ms
      - 15 KiB
-     - 8.4 ms
-     - 204 KiB
+     - 6.7 ms
+     - 206 KiB
    * - :ref:`plot_17_pcolormesh <sphx_glr_auto_examples_plot_17_pcolormesh.py>`
      - 1
-     - 4.3 ms
+     - 3.2 ms
      - 13 KiB
-     - 22.0 ms
-     - 428 KiB
+     - 18.0 ms
+     - 430 KiB
    * - :ref:`plot_18_contour <sphx_glr_auto_examples_plot_18_contour.py>`
      - 1
-     - 36.1 ms
+     - 32.8 ms
      - 87 KiB
-     - 42.0 ms
-     - 280 KiB
+     - 39.1 ms
+     - 282 KiB
    * - :ref:`plot_19_quiver <sphx_glr_auto_examples_plot_19_quiver.py>`
      - 1
-     - 2.2 ms
+     - 2.0 ms
      - 27 KiB
-     - 2.7 ms
-     - 81 KiB
+     - 2.6 ms
+     - 83 KiB
    * - :ref:`plot_20_subplots <sphx_glr_auto_examples_plot_20_subplots.py>`
      - 4
-     - 2.7 ms
+     - 2.6 ms
      - 23 KiB
-     - 4.3 ms
-     - 95 KiB
+     - 3.9 ms
+     - 97 KiB
    * - :ref:`plot_21_loglog <sphx_glr_auto_examples_plot_21_loglog.py>`
      - 1
-     - 1.1 ms
+     - 1.0 ms
      - 6 KiB
      - 1.3 ms
-     - 51 KiB
+     - 53 KiB
    * - :ref:`plot_22_annotations <sphx_glr_auto_examples_plot_22_annotations.py>`
      - 1
-     - 0.9 ms
+     - 0.6 ms
      - 6 KiB
      - 0.9 ms
-     - 52 KiB
+     - 54 KiB
    * - :ref:`plot_24_contourf <sphx_glr_auto_examples_plot_24_contourf.py>`
      - 1
-     - 23.4 ms
+     - 20.7 ms
      - 12 KiB
-     - 55.3 ms
-     - 642 KiB
+     - 45.5 ms
+     - 644 KiB
    * - :ref:`plot_25_hexbin <sphx_glr_auto_examples_plot_25_hexbin.py>`
      - 1
-     - 15.9 ms
+     - 14.0 ms
      - 63 KiB
-     - 15.7 ms
-     - 105 KiB
+     - 21.8 ms
+     - 141 KiB
    * - :ref:`plot_26_twin_axes <sphx_glr_auto_examples_plot_26_twin_axes.py>`
      - 2
-     - 2.0 ms
+     - 1.6 ms
      - 12 KiB
-     - 2.8 ms
-     - 67 KiB
+     - 2.3 ms
+     - 69 KiB
    * - :ref:`plot_27_curvilinear_mesh <sphx_glr_auto_examples_plot_27_curvilinear_mesh.py>`
      - 1
-     - 308.1 ms
+     - 289.1 ms
      - 41 KiB
-     - 309.7 ms
-     - 156 KiB
+     - 290.0 ms
+     - 158 KiB
    * - :ref:`plot_28_gouraud <sphx_glr_auto_examples_plot_28_gouraud.py>`
      - 2
-     - 211.0 ms
+     - 196.3 ms
      - 289 KiB
-     - 210.3 ms
-     - 354 KiB
+     - 194.5 ms
+     - 355 KiB
    * - :ref:`plot_29_reference_lines <sphx_glr_auto_examples_plot_29_reference_lines.py>`
      - 1
-     - 2.3 ms
+     - 1.8 ms
      - 16 KiB
-     - 3.4 ms
-     - 71 KiB
+     - 2.5 ms
+     - 73 KiB
    * - :ref:`plot_30_lognorm <sphx_glr_auto_examples_plot_30_lognorm.py>`
      - 2
-     - 8.5 ms
+     - 6.9 ms
      - 28 KiB
-     - 44.9 ms
-     - 899 KiB
+     - 38.0 ms
+     - 901 KiB
    * - :ref:`plot_31_shared_colorbar <sphx_glr_auto_examples_plot_31_shared_colorbar.py>`
      - 6
-     - 5.2 ms
-     - 21 KiB
-     - 16.1 ms
-     - 275 KiB
+     - 3.7 ms
+     - 22 KiB
+     - 11.9 ms
+     - 277 KiB
    * - :ref:`plot_32_broken_barh <sphx_glr_auto_examples_plot_32_broken_barh.py>`
      - 1
-     - 0.4 ms
+     - 0.3 ms
      - 3 KiB
-     - 0.5 ms
-     - 45 KiB
+     - 0.7 ms
+     - 47 KiB
    * - :ref:`plot_33_matshow <sphx_glr_auto_examples_plot_33_matshow.py>`
      - 1
      - 0.6 ms
      - 7 KiB
      - 0.8 ms
-     - 51 KiB
+     - 52 KiB
    * - :ref:`plot_34_spy <sphx_glr_auto_examples_plot_34_spy.py>`
      - 1
      - 0.4 ms
      - 3 KiB
-     - 0.7 ms
-     - 50 KiB
+     - 0.6 ms
+     - 52 KiB
    * - :ref:`plot_35_stairs <sphx_glr_auto_examples_plot_35_stairs.py>`
      - 1
      - 0.3 ms
      - 3 KiB
-     - 0.7 ms
-     - 46 KiB
+     - 0.4 ms
+     - 48 KiB
    * - :ref:`plot_36_axline <sphx_glr_auto_examples_plot_36_axline.py>`
      - 1
-     - 0.6 ms
+     - 0.4 ms
      - 4 KiB
-     - 0.8 ms
-     - 48 KiB
+     - 0.6 ms
+     - 50 KiB
    * - :ref:`scale/plot_01_many_axes <sphx_glr_auto_scale_plot_01_many_axes.py>`
      - 500
-     - 564.7 ms
+     - 406.6 ms
      - 2.7 MiB
-     - 1054.3 ms
+     - 796.9 ms
      - 11.3 MiB
    * - :ref:`scale/plot_02_million_point_line <sphx_glr_auto_scale_plot_02_million_point_line.py>`
      - 1
-     - 210.7 ms
-     - 46 KiB
-     - 221.4 ms
-     - 89 KiB
+     - 160.7 ms
+     - 47 KiB
+     - 172.7 ms
+     - 91 KiB
    * - :ref:`scale/plot_03_multimillion_mesh <sphx_glr_auto_scale_plot_03_multimillion_mesh.py>`
      - 1
-     - 346.4 ms
+     - 327.1 ms
      - 775 KiB
-     - 403.1 ms
+     - 368.8 ms
      - 1.3 MiB
    * - :ref:`scale/plot_04_thousand_series <sphx_glr_auto_scale_plot_04_thousand_series.py>`
      - 1
-     - 951.8 ms
+     - 919.3 ms
      - 6.9 MiB
-     - 1421.7 ms
+     - 1370.8 ms
      - 17.2 MiB
    * - :ref:`scale/plot_05_axes_grid_lines <sphx_glr_auto_scale_plot_05_axes_grid_lines.py>`
      - 900
-     - 22360.4 ms
-     - 2.3 MiB
-     - 42006.6 ms
+     - 20608.1 ms
+     - 2.4 MiB
+     - 40743.8 ms
      - 4.5 MiB
    * - :ref:`scale/plot_06_shared_colorbar_lognorm <sphx_glr_auto_scale_plot_06_shared_colorbar_lognorm.py>`
      - 144
-     - 99.5 ms
-     - 502 KiB
-     - 254.3 ms
+     - 83.1 ms
+     - 508 KiB
+     - 237.4 ms
      - 4.0 MiB
    * - :ref:`scale/plot_07_matplotlib_comparison <sphx_glr_auto_scale_plot_07_matplotlib_comparison.py>`
      - 1
-     - 1.0 ms
+     - 0.9 ms
      - 5 KiB
-     - 1.2 ms
-     - 47 KiB
+     - 1.1 ms
+     - 49 KiB
    * - :ref:`scale/plot_08_vector_over_raster <sphx_glr_auto_scale_plot_08_vector_over_raster.py>`
      - 1
-     - 285.9 ms
+     - 271.3 ms
      - 599 KiB
-     - 339.6 ms
+     - 322.8 ms
      - 1.4 MiB
    * - :ref:`scale/plot_09_output_scaling <sphx_glr_auto_scale_plot_09_output_scaling.py>`
      - 1
-     - 1.8 ms
+     - 1.6 ms
      - 6 KiB
-     - 2.3 ms
-     - 50 KiB
+     - 1.9 ms
+     - 52 KiB
 
-The ``scale/plot_01_many_axes`` row is the deliberate stress case: 500 independent pcolormesh axes on one figure. Its interactive HTML is dominated by the 500 embedded mesh ``z`` grids; lower ``fig.to_html(pick_precision=...)`` (or ``fig.save(..., pick_precision=...)``) to trade readout precision for a smaller file.
+The ``scale/plot_01_many_axes`` row is the deliberate stress case: 500 independent pcolormesh axes on one figure. Its interactive HTML is dominated by the 500 embedded mesh ``z`` grids; lower ``fig.to_html(pick_precision=...)`` (or ``fig.save(..., pick_precision=...)``) to trade readout precision for a smaller file, or cap the total embedded amount directly with ``pick_max_mesh_cells`` / ``pick_max_points`` -- a mesh over the cap is block-averaged down to it rather than dropped, so a click still answers with a real, if coarser, value.

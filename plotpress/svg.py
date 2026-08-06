@@ -583,26 +583,30 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif is_secondary:
             # No data of its own -- draw only the mirrored dimension's ticks,
             # on whichever side tick_top()/tick_right() (reused here) picked.
-            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
+            xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+            yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
             is_x = ax._secondary_dim == "x"
             xlabels = _resolve_tick_labels(ax._xticklabels, xticks) if is_x else []
             ylabels = _resolve_tick_labels(ax._yticklabels, yticks) if not is_x else []
-            _render_ticks(tst, tr, xticks if is_x else [], yticks if not is_x else [],
+            _render_ticks(xst, yst, tr, xticks if is_x else [], yticks if not is_x else [],
                           xlabels, ylabels, px_left, px_top, px_w, px_h, body,
                           xside=ax._xtick_side, yside=ax._ytick_side)
         else:
             xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
             ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
-            tst = st.copy(**ax._tick_overrides) if ax._tick_overrides else st
-            _render_ticks(tst, tr, xticks, yticks, xlabels, ylabels,
+            xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+            yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
+            _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
                           px_left, px_top, px_w, px_h, body,
                           xside=ax._xtick_side, yside=ax._ytick_side)
             if ax._minor_ticks_on:
-                mst = (tst.copy(**ax._minor_tick_overrides)
-                      if ax._minor_tick_overrides else tst)
+                mxst = (xst.copy(**ax._minor_tick_overrides["x"])
+                       if ax._minor_tick_overrides["x"] else xst)
+                myst = (yst.copy(**ax._minor_tick_overrides["y"])
+                       if ax._minor_tick_overrides["y"] else yst)
                 xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
                 yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
-                _render_minor_ticks(mst, tr, xminor, yminor,
+                _render_minor_ticks(mxst, myst, tr, xminor, yminor,
                                     px_left, px_top, px_w, px_h, body,
                                     xside=ax._xtick_side, yside=ax._ytick_side)
     body.append("</g>")
@@ -1224,12 +1228,12 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
     body.append("".join(labels))
 
 
-def _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
+def _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
                   px_left, px_top, px_w, px_h, body,
                   xside="bottom", yside="left"):
-    ts, tw = st.tick_size, st.tick_width
-    fs = st.tick_label_size
-    marks, labels = [], []
+    xts, xfs = xst.tick_size, xst.tick_label_size
+    yts, yfs = yst.tick_size, yst.tick_label_size
+    xmarks, ymarks, labels = [], [], []
     x_axis = px_top if xside == "top" else px_top + px_h
     xsign = -1 if xside == "top" else 1
     y_axis = px_left if yside == "left" else px_left + px_w
@@ -1237,32 +1241,34 @@ def _render_ticks(st, tr, xticks, yticks, xlabels, ylabels,
 
     for xt, lab in zip(xticks, xlabels):
         x = tr.x(xt)
-        marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
-                     f'y2="{_fmt(x_axis + xsign * ts)}"/>')
-        ly = x_axis + xsign * ts + (fs if xside == "bottom" else -3)
+        xmarks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
+                      f'y2="{_fmt(x_axis + xsign * xts)}"/>')
+        ly = x_axis + xsign * xts + (xfs if xside == "bottom" else -3)
         labels.append(
             f'<text x="{_fmt(x)}" y="{_fmt(ly)}" text-anchor="middle" '
-            f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+            f'font-size="{xfs}" fill="{xst.text_color}">{_esc(lab)}</text>'
         )
     for yt, lab in zip(yticks, ylabels):
         y = tr.y(yt)
-        marks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
-                     f'x2="{_fmt(y_axis + ysign * ts)}" y2="{_fmt(y)}"/>')
+        ymarks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
+                      f'x2="{_fmt(y_axis + ysign * yts)}" y2="{_fmt(y)}"/>')
         anchor = "end" if yside == "left" else "start"
-        lx = y_axis + ysign * ts + (-2 if yside == "left" else 2)
+        lx = y_axis + ysign * yts + (-2 if yside == "left" else 2)
         labels.append(
-            f'<text x="{_fmt(lx)}" y="{_fmt(y + fs * 0.35)}" text-anchor="{anchor}" '
-            f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+            f'<text x="{_fmt(lx)}" y="{_fmt(y + yfs * 0.35)}" text-anchor="{anchor}" '
+            f'font-size="{yfs}" fill="{yst.text_color}">{_esc(lab)}</text>'
         )
-    body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
+    body.append(f'<g stroke="{xst.spine_color}" stroke-width="{xst.tick_width}">{"".join(xmarks)}</g>')
+    body.append(f'<g stroke="{yst.spine_color}" stroke-width="{yst.tick_width}">{"".join(ymarks)}</g>')
     body.append("".join(labels))
 
 
-def _render_minor_ticks(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
+def _render_minor_ticks(xst, yst, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
                         xside="bottom", yside="left"):
     """Unlabeled minor tick marks, drawn shorter than the major ones."""
-    ts, tw = st.tick_size * 0.6, st.tick_width
-    marks = []
+    xts = xst.tick_size * 0.6
+    yts = yst.tick_size * 0.6
+    xmarks, ymarks = [], []
     x_axis = px_top if xside == "top" else px_top + px_h
     xsign = -1 if xside == "top" else 1
     y_axis = px_left if yside == "left" else px_left + px_w
@@ -1270,13 +1276,14 @@ def _render_minor_ticks(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, bod
 
     for xt in xticks:
         x = tr.x(xt)
-        marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
-                     f'y2="{_fmt(x_axis + xsign * ts)}"/>')
+        xmarks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
+                      f'y2="{_fmt(x_axis + xsign * xts)}"/>')
     for yt in yticks:
         y = tr.y(yt)
-        marks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
-                     f'x2="{_fmt(y_axis + ysign * ts)}" y2="{_fmt(y)}"/>')
-    body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
+        ymarks.append(f'<line x1="{_fmt(y_axis)}" y1="{_fmt(y)}" '
+                      f'x2="{_fmt(y_axis + ysign * yts)}" y2="{_fmt(y)}"/>')
+    body.append(f'<g stroke="{xst.spine_color}" stroke-width="{xst.tick_width}">{"".join(xmarks)}</g>')
+    body.append(f'<g stroke="{yst.spine_color}" stroke-width="{yst.tick_width}">{"".join(ymarks)}</g>')
 
 
 def _render_spines(ax, px_left, px_top, px_w, px_h, body):

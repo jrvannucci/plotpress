@@ -26,8 +26,13 @@ The toolbar
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
        images). Right-click deletes a marker; Escape clears all.
-   * - **Annotate**
-     - Click to drop a text note anchored to the data.
+   * - **Annotate Point**
+     - Like Point Pick, but prompts for text and locks a user-written note to
+       that datum instead of the auto-generated readout; still steppable by
+       arrow key and still tracks pan/zoom.
+   * - **Annotate Free**
+     - Drop a user-written note anywhere on the figure, not locked to any
+       datum -- including the margins or the gap between subplots.
    * - **Reset**
      - Restore the view; double-click resets just the plot under the cursor.
    * - **Extract**

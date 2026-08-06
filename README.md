@@ -110,10 +110,19 @@ webviews). Nothing is active until you pick a tool:
 - **Point Pick** — click to pin the nearest data point's value; arrow keys step
   along the series (nearest-neighbour for scatter, cell-by-cell for
   meshes/contours), reporting extra dims (`z`, `c`, …). Right-click deletes.
-- **Annotate** — click to drop a text note anchored to the data.
+- **Annotate Point** — like Point Pick, but prompts for text and locks a
+  user-written note to that datum instead of the auto-generated readout.
+- **Annotate Free** — drop a user-written note anywhere on the figure, not
+  locked to any datum.
 - **Reset** restores the view (double-click resets just the plot under the
   cursor). **Extract** copies/downloads all markers + annotations as CSV/JSON,
   or hands them back to the kernel (`fig.show(wait_for_extract=True)`).
+
+`fig.to_html()`/`fig.save(..., interactive=True)` accept `pick_precision`
+(decimal places embedded per value) and `pick_max_mesh_cells`/
+`pick_max_points` (a hard cap on how much of each mesh/series is embedded for
+picking, per artist) to bound the interactive payload for mesh- or
+point-heavy figures.
 
 3-D data via `ax.plot_frames(...)` adds a **slider** (play/pause/step) over the
 extra dimension; multiple sliders can be linked by a shared index.
@@ -151,10 +160,15 @@ Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 **log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
 **`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
 `set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `margins`, `grid`,
-`set_axis_off`, **`subplots(sharex=…, sharey=…)`**, and **`twinx`/`twiny`**
-(overlaid axes with a second y/x axis), `tick_params` (per-axes tick styling),
-and matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
-(auto-margins so labels never overflow), text (`ax.text`, `ax.annotate` with
+`set_axis_off`, **`subplots(sharex=…, sharey=…)`** (plus post-hoc
+`sharex()`/`sharey()`), and **`twinx`/`twiny`** (overlaid axes with a second
+y/x axis), `tick_params` (per-axes, per-x/y-axis tick styling), and
+matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
+(auto-margins so labels never overflow) and **`fig.subplots_adjust(...)`** /
+**`GridSpec`** row/column spans for direct margin control, `ax.spines`
+(per-side visible/color/linewidth), `secondary_xaxis`/`secondary_yaxis`
+(a mirrored, unit-converted second axis) and `inset_axes` (a nested axes),
+`align_xlabels`/`align_ylabels`, text (`ax.text`, `ax.annotate` with
 arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
 `fig.colorbar(...)` (single **or shared across a list of axes**),
 `legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and

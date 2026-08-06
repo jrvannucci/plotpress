@@ -55,6 +55,20 @@ class Axes3D(Axes):
         self._rebuild()
         return self
 
+    def set_xscale(self, scale):
+        """Only ``'linear'`` -- the 3-D projection has no log-axis support."""
+        if scale != "linear":
+            raise NotImplementedError(
+                "Axes3D does not support non-linear scales (got %r)" % scale)
+        self._xscale = scale
+
+    def set_yscale(self, scale):
+        """Only ``'linear'`` -- the 3-D projection has no log-axis support."""
+        if scale != "linear":
+            raise NotImplementedError(
+                "Axes3D does not support non-linear scales (got %r)" % scale)
+        self._yscale = scale
+
     def set_xlim3d(self, lo, hi):
         self._xlim3d = (float(lo), float(hi)); self._rebuild(); return self
 

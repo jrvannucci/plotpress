@@ -216,7 +216,11 @@ def write_rst(rows, comparison=None):
         " independent pcolormesh axes on one figure. Its interactive HTML is"
         " dominated by the 500 embedded mesh ``z`` grids; lower"
         " ``fig.to_html(pick_precision=...)`` (or ``fig.save(...,"
-        " pick_precision=...)``) to trade readout precision for a smaller file.",
+        " pick_precision=...)``) to trade readout precision for a smaller file,"
+        " or cap the total embedded amount directly with ``pick_max_mesh_cells``"
+        " / ``pick_max_points`` -- a mesh over the cap is block-averaged down to"
+        " it rather than dropped, so a click still answers with a real, if"
+        " coarser, value.",
         "",
     ]
     with open(OUT_RST, "w", encoding="utf-8") as f:

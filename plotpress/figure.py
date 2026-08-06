@@ -71,10 +71,12 @@ class GridSpec:
     place of ``(nrows, ncols, index)``.
 
     ``left``/``right``/``top``/``bottom``/``wspace``/``hspace`` are accepted
-    for signature familiarity with matplotlib's ``GridSpec``, but are not
-    (yet) honored by :meth:`Figure.tight_layout`/:meth:`Figure.subplots_adjust`
-    -- both still size one uniform grid per figure. Use
-    ``fig.subplots_adjust(...)`` for margin control instead.
+    for signature familiarity with matplotlib's ``GridSpec``. Since the figure
+    only ever sizes one uniform grid at a time, any given here are applied
+    immediately as the figure's own margins (like calling
+    :meth:`Figure.subplots_adjust` with the same values) -- a later
+    ``tight_layout()``/``subplots_adjust()`` call still wins, same as it would
+    over an explicit ``subplots_adjust`` call.
     """
 
     def __init__(self, figure, nrows, ncols, left=None, right=None, top=None,
@@ -85,6 +87,14 @@ class GridSpec:
         self.left, self.right = left, right
         self.top, self.bottom = top, bottom
         self.wspace, self.hspace = wspace, hspace
+        sp = figure._subplot_params
+        for key, val in (("left", left), ("right", right), ("top", top),
+                         ("bottom", bottom), ("wspace", wspace), ("hspace", hspace)):
+            if val is not None:
+                sp[key] = float(val)
+        if any(v is not None for v in (left, right, top, bottom, wspace, hspace)):
+            figure._tight_pad = None
+            figure._layout_dirty = False
 
     def __getitem__(self, key) -> SubplotSpec:
         rows, cols = key if isinstance(key, tuple) else (key, slice(None))
@@ -284,11 +294,13 @@ class Figure:
         if isinstance(nrows, SubplotSpec):
             spec = nrows
             placeholder = spec.row0 * spec.ncols + spec.col0 + 1
-            ax = self.add_axes(_subplot_rect(spec.nrows, spec.ncols, placeholder),
-                               projection=projection)
+            ax = self.add_axes(
+                _subplot_rect(spec.nrows, spec.ncols, placeholder, self._subplot_params),
+                projection=projection)
             ax._subplotspec = spec
             return ax
-        ax = self.add_axes(_subplot_rect(nrows, ncols, index), projection=projection)
+        ax = self.add_axes(_subplot_rect(nrows, ncols, index, self._subplot_params),
+                           projection=projection)
         ax._subplotspec = _cell_subplotspec(nrows, ncols, index)
         return ax
 
@@ -296,7 +308,9 @@ class Figure:
         """Return a :class:`GridSpec` for slicing into row/column spans.
 
         ``fig.add_subplot(fig.add_gridspec(2, 2)[0, :])`` spans both columns
-        of the top row.
+        of the top row. Any ``left``/``right``/``top``/``bottom``/``wspace``/
+        ``hspace`` kwargs become this figure's margins immediately -- see
+        :class:`GridSpec`.
         """
         return GridSpec(self, nrows, ncols, **kwargs)
 
@@ -312,7 +326,7 @@ class Figure:
         for r in range(nrows):
             for c in range(ncols):
                 index = r * ncols + c + 1
-                ax = self.add_axes(_subplot_rect(nrows, ncols, index),
+                ax = self.add_axes(_subplot_rect(nrows, ncols, index, self._subplot_params),
                                    projection=projection)
                 ax._subplotspec = _cell_subplotspec(nrows, ncols, index)
                 grid[r, c] = ax
@@ -1076,10 +1090,18 @@ def _fit_cells(avail, n, gap, floor=0.02):
     return max((avail - (n - 1) * gap) / n, 1e-4), gap
 
 
-def _subplot_rect(nrows, ncols, index):
-    """Compute an axes rect for a 1-based subplot ``index`` in an NxM grid."""
-    left, right, bottom, top = 0.125, 0.9, 0.11, 0.88
-    wspace, hspace = 0.2, 0.2
+def _subplot_rect(nrows, ncols, index, sp=None):
+    """Compute an axes rect for a 1-based subplot ``index`` in an NxM grid.
+
+    ``sp`` is a ``{left, right, top, bottom, wspace, hspace}`` dict (matching
+    :attr:`Figure._subplot_params`); defaults to matplotlib's own margins when
+    omitted.
+    """
+    if sp is None:
+        sp = {"left": 0.125, "right": 0.9, "top": 0.88, "bottom": 0.11,
+              "wspace": 0.2, "hspace": 0.2}
+    left, right, bottom, top = sp["left"], sp["right"], sp["bottom"], sp["top"]
+    wspace, hspace = sp["wspace"], sp["hspace"]
     avail_w = right - left
     avail_h = top - bottom
     axw = avail_w / (ncols + wspace * (ncols - 1))
