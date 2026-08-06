@@ -420,10 +420,48 @@ _JS_SOURCE = r"""
   function axisTicks(lo, hi, scale) {
     if (scale === 'log') {
       var lt = jsLogTicks(lo, hi);
-      return { ticks: lt, labels: lt.map(function (v) { return fmtNum(v); }) };
+      return { ticks: lt, labels: lt.map(function (v) { return fmtNum(v); }), step: null };
     }
     var r = jsNiceTicks(lo, hi, 5);
-    return { ticks: r.ticks, labels: fmtTickSet(r.ticks, r.step) };
+    return { ticks: r.ticks, labels: fmtTickSet(r.ticks, r.step), step: r.step };
+  }
+
+  // Mirrors ticker.minor_ticks: unlabeled subdivisions within [lo, hi]. Log
+  // is the 2..9 sub-decade marks per decade the range spans; linear
+  // subdivides the major step by a count keyed off its leading digit
+  // (1->5, 2->4, 5->5, matching nice_ticks' own 1-2-5 convention) and walks
+  // outward from the first major tick, so minor ticks land on round
+  // subdivisions of the major grid rather than an independent one that may
+  // not line up with it.
+  function jsMinorTicks(majorTicks, step, lo, hi, scale) {
+    if (scale === 'log') {
+      if (lo <= 0) lo = hi > 0 ? hi / 1000 : 1e-3;
+      var e0 = Math.floor(Math.log10(lo)), e1 = Math.ceil(Math.log10(hi)), out = [];
+      for (var e = e0; e <= e1; e++)
+        for (var d = 2; d <= 9; d++) {
+          var v = d * Math.pow(10, e);
+          if (v >= lo && v <= hi) out.push(v);
+        }
+      return out;
+    }
+    if (majorTicks.length < 2 || !step) return [];
+    var mag = Math.pow(10, Math.floor(Math.log10(Math.abs(step))));
+    var lead = Math.round(Math.abs(step) / mag);
+    var n = lead === 2 ? 4 : 5;   // 1->5, 2->4, 5->5 (and any other lead->5)
+    var substep = step / n;
+    var ticks = [];
+    var k0 = Math.floor((lo - majorTicks[0]) / substep) - 1;
+    var k1 = Math.ceil((hi - majorTicks[0]) / substep) + 1;
+    for (var k = k0; k <= k1; k++) {
+      var v2 = majorTicks[0] + k * substep;
+      if (v2 < lo - substep * 1e-6 || v2 > hi + substep * 1e-6) continue;
+      var onMajor = false;
+      for (var m = 0; m < majorTicks.length; m++) {
+        if (Math.abs(majorTicks[m] - v2) < Math.abs(substep) * 1e-6) { onMajor = true; break; }
+      }
+      if (!onMajor) ticks.push(v2);
+    }
+    return ticks;
   }
 
   // Rebuild an axes' grid + ticks + numeric labels from its current limits.
@@ -462,6 +500,20 @@ _JS_SOURCE = r"""
     });
     parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + marks.join('') + '</g>');
     parts.push(labels.join(''));
+    if (om.minor) {
+      // Unlabeled, drawn shorter than the major marks -- mirrors
+      // svg._render_minor_ticks exactly (same 0.6x length convention).
+      var mts = ts * 0.6, mmarks = [];
+      jsMinorTicks(xr.ticks, xr.step, m.xmin, m.xmax, m.xscale).forEach(function (xt) {
+        var px = toPixel(m, xt, m.ymin).x;
+        mmarks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * mts).toFixed(2) + '"/>');
+      });
+      jsMinorTicks(yr.ticks, yr.step, m.ymin, m.ymax, m.yscale).forEach(function (yt) {
+        var py = toPixel(m, m.xmin, yt).y;
+        mmarks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * mts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
+      });
+      parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + mmarks.join('') + '</g>');
+    }
     g.innerHTML = parts.join('');
   }
 

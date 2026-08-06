@@ -788,6 +788,7 @@ class Axes:
         facecolors = apply_colormap(counts, lut, norm)[:, :3] if len(counts) else []
         pc = PolyCollection(verts, facecolors, label=label)
         pc.lut, pc.norm = lut, norm      # make it a colorbar mappable
+        pc.counts = counts               # picking reports the raw count per hexagon
         self.artists.append(pc)
         return pc
 
@@ -1069,17 +1070,23 @@ class Axes:
     def cla(self):
         """Reset this axes to a freshly-created state, keeping its position.
 
+        Detaches from any ``sharex``/``sharey`` group first, using the same
+        in-place-removal trick as :meth:`remove` (those lists are shared by
+        reference with every sibling), since the constructor about to run
+        would otherwise just drop the reference and leave the group missing
+        its own member -- a cleared axes contributing no data is autoscale-
+        neutral, but it would still receive a shared explicit limit from a
+        sibling's ``set_xlim``/``set_ylim``.
+
         Re-runs the constructor (so subclasses like ``PolarAxes``/``Axes3D``
         reset their own extra state too) without duplicating the attribute
         list here, then restores the figure position and grid membership that
         the constructor doesn't know about.
-
-        Known limitation: this does not detach ``self`` from a sibling's
-        ``_sharex_group``/``_sharey_group`` -- that list is shared by
-        reference, and a cleared axes contributing no data is autoscale-
-        neutral, but it can still receive a shared explicit limit from a
-        sibling's ``set_xlim``/``set_ylim``.
         """
+        if self._sharex_group is not None and self in self._sharex_group:
+            self._sharex_group.remove(self)
+        if self._sharey_group is not None and self in self._sharey_group:
+            self._sharey_group.remove(self)
         subplotspec = self._subplotspec
         type(self).__init__(self, self.figure, self._rect)
         self._subplotspec = subplotspec

@@ -381,4 +381,63 @@ def build_cases():
                       "a click inside an inset must resolve to the inset, not the "
                       "enclosing parent axes underneath it"))
 
+    # -- fill(): a plain filled polygon had no pick data at all --------------
+    fpx = np.array([0.0, 2.0, 2.0, 0.0])
+    fpy = np.array([0.0, 0.0, 1.0, 1.0])
+    fig, ax = plotpress.subplots()
+    ax.fill(fpx, fpy, color="gold")
+    cases.append(Case("fill_polygon", fig, _points(fig, 0, fpx, fpy, (0, 1, 2, 3)),
+                      "fill() must be pickable at its own vertices"))
+
+    # -- hlines/vlines: a LineCollection had no pick data at all -------------
+    fig, ax = plotpress.subplots()
+    hy = np.array([1.0, 2.0, 3.0])
+    ax.hlines(hy, 0.0, 4.0)
+    hcases = [{"px": px(fig, 0, 2.0, hy[j]),
+              "expect": {"kind": "points", "axes": 0, "index": j,
+                         "x": 2.0, "y": float(hy[j]),
+                         "x0": 0.0, "x1": 4.0, "y0": float(hy[j]), "y1": float(hy[j])}}
+             for j in (0, 1, 2)]
+    cases.append(Case("hlines", fig, hcases,
+                      "each hline must report its own x0/x1 span, not just "
+                      "the midpoint it was clicked at"))
+
+    fig, ax = plotpress.subplots()
+    vx = np.array([1.0, 3.0])
+    ax.vlines(vx, 0.0, 4.0)
+    vcases = [{"px": px(fig, 0, vx[j], 2.0),
+              "expect": {"kind": "points", "axes": 0, "index": j,
+                         "x": float(vx[j]), "y": 2.0,
+                         "x0": float(vx[j]), "x1": float(vx[j]), "y0": 0.0, "y1": 4.0}}
+             for j in (0, 1)]
+    cases.append(Case("vlines", fig, vcases,
+                      "each vline must report its own y0/y1 span"))
+
+    # -- broken_barh: a PolyCollection had no pick data at all ---------------
+    fig, ax = plotpress.subplots()
+    ax.broken_barh([(1.0, 2.0), (5.0, 1.0)], (3.0, 1.0))
+    cases.append(Case("broken_barh", fig, [
+        {"px": px(fig, 0, 2.0, 3.5),
+         "expect": {"kind": "points", "axes": 0, "index": 0, "x": 2.0, "y": 3.5,
+                    "xmin": 1.0, "xmax": 3.0, "ymin": 3.0, "ymax": 4.0}},
+        {"px": px(fig, 0, 5.5, 3.5),
+         "expect": {"kind": "points", "axes": 0, "index": 1, "x": 5.5, "y": 3.5,
+                    "xmin": 5.0, "xmax": 6.0, "ymin": 3.0, "ymax": 4.0}},
+    ], "each rectangle must report its own bounding box"))
+
+    # -- hexbin: a PolyCollection whose per-polygon value (count) the -------
+    # facecolors array alone had already thrown away ------------------------
+    rng2 = np.random.RandomState(3)
+    hx = rng2.normal(size=3000)
+    hyv = rng2.normal(size=3000)
+    fig, ax = plotpress.subplots()
+    hb = ax.hexbin(hx, hyv, gridsize=12)
+    busiest = int(np.argmax(hb.counts))
+    cx, cy = hb.verts[busiest][:, 0].mean(), hb.verts[busiest][:, 1].mean()
+    cases.append(Case("hexbin", fig, [
+        {"px": px(fig, 0, cx, cy),
+         "expect": {"kind": "points", "axes": 0, "index": busiest,
+                    "count": float(hb.counts[busiest])}},
+    ], "a hexagon must report its raw count, not just its mapped color"))
+
     return cases

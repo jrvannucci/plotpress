@@ -17,8 +17,8 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Line2D, Pie, Polygon, QuadMesh, Quiver,
-    ScatterCollection, Span, Stem, Text, Violin, _edges_from,
+    FrameLine2D, Image, Line2D, LineCollection, Pie, Polygon, PolyCollection,
+    QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin, _edges_from,
 )
 from .colors import colorbar_ticks
 from .png import png_data_uri
@@ -170,6 +170,7 @@ def axes_metadata(fig):
             # Whether ticks are user-fixed (don't auto-recompute on zoom).
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
+            "minor": bool(ax._minor_ticks_on),
             # Surfaced on extracted points as axes_title, so a multi-panel
             # export identifies which panel a marker came from by name
             # instead of just a bare index.
@@ -402,6 +403,44 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                     series.append({"kind": "fill", "x": _round_list(art.x),
                                    "y": _round_list(hi),           # snap to band top
                                    "vals": {"lower": _round_list(lo)}})
+            elif isinstance(art, Polygon):
+                if 0 < art.x.size <= max_points:
+                    series.append({"kind": "polygon", "x": _round_list(art.x),
+                                   "y": _round_list(art.y), "vals": {}})
+            elif isinstance(art, LineCollection):
+                segs = art.segments
+                if 0 < len(segs) <= max_points:
+                    # One pickable point per segment, at its midpoint -- vals
+                    # carry the full span so hlines/vlines report where the
+                    # line actually starts and ends, not just where it was
+                    # clicked along its length.
+                    x0, y0, x1, y1 = segs[:, 0], segs[:, 1], segs[:, 2], segs[:, 3]
+                    series.append({"kind": "lines",
+                                   "x": _round_list((x0 + x1) / 2.0),
+                                   "y": _round_list((y0 + y1) / 2.0),
+                                   "vals": {"x0": _round_list(x0), "x1": _round_list(x1),
+                                            "y0": _round_list(y0), "y1": _round_list(y1)}})
+            elif isinstance(art, PolyCollection):
+                n = len(art.verts)
+                if 0 < n <= max_points:
+                    # One pickable point per polygon, at its centroid -- vals
+                    # carry its bounding box (broken_barh's rectangles) and,
+                    # when present, the raw per-polygon value a colormap was
+                    # built from (hexbin's counts -- the facecolors array
+                    # alone has already thrown that number away).
+                    cx = np.array([v[:, 0].mean() for v in art.verts])
+                    cy = np.array([v[:, 1].mean() for v in art.verts])
+                    vals = {
+                        "xmin": _round_list([v[:, 0].min() for v in art.verts]),
+                        "xmax": _round_list([v[:, 0].max() for v in art.verts]),
+                        "ymin": _round_list([v[:, 1].min() for v in art.verts]),
+                        "ymax": _round_list([v[:, 1].max() for v in art.verts]),
+                    }
+                    counts = getattr(art, "counts", None)
+                    if counts is not None and len(counts) == n:
+                        vals["count"] = _round_list(counts)
+                    series.append({"kind": "poly", "x": _round_list(cx),
+                                   "y": _round_list(cy), "vals": vals})
             elif isinstance(art, (QuadMesh, Image)):
                 is_img = isinstance(art, Image)
                 if is_img and art.A.ndim != 2:

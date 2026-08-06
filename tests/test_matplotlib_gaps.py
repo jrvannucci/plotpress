@@ -624,6 +624,23 @@ def test_axes_cla_resets_state_but_keeps_position():
     assert ax in fig.axes
 
 
+def test_axes_cla_detaches_from_its_share_group():
+    """Regression: cla() re-ran the constructor, which sets _sharex_group to
+    None on the cleared axes but never removed it from the *old* group's
+    list -- so a sibling's set_xlim still updated the shared span using a
+    member that no longer identifies as sharing anything."""
+    fig, (ax1, ax2) = plotpress.subplots(1, 2, sharex=True)
+    assert ax2 in ax1._sharex_group
+
+    ax2.cla()
+    assert ax2 not in ax1._sharex_group
+    assert ax2._sharex_group is None
+
+    ax1.set_xlim(5, 9)
+    assert ax1.get_xlim() == (5, 9)
+    assert ax2.get_xlim() != (5, 9)   # no longer shares the group
+
+
 # -- getters ------------------------------------------------------------
 def test_getters_mirror_setters():
     fig, ax = plotpress.subplots()
