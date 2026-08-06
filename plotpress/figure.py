@@ -664,12 +664,21 @@ class Figure:
         return figure_to_svg(self)
 
     def to_html(self, interactive: bool = True, wait_extract: bool = False,
-                pick_precision: int = 6) -> str:
+                pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+                pick_max_points: int = 20000) -> str:
         """Serialize to a self-contained HTML document.
 
         ``pick_precision`` sets the decimal places of the embedded point-pick
         arrays (the mesh z grids dominate the file size for mesh-heavy figures);
         lower it to shrink the HTML at the cost of readout precision.
+
+        ``pick_max_mesh_cells``/``pick_max_points`` cap how much of each
+        mesh's/series' own data is embedded for picking, per artist -- so a
+        figure with *many* mesh-bearing axes (a grid of pcolormeshes, say)
+        does not multiply the default cap by the axes count. A mesh over the
+        cap is block-averaged down to it rather than dropped, so a click still
+        answers with a real, if coarser, value; a series over the point cap
+        falls back to a geometry-only x/y readout.
         """
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
@@ -680,7 +689,9 @@ class Figure:
             from .svg import axes_metadata, frame_data, pick_data, style_payload
 
             meta = _json_payload(axes_metadata(self))
-            pick = _json_payload(pick_data(self, precision=pick_precision))
+            pick = _json_payload(pick_data(self, max_points=pick_max_points,
+                                           max_mesh_cells=pick_max_mesh_cells,
+                                           precision=pick_precision))
             styl = _json_payload(style_payload(self))
             payloads = (
                 f'<script type="application/json" id="plotpress-meta">{meta}</script>'
@@ -713,17 +724,21 @@ class Figure:
     # figure in a notebook, embed to_html() in an <iframe> (see the docs).
 
     def save(self, path: str, interactive: bool = False, scale: int = 2,
-             pick_precision: int = 6):
+             pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+             pick_max_points: int = 20000):
         """Save by extension: ``.svg``, ``.html``, ``.png``, or ``.pdf``.
 
         All formats work with the standard install (PNG is a supersampled
-        raster; PDF is vector). ``pick_precision`` applies only to interactive
-        HTML (see :meth:`to_html`).
+        raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
+        ``pick_max_points`` apply only to interactive HTML (see
+        :meth:`to_html`).
         """
         lower = path.lower()
         if lower.endswith(".html") or lower.endswith(".htm"):
             content = self.to_html(interactive=interactive,
-                                   pick_precision=pick_precision)
+                                   pick_precision=pick_precision,
+                                   pick_max_mesh_cells=pick_max_mesh_cells,
+                                   pick_max_points=pick_max_points)
         elif lower.endswith(".svg"):
             content = self.to_svg()
         elif lower.endswith(".png"):

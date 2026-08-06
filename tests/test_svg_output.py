@@ -559,6 +559,26 @@ def test_curvilinear_pick_data_handles_xy_shaped_like_c():
     assert len(mesh["xc"]) == len(mesh["yc"]) == len(mesh["z"]) == ny * nx
 
 
+def test_to_html_exposes_pick_caps_for_mesh_heavy_figures():
+    """A figure with many mesh-bearing axes has no way to bound the total pick
+    payload unless the per-mesh caps are reachable from the public API --
+    pick_max_mesh_cells/pick_max_points forward to pick_data()'s own caps."""
+    g = np.linspace(-3, 3, 300)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(np.hypot(X, Y))
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+
+    full = fig.to_html(interactive=True)
+    capped = fig.to_html(interactive=True, pick_max_mesh_cells=1000)
+    assert len(capped) < len(full)
+
+    from plotpress.svg import pick_data
+    mesh = pick_data(fig, max_mesh_cells=1000)[0]["meshes"][0]
+    ny, nx = mesh["shape"]
+    assert ny * nx <= 1000
+
+
 def test_round_list_matches_python_rounding():
     # The vectorized _rl replaced a per-element round(float(v), nd) comprehension.
     # It agrees with it to within one quantum -- the two can differ only on exact
