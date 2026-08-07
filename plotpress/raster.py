@@ -108,8 +108,14 @@ def _font(size, family=None, bold=False):
     return font
 
 
-def figure_to_image(fig, scale=2):
-    """Render ``fig`` to a Pillow ``Image`` (RGB), supersampled by ``scale``."""
+def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
+    """Render ``fig`` to a Pillow ``Image`` (RGB), supersampled by ``scale``.
+
+    ``frame``/``animate_unit`` select which frame of any ``plot_frames()``
+    series registered under ``animate_unit`` to draw (see :func:`save_gif`);
+    every other artist, and any ``FrameLine2D`` under a different slider
+    unit, is unaffected and renders as it always has.
+    """
     from PIL import Image as PILImage, ImageDraw
 
     fig._settle_layout()
@@ -121,7 +127,7 @@ def figure_to_image(fig, scale=2):
     draw = ImageDraw.Draw(canvas)
 
     for ax in fig.axes:
-        _raster_axes(ax, fig, W * S, H * S, S, draw, canvas)
+        _raster_axes(ax, fig, W * S, H * S, S, draw, canvas, frame, animate_unit)
     _raster_figtexts(fig, W * S, H * S, S, draw)
     _raster_figure_legend(fig, fig.style, W * S, H * S, S, draw)
 
@@ -132,6 +138,36 @@ def figure_to_image(fig, scale=2):
 
 def save_png(fig, path, scale=2):
     figure_to_image(fig, scale=scale).save(path, format="PNG")
+    return path
+
+
+def save_gif(fig, path, fps=10, scale=2, slider_unit="main"):
+    """Animate a ``plot_frames()`` figure to a looping GIF via Pillow.
+
+    Every ``FrameLine2D`` series registered under ``slider_unit`` (``"main"``,
+    the figure's shared/global slider, by default) is stepped through all of
+    its frames and the results stitched into a looping GIF -- the same data
+    an interactive HTML slider scrubs through, as a self-contained file. A
+    series under a *different* slider unit (an axes-local, non-shared
+    ``plot_frames(..., shared=False)``) stays on its own frame 0 throughout,
+    since only one unit can drive the animation at a time; pass its
+    ``slider_group``/axes unit name to animate that one instead.
+
+    Raises ``ValueError`` if the figure has no ``plot_frames()`` series
+    registered under ``slider_unit`` -- there is nothing to animate.
+    """
+    if slider_unit not in fig._sliders:
+        available = sorted(fig._sliders) or ["(none)"]
+        raise ValueError(
+            f"no plot_frames() series registered under slider_unit={slider_unit!r}; "
+            f"available slider units: {available}"
+        )
+    n_frames = fig._sliders[slider_unit]["n"]
+    frames = [figure_to_image(fig, scale=scale, frame=f, animate_unit=slider_unit)
+              for f in range(n_frames)]
+    duration_ms = max(1, round(1000.0 / fps))
+    frames[0].save(path, format="GIF", save_all=True, append_images=frames[1:],
+                   duration=duration_ms, loop=0)
     return path
 
 
@@ -170,7 +206,7 @@ def _raster_spines(ax, L, T, Wp, Hp, S, draw):
                   width=max(1, int(round(width * S))))
 
 
-def _raster_axes(ax, fig, W, H, S, draw, canvas):
+def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
     st = ax.style
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
     L, T, Wp, Hp = _effective_rect(ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
@@ -214,7 +250,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas):
     # SVG backend's <clipPath>: without it the two backends disagree the moment
     # any data falls outside the limits, and the PNG paints it across the rest
     # of the figure -- over neighbouring subplots, labels and the legend.
-    _clip_artists(ax, tr, st, S, canvas, (L, T, Wp, Hp))
+    _clip_artists(ax, tr, st, S, canvas, (L, T, Wp, Hp), frame, animate_unit)
 
     if not ax._axis_off:
         if is_twin:
@@ -299,7 +335,7 @@ def _draw_prim(p, S, draw, canvas):
                 _polyline(draw, sub, _rgb(p.stroke), w, dash)
 
 
-def _clip_artists(ax, tr, st, S, canvas, rect):
+def _clip_artists(ax, tr, st, S, canvas, rect, frame=0, animate_unit="main"):
     """Draw ``ax``'s artists clipped to ``rect`` = (left, top, w, h) in pixels.
 
     Pillow has no clip region, so the artists are drawn onto a transparent layer
@@ -324,21 +360,25 @@ def _clip_artists(ax, tr, st, S, canvas, rect):
     ldraw = ImageDraw.Draw(layer)
 
     for artist in ax.artists:
-        _raster_artist(artist, tr, st, S, ldraw, layer, rect)
+        _raster_artist(artist, tr, st, S, ldraw, layer, rect, frame, animate_unit)
 
     canvas.alpha_composite(layer.crop(box), (box[0], box[1]))
     # Clear only what was used, so the next axes starts from transparent.
     layer.paste((0, 0, 0, 0), box)
 
 
-def _raster_artist(artist, tr, st, S, draw, canvas, clip):
+def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit="main"):
     prims = artist_to_prims(artist, tr, 0, 0, size_scale=st.dpi / 72.0 * S)
     if prims is not None:
         for p in prims:
             _draw_prim(p, S, draw, canvas)
         return
     if isinstance(artist, FrameLine2D):
-        x0, y0 = artist.frame_xy(0)
+        # Only the unit being animated steps through its frames; a FrameLine2D
+        # under any other slider unit stays on frame 0, same as static output.
+        f = frame if artist.slider_unit == animate_unit else 0
+        f = min(f, artist.n_frames - 1)
+        x0, y0 = artist.frame_xy(f)
         _polyline(draw, tr.xy(x0, y0), _rgb(artist.color),
                   max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))

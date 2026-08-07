@@ -125,3 +125,17 @@ extra dimension. ``slider_values`` labels it.
 * ``shared=False`` -- each axes gets its own slider docked beneath it. Give
   several the same ``slider_group`` to show a link checkbox so they can scrub
   together on demand.
+
+The same frames export to a self-contained looping GIF, for anywhere an
+interactive HTML slider does not fit -- a README, a slide, a chat message:
+
+.. code-block:: python
+
+   fig.save("wave.gif", fps=10)
+
+This animates whichever slider ``slider_unit`` names (``"main"``, the shared
+global slider, by default). A figure with more than one -- some
+``plot_frames`` panels shared, others docked with ``shared=False`` -- picks
+one slider per GIF; the others hold their frame 0 for that render. Export
+each unit separately (``slider_unit="ax1"``, matching the axes it is docked
+to) for more than one animated GIF from the same figure.

@@ -3,7 +3,7 @@ Saving and showing
 
 A figure knows how to serialize itself -- no backend selection, no globals.
 
-``fig.save(path, interactive=False, scale=2)``
+``fig.save(path, interactive=False, scale=2, fps=10, slider_unit="main")``
     Save by file extension:
 
     ==========  =========================================================
@@ -13,6 +13,8 @@ A figure knows how to serialize itself -- no backend selection, no globals.
     ``.html``   interactive HTML (pass ``interactive=True``)
     ``.png``    raster PNG, supersampled by ``scale``
     ``.pdf``    vector PDF (svglib + reportlab)
+    ``.gif``    looping animated GIF of a :meth:`~plotpress.axes.Axes.plot_frames`
+                series, ``fps`` frames per second
     ==========  =========================================================
 
     .. code-block:: python
@@ -20,6 +22,12 @@ A figure knows how to serialize itself -- no backend selection, no globals.
        fig.save("figure.svg")
        fig.save("figure.png", scale=3)          # higher-res raster
        fig.save("figure.html", interactive=True)
+       fig.save("figure.gif", fps=15)           # needs a plot_frames() series
+
+    ``.gif`` raises ``ValueError`` if the figure has no ``plot_frames()``
+    series; ``fps``/``slider_unit`` are ignored for every other extension.
+    See :doc:`interactivity` for what ``slider_unit`` selects on a figure
+    with more than one slider.
 
 ``fig.savefig(path, **kwargs)``
     matplotlib-compatible alias for :meth:`~plotpress.figure.Figure.save`.
@@ -65,5 +73,6 @@ See :doc:`interactivity` for the in-window toolbar and extraction format.
 Export dependencies
 -------------------
 
-PNG/PDF export uses pure-wheel packages (no cairo) that ship with the standard
-install: **Pillow** (PNG raster backend) and **svglib + reportlab** (vector PDF).
+PNG/PDF/GIF export uses pure-wheel packages (no cairo) that ship with the
+standard install: **Pillow** (the PNG raster backend, which GIF export reuses
+one frame at a time) and **svglib + reportlab** (vector PDF).

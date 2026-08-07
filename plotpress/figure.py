@@ -740,13 +740,19 @@ class Figure:
 
     def save(self, path: str, interactive: bool = False, scale: int = 2,
              pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
-             pick_max_points: int = 20000):
-        """Save by extension: ``.svg``, ``.html``, ``.png``, or ``.pdf``.
+             pick_max_points: int = 20000, fps: int = 10,
+             slider_unit: str = "main"):
+        """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``, or ``.gif``.
 
         All formats work with the standard install (PNG is a supersampled
         raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
         ``pick_max_points`` apply only to interactive HTML (see
-        :meth:`to_html`).
+        :meth:`to_html`). ``.gif`` needs at least one :meth:`Axes.plot_frames`
+        series -- it animates through that series' frames at ``fps``, the
+        same data an interactive HTML slider scrubs through, as a
+        self-contained looping file; ``slider_unit`` picks which slider
+        drives the animation for figures with more than one (see
+        :func:`plotpress.raster.save_gif`).
         """
         lower = path.lower()
         if lower.endswith(".html") or lower.endswith(".htm"):
@@ -762,8 +768,12 @@ class Figure:
         elif lower.endswith(".pdf"):
             from .raster import save_pdf
             return save_pdf(self, path)
+        elif lower.endswith(".gif"):
+            from .raster import save_gif
+            return save_gif(self, path, fps=fps, scale=scale, slider_unit=slider_unit)
         else:
-            raise ValueError("save() supports .svg/.html/.png/.pdf (got %r)" % path)
+            raise ValueError(
+                "save() supports .svg/.html/.png/.pdf/.gif (got %r)" % path)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         return path

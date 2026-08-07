@@ -157,6 +157,57 @@ def test_save_pdf(tmp_path):
     assert p.read_bytes()[:5] == b"%PDF-"
 
 
+def test_save_gif(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 2 * np.pi, 40)
+    t = np.linspace(0, 2 * np.pi, 6, endpoint=False)
+    ax.plot_frames(x, np.sin(x[None, :] - t[:, None]))
+    p = tmp_path / "o.gif"
+    fig.save(str(p), fps=5)
+
+    assert p.read_bytes()[:6] in (b"GIF87a", b"GIF89a")
+    im = Image.open(str(p))
+    assert im.n_frames == 6
+    assert im.info["duration"] == 200          # 1000 / 5 fps
+    assert im.info["loop"] == 0                # loops forever
+
+    im.seek(0)
+    first = np.array(im.convert("RGB"))
+    im.seek(3)
+    later = np.array(im.convert("RGB"))
+    assert not np.array_equal(first, later)    # the sine wave actually moved
+
+
+def test_save_gif_requires_plot_frames(tmp_path):
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])                    # no plot_frames() series
+    with pytest.raises(ValueError, match="plot_frames"):
+        fig.save(str(tmp_path / "o.gif"))
+
+
+def test_save_gif_animates_requested_slider_unit_only(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    fig, axes = plotpress.subplots(1, 2)
+    x = np.arange(5)
+    axes[0].plot_frames(x, np.arange(4 * 5).reshape(4, 5).astype(float))  # "main", n=4
+    axes[1].plot_frames(x, np.arange(3 * 5).reshape(3, 5).astype(float),   # "ax1", n=3
+                        shared=False)
+
+    p_main = tmp_path / "main.gif"
+    fig.save(str(p_main), slider_unit="main")
+    assert Image.open(str(p_main)).n_frames == 4
+
+    p_ax1 = tmp_path / "ax1.gif"
+    fig.save(str(p_ax1), slider_unit="ax1")
+    assert Image.open(str(p_ax1)).n_frames == 3
+
+
 def test_bar_and_barh_render_rects():
     fig, axes = plotpress.subplots(1, 2)
     axes[0].bar([0, 1, 2], [3, 5, 2])
