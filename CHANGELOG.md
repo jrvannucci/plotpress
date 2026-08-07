@@ -97,6 +97,26 @@ is derived from it at build time rather than written down anywhere in the source
   randomized-benchmarking examples (RB fidelity across the flux range,
   simultaneous RB crosstalk, purity RB, cross-entropy benchmarking vs depth
   and qubit count, leakage RB) in the quantum devices gallery.
+- Ten more quantum devices examples pushing past device calibration into
+  device *theory*: Floquet sideband spectroscopy of a flux-modulated qubit
+  (Bessel-weighted photon replicas, computed from a self-contained
+  trapezoidal-quadrature Bessel function rather than a SciPy dependency),
+  fluxonium's multi-level spectrum from an exact finite-difference
+  diagonalization of its Hamiltonian rather than a closed-form fit,
+  Landau-Zener-Stuckelberg interference diamonds, Autler-Townes dressed-state
+  splitting, a Josephson parametric amplifier's gain-bandwidth trade-off,
+  GHZ-state parity oscillation and its visibility decay with qubit count,
+  a noisy gate's Pauli transfer matrix from process tomography, a simulated
+  repetition-code space-time syndrome plot, a Bell/CHSH correlation map
+  reaching the Tsirelson bound, and a Kerr-cat qubit's exponential-vs-linear
+  bit-flip/phase-flip noise-bias trade-off.
+- Every real-application gallery script (all fifteen fields, ~140 examples)
+  now builds a `polars` `DataFrame` from the underlying theory or simulation
+  and extracts the `numpy` arrays it plots from that table, rather than
+  plotting arrays computed inline. This isolates data generation from
+  rendering, matching how data is actually collected and tabulated in a lab
+  or on a shop floor before anyone touches a plotting call. `polars` is a
+  docs-only dependency (`docs/requirements.txt`), not a package dependency.
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
