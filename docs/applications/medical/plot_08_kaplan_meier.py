@@ -24,6 +24,7 @@ using ``step``-shaped inputs so the band's edges follow the curve rather than
 cutting corners across it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1958)
@@ -60,8 +61,15 @@ fig, ax = plotpress.subplots(figsize=(8.4, 5.6))
 for name, median, color in ARMS:
     survival_time = rng.exponential(median / np.log(2.0), N_PER_ARM)
     dropout_time = rng.uniform(6.0, 1.8 * FOLLOW_UP, N_PER_ARM)
-    observed = np.minimum(np.minimum(survival_time, dropout_time), FOLLOW_UP)
-    events = (survival_time <= np.minimum(dropout_time, FOLLOW_UP)).astype(int)
+
+    # One row per randomised patient -- the shape a trial's own case report
+    # forms are in, before the Kaplan-Meier estimator is computed from them.
+    cohort = pl.DataFrame({
+        "observed": np.minimum(np.minimum(survival_time, dropout_time), FOLLOW_UP),
+        "event": (survival_time <= np.minimum(dropout_time, FOLLOW_UP)).astype(int),
+    })
+    observed = cohort["observed"].to_numpy()
+    events = cohort["event"].to_numpy()
 
     t, s, cum = kaplan_meier(observed, events)
     # Greenwood's formula for the pointwise standard error.

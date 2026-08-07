@@ -18,6 +18,7 @@ photoreceptor inner segments, then the bright RPE and choroid beneath. The
 foveal pit dips through the middle.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(17)
@@ -46,6 +47,14 @@ signal *= rng.rayleigh(1.0, X.shape) ** 0.6                # speckle
 
 db = 20.0 * np.log10(signal / signal.max())
 db = np.maximum(db, -55.0)
+
+# One row per A-scan sample -- the shape an OCT engine's own B-scan export
+# is in, before it is gridded for the mesh.
+bscan = pl.DataFrame({"lateral": X.ravel(), "depth": Z.ravel(), "db": db.ravel()}) \
+    .sort(["depth", "lateral"])
+lateral = bscan["lateral"].unique().sort().to_numpy()
+depth = bscan["depth"].unique().sort().to_numpy()
+db = bscan["db"].to_numpy().reshape(depth.size, lateral.size)
 
 fig, ax = plotpress.subplots(figsize=(9.0, 4.4))
 mesh = ax.pcolormesh(lateral, depth, db, cmap="gray", vmin=-55.0, vmax=0.0)

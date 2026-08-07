@@ -18,6 +18,7 @@ Grey is conventional and deliberate: radiologists read texture, and a
 colourful map invents structure the eye then tries to interpret.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(31)
@@ -41,6 +42,17 @@ envelope *= np.exp(-0.016 * D)                                   # 0.7 dB/cm/MHz
 db = 20.0 * np.log10(envelope / envelope.max())
 DYNAMIC_RANGE = 60.0
 db = np.maximum(db, -DYNAMIC_RANGE)
+
+# One row per (range, angle) beamformed sample -- the shape a scanner's own
+# RF acquisition is in, before the curvilinear x/y mesh is reconstructed.
+grid_shape = D.shape
+frame = pl.DataFrame({
+    "depth": D.ravel(), "angle": A.ravel(),
+    "x": X.ravel(), "y": Y.ravel(), "db": db.ravel(),
+}).sort(["depth", "angle"])
+X = frame["x"].to_numpy().reshape(grid_shape)
+Y = frame["y"].to_numpy().reshape(grid_shape)
+db = frame["db"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(6.4, 6.4))
 mesh = ax.pcolormesh(X, Y, db, cmap="gray", vmin=-DYNAMIC_RANGE, vmax=0.0)

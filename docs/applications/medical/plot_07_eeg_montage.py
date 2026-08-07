@@ -23,6 +23,7 @@ two temporal channels and spreads. Shading the electrographic seizure with
 and the low alpha keeps the signal readable through it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(88)
@@ -55,16 +56,25 @@ for name in channels:
                           + 0.45 * np.sin(2 * np.pi * 6.0 * t + 0.9))
     traces.append(x)
 
+# One row per channel sample -- the shape an EEG amplifier's own multichannel
+# export is in, before each channel is offset and plotted on the montage.
+recording = pl.concat([
+    pl.DataFrame({"channel": name, "time": t, "microvolts": x})
+    for name, x in zip(channels, traces)
+])
+
 OFFSET = 150.0                                     # microvolts between channels
 positions = -OFFSET * np.arange(len(channels), dtype=float)
 
 fig, ax = plotpress.subplots(figsize=(11.0, 7.5))
 ax.axvspan(SEIZURE[0], SEIZURE[1], color="#d62728", alpha=0.10,
            label="electrographic seizure")
-for name, x, y0 in zip(channels, traces, positions):
+for name, y0 in zip(channels, positions):
+    channel = recording.filter(pl.col("channel") == name)
     color = "#d62728" if name in FOCUS else ("#ff7f0e" if name in SPREAD
                                              else "#1f77b4")
-    ax.plot(t, x + y0, color=color, linewidth=0.7)
+    ax.plot(channel["time"].to_numpy(), channel["microvolts"].to_numpy() + y0,
+            color=color, linewidth=0.7)
 
 # Calibration bar: the amplitude scale the shared y axis cannot show. It sits
 # below the last trace rather than beside it, where nothing can overlap it.

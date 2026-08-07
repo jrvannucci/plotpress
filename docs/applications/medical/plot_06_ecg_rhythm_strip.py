@@ -25,6 +25,7 @@ compensatory pause -- which is exactly the event the R-R annotation exists to
 make obvious.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(60)
@@ -73,6 +74,12 @@ for onset, kind in zip(onsets, kinds):
 ecg += 0.06 * np.sin(2 * np.pi * 0.28 * t)
 ecg += 0.008 * np.sin(2 * np.pi * 50.0 * t)
 ecg += rng.normal(0.0, 0.011, t.size)
+
+# One row per sample -- the shape a monitor's own lead export is in, before
+# R peaks are detected and beat-to-beat intervals are derived from it.
+strip = pl.DataFrame({"time": t, "lead_ii": ecg})
+t = strip["time"].to_numpy()
+ecg = strip["lead_ii"].to_numpy()
 
 r_times = np.array([o + (0.26 if k == "V" else 0.19)
                     for o, k in zip(onsets, kinds)])

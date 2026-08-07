@@ -17,6 +17,7 @@ any dropout can be seen.
 Shown beside the reconstructed image, so the correspondence is concrete.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(23)
@@ -36,6 +37,23 @@ kspace = np.fft.fftshift(np.fft.fft2(phantom))
 magnitude = np.abs(kspace)
 magnitude = np.maximum(magnitude, magnitude.max() * 1e-6)
 kx = np.linspace(-N / 2, N / 2, N)
+KX, KY = np.meshgrid(kx, kx)
+X, Y = np.meshgrid(g, g)
+reconstructed = np.abs(np.fft.ifft2(np.fft.ifftshift(kspace)))
+
+# One row per k-space sample -- the shape a scanner's own raw data export is
+# in, before it is gridded for the mesh.
+acquisition = pl.DataFrame({"kx": KX.ravel(), "ky": KY.ravel(), "magnitude": magnitude.ravel()}) \
+    .sort(["ky", "kx"])
+kx = acquisition["kx"].unique().sort().to_numpy()
+magnitude = acquisition["magnitude"].to_numpy().reshape(kx.size, kx.size)
+
+# One row per reconstructed pixel -- the image-space counterpart, gridded
+# the same way once the inverse transform has been applied.
+image = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "intensity": reconstructed.ravel()}) \
+    .sort(["y", "x"])
+g = image["x"].unique().sort().to_numpy()
+reconstructed = image["intensity"].to_numpy().reshape(g.size, g.size)
 
 fig, axes = plotpress.subplots(1, 3, figsize=(13.5, 4.4))
 lin = axes[0].pcolormesh(kx, kx, magnitude, cmap="gray")
@@ -46,8 +64,7 @@ log = axes[1].pcolormesh(kx, kx, magnitude, cmap="gray", norm=plotpress.LogNorm(
 axes[1].set_title("k-space, LogNorm")
 fig.colorbar(log, ax=axes[1])
 
-img = axes[2].pcolormesh(g, g, np.abs(np.fft.ifft2(np.fft.ifftshift(kspace))),
-                         cmap="gray")
+img = axes[2].pcolormesh(g, g, reconstructed, cmap="gray")
 axes[2].set_title("reconstructed image")
 fig.colorbar(img, ax=axes[2])
 
