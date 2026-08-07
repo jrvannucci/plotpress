@@ -26,6 +26,7 @@ shift boundaries and the break are shaded, so idle time inside the shift is
 visually distinct from time the shop was never open.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 SHIFT = (6.0, 14.0)                                # hours, clock time
@@ -66,6 +67,16 @@ ROW_HEIGHT = 0.62
 machines = list(SCHEDULE)
 positions = np.arange(len(machines), dtype=float)
 
+# One row per scheduled activity span -- the shape a shop-floor event log is
+# actually recorded in, before it is grouped into per-machine, per-activity
+# bars and utilisation percentages.
+events = pl.concat([
+    pl.DataFrame({"machine": machine, "activity": activity,
+                  "start": [s for s, _ in spans], "duration": [d for _, d in spans]})
+    for machine, activities in SCHEDULE.items()
+    for activity, spans in activities.items() if spans
+])
+
 fig, ax = plotpress.subplots(figsize=(11.0, 5.2))
 
 ax.axvspan(SHIFT[0], SHIFT[1], color="#f2f2f2", alpha=1.0)
@@ -74,9 +85,10 @@ ax.axvspan(BREAK[0], BREAK[1], color="#cccccc", alpha=0.9)
 labelled = set()
 for row, machine in zip(positions, machines):
     for activity, color in STYLE.items():
-        spans = SCHEDULE[machine][activity]
-        if not spans:
+        rows = events.filter((pl.col("machine") == machine) & (pl.col("activity") == activity))
+        if rows.height == 0:
             continue
+        spans = list(zip(rows["start"].to_list(), rows["duration"].to_list()))
         # Label the first row that actually has this activity -- keying the
         # label off row 0 silently drops any category the top machine happens
         # not to have, which is exactly the downtime row a reader looks for.
@@ -84,7 +96,8 @@ for row, machine in zip(positions, machines):
         labelled.add(activity)
         ax.broken_barh(spans, (row - ROW_HEIGHT / 2, ROW_HEIGHT), color=color,
                        label=activity if first else None)
-    run_hours = sum(d for _, d in SCHEDULE[machine]["running"])
+    run_hours = events.filter((pl.col("machine") == machine)
+                               & (pl.col("activity") == "running"))["duration"].sum()
     ax.text(SHIFT[1] + 0.12, row, f"{100 * run_hours / (SHIFT[1] - SHIFT[0]):.0f}%",
             va="center", fontsize=9, color="#333333")
 
