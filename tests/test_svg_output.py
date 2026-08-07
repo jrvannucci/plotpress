@@ -1,5 +1,6 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
+import json
 import math
 import re
 import os
@@ -377,6 +378,86 @@ def test_axes_metadata_carries_title_for_extract():
     assert meta[1]["title"] == ""
 
 
+def test_axes_metadata_carries_pickable_flag():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    axes[1].set_pickable(False)
+    meta = axes_metadata(fig)
+    assert meta[0]["pickable"] is True
+    assert meta[1]["pickable"] is False
+    assert axes[0].get_pickable() is True
+    assert axes[1].get_pickable() is False
+
+
+def test_axes_metadata_carries_pick_context():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[0].set_pick_context(edge_color="#d62728")
+    axes[0].set_pick_context(unit="V")   # accumulates, doesn't replace
+    axes[1].plot([0, 1], [1, 0])
+    meta = axes_metadata(fig)
+    assert meta[0]["context"] == {"edge_color": "#d62728", "unit": "V"}
+    assert meta[1]["context"] == {}
+    assert axes[0].get_pick_context() == {"edge_color": "#d62728", "unit": "V"}
+
+
+def test_axes_metadata_carries_xlabel_ylabel():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[0].set_xlabel("Time (s)")
+    axes[0].set_ylabel("Amplitude (V)")
+    axes[1].plot([0, 1], [1, 0])   # labels left unset
+    meta = axes_metadata(fig)
+    assert meta[0]["xlabel"] == "Time (s)"
+    assert meta[0]["ylabel"] == "Amplitude (V)"
+    assert meta[1]["xlabel"] == "" and meta[1]["ylabel"] == ""
+    assert meta[0]["zlabel"] == ""   # no colorbar attached
+
+
+def test_axes_metadata_carries_zlabel_from_colorbar():
+    from plotpress.svg import axes_metadata
+
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.zeros((4, 4)))
+    fig.colorbar(mesh, ax=ax).set_title("power (dB)")
+    assert axes_metadata(fig)[0]["zlabel"] == "power (dB)"
+
+
+def test_axes_metadata_zlabel_from_shared_colorbar_reaches_every_parent():
+    """A colorbar shared across several pcolormesh axes must report its label
+    for *every* axes it covers, not just the one it happened to steal space
+    from -- fig.colorbar(mesh, ax=[ax0, ax1, ax2]) is the documented way to
+    build a shared bar over a grid of meshes."""
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 3, figsize=(9, 3))
+    meshes = [ax.pcolormesh(np.full((4, 4), i), vmin=0, vmax=2)
+              for i, ax in enumerate(axes)]
+    fig.colorbar(meshes[0], ax=list(axes)).set_title("temperature (degC)")
+
+    meta = axes_metadata(fig)
+    # Three data axes plus the one shared colorbar axes -- the colorbar
+    # itself must not appear as a fourth "data" entry.
+    assert len(meta) == 3
+    for i in range(3):
+        assert meta[i]["zlabel"] == "temperature (degC)", (
+            "axes %d did not get the shared colorbar's label" % i)
+
+    # And the fully-embedded interactive payload must agree.
+    html = fig.to_html(interactive=True)
+    m = re.search(r'id="plotpress-meta">(.*?)</script>', html, re.S)
+    payload = json.loads(m.group(1))
+    for i in range(3):
+        assert payload[str(i)]["zlabel"] == "temperature (degC)"
+
+
 def test_axes_metadata_carries_minor_ticks_flag():
     from plotpress.svg import axes_metadata
 
@@ -459,6 +540,33 @@ def test_interactive_html_embeds_pick_metadata():
     assert 'application/json' in html
     # Static output must not carry the metadata payload.
     assert 'plotpress-meta' not in fig.to_html(interactive=False)
+
+
+def test_interactive_html_pick_payload_survives_nan_and_inf():
+    """A masked/missing measurement (NaN, or +-inf from a divide-by-zero) must
+    not corrupt the embedded JSON. ``json.dumps``'s default ``allow_nan=True``
+    emits bare ``NaN``/``Infinity``/``-Infinity`` tokens -- valid Python, not
+    valid JSON -- so the browser's strict ``JSON.parse`` throws on the very
+    first one and the *entire* interactive toolbar silently stops working, not
+    just picking on the affected series. Real measurements have gaps (a
+    masked heatmap region, a dropped-out channel) often enough that this has
+    to hold generally, not just for the common finite case.
+    """
+    fig, (ax1, ax2) = plotpress.subplots(1, 2)
+    ax1.plot([0, 1, 2, 3], [0.0, float("nan"), 2.0, float("inf")])
+    Z = np.array([[0.0, np.nan], [np.nan, float("-inf")]])
+    ax2.pcolormesh(Z)
+    html = fig.to_html(interactive=True)
+
+    def _reject_bare_constant(name):
+        raise ValueError(
+            "payload embeds a bare %r token -- not valid JSON, "
+            "JSON.parse() would throw in the browser" % name)
+
+    for pid in ("plotpress-meta", "plotpress-pick", "plotpress-style"):
+        start = html.index('id="%s">' % pid) + len('id="%s">' % pid)
+        end = html.index("</script>", start)
+        json.loads(html[start:end], parse_constant=_reject_bare_constant)
 
 
 def test_pick_data_includes_z_c_and_extra_dims():

@@ -9,6 +9,7 @@ mutable state.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 
@@ -1012,6 +1013,27 @@ def _layout_colorbar(cax):
     cax._rect = (gl + keep + span_w * pad, gb, bar_w, gt - gb)
 
 
+def _sanitize_nan(obj):
+    """Replace non-finite floats (NaN/Infinity/-Infinity) with ``None``.
+
+    ``json.dumps``'s default ``allow_nan=True`` emits those as bare, unquoted
+    tokens -- valid Python literals but not valid JSON -- so the browser's
+    strict ``JSON.parse`` throws on the very first one and the whole payload
+    (meta, pick data, style, everything in one script element) fails to load,
+    silently disabling the entire interactive toolbar. A masked or missing
+    measurement is an ordinary case for real data (a heatmap's saturated
+    pixels, a masked land/ocean field, a scatter's dropped-out channel), not a
+    rare one, so this has to hold for every payload, not just the common one.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nan(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nan(v) for v in obj]
+    return obj
+
+
 def _json_payload(obj) -> str:
     """JSON for embedding in an inline ``<script>`` block.
 
@@ -1023,7 +1045,7 @@ def _json_payload(obj) -> str:
     yields the original characters.
     """
     return (
-        json.dumps(obj)
+        json.dumps(_sanitize_nan(obj))
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")

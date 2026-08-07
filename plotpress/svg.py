@@ -130,6 +130,22 @@ def _render_fig_text(t, st, W, H, body):
     )
 
 
+def _colorbar_label(ax, fig):
+    """The title of any colorbar attached to ``ax``, or ``""`` if none.
+
+    This library's own convention for labeling what a colorbar's scale means
+    is ``fig.colorbar(mesh, ax=ax).set_title("units")`` (there is no separate
+    ``set_label``) -- reused here so a mesh/image/scatter pick can report what
+    its color-encoded value actually means downstream, not just a bare number.
+    A colorbar shared across several axes (``fig.colorbar(mesh, ax=[a, b])``)
+    reports the same label for each of its parents.
+    """
+    for cax in fig.axes:
+        if cax._is_colorbar and cax._cbar_parents and ax in cax._cbar_parents:
+            return cax._title or ""
+    return ""
+
+
 def axes_metadata(fig):
     """Per-axes pixel rect + data limits, for client-side point picking.
 
@@ -171,10 +187,22 @@ def axes_metadata(fig):
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
             "minor": bool(ax._minor_ticks_on),
-            # Surfaced on extracted points as axes_title, so a multi-panel
-            # export identifies which panel a marker came from by name
+            # Surfaced on extracted points as axes_title (falling back to a
+            # generated "axes N" when untitled), so a multi-panel export
+            # always identifies which panel a marker came from by name
             # instead of just a bare index.
             "title": ax._title,
+            # Also surfaced on every extracted record, so a value pulled out
+            # of context (a CSV row, a JSON dict) still carries what its x/y
+            # and any color-encoded value actually mean, not just bare numbers.
+            "xlabel": ax._xlabel, "ylabel": ax._ylabel,
+            "zlabel": _colorbar_label(ax, fig),
+            # False excludes this axes from Point Pick/Annotate Point --
+            # see Axes.set_pickable.
+            "pickable": bool(ax._pickable),
+            # Arbitrary user-supplied key/value pairs merged onto every pick
+            # record from this axes -- see Axes.set_pick_context.
+            "context": dict(ax._pick_context),
             # A twin/secondary axes fully overlaps its parent's pixel rect, so
             # they can never both be reached by a click -- the client instead
             # resolves one and propagates the limit change to the other(s)

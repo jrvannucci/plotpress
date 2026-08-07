@@ -440,4 +440,47 @@ def build_cases():
                     "count": float(hb.counts[busiest])}},
     ], "a hexagon must report its raw count, not just its mapped color"))
 
+    # -- axes_title fallback + set_pick_context: extra per-axes context must
+    # ride along on every pick from that axes, and axes_title must be present
+    # even when the axes has no title of its own -------------------------
+    fig, (axl, axr) = plotpress.subplots(1, 2)
+    tx, ty = np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 0.0])
+    axl.plot(tx, ty)
+    axl.set_title("Sensor A")
+    axl.set_pick_context(edge_color="#d62728", unit="V")
+    axr.plot(tx, ty[::-1])   # no title
+    cases.append(Case("pick_context_and_title_fallback", fig,
+        _points(fig, 0, tx, ty, (0, 1, 2),
+               lambda j: {"axes_title": "Sensor A", "edge_color": "#d62728", "unit": "V"})
+        + _points(fig, 1, tx, ty[::-1], (0, 1, 2),
+                 lambda j: {"axes_title": "axes 1"}),
+        "set_pick_context's keys must ride along on every pick from that "
+        "axes, and axes_title must fall back to a generated name when the "
+        "axes has no title"))
+
+    # -- xlabel/ylabel/zlabel, incl. a colorbar shared across several -------
+    # pcolormesh axes -- every parent axes must report the same zlabel, not
+    # just the one the colorbar happened to steal space from ---------------
+    lz0 = np.full((2, 2), 0.0)
+    lz1 = np.full((2, 2), 1.0)
+    fig, (laxl, laxr) = plotpress.subplots(1, 2)
+    lm0 = laxl.pcolormesh(lz0, vmin=0, vmax=1)
+    laxl.set_xlabel("excitation (nm)")
+    laxl.set_ylabel("emission (nm)")
+    lm1 = laxr.pcolormesh(lz1, vmin=0, vmax=1)
+    laxr.set_xlabel("time (s)")
+    laxr.set_ylabel("emission (nm)")
+    fig.colorbar(lm0, ax=[laxl, laxr]).set_title("intensity (a.u.)")
+    cases.append(Case("shared_colorbar_zlabel", fig, [
+        {"px": px(fig, 0, 1.0, 1.0),
+         "expect": {"kind": "mesh", "axes": 0, "z": 0.0,
+                    "xlabel": "excitation (nm)", "ylabel": "emission (nm)",
+                    "zlabel": "intensity (a.u.)"}},
+        {"px": px(fig, 1, 1.0, 1.0),
+         "expect": {"kind": "mesh", "axes": 1, "z": 1.0,
+                    "xlabel": "time (s)", "ylabel": "emission (nm)",
+                    "zlabel": "intensity (a.u.)"}},
+    ], "a colorbar shared over several axes must label every one of them, "
+       "not just its own parent"))
+
     return cases

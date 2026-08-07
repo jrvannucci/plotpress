@@ -124,6 +124,15 @@ webviews). Nothing is active until you pick a tool:
 picking, per artist) to bound the interactive payload for mesh- or
 point-heavy figures.
 
+Per axes: `ax.set_pickable(False)` excludes that axes from Point Pick/Annotate
+Point (Span/Zoom/Annotate Free still work everywhere), and
+`ax.set_pick_context(**kwargs)` attaches extra key/value context — e.g. a
+panel's spine color — that rides along on every record picked from it. Every
+picked record also always carries `axes_title` (falling back to a generated
+name when the axes has no title) plus `xlabel`/`ylabel` and `zlabel` (the
+title of any colorbar attached to that axes, shared or not), so a value
+pulled out of context still says what it means.
+
 3-D data via `ax.plot_frames(...)` adds a **slider** (play/pause/step) over the
 extra dimension; multiple sliders can be linked by a shared index.
 
