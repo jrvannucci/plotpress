@@ -91,6 +91,12 @@ is derived from it at build time rather than written down anywhere in the source
   gate's amplitude/duration speed limit against leakage, a single-shot
   readout IQ blob histogram, and CPMG dynamical-decoupling coherence
   extension.
+- Five more tune-up examples (IQ mixer LO-leakage and image-sideband
+  nulling, measurement-induced state transitions, photon-shot-noise Hahn
+  echo dephasing, flux-pulse rise-time/leakage trade-off) and five
+  randomized-benchmarking examples (RB fidelity across the flux range,
+  simultaneous RB crosstalk, purity RB, cross-entropy benchmarking vs depth
+  and qubit count, leakage RB) in the quantum devices gallery.
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
