@@ -23,6 +23,7 @@ coloured by phase and the minority phase's peaks are marked underneath with
 ``eventplot``, which keeps the tick marks out of the pattern itself.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1912)
@@ -52,6 +53,12 @@ def pattern(peaks, scale):
 counts = pattern(PHASE_A, SCALE) + pattern(PHASE_B, SCALE)
 counts += 260.0 + 900.0 * np.exp(-(two_theta - 22.0) / 18.0)     # amorphous hump
 counts = rng.poisson(np.clip(counts, 0.0, None)).astype(float)   # counting noise
+
+# One row per diffractometer step -- the shape a powder-diffraction scan is
+# actually recorded in, before it is drawn on linear and square-root axes.
+scan = pl.DataFrame({"two_theta": two_theta, "counts": counts})
+two_theta = scan["two_theta"].to_numpy()
+counts = scan["counts"].to_numpy()
 
 fig, axes = plotpress.subplots(2, 1, figsize=(9.6, 7.2), sharex=True)
 ax_lin, ax_sqrt = axes
