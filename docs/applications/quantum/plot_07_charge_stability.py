@@ -22,6 +22,7 @@ interpolation would blur exactly the boundaries the measurement is about.
 ``pcolormesh`` maps one cell to one cell, and the plateau edges stay sharp.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 EC_L, EC_R, EC_M = 1.0, 1.0, 0.28      # charging energies (arbitrary units)
@@ -48,8 +49,20 @@ n_right = np.array([o[1] for o in occupations])[ground]
 # A nearby charge sensor couples more strongly to the left dot than the right.
 sensor = -(0.62 * n_left + 0.38 * n_right)
 
+# One row per swept (V_L, V_R) gate point -- sorted before the reshape below
+# so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "v_left": VL.ravel(),
+    "v_right": VR.ravel(),
+    "sensor": sensor.ravel(),
+}).sort(["v_right", "v_left"])
+
+v_left_axis = sweep["v_left"].unique().sort().to_numpy()
+v_right_axis = sweep["v_right"].unique().sort().to_numpy()
+sensor = sweep["sensor"].to_numpy().reshape(v_right_axis.size, v_left_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(6.8, 5.8))
-mesh = ax.pcolormesh(v_left, v_right, sensor, cmap="cividis")
+mesh = ax.pcolormesh(v_left_axis, v_right_axis, sensor, cmap="cividis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("sensor\n(a.u.)")
 ax.set_aspect("equal")

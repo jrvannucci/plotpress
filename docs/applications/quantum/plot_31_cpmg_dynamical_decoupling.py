@@ -16,6 +16,7 @@ and reading where each row crosses a fixed contrast threshold is how many
 pulses a given idle duration actually needs is decided in practice.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 T2_ECHO = 12.0                 # microseconds, N=1 (Hahn echo) coherence time
@@ -33,8 +34,20 @@ contrast = np.exp(-(T / t2_n) ** STRETCH)
 contrast += rng.normal(0.0, 0.015, contrast.shape)
 contrast = np.clip(contrast, 0.0, 1.0)
 
+# One row per swept (time, pulses) shot -- sorted before the reshape below
+# so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "time_us": T.ravel(),
+    "pulses": N.ravel(),
+    "contrast": contrast.ravel(),
+}).sort(["pulses", "time_us"])
+
+time_axis = sweep["time_us"].unique().sort().to_numpy()
+pulses_axis = sweep["pulses"].unique().sort().to_numpy()
+contrast = sweep["contrast"].to_numpy().reshape(pulses_axis.size, time_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(time, pulses, contrast, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(time_axis, pulses_axis, contrast, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("contrast")
 ax.set_xlabel("total free-evolution time (us)")

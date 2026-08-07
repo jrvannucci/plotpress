@@ -16,6 +16,7 @@ control software has to compensate before any of its flux lines can be
 swept independently.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_MAX = 5.6                   # GHz
@@ -29,8 +30,21 @@ V_OWN, V_NBR = np.meshgrid(own_voltage, neighbor_voltage)
 phi = (V_OWN + XTALK * V_NBR) / V_PERIOD
 frequency = F_MAX * np.sqrt(np.abs(np.cos(np.pi * phi)))
 
+# One row per swept (own voltage, neighbor voltage) point -- sorted before
+# the reshape below so the pivot back to a grid is correct regardless of
+# row order.
+sweep = pl.DataFrame({
+    "own_voltage_v": V_OWN.ravel(),
+    "neighbor_voltage_v": V_NBR.ravel(),
+    "frequency_ghz": frequency.ravel(),
+}).sort(["neighbor_voltage_v", "own_voltage_v"])
+
+own_axis = sweep["own_voltage_v"].unique().sort().to_numpy()
+neighbor_axis = sweep["neighbor_voltage_v"].unique().sort().to_numpy()
+frequency = sweep["frequency_ghz"].to_numpy().reshape(neighbor_axis.size, own_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(own_voltage, neighbor_voltage, frequency, cmap="cividis")
+mesh = ax.pcolormesh(own_axis, neighbor_axis, frequency, cmap="cividis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("f_01\n(GHz)")
 ax.set_xlabel("own flux-line voltage (V)")

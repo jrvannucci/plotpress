@@ -15,6 +15,7 @@ one figure showing why operating at the sweet spot is not just convenient but
 is the whole reason flux-tunable qubits are usable at all.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_SWEET = 5.0                 # GHz, qubit frequency at the sweet spot
@@ -38,8 +39,20 @@ t2 = 1.0 / dephasing_rate
 signal = 0.5 + 0.5 * np.exp(-TAU / t2) * np.cos(2 * np.pi * detuning * 1e3 * TAU)
 signal += rng.normal(0.0, 0.015, signal.shape)
 
+# One row per swept (flux, delay) shot -- sorted before the reshape below so
+# the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "flux_phi0": PHI.ravel(),
+    "delay_us": TAU.ravel(),
+    "signal": signal.ravel(),
+}).sort(["delay_us", "flux_phi0"])
+
+flux_axis = sweep["flux_phi0"].unique().sort().to_numpy()
+delay_axis = sweep["delay_us"].unique().sort().to_numpy()
+signal = sweep["signal"].to_numpy().reshape(delay_axis.size, flux_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(flux, delay, signal, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(flux_axis, delay_axis, signal, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(e)")
 ax.set_xlabel("flux bias (Phi / Phi0)")

@@ -19,6 +19,7 @@ coordinate, so no color-scale trickery is needed. The transmission itself is
 plotted in dB for the same reason.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_DISPERSIVE = 7.128     # low-power (qubit-pulled) frequency (GHz)
@@ -41,10 +42,21 @@ width = KAPPA * (1.0 + 2.5 * straddle)
 depth = 0.94 * (1.0 - 0.45 * straddle)
 
 transmission = 1.0 - depth * width ** 2 / ((F - center) ** 2 + width ** 2)
-transmission_db = 20.0 * np.log10(transmission)
+
+# One row per swept (frequency, power) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "power_dbm": P.ravel(),
+    "transmission_db": 20.0 * np.log10(transmission.ravel()),
+}).sort(["power_dbm", "frequency_ghz"])
+
+frequency_axis = sweep["frequency_ghz"].unique().sort().to_numpy()
+power_axis = sweep["power_dbm"].unique().sort().to_numpy()
+transmission_db = sweep["transmission_db"].to_numpy().reshape(power_axis.size, frequency_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(frequency, power, transmission_db, cmap="viridis")
+mesh = ax.pcolormesh(frequency_axis, power_axis, transmission_db, cmap="viridis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("|S21|\n(dB)")
 ax.set_xlabel("probe frequency (GHz)")

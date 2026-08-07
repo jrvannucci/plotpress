@@ -17,6 +17,7 @@ optimization (:doc:`plot_20_readout_fidelity_optimization`) alone would
 place it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 P_CRIT = -18.0                 # dBm, critical readout power
@@ -34,8 +35,20 @@ p_transition = threshold * exposure
 p_transition += rng.normal(0.0, 0.012, p_transition.shape)
 p_transition = np.clip(p_transition, 0.0, 1.0)
 
+# One row per swept (power, duration) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "power_dbm": P.ravel(),
+    "duration_us": T.ravel(),
+    "p_transition": p_transition.ravel(),
+}).sort(["duration_us", "power_dbm"])
+
+power_axis = sweep["power_dbm"].unique().sort().to_numpy()
+duration_axis = sweep["duration_us"].unique().sort().to_numpy()
+p_transition = sweep["p_transition"].to_numpy().reshape(duration_axis.size, power_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(power, duration, p_transition, cmap="inferno", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(power_axis, duration_axis, p_transition, cmap="inferno", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(transition)")
 ax.set_xlabel("readout power (dBm)")

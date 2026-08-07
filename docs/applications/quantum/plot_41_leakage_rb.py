@@ -18,6 +18,7 @@ floor is what tells a calibration engineer to revisit
 curve's fitted error rate at face value.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ASYMPTOTE = 0.5
@@ -38,11 +39,28 @@ err = 0.012 * np.sqrt(lengths / lengths[0])
 survival_meas = np.clip(survival + rng.normal(0.0, err * 0.15), 0.0, 1.0)
 leak_meas = np.clip(p_leak + rng.normal(0.0, err * 0.1), 0.0, 1.0)
 
+# One row per (sequence length, curve) measurement -- the shape the two
+# readouts (in-subspace survival and leaked population) are actually
+# logged in, before either is plotted.
+runs = pl.concat([
+    pl.DataFrame({"sequence_length": lengths, "curve": "survival",
+                  "value": survival_meas, "error": err * 0.15}),
+    pl.DataFrame({"sequence_length": lengths, "curve": "leaked",
+                  "value": leak_meas, "error": err * 0.1}),
+])
+
+survival_run = runs.filter(pl.col("curve") == "survival")
+leaked_run = runs.filter(pl.col("curve") == "leaked")
+
 fig, ax = plotpress.subplots(figsize=(8.2, 5.6))
-ax.errorbar(lengths, survival_meas, yerr=err * 0.15, color="#1f77b4",
+ax.errorbar(survival_run["sequence_length"].to_numpy(),
+            survival_run["value"].to_numpy(),
+            yerr=survival_run["error"].to_numpy(), color="#1f77b4",
             marker="o", markersize=4.5, linestyle="none", capsize=2.5,
             label="survival in computational subspace")
-ax.errorbar(lengths, leak_meas, yerr=err * 0.1, color="#ff7f0e",
+ax.errorbar(leaked_run["sequence_length"].to_numpy(),
+            leaked_run["value"].to_numpy(),
+            yerr=leaked_run["error"].to_numpy(), color="#ff7f0e",
             marker="o", markersize=4.5, linestyle="none", capsize=2.5,
             label="leaked to |2>")
 fine = np.logspace(0, 3.2, 300)

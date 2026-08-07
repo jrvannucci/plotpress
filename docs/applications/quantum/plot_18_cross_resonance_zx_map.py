@@ -20,6 +20,7 @@ map is the only choice that puts it at a fixed, recognizable color instead of
 wherever the data's extremes happen to place it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 J_MHZ = 3.5                  # direct qubit-qubit coupling, MHz
@@ -34,9 +35,21 @@ delta_eff = np.sign(DELTA) * np.maximum(np.abs(DELTA), DETUNING_FLOOR_MHZ)
 zx_rate = J_MHZ * OMEGA / delta_eff          # MHz
 zx_rate += rng.normal(0.0, 0.03, zx_rate.shape)
 
-lim = float(np.abs(zx_rate).max())
+# One row per swept (amplitude, detuning) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "amplitude_mhz": OMEGA.ravel(),
+    "detuning_mhz": DELTA.ravel(),
+    "zx_rate_mhz": zx_rate.ravel(),
+}).sort(["detuning_mhz", "amplitude_mhz"])
+
+amplitude_axis = sweep["amplitude_mhz"].unique().sort().to_numpy()
+detuning_axis = sweep["detuning_mhz"].unique().sort().to_numpy()
+zx_rate = sweep["zx_rate_mhz"].to_numpy().reshape(detuning_axis.size, amplitude_axis.size)
+lim = float(sweep["zx_rate_mhz"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(amplitude, detuning, zx_rate, cmap="RdBu", vmin=-lim, vmax=lim)
+mesh = ax.pcolormesh(amplitude_axis, detuning_axis, zx_rate, cmap="RdBu", vmin=-lim, vmax=lim)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("zeta_ZX\n(MHz)")
 ax.set_xlabel("cross-resonance drive amplitude (MHz)")

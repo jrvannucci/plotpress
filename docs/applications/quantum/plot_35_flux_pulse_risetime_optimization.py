@@ -16,6 +16,7 @@ rise time that is safe at every amplitude, and no amplitude that is safe at
 every rise time, only a trade-off between the two.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 RATE_STAR = 0.035               # GHz/ns, sets the Landau-Zener leakage scale
@@ -27,8 +28,20 @@ RISE, AMP = np.meshgrid(rise_time, amplitude)
 rate = AMP / RISE                              # GHz / ns
 leakage = np.exp(-2.0 * RATE_STAR / rate)
 
+# One row per swept (rise time, amplitude) point -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "rise_time_ns": RISE.ravel(),
+    "amplitude_ghz": AMP.ravel(),
+    "leakage": leakage.ravel(),
+}).sort(["amplitude_ghz", "rise_time_ns"])
+
+rise_axis = sweep["rise_time_ns"].unique().sort().to_numpy()
+amplitude_axis = sweep["amplitude_ghz"].unique().sort().to_numpy()
+leakage = sweep["leakage"].to_numpy().reshape(amplitude_axis.size, rise_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(rise_time, amplitude, leakage, cmap="magma")
+mesh = ax.pcolormesh(rise_axis, amplitude_axis, leakage, cmap="magma")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(leak)")
 ax.set_xlabel("ramp rise time (ns)")

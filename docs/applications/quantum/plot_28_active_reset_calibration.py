@@ -16,6 +16,7 @@ linear one would show every round past the second or third as
 indistinguishable from zero.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 BASE_LEAK = 0.03               # per-round residual excitation at the correct amplitude
@@ -31,10 +32,21 @@ leak_per_round = BASE_LEAK + CURVATURE * (AMP - 1.0) ** 2
 residual = np.clip(leak_per_round, 1e-4, 1.0) ** N
 residual *= 1.0 + rng.normal(0.0, 0.05, residual.shape)
 residual = np.clip(residual, 1e-12, 1.0)
-log_residual = np.log10(residual)
+
+# One row per swept (amplitude scale, rounds) shot -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "amp_scale": AMP.ravel(),
+    "rounds": N.ravel(),
+    "log_residual": np.log10(residual).ravel(),
+}).sort(["rounds", "amp_scale"])
+
+amp_axis = sweep["amp_scale"].unique().sort().to_numpy()
+rounds_axis = sweep["rounds"].unique().sort().to_numpy()
+log_residual = sweep["log_residual"].to_numpy().reshape(rounds_axis.size, amp_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(amp_scale, rounds, log_residual, cmap="inferno")
+mesh = ax.pcolormesh(amp_axis, rounds_axis, log_residual, cmap="inferno")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("log10\nP(e)")
 ax.set_xlabel("conditional pulse amplitude scale")

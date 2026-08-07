@@ -22,6 +22,7 @@ half, which is why they widen through the middle of the T1 curve and stay wide
 across the whole Ramsey trace.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(908)
@@ -47,10 +48,23 @@ sigma_t1, meas_t1 = shot_noise(p_t1)
 p_t2 = 0.5 + 0.5 * np.exp(-delay / T2) * np.cos(2 * np.pi * DETUNING * delay)
 sigma_t2, meas_t2 = shot_noise(p_t2)
 
+# The actual shot table -- one row per delay point actually measured, each
+# with its own shot-noise uncertainty. The smooth fit/envelope curves below
+# are the theoretical model evaluated on a fine grid for display, not data
+# that was collected, so they stay as plain arrays.
+shots = pl.DataFrame({
+    "delay_us": delay,
+    "p_t1": meas_t1,
+    "sigma_t1": sigma_t1,
+    "p_t2": meas_t2,
+    "sigma_t2": sigma_t2,
+})
+
 fig, axes = plotpress.subplots(1, 2, figsize=(11.0, 4.6), sharex=True)
 ax1, ax2 = axes
 
-ax1.errorbar(delay, meas_t1, yerr=sigma_t1, color="#1f77b4", marker="o",
+ax1.errorbar(shots["delay_us"].to_numpy(), shots["p_t1"].to_numpy(),
+             yerr=shots["sigma_t1"].to_numpy(), color="#1f77b4", marker="o",
              markersize=4.0, linestyle="none", capsize=2.5, label="measured")
 ax1.plot(fine, np.exp(-fine / T1), color="#d62728", linewidth=1.8,
          label=f"exp fit, T1 = {T1:.0f} us")
@@ -68,7 +82,8 @@ ax2.fill_between(fine, envelope_lo, envelope_hi, color="#d62728", alpha=0.15,
                  label=f"envelope, T2 = {T2:.0f} us")
 ax2.plot(fine, 0.5 + 0.5 * np.exp(-fine / T2)
          * np.cos(2 * np.pi * DETUNING * fine), color="#d62728", linewidth=1.2)
-ax2.errorbar(delay, meas_t2, yerr=sigma_t2, color="#1f77b4", marker="o",
+ax2.errorbar(shots["delay_us"].to_numpy(), shots["p_t2"].to_numpy(),
+             yerr=shots["sigma_t2"].to_numpy(), color="#1f77b4", marker="o",
              markersize=4.0, linestyle="none", capsize=2.5, label="measured")
 ax2.axhline(0.5, color="#888888", linestyle=":", linewidth=1.0)
 ax2.set_ylim(-0.05, 1.05)

@@ -15,6 +15,7 @@ fidelity at a *finite* integration time, not a monotonic climb -- that
 neither a frequency sweep nor a duration sweep alone would reveal.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_OPT = 7.142                # GHz, frequency of maximum dispersive contrast
@@ -33,8 +34,20 @@ p_decay_during_readout = 1.0 - np.exp(-T / T1_QUBIT)   # chance |1> relaxed mid-
 
 fidelity = (1.0 - np.exp(-snr ** 2 / 2.0)) * (1.0 - 0.5 * p_decay_during_readout)
 
+# One row per swept (frequency, duration) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "duration_us": T.ravel(),
+    "fidelity": fidelity.ravel(),
+}).sort(["duration_us", "frequency_ghz"])
+
+frequency_axis = sweep["frequency_ghz"].unique().sort().to_numpy()
+duration_axis = sweep["duration_us"].unique().sort().to_numpy()
+fidelity = sweep["fidelity"].to_numpy().reshape(duration_axis.size, frequency_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(frequency, duration, fidelity, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(frequency_axis, duration_axis, fidelity, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("fidelity")
 ax.set_xlabel("probe frequency (GHz)")

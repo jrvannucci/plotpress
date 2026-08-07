@@ -19,6 +19,7 @@ color, which is why a colormap dark at low values earns its place here rather
 than something brighter across the whole range.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 T1_BASELINE = 65.0        # microseconds, away from any TLS
@@ -38,7 +39,7 @@ tls_freq = tls_freq0[None, :] + tls_drift                  # (n_sweeps, N_TLS)
 tls_coupling = rng.uniform(0.006, 0.020, N_TLS)             # GHz, dip strength
 tls_width = rng.uniform(0.0015, 0.004, N_TLS)               # GHz, dip width
 
-F, _ = np.meshgrid(frequency, elapsed)
+F, ELAPSED = np.meshgrid(frequency, elapsed)
 rate = np.full_like(F, 1.0 / T1_BASELINE)
 for i in range(N_TLS):
     detuning = F - tls_freq[:, i][:, None]
@@ -47,8 +48,20 @@ T1_map = 1.0 / rate
 T1_map *= 1.0 + rng.normal(0.0, 0.03, T1_map.shape)    # measurement scatter
 T1_map = np.clip(T1_map, 1.0, None)
 
+# One row per (frequency, sweep time) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweeps = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "elapsed_hours": ELAPSED.ravel(),
+    "t1_us": T1_map.ravel(),
+}).sort(["elapsed_hours", "frequency_ghz"])
+
+frequency_axis = sweeps["frequency_ghz"].unique().sort().to_numpy()
+elapsed_axis = sweeps["elapsed_hours"].unique().sort().to_numpy()
+T1_map = sweeps["t1_us"].to_numpy().reshape(elapsed_axis.size, frequency_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(frequency, elapsed, T1_map, cmap="cividis")
+mesh = ax.pcolormesh(frequency_axis, elapsed_axis, T1_map, cmap="cividis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("T1\n(us)")
 ax.set_xlabel("qubit frequency (GHz)")

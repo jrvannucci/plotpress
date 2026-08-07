@@ -15,6 +15,7 @@ both axes matter simultaneously here rather than one being swept just to
 check the other still works.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ERROR_PER_CYCLE_PAIR = 0.0065      # per-cycle, per-qubit-pair error contribution
@@ -28,10 +29,21 @@ pairs_per_cycle = np.floor(NQ / 2.0)
 xeb_fidelity = (1.0 - ERROR_PER_CYCLE_PAIR) ** (D * pairs_per_cycle)
 xeb_fidelity *= 1.0 + rng.normal(0.0, 0.03, xeb_fidelity.shape)
 xeb_fidelity = np.clip(xeb_fidelity, 1e-4, 1.0)
-log_fidelity = np.log10(xeb_fidelity)
+
+# One row per swept (depth, qubit count) circuit -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "depth": D.ravel(),
+    "n_qubits": NQ.ravel(),
+    "log_fidelity": np.log10(xeb_fidelity).ravel(),
+}).sort(["n_qubits", "depth"])
+
+depth_axis = sweep["depth"].unique().sort().to_numpy()
+n_qubits_axis = sweep["n_qubits"].unique().sort().to_numpy()
+log_fidelity = sweep["log_fidelity"].to_numpy().reshape(n_qubits_axis.size, depth_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(depth, n_qubits, log_fidelity, cmap="viridis")
+mesh = ax.pcolormesh(depth_axis, n_qubits_axis, log_fidelity, cmap="viridis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("log10 F_XEB")
 ax.set_xlabel("circuit depth (cycles)")

@@ -17,6 +17,7 @@ on rung by rung as power rises rather than all at once, and each rung
 power-broadens once driven hard enough to saturate.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F01 = 5.050                  # 0-1 transition, GHz
@@ -37,8 +38,20 @@ for n in range(1, N_LEVELS + 1):
     width = 0.006 + 0.010 * amplitude / n
     response += turn_on * width ** 2 / ((F - center) ** 2 + width ** 2)
 
+# One row per swept (frequency, power) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "power_dbm": P.ravel(),
+    "response": response.ravel(),
+}).sort(["power_dbm", "frequency_ghz"])
+
+frequency_axis = sweep["frequency_ghz"].unique().sort().to_numpy()
+power_axis = sweep["power_dbm"].unique().sort().to_numpy()
+response = sweep["response"].to_numpy().reshape(power_axis.size, frequency_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(frequency, power_dbm, response, cmap="plasma")
+mesh = ax.pcolormesh(frequency_axis, power_axis, response, cmap="plasma")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("response\n(a.u.)")
 ax.set_xlabel("probe frequency (GHz)")

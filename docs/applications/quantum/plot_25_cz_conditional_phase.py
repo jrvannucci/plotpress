@@ -15,6 +15,7 @@ operating amplitude is simply wherever that tilt crosses ``phi = pi``, read
 straight off the map rather than fitted from a stack of separate 1-D traces.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 A_CZ = 0.62                  # coupler pulse amplitude (a.u.) giving phi = pi
@@ -30,8 +31,20 @@ conditional_phase = PHASE_SLOPE * (A - A_CZ) + np.pi
 p_excited = 0.5 + 0.5 * CONTRAST * np.cos(PHI - conditional_phase)
 p_excited += rng.normal(0.0, 0.015, p_excited.shape)
 
+# One row per swept (amplitude, phase) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "amplitude": A.ravel(),
+    "phase_rad": PHI.ravel(),
+    "p_excited": p_excited.ravel(),
+}).sort(["phase_rad", "amplitude"])
+
+amplitude_axis = sweep["amplitude"].unique().sort().to_numpy()
+phase_axis = sweep["phase_rad"].unique().sort().to_numpy()
+p_excited = sweep["p_excited"].to_numpy().reshape(phase_axis.size, amplitude_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(amplitude, phase, p_excited, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(amplitude_axis, phase_axis, p_excited, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(e)")
 ax.axvline(A_CZ, color="white", linestyle=":", linewidth=1.0)
