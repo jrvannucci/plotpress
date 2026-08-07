@@ -28,6 +28,7 @@ Median ranks are used for the plotting positions rather than a naive i/n,
 because i/n puts the last failure at 100%, which is off the axis at infinity.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1951)
@@ -60,7 +61,10 @@ for name, beta, eta, second, color in POPULATIONS:
         early = rng.random(N) < share
         times = np.where(early, eta_early * rng.weibull(beta_early, N), times)
         knee = int(early.sum())
-    times = np.sort(times)
+
+    # One row per unit on test -- the shape a life-test rig's own failure log
+    # is in, before the units are ranked by time to failure.
+    times = pl.DataFrame({"time": times}).sort("time")["time"].to_numpy()
 
     # Median ranks (Bernard's approximation): keeps the last point off infinity.
     i = np.arange(1, N + 1)

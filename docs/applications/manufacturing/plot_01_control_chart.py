@@ -26,6 +26,7 @@ The one-sigma and two-sigma zones are shaded, because most of the additional
 run rules are stated in terms of them.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1924)
@@ -46,8 +47,17 @@ parts += drift[:, None]
 # One genuine outlier: a subgroup with a loose fixture.
 parts[47] += 0.0135
 
-xbar = parts.mean(axis=1)
-rng_bar = parts.max(axis=1) - parts.min(axis=1)
+groups = np.arange(1, N_GROUPS + 1)
+
+# One row per part measured -- the shape a gauge's own measurement log is in,
+# before it is aggregated into a subgroup mean and range.
+measurements = pl.DataFrame({"group": np.repeat(groups, SUBGROUP), "value": parts.ravel()})
+subgroups = measurements.group_by("group", maintain_order=True).agg(
+    pl.col("value").mean().alias("xbar"),
+    (pl.col("value").max() - pl.col("value").min()).alias("range"),
+)
+xbar = subgroups["xbar"].to_numpy()
+rng_bar = subgroups["range"].to_numpy()
 
 # Limits from the first 30 subgroups, before the process drifted -- estimating
 # them from data that already contains the fault widens them until the fault fits.
@@ -57,8 +67,6 @@ centre_r = rng_bar[BASE].mean()
 ucl_x, lcl_x = centre_x + A2 * centre_r, centre_x - A2 * centre_r
 ucl_r, lcl_r = D4 * centre_r, D3 * centre_r
 sigma_hat = centre_r / (D2 * np.sqrt(SUBGROUP))
-
-groups = np.arange(1, N_GROUPS + 1)
 
 # Rule 1: outside the control limits. Rule 2: seven in a row on one side.
 beyond = (xbar > ucl_x) | (xbar < lcl_x)

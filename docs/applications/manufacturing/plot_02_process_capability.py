@@ -24,6 +24,7 @@ Out-of-tolerance parts are shaded and counted in parts per million, which is the
 unit a supplier quality agreement is written in.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(66)
@@ -40,7 +41,10 @@ fig, axes = plotpress.subplots(1, 2, figsize=(11.6, 5.2), sharex=True, sharey=Tr
 grid = np.linspace(9.70, 10.32, 600)
 
 for ax, (name, mu, color) in zip(axes, CASES):
-    parts = rng.normal(mu, SIGMA, N)
+    # One row per inspected part -- the shape a CMM's own measurement log is
+    # in, before the histogram and capability indices are computed from it.
+    inspected = pl.DataFrame({"diameter": rng.normal(mu, SIGMA, N)})
+    parts = inspected["diameter"].to_numpy()
     ax.hist(parts, bins=48, range=(9.70, 10.32), density=True, color=color,
             alpha=0.55, edgecolor="#ffffff", label=f"{N} parts")
 

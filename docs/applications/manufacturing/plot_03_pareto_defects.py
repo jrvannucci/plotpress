@@ -25,6 +25,7 @@ the cut are still drawn rather than lumped into "other", because a cause that is
 rare but expensive to fix should still be visible to whoever is deciding.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 CAUSES = {
@@ -42,11 +43,16 @@ CAUSES = {
 }
 THRESHOLD = 0.80
 
-# "other" stays at the end however large it is: it is not a cause, so it cannot
-# be a recommendation, and sorting it into the middle would imply it was.
-named = {k: v for k, v in CAUSES.items() if k != "other"}
-labels = sorted(named, key=named.get, reverse=True) + ["other"]
-counts = np.array([CAUSES[k] for k in labels], dtype=float)
+# One row per failure mode -- the shape a quality log's own tally is in,
+# before it is sorted for the Pareto ranking. "other" stays at the end
+# however large it is: it is not a cause, so it cannot be a recommendation,
+# and sorting it into the middle would imply it was.
+named = pl.DataFrame({"cause": [k for k in CAUSES if k != "other"],
+                       "count": [v for k, v in CAUSES.items() if k != "other"]}) \
+    .sort("count", descending=True)
+defects = pl.concat([named, pl.DataFrame({"cause": ["other"], "count": [CAUSES["other"]]})])
+labels = defects["cause"].to_list()
+counts = defects["count"].to_numpy().astype(float)
 
 position = np.arange(len(labels), dtype=float)
 cumulative = 100.0 * np.cumsum(counts) / counts.sum()
