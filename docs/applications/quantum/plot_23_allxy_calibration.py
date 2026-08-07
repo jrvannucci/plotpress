@@ -16,6 +16,7 @@ value -- which is the entire diagnostic power of AllXY: it does not just flag
 much says what kind of error it is.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 N_SEQ = 21
@@ -39,8 +40,20 @@ response = ideal[idx] + sensitivity[idx] * (SCALE - 1.0)
 response = np.clip(response, 0.0, 1.0)
 response += rng.normal(0.0, 0.012, response.shape)
 
+# One row per swept (scale, sequence index) shot -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "amp_scale": SCALE.ravel(),
+    "sequence_index": SEQ.ravel(),
+    "response": response.ravel(),
+}).sort(["sequence_index", "amp_scale"])
+
+scale_axis = sweep["amp_scale"].unique().sort().to_numpy()
+sequence_axis = sweep["sequence_index"].unique().sort().to_numpy()
+response = sweep["response"].to_numpy().reshape(sequence_axis.size, scale_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.6))
-mesh = ax.pcolormesh(scale, sequence, response, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(scale_axis, sequence_axis, response, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(e)")
 ax.set_xlabel("pulse amplitude scale factor")

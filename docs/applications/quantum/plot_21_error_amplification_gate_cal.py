@@ -19,6 +19,7 @@ a real amplification sequence has a practical ceiling on how many repeats are
 worth applying before decoherence outruns the amplification.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 GATE_INFIDELITY = 0.0018     # per-gate depolarizing-like error
@@ -33,8 +34,20 @@ contrast = (1.0 - GATE_INFIDELITY) ** N
 p_excited = 0.5 - 0.5 * contrast * np.cos(N * EPS)
 p_excited += rng.normal(0.0, 0.012, p_excited.shape)
 
+# One row per swept (angle error, repetitions) shot -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "angle_error_rad": EPS.ravel(),
+    "repetitions": N.ravel(),
+    "p_excited": p_excited.ravel(),
+}).sort(["repetitions", "angle_error_rad"])
+
+angle_axis = sweep["angle_error_rad"].unique().sort().to_numpy()
+repetitions_axis = sweep["repetitions"].unique().sort().to_numpy()
+p_excited = sweep["p_excited"].to_numpy().reshape(repetitions_axis.size, angle_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(angle_error, repetitions, p_excited, cmap="viridis",
+mesh = ax.pcolormesh(angle_axis, repetitions_axis, p_excited, cmap="viridis",
                      vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(e)")

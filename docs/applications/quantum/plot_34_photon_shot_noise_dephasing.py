@@ -17,6 +17,7 @@ validated -- if T2_echo does not recover to its low-photon value between
 shots, photons are lingering longer than intended.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 GAMMA0_PER_US = 1.0 / 25.0       # 1/T2_echo at n_th = 0
@@ -38,8 +39,20 @@ contrast = np.exp(-TAU * gamma_phi)
 contrast += rng.normal(0.0, 0.015, contrast.shape)
 contrast = np.clip(contrast, 0.0, 1.0)
 
+# One row per swept (delay, photon number) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "delay_us": TAU.ravel(),
+    "n_photons": N.ravel(),
+    "contrast": contrast.ravel(),
+}).sort(["n_photons", "delay_us"])
+
+delay_axis = sweep["delay_us"].unique().sort().to_numpy()
+n_photons_axis = sweep["n_photons"].unique().sort().to_numpy()
+contrast = sweep["contrast"].to_numpy().reshape(n_photons_axis.size, delay_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(delay, n_photons, contrast, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(delay_axis, n_photons_axis, contrast, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("contrast")
 ax.set_xlabel("echo delay (us)")

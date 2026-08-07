@@ -24,6 +24,7 @@ here would put zero at an arbitrary color and destroy the one thing the plot
 exists to show.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ALPHA = 2.0                       # coherent-state amplitude
@@ -36,11 +37,22 @@ X, P = np.meshgrid(x, p)
 lobes = np.exp(-(X - x0) ** 2 - P ** 2) + np.exp(-(X + x0) ** 2 - P ** 2)
 interference = 2.0 * np.exp(-X ** 2 - P ** 2) * np.cos(2.0 * P * x0)
 norm = np.pi * 2.0 * (1.0 + np.exp(-2.0 * ALPHA ** 2))
-wigner = (lobes + interference) / norm
 
-lim = float(np.abs(wigner).max())
+# One row per (x, p) phase-space sample -- sorted before the reshape below so
+# the pivot back to a grid is correct regardless of row order.
+phase_space = pl.DataFrame({
+    "x": X.ravel(),
+    "p": P.ravel(),
+    "wigner": ((lobes + interference) / norm).ravel(),
+}).sort(["p", "x"])
+
+x_axis = phase_space["x"].unique().sort().to_numpy()
+p_axis = phase_space["p"].unique().sort().to_numpy()
+wigner = phase_space["wigner"].to_numpy().reshape(p_axis.size, x_axis.size)
+lim = float(phase_space["wigner"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(6.6, 5.6))
-mesh = ax.pcolormesh(x, p, wigner, cmap="RdBu", vmin=-lim, vmax=lim)
+mesh = ax.pcolormesh(x_axis, p_axis, wigner, cmap="RdBu", vmin=-lim, vmax=lim)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("W(x, p)")
 ax.set_aspect("equal")

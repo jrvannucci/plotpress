@@ -19,6 +19,7 @@ is intrinsically far weaker -- exactly what would be measured, not an
 arbitrary styling choice.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_MAX = 6.10                  # transmon sweet-spot 0-1 frequency, GHz
@@ -40,8 +41,20 @@ def lorentzian(detuning, width):
 response = (lorentzian(F - f01, LINEWIDTH)
             + 0.22 * lorentzian(F - f02_half, LINEWIDTH * 0.8))
 
+# One row per swept (frequency, flux) point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "flux_phi0": PHI.ravel(),
+    "response": response.ravel(),
+}).sort(["flux_phi0", "frequency_ghz"])
+
+frequency_axis = sweep["frequency_ghz"].unique().sort().to_numpy()
+flux_axis = sweep["flux_phi0"].unique().sort().to_numpy()
+response = sweep["response"].to_numpy().reshape(flux_axis.size, frequency_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(frequency, flux, response, cmap="magma")
+mesh = ax.pcolormesh(frequency_axis, flux_axis, response, cmap="magma")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("response\n(a.u.)")
 ax.set_xlabel("probe frequency (GHz)")

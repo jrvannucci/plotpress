@@ -20,6 +20,7 @@ is the only choice that puts the operating point the measurement exists to
 find at a fixed, recognizable color.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 A_ZZ_KHZ = 380.0              # peak |ZZ| rate, kHz
@@ -33,9 +34,21 @@ FLUX, DELTA = np.meshgrid(coupler_flux, detuning)
 zz_khz = A_ZZ_KHZ * np.cos(np.pi * FLUX) * DELTA / np.hypot(DELTA, GAMMA_MHZ)
 zz_khz += rng.normal(0.0, 4.0, zz_khz.shape)
 
-lim = float(np.abs(zz_khz).max())
+# One row per swept (coupler flux, detuning) point -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "coupler_flux_phi0": FLUX.ravel(),
+    "detuning_mhz": DELTA.ravel(),
+    "zz_khz": zz_khz.ravel(),
+}).sort(["detuning_mhz", "coupler_flux_phi0"])
+
+flux_axis = sweep["coupler_flux_phi0"].unique().sort().to_numpy()
+detuning_axis = sweep["detuning_mhz"].unique().sort().to_numpy()
+zz_khz = sweep["zz_khz"].to_numpy().reshape(detuning_axis.size, flux_axis.size)
+lim = float(sweep["zz_khz"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(coupler_flux, detuning, zz_khz, cmap="RdBu", vmin=-lim, vmax=lim)
+mesh = ax.pcolormesh(flux_axis, detuning_axis, zz_khz, cmap="RdBu", vmin=-lim, vmax=lim)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("ZZ\n(kHz)")
 ax.set_xlabel("coupler flux bias (Phi / Phi0)")

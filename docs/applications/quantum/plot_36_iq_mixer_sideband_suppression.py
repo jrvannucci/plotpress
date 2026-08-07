@@ -17,6 +17,7 @@ two-dimensional minimum searches, run back to back before any pulse on this
 line means what it is supposed to.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 AMP_CORR0 = 1.018              # correct amplitude ratio (Q/I)
@@ -33,8 +34,21 @@ residual = (AMP - AMP_CORR0) ** 2 / 0.02 ** 2 + (PHASE - PHASE_CORR0) ** 2 / 1.5
 image_dbc = NOISE_FLOOR_DBC + SLOPE_DB * np.log10(1.0 + residual / 40.0)
 image_dbc += rng.normal(0.0, 0.5, image_dbc.shape)
 
+# One row per swept (amplitude, phase) correction point -- sorted before
+# the reshape below so the pivot back to a grid is correct regardless of
+# row order.
+sweep = pl.DataFrame({
+    "amp_corr": AMP.ravel(),
+    "phase_corr_deg": PHASE.ravel(),
+    "image_dbc": image_dbc.ravel(),
+}).sort(["phase_corr_deg", "amp_corr"])
+
+amp_axis = sweep["amp_corr"].unique().sort().to_numpy()
+phase_axis = sweep["phase_corr_deg"].unique().sort().to_numpy()
+image_dbc = sweep["image_dbc"].to_numpy().reshape(phase_axis.size, amp_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.6))
-mesh = ax.pcolormesh(amp_corr, phase_corr, image_dbc, cmap="viridis")
+mesh = ax.pcolormesh(amp_axis, phase_axis, image_dbc, cmap="viridis")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("image\n(dBc)")
 ax.set_xlabel("amplitude correction (Q/I ratio)")

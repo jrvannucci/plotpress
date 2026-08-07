@@ -25,6 +25,7 @@ sequences, which is genuinely large at long lengths and is the reason short
 sequences alone cannot resolve a small error rate.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(4096)
@@ -59,11 +60,27 @@ int_mean, int_err = measure(P_INT)
 # Gate error from the ratio of the two decay parameters (d = 4 for two qubits).
 gate_error = (1.0 - P_INT / P_REF) * (4.0 - 1.0) / 4.0
 
+# One row per (sequence, curve) point -- the shape the 40-sequences-per-length
+# average is actually logged in, before either curve is plotted.
+runs = pl.concat([
+    pl.DataFrame({"sequence_length": lengths, "curve": "reference",
+                  "fidelity": ref_mean, "error": ref_err}),
+    pl.DataFrame({"sequence_length": lengths, "curve": "interleaved",
+                  "fidelity": int_mean, "error": int_err}),
+])
+
+reference = runs.filter(pl.col("curve") == "reference")
+interleaved = runs.filter(pl.col("curve") == "interleaved")
+
 fig, ax = plotpress.subplots(figsize=(8.4, 5.6))
-ax.errorbar(lengths, ref_mean - ASYMPTOTE, yerr=ref_err, color="#1f77b4",
+ax.errorbar(reference["sequence_length"].to_numpy(),
+            reference["fidelity"].to_numpy() - ASYMPTOTE,
+            yerr=reference["error"].to_numpy(), color="#1f77b4",
             marker="o", markersize=5.0, linestyle="none", capsize=3.0,
             label="reference")
-ax.errorbar(lengths, int_mean - ASYMPTOTE, yerr=int_err, color="#d62728",
+ax.errorbar(interleaved["sequence_length"].to_numpy(),
+            interleaved["fidelity"].to_numpy() - ASYMPTOTE,
+            yerr=interleaved["error"].to_numpy(), color="#d62728",
             marker="o", markersize=5.0, linestyle="none", capsize=3.0,
             label="interleaved CZ")
 ax.plot(fine, decay(fine, P_REF) - ASYMPTOTE, color="#1f77b4", linewidth=1.5)

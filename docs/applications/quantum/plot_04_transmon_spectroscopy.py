@@ -25,6 +25,7 @@ a log scale applied to the data rather than to the norm, which suits a quantity
 already conventionally reported in dB.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 F_MAX = 6.20             # transmon sweet-spot frequency (GHz)
@@ -55,10 +56,23 @@ weight_lower = 0.12 + 0.88 * mixing
 
 response = (weight_upper * lorentzian(F - upper, LINEWIDTH)
             + weight_lower * lorentzian(F - lower, LINEWIDTH))
-response_db = 10.0 * np.log10(response + 1.5e-3)
+
+# One row per swept (frequency, flux) point -- the shape a real two-tone
+# spectroscopy sweep is actually logged in, before anything is reshaped for
+# plotting. Sorting before the reshape below makes the pivot back to a grid
+# correct regardless of what order the sweep happened to log rows in.
+sweep = pl.DataFrame({
+    "frequency_ghz": F.ravel(),
+    "flux_phi0": PHI.ravel(),
+    "response_db": 10.0 * np.log10(response.ravel() + 1.5e-3),
+}).sort(["flux_phi0", "frequency_ghz"])
+
+frequency_axis = sweep["frequency_ghz"].unique().sort().to_numpy()
+flux_axis = sweep["flux_phi0"].unique().sort().to_numpy()
+response_db = sweep["response_db"].to_numpy().reshape(flux_axis.size, frequency_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(frequency, flux, response_db, cmap="magma")
+mesh = ax.pcolormesh(frequency_axis, flux_axis, response_db, cmap="magma")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("|S21|\n(dB)")
 ax.set_xlabel("probe frequency (GHz)")

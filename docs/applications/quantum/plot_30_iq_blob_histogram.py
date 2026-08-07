@@ -17,6 +17,7 @@ lets a *single*-quadrature threshold on I alone separate the states, instead
 of a threshold in the full IQ plane.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 N_SHOTS = 60000
@@ -30,10 +31,18 @@ center_e = SEPARATION * np.array([np.cos(angle), np.sin(angle)])
 
 points = np.where(state[:, None] == 0, center_g, center_e)
 points = points + rng.normal(0.0, 1.0, points.shape)
-I, Q = points[:, 0], points[:, 1]
 
-counts, i_edges, q_edges = np.histogram2d(I, Q, bins=140,
-                                          range=[[-3.5, 5.5], [-3.5, 5.5]])
+# One row per single-shot measurement -- exactly the raw shot table a real
+# acquisition would log, before it is ever binned into a histogram.
+shots = pl.DataFrame({
+    "state": state,
+    "i": points[:, 0],
+    "q": points[:, 1],
+})
+
+counts, i_edges, q_edges = np.histogram2d(
+    shots["i"].to_numpy(), shots["q"].to_numpy(), bins=140,
+    range=[[-3.5, 5.5], [-3.5, 5.5]])
 
 fig, ax = plotpress.subplots(figsize=(6.6, 5.8))
 mesh = ax.pcolormesh(i_edges, q_edges, counts.T, cmap="magma")

@@ -16,6 +16,7 @@ straight-ish lines legible across two decades at once instead of flattening
 them all into the same-looking curve near the bottom of a linear scale.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ASYMPTOTE = 0.5                    # single qubit: 1/2^n
@@ -31,10 +32,21 @@ p = P0 - FLUX_SENSITIVITY * PHI ** 2
 survival = (1.0 - ASYMPTOTE) * p ** M
 survival *= 1.0 + rng.normal(0.0, 0.02, survival.shape)
 survival = np.clip(survival, 1e-4, 1.0)
-log_survival = np.log10(survival)
+
+# One row per swept (sequence length, flux) point -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "sequence_length": M.ravel(),
+    "flux_phi0": PHI.ravel(),
+    "log_survival": np.log10(survival).ravel(),
+}).sort(["flux_phi0", "sequence_length"])
+
+lengths_axis = sweep["sequence_length"].unique().sort().to_numpy()
+flux_axis = sweep["flux_phi0"].unique().sort().to_numpy()
+log_survival = sweep["log_survival"].to_numpy().reshape(flux_axis.size, lengths_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(lengths, flux, log_survival, cmap="viridis")
+mesh = ax.pcolormesh(lengths_axis, flux_axis, log_survival, cmap="viridis")
 ax.set_xscale("log")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("log10\n(F - 1/2)")

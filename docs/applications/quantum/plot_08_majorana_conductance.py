@@ -21,6 +21,7 @@ broadening, disorder, and quasiparticle states in the gap -- but it is the shape
 of the plot that matters for the example.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 DELTA0 = 0.25            # induced gap at zero field (meV)
@@ -52,8 +53,20 @@ background = 0.12 + 0.35 * (1.0 - weight)
 
 conductance = background + coherence + zero_bias
 
+# One row per swept (bias, field) point -- sorted before the reshape below so
+# the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "bias_mv": V.ravel(),
+    "field_t": B.ravel(),
+    "conductance": conductance.ravel(),
+}).sort(["field_t", "bias_mv"])
+
+bias_axis = sweep["bias_mv"].unique().sort().to_numpy()
+field_axis = sweep["field_t"].unique().sort().to_numpy()
+conductance = sweep["conductance"].to_numpy().reshape(field_axis.size, bias_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.5, 5.0))
-mesh = ax.pcolormesh(bias, field, conductance, cmap="inferno")
+mesh = ax.pcolormesh(bias_axis, field_axis, conductance, cmap="inferno")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("dI/dV\n(2e^2/h)")
 ax.set_xlabel("bias voltage (mV)")

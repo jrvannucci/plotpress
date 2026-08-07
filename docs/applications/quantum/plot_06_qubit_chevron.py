@@ -21,6 +21,7 @@ scale with no meaningful midpoint, so the limits are pinned to ``vmin=0``,
 reach.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 RABI_MHZ = 10.0          # drive amplitude on resonance
@@ -40,8 +41,20 @@ p_excited = 0.5 + contrast * (
     (omega ** 2 / omega_eff ** 2) * np.sin(omega_eff * T / 2.0) ** 2 - 0.5)
 p_excited += rng.normal(0.0, 0.012, p_excited.shape)   # readout noise
 
+# One row per swept (detuning, duration) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "detuning_mhz": D.ravel(),
+    "duration_ns": (T * 1e3).ravel(),
+    "p_excited": p_excited.ravel(),
+}).sort(["duration_ns", "detuning_mhz"])
+
+detuning_axis = sweep["detuning_mhz"].unique().sort().to_numpy()
+duration_axis = sweep["duration_ns"].unique().sort().to_numpy()
+p_excited = sweep["p_excited"].to_numpy().reshape(duration_axis.size, detuning_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.5, 5.0))
-mesh = ax.pcolormesh(detuning, duration * 1e3, p_excited,
+mesh = ax.pcolormesh(detuning_axis, duration_axis, p_excited,
                      cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(e)")

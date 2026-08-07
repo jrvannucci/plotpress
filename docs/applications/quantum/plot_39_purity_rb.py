@@ -18,6 +18,7 @@ wrong) rather than genuine decoherence, and is worth chasing with
 a hardware limit.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ASYMPTOTE = 0.5
@@ -35,11 +36,27 @@ u_err = 0.012 * np.sqrt(lengths / lengths[0])
 fidelity_meas = np.clip(fidelity + rng.normal(0.0, f_err * 0.15), 0.0, 1.0)
 unitarity_meas = np.clip(unitarity + rng.normal(0.0, u_err * 0.15), 0.0, 1.0)
 
+# One row per (sequence length, curve) measurement -- the shape the two
+# decay curves are actually logged in, before either is plotted.
+runs = pl.concat([
+    pl.DataFrame({"sequence_length": lengths, "curve": "fidelity",
+                  "value": fidelity_meas, "error": f_err * 0.15}),
+    pl.DataFrame({"sequence_length": lengths, "curve": "unitarity",
+                  "value": unitarity_meas, "error": u_err * 0.15}),
+])
+
+fidelity_run = runs.filter(pl.col("curve") == "fidelity")
+unitarity_run = runs.filter(pl.col("curve") == "unitarity")
+
 fig, ax = plotpress.subplots(figsize=(8.2, 5.6))
-ax.errorbar(lengths, fidelity_meas - ASYMPTOTE, yerr=f_err * 0.15, color="#1f77b4",
+ax.errorbar(fidelity_run["sequence_length"].to_numpy(),
+            fidelity_run["value"].to_numpy() - ASYMPTOTE,
+            yerr=fidelity_run["error"].to_numpy(), color="#1f77b4",
             marker="o", markersize=4.5, linestyle="none", capsize=2.5,
             label="RB fidelity")
-ax.errorbar(lengths, unitarity_meas - ASYMPTOTE, yerr=u_err * 0.15, color="#d62728",
+ax.errorbar(unitarity_run["sequence_length"].to_numpy(),
+            unitarity_run["value"].to_numpy() - ASYMPTOTE,
+            yerr=unitarity_run["error"].to_numpy(), color="#d62728",
             marker="o", markersize=4.5, linestyle="none", capsize=2.5,
             label="purity RB (unitarity)")
 fine = np.logspace(0, 3.3, 300)

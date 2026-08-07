@@ -16,6 +16,7 @@ whose minimum locates the correct ``beta`` far more precisely than a single
 application ever could.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 BETA_OPT = 0.42                 # correct DRAG coefficient
@@ -32,8 +33,20 @@ leak_per_gate = LEAK_MIN + CURVATURE * (BETA - BETA_OPT) ** 2
 p_leak = 1.0 - (1.0 - leak_per_gate) ** N
 p_leak = np.clip(p_leak + rng.normal(0.0, 0.0015, p_leak.shape), 0.0, 1.0)
 
+# One row per swept (beta, repetitions) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "beta": BETA.ravel(),
+    "repetitions": N.ravel(),
+    "p_leak": p_leak.ravel(),
+}).sort(["repetitions", "beta"])
+
+beta_axis = sweep["beta"].unique().sort().to_numpy()
+repetitions_axis = sweep["repetitions"].unique().sort().to_numpy()
+p_leak = sweep["p_leak"].to_numpy().reshape(repetitions_axis.size, beta_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.4))
-mesh = ax.pcolormesh(beta, repetitions, p_leak, cmap="inferno")
+mesh = ax.pcolormesh(beta_axis, repetitions_axis, p_leak, cmap="inferno")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(leak)")
 ax.set_xlabel("DRAG coefficient beta")

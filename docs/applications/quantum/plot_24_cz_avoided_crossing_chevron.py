@@ -19,6 +19,7 @@ brought through an avoided crossing -- applied to a different pair of levels
 for a different purpose.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 G_MHZ = 10.0                 # 11-02 coupling strength
@@ -37,8 +38,20 @@ contrast = np.exp(-T / T2_NS)
 p_02 = contrast * (4 * g ** 2 / omega_eff ** 2) * np.sin(omega_eff * T / 2.0) ** 2
 p_02 += rng.normal(0.0, 0.012, p_02.shape)
 
+# One row per swept (detuning, duration) shot -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "detuning_mhz": D.ravel(),
+    "duration_ns": T.ravel(),
+    "p_02": p_02.ravel(),
+}).sort(["duration_ns", "detuning_mhz"])
+
+detuning_axis = sweep["detuning_mhz"].unique().sort().to_numpy()
+duration_axis = sweep["duration_ns"].unique().sort().to_numpy()
+p_02 = sweep["p_02"].to_numpy().reshape(duration_axis.size, detuning_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(detuning, duration, p_02, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(detuning_axis, duration_axis, p_02, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(02)")
 ax.set_xlabel("coupler detuning to |02> (MHz)")

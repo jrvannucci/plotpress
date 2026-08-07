@@ -12,6 +12,7 @@ stretches the bottom, which lifts faint structure into view without clipping the
 maximum or resorting to a log scale the data's zeros would not survive.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 g = np.linspace(-24.0, 24.0, 340)        # Bohr radii
@@ -25,12 +26,24 @@ psi = r ** 2 * np.exp(-r / 3.0) * (3.0 * cos_theta ** 2 - 1.0)
 density = psi ** 2
 density /= density.max()
 
+# One row per sampled (x, z) point -- sorted before the reshape below so the
+# pivot back to a grid is correct regardless of row order.
+orbital = pl.DataFrame({
+    "x": X.ravel(),
+    "z": Z.ravel(),
+    "density": density.ravel(),
+}).sort(["z", "x"])
+
+x_axis = orbital["x"].unique().sort().to_numpy()
+z_axis = orbital["z"].unique().sort().to_numpy()
+density = orbital["density"].to_numpy().reshape(z_axis.size, x_axis.size)
+
 fig, axes = plotpress.subplots(1, 2, figsize=(11.0, 4.6))
-linear = axes[0].pcolormesh(g, g, density, cmap="magma")
+linear = axes[0].pcolormesh(x_axis, z_axis, density, cmap="magma")
 axes[0].set_title("linear norm")
 fig.colorbar(linear, ax=axes[0])
 
-gamma = axes[1].pcolormesh(g, g, density, cmap="magma",
+gamma = axes[1].pcolormesh(x_axis, z_axis, density, cmap="magma",
                            norm=plotpress.PowerNorm(0.35))
 axes[1].set_title("PowerNorm(0.35)")
 fig.colorbar(gamma, ax=axes[1])

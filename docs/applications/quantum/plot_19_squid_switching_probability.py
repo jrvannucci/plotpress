@@ -21,6 +21,7 @@ figures instead of depending on whatever range a given sweep happened to
 cover.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 IC_MAX = 850.0                # peak critical current, nA
@@ -33,8 +34,20 @@ PHI, I = np.meshgrid(flux, bias)
 ic = IC_MAX * np.abs(np.cos(np.pi * PHI))
 p_switch = 1.0 / (1.0 + np.exp(-(I - ic) / SWITCH_WIDTH))
 
+# One row per swept (flux, bias) point -- sorted before the reshape below so
+# the pivot back to a grid is correct regardless of row order.
+sweep = pl.DataFrame({
+    "flux_phi0": PHI.ravel(),
+    "bias_na": I.ravel(),
+    "p_switch": p_switch.ravel(),
+}).sort(["bias_na", "flux_phi0"])
+
+flux_axis = sweep["flux_phi0"].unique().sort().to_numpy()
+bias_axis = sweep["bias_na"].unique().sort().to_numpy()
+p_switch = sweep["p_switch"].to_numpy().reshape(bias_axis.size, flux_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.2))
-mesh = ax.pcolormesh(flux, bias, p_switch, cmap="viridis", vmin=0.0, vmax=1.0)
+mesh = ax.pcolormesh(flux_axis, bias_axis, p_switch, cmap="viridis", vmin=0.0, vmax=1.0)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("P(switch)")
 ax.set_xlabel("flux (Phi / Phi0)")
