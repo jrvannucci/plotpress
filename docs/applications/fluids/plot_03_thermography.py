@@ -21,6 +21,7 @@ Isotherms mark the thermal design limits: the 85 degC contour is the commercial
 component ceiling, and the regulator crosses it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(71)
@@ -45,6 +46,15 @@ rise += 6.0 * np.exp(-((Y - 38.0) ** 2) / 260.0)
 rise += rng.normal(0.0, 0.25, rise.shape)   # detector NETD
 
 temperature = AMBIENT + np.clip(rise, 0.0, None)
+
+# One row per camera pixel -- the shape a thermal camera's own frame export
+# is in, before it is gridded for the mesh and contour.
+frame = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "temperature": temperature.ravel()}) \
+    .sort(["y", "x"])
+x = frame["x"].unique().sort().to_numpy()
+y = frame["y"].unique().sort().to_numpy()
+temperature = frame["temperature"].to_numpy().reshape(y.size, x.size)
+X, Y = np.meshgrid(x, y)
 
 fig, ax = plotpress.subplots(figsize=(9.2, 5.4))
 mesh = ax.pcolormesh(x, y, temperature, cmap="inferno",

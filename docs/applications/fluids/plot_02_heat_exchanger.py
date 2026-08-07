@@ -19,6 +19,7 @@ temperature. Isotherms over the mesh show the thermal boundary layers wrapping
 each tube.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 T_IN, T_WALL = 20.0, 95.0          # degC
@@ -48,6 +49,16 @@ for cx, cy in centres:
 
 for cx, cy in centres:             # the tubes carry no fluid temperature
     temperature[np.hypot(X - cx, Y - cy) < TUBE_R] = np.nan
+
+# One row per grid node -- the shape a CFD solver's own field export is in,
+# before it is gridded for the mesh and contour. The tubes' nan cells ride
+# along in the value column; the x/y axis columns stay finite throughout.
+field = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "temperature": temperature.ravel()}) \
+    .sort(["y", "x"])
+x = field["x"].unique().sort().to_numpy()
+y = field["y"].unique().sort().to_numpy()
+temperature = field["temperature"].to_numpy().reshape(y.size, x.size)
+X, Y = np.meshgrid(x, y)
 
 fig, ax = plotpress.subplots(figsize=(9.6, 5.2))
 mesh = ax.pcolormesh(x, y, temperature, cmap="inferno", vmin=T_IN, vmax=T_WALL)

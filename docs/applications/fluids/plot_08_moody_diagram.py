@@ -23,6 +23,7 @@ rather than in a legend -- the label sits on the part of the curve it describes,
 and a nine-entry legend would be read by colour-matching instead.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 LAMINAR = (500.0, 2300.0)
@@ -52,16 +53,25 @@ ax.plot(re_lam, 64.0 / re_lam, color="#111111", linewidth=2.0, label="laminar, 6
 ax.axvspan(*TRANSITION, color="#bbbbbb", alpha=0.55)
 ax.text(2950.0, 0.058, "critical\nzone", ha="center", fontsize=9, color="#444444")
 
+# One row per (roughness, Reynolds number) point -- the shape a friction-factor
+# lookup table is in, before one curve per roughness is picked out of it.
+curves = pl.concat([
+    pl.DataFrame({"roughness": eps, "re": re_turb, "friction": colebrook(re_turb, eps)})
+    for eps in ROUGHNESS
+])
+
 Y_LO, Y_HI = 0.007, 0.14
 for eps, color in zip(ROUGHNESS, colors):
-    f = colebrook(re_turb, eps)
-    ax.plot(re_turb, f, color=color, linewidth=1.4)
+    curve = curves.filter(pl.col("roughness") == eps)
+    re_turb_c = curve["re"].to_numpy()
+    f = curve["friction"].to_numpy()
+    ax.plot(re_turb_c, f, color=color, linewidth=1.4)
     # Label each curve on itself, at the last Reynolds number where it is still
     # inside the axes. The smooth-pipe curve keeps falling off the bottom, and
     # a label pinned to the right-hand edge would be drawn below the axis.
-    visible = np.nonzero((f > Y_LO) & (re_turb < 1.2e8))[0]
+    visible = np.nonzero((f > Y_LO) & (re_turb_c < 1.2e8))[0]
     label = "smooth" if eps == 0.0 else f"{eps:g}"
-    ax.text(re_turb[visible[-1]] * 1.1, f[visible[-1]], label, fontsize=8,
+    ax.text(re_turb_c[visible[-1]] * 1.1, f[visible[-1]], label, fontsize=8,
             color=color, va="baseline")
 
 ax.text(2.2e7, 0.0115, "relative roughness e/D", fontsize=9, color="#333333",

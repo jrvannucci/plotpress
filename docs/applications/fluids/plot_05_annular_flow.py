@@ -12,6 +12,7 @@ mesh to a single image in pure NumPy -- no per-cell polygons, and no compiled
 extension doing the sampling.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 R_IN, R_OUT = 0.35, 1.0          # cylinder radii (m)
@@ -34,6 +35,17 @@ envelope = np.sin(np.pi * (R - R_IN) / (R_OUT - R_IN))
 v = v * (1.0 + 0.18 * np.sin(6.0 * THETA) * envelope)
 
 X, Y = R * np.cos(THETA), R * np.sin(THETA)
+
+# One row per (r, theta) grid node -- the shape a solver's own polar-grid
+# export is in, before the curvilinear x/y mesh is reconstructed from it.
+grid_shape = (r.size, theta.size)
+field = pl.DataFrame({
+    "r": R.ravel(), "theta": THETA.ravel(),
+    "x": X.ravel(), "y": Y.ravel(), "v": v.ravel(),
+}).sort(["r", "theta"])
+X = field["x"].to_numpy().reshape(grid_shape)
+Y = field["y"].to_numpy().reshape(grid_shape)
+v = field["v"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(6.5, 6.0))
 mesh = ax.pcolormesh(X, Y, v, cmap="plasma")

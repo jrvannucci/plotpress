@@ -18,6 +18,7 @@ and leaving it unpainted is more honest than filling it with zero, which would
 read as stagnant fluid.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 x = np.linspace(-2.0, 9.0, 360)          # cylinder diameters
@@ -44,6 +45,20 @@ for k, sign in enumerate([1, -1, 1, -1, 1, -1]):
 u = np.where(r2 < RADIUS ** 2, np.nan, u)
 v = np.where(r2 < RADIUS ** 2, np.nan, v)
 speed = np.hypot(u, v)
+
+# One row per interrogation window -- the shape a PIV cross-correlation pass
+# actually outputs, before it is gridded for the mesh and quiver.
+field = pl.DataFrame({
+    "x": X.ravel(), "y": Y.ravel(),
+    "u": u.ravel(), "v": v.ravel(), "speed": speed.ravel(),
+}).sort(["y", "x"])
+x = field["x"].unique().sort().to_numpy()
+y = field["y"].unique().sort().to_numpy()
+shape = (y.size, x.size)
+u = field["u"].to_numpy().reshape(shape)
+v = field["v"].to_numpy().reshape(shape)
+speed = field["speed"].to_numpy().reshape(shape)
+X, Y = np.meshgrid(x, y)
 
 fig, ax = plotpress.subplots(figsize=(9.0, 5.0))
 mesh = ax.pcolormesh(x, y, speed, cmap="viridis", vmin=0.0, vmax=2.2)

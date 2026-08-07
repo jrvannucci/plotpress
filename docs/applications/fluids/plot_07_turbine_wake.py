@@ -19,6 +19,7 @@ in quadrature, which is why the downstream machines sit in noticeably slower
 air than the front row.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 D = 120.0                          # rotor diameter (m)
@@ -43,6 +44,14 @@ for tx, ty in TURBINES:
     squared += deficit ** 2                   # quadratic wake superposition
 
 deficit = np.sqrt(squared)
+
+# One row per grid node -- the shape a wake model's own field export is in,
+# before it is gridded for the mesh.
+field = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "deficit": deficit.ravel()}) \
+    .sort(["y", "x"])
+x = field["x"].unique().sort().to_numpy()
+y = field["y"].unique().sort().to_numpy()
+deficit = field["deficit"].to_numpy().reshape(y.size, x.size)
 
 fig, ax = plotpress.subplots(figsize=(9.4, 4.8))
 mesh = ax.pcolormesh(x / D, y / D, 100.0 * deficit, cmap="magma", vmin=0.0)
