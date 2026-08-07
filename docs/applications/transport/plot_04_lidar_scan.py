@@ -25,6 +25,7 @@ from ordinary wall paint at the same range -- the second channel every lidar
 returns and most plots discard.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(360)
@@ -69,7 +70,16 @@ doorway = (np.abs(bearing) < 0.16)
 distance[doorway] = np.inf
 
 distance += rng.normal(0.0, 0.012, N_BEAMS)        # ranging noise
-no_return = ~np.isfinite(distance) | (distance > MAX_RANGE)
+
+# One row per beam -- the shape a lidar's own scan packet is in, before
+# no-return beams are split from genuine returns.
+scan = pl.DataFrame({"bearing": bearing, "distance": distance, "intensity": intensity})
+scan = scan.with_columns(
+    (~pl.col("distance").is_finite() | (pl.col("distance") > MAX_RANGE)).alias("no_return"))
+bearing = scan["bearing"].to_numpy()
+distance = scan["distance"].to_numpy()
+intensity = scan["intensity"].to_numpy()
+no_return = scan["no_return"].to_numpy()
 
 fig = plotpress.Figure(figsize=(7.4, 7.4))
 ax = fig.add_subplot(projection="polar")

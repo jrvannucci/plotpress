@@ -26,6 +26,7 @@ picked out on the energy trace, since that is where hybrid and conventional
 drivetrains diverge and the reason the same cycle gives them different answers.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 # A WLTP-style cycle: (duration, target speed in km/h) segments per phase.
@@ -65,6 +66,17 @@ force = MASS * accel + 0.5 * RHO * CD_A * v ** 2 + CRR * MASS * 9.81 * (v > 0.1)
 power = force * v                                  # W, negative when braking
 energy = np.cumsum(np.clip(power, 0.0, None)) / 3.6e6          # kWh, traction only
 recoverable = np.cumsum(np.clip(-power, 0.0, None)) / 3.6e6    # kWh at the wheels
+
+# One row per simulation second -- the shape a chassis-dyno logger's own
+# trace export is in, before the derived series are plotted from it.
+trace = pl.DataFrame({
+    "t": t, "speed": speed, "accel": accel, "energy": energy, "recoverable": recoverable,
+})
+t = trace["t"].to_numpy()
+speed = trace["speed"].to_numpy()
+accel = trace["accel"].to_numpy()
+energy = trace["energy"].to_numpy()
+recoverable = trace["recoverable"].to_numpy()
 
 fig, axes = plotpress.subplots(2, 1, figsize=(11.4, 7.0), sharex=True)
 ax_v, ax_a = axes
