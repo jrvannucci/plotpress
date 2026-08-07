@@ -24,6 +24,7 @@ are drawn as dashed lines so the reader can see where each stops describing the
 data, and the buffer layer between them is shaded because neither applies there.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1904)
@@ -43,10 +44,8 @@ def u_plus(y_plus):
     return blend * y_plus + (1.0 - blend) * log_law
 
 
-fig, axes = plotpress.subplots(1, 2, figsize=(11.4, 5.0))
-ax_phys, ax_wall = axes
-
-for x_station, color in STATIONS:
+station_profiles = []
+for x_station, _ in STATIONS:
     # Turbulent flat-plate correlations: skin friction falls slowly downstream.
     re_x = U_INF * x_station / NU
     cf = 0.0592 * re_x ** -0.2
@@ -57,6 +56,23 @@ for x_station, color in STATIONS:
     y = y_plus * NU / u_tau
     u = np.minimum(u_plus(y_plus), U_INF / u_tau) * u_tau
     u = u * (1.0 + rng.normal(0.0, 0.006, u.size))  # hot-wire noise
+
+    # One row per probe position -- the shape a hot-wire traverse's own
+    # output is in, before the physical and wall-unit views are plotted.
+    station_profiles.append(pl.DataFrame({
+        "x_station": x_station, "y": y, "u": u, "y_plus": y_plus, "u_tau": u_tau,
+    }))
+profiles = pl.concat(station_profiles)
+
+fig, axes = plotpress.subplots(1, 2, figsize=(11.4, 5.0))
+ax_phys, ax_wall = axes
+
+for x_station, color in STATIONS:
+    probe = profiles.filter(pl.col("x_station") == x_station)
+    y = probe["y"].to_numpy()
+    u = probe["u"].to_numpy()
+    y_plus = probe["y_plus"].to_numpy()
+    u_tau = probe["u_tau"][0]
 
     # plot() draws the line and scatter() the sample markers: these are 60
     # discrete probe positions, not a continuous curve, and the marker spacing

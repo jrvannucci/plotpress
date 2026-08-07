@@ -27,6 +27,7 @@ are in metres -- a rare case where two curves legitimately share one axis
 despite meaning different things.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 flow = np.linspace(0.0, 160.0, 400)                # m3/h
@@ -34,13 +35,29 @@ flow = np.linspace(0.0, 160.0, 400)                # m3/h
 SHUTOFF_HEAD = 62.0                                # m at zero flow
 Q_BEP = 96.0                                       # best-efficiency flow
 
-head_pump = SHUTOFF_HEAD - 0.00165 * flow ** 2
-efficiency = 82.0 * (1.0 - ((flow - Q_BEP) / 96.0) ** 2) * (flow > 0)
-npsh_required = 1.6 + 0.00042 * flow ** 2
+# One row per flow rate -- the shape a pump's own test-stand data sheet is in,
+# before the operating point is picked out against a system curve.
+pump = pl.DataFrame({
+    "flow": flow,
+    "head": SHUTOFF_HEAD - 0.00165 * flow ** 2,
+    "efficiency": 82.0 * (1.0 - ((flow - Q_BEP) / 96.0) ** 2) * (flow > 0),
+    "npsh_required": 1.6 + 0.00042 * flow ** 2,
+})
+flow = pump["flow"].to_numpy()
+head_pump = pump["head"].to_numpy()
+efficiency = pump["efficiency"].to_numpy()
+npsh_required = pump["npsh_required"].to_numpy()
 
 STATIC_LIFT = 18.0                                 # m the fluid must be raised
 SYSTEMS = [("valve open", 0.00135, "#2ca02c"),
            ("valve throttled", 0.00305, "#9467bd")]
+
+# One row per (system, flow rate) point -- the two resistance curves the
+# pump curve is intersected against.
+system_curves = pl.concat([
+    pl.DataFrame({"system": name, "flow": flow, "head": STATIC_LIFT + k * flow ** 2})
+    for name, k, _ in SYSTEMS
+])
 
 fig, ax = plotpress.subplots(figsize=(9.0, 5.8))
 ax.plot(flow, head_pump, color="#1f77b4", linewidth=2.2, label="pump head")
@@ -50,7 +67,7 @@ ax.axhline(STATIC_LIFT, color="#888888", linestyle=":", linewidth=1.2,
            label="static lift")
 
 for name, k, color in SYSTEMS:
-    head_system = STATIC_LIFT + k * flow ** 2
+    head_system = system_curves.filter(pl.col("system") == name)["head"].to_numpy()
     ax.plot(flow, head_system, color=color, linewidth=1.8, linestyle="--",
             label=f"system, {name}")
     # Operating point: where the two curves cross.

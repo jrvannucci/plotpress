@@ -25,6 +25,7 @@ terminated at stall rather than extrapolated through it -- past stall the flow i
 separated and unsteady, and a smooth curve there would be fiction.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 CASES = [
@@ -36,11 +37,8 @@ CASES = [
 CL_SLOPE = 0.105                                   # per degree, thin-airfoil theory
 ALPHA_ZERO_LIFT = -2.2                             # degrees, cambered section
 
-fig, axes = plotpress.subplots(1, 2, figsize=(11.6, 5.2))
-ax_cl, ax_polar = axes
-ax_cd = ax_cl.twinx()
-
-for reynolds, stall, cl_max, cd_min, color in CASES:
+wind_tunnel = []
+for reynolds, stall, cl_max, cd_min, _ in CASES:
     alpha = np.linspace(-6.0, stall, 200)
     cl = CL_SLOPE * (alpha - ALPHA_ZERO_LIFT)
     # Soften the last couple of degrees before stall.
@@ -48,6 +46,21 @@ for reynolds, stall, cl_max, cd_min, color in CASES:
                                                        0.0, 1.0) ** 2))
     cd = cd_min + 2.2e-4 * (alpha - 1.0) ** 2 + 0.010 * np.clip(
         (alpha - stall + 4.0) / 4.0, 0.0, None) ** 2
+    # One row per angle-of-attack sweep point -- the shape a wind-tunnel
+    # run's own data sheet is in, before it is split by Reynolds number.
+    wind_tunnel.append(pl.DataFrame({"reynolds": reynolds, "alpha": alpha,
+                                      "cl": cl, "cd": cd}))
+sweeps = pl.concat(wind_tunnel)
+
+fig, axes = plotpress.subplots(1, 2, figsize=(11.6, 5.2))
+ax_cl, ax_polar = axes
+ax_cd = ax_cl.twinx()
+
+for reynolds, stall, cl_max, cd_min, color in CASES:
+    run = sweeps.filter(pl.col("reynolds") == reynolds)
+    alpha = run["alpha"].to_numpy()
+    cl = run["cl"].to_numpy()
+    cd = run["cd"].to_numpy()
 
     label = f"Re = {reynolds:.0e}"
     ax_cl.plot(alpha, cl, color=color, linewidth=1.9, label=label)

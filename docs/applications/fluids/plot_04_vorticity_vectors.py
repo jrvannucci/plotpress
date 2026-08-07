@@ -14,6 +14,7 @@ And the arrows are subsampled by slicing the grid -- one arrow per 14 cells --
 because a vector per cell would bury the field it is meant to annotate.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 g = np.linspace(0.0, 2.0 * np.pi, 260)
@@ -22,6 +23,19 @@ X, Y = np.meshgrid(g, g)
 U = np.sin(X) * np.cos(Y)                 # velocity components
 V = -np.cos(X) * np.sin(Y)
 vorticity = 2.0 * np.sin(X) * np.sin(Y)   # curl of (U, V)
+
+# One row per grid node -- the shape a flow solver's own field export is in,
+# before it is gridded for the mesh and quiver.
+field = pl.DataFrame({
+    "x": X.ravel(), "y": Y.ravel(),
+    "u": U.ravel(), "v": V.ravel(), "vorticity": vorticity.ravel(),
+}).sort(["y", "x"])
+g = field["x"].unique().sort().to_numpy()
+shape = (g.size, g.size)
+U = field["u"].to_numpy().reshape(shape)
+V = field["v"].to_numpy().reshape(shape)
+vorticity = field["vorticity"].to_numpy().reshape(shape)
+X, Y = np.meshgrid(g, g)
 
 lim = float(np.abs(vorticity).max())
 fig, ax = plotpress.subplots(figsize=(7.0, 6.0))

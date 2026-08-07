@@ -16,6 +16,7 @@ ringing, not a plotting artifact. The color limits are pinned to the physical
 range so the overshoot saturates instead of stretching the scale past 100.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 L, W = 1.0, 0.6          # plate width and height (m)
@@ -34,6 +35,15 @@ for n in range(1, 80, 2):        # 40 odd harmonics
     k = n * np.pi / L
     ratio = (np.exp(k * (Y - W)) - np.exp(-k * (Y + W))) / (1.0 - np.exp(-2.0 * k * W))
     T += (4.0 * T_TOP / (n * np.pi)) * np.sin(k * X) * ratio
+
+# One row per grid node -- the shape a finite-element solver's own field
+# export is in, before it is gridded for the mesh and contour.
+field = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "temperature": T.ravel()}) \
+    .sort(["y", "x"])
+x = field["x"].unique().sort().to_numpy()
+y = field["y"].unique().sort().to_numpy()
+T = field["temperature"].to_numpy().reshape(y.size, x.size)
+X, Y = np.meshgrid(x, y)
 
 fig, ax = plotpress.subplots(figsize=(7.5, 5))
 mesh = ax.pcolormesh(x, y, T, cmap="inferno", vmin=0.0, vmax=T_TOP)
