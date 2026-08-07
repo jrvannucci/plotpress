@@ -18,6 +18,7 @@ looks like real absorption, whereas an unpainted channel is unmistakably
 missing data.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(19)
@@ -38,6 +39,14 @@ power += rng.normal(0.0, 0.35, power.shape) + 1.0
 # Radio-frequency interference: whole channels are unusable and get flagged.
 for f0, width in [(1.381, 0.006), (1.452, 0.010), (1.269, 0.004)]:
     power[np.abs(F - f0) < width] = np.nan
+
+# One row per (time, frequency) channel sample -- the shape a backend's own
+# filterbank export is in, before it is gridded for the mesh.
+filterbank = pl.DataFrame({"freq": F.ravel(), "time": T.ravel(), "power": power.ravel()}) \
+    .sort(["time", "freq"])
+freq = filterbank["freq"].unique().sort().to_numpy()
+time = filterbank["time"].unique().sort().to_numpy()
+power = filterbank["power"].to_numpy().reshape(time.size, freq.size)
 
 fig, ax = plotpress.subplots(figsize=(7.8, 5.2))
 mesh = ax.pcolormesh(freq, time, power, cmap="cividis")

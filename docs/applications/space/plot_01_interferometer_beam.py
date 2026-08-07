@@ -18,6 +18,7 @@ sidelobe what matters here is its magnitude, not whether it is a positive or
 negative excursion.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(3)
@@ -47,6 +48,14 @@ beam = np.maximum(beam, 1e-4)          # floor, so the log scale has a bottom
 
 extent = N / (2.0 * scale)             # arcsec-like image coordinates
 axis = np.linspace(-extent, extent, N)
+X, Y = np.meshgrid(axis, axis)
+
+# One row per synthesised-image pixel -- the shape an imager's own beam
+# export is in, before it is gridded for the mesh.
+image = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "beam": beam.ravel()}) \
+    .sort(["y", "x"])
+axis = image["x"].unique().sort().to_numpy()
+beam = image["beam"].to_numpy().reshape(axis.size, axis.size)
 
 fig, axes = plotpress.subplots(1, 2, figsize=(11.5, 4.8))
 lin = axes[0].pcolormesh(axis, axis, beam, cmap="magma")

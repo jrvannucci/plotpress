@@ -22,6 +22,7 @@ systematics. The contact points are marked, because ingress duration is what
 constrains the impact parameter.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(314)
@@ -50,6 +51,12 @@ model = transit_profile(t)
 flux = model + rng.normal(0.0, SIGMA, t.size)
 # A slow instrumental trend, the sort a detrending step is meant to remove.
 flux += 4.0e-4 * np.sin(t / 3.4)
+
+# One row per cadence -- the shape a photometry pipeline's own light-curve
+# export is in, before the transit model is drawn over it.
+cadences = pl.DataFrame({"t": t, "flux": flux})
+t = cadences["t"].to_numpy()
+flux = cadences["flux"].to_numpy()
 
 fine = np.linspace(-4.5, 4.5, 1200)
 
