@@ -54,6 +54,15 @@ is derived from it at build time rather than written down anywhere in the source
 
 ### Added
 
+- **`fig.save(path.gif, fps=10, slider_unit="main")`.** Any
+  `Axes.plot_frames()` series now exports to a self-contained looping GIF via
+  Pillow, animating through the same frames an interactive HTML slider
+  scrubs -- for anywhere that slider does not fit (a README, a slide, a chat
+  message). `slider_unit` picks which slider drives the animation on a
+  figure with more than one (a mix of shared and per-axes `plot_frames()`
+  panels); every other series holds its frame 0 for that render. Raises
+  `ValueError` on a figure with no `plot_frames()` series -- there is
+  nothing to animate.
 - **Per-axes point-picking control.** `Axes.set_pickable(False)` excludes an
   axes from Point Pick/Annotate Point (Span, Zoom and Annotate Free are
   unaffected), so a figure can restrict picking to a single panel.

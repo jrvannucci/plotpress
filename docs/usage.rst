@@ -50,6 +50,7 @@ Call                                          Result
 ``fig.save("x.svg")``                         static vector SVG
 ``fig.save("x.png")`` / ``fig.savefig(...)``  raster PNG
 ``fig.save("x.pdf")``                          vector PDF
+``fig.save("x.gif")``                          looping GIF (plot_frames())
 ``fig.save("x.html", interactive=True)``       interactive HTML (JS toolbar)
 ``fig._repr_svg_()``                           inline SVG in Jupyter
 ``fig.show()``                                 native pop-up window (``[gui]``)
