@@ -24,14 +24,23 @@ an investor who can borrow and lend should hold. Both are marked, since the
 distinction is the most commonly skipped step in reading this figure.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1952)
 
 ASSETS = ["US equity", "Intl equity", "EM equity", "Small cap",
           "Corp bonds", "Govt bonds", "REITs", "Commodities"]
-mean_return = np.array([0.085, 0.075, 0.105, 0.098, 0.045, 0.028, 0.082, 0.052])
-volatility = np.array([0.155, 0.170, 0.230, 0.205, 0.070, 0.050, 0.190, 0.215])
+
+# One row per asset -- the shape a fund's own return/risk assumptions sheet
+# is in, before it is turned into a covariance matrix.
+asset_stats = pl.DataFrame({
+    "asset": ASSETS,
+    "mean_return": [0.085, 0.075, 0.105, 0.098, 0.045, 0.028, 0.082, 0.052],
+    "volatility": [0.155, 0.170, 0.230, 0.205, 0.070, 0.050, 0.190, 0.215],
+})
+mean_return = asset_stats["mean_return"].to_numpy()
+volatility = asset_stats["volatility"].to_numpy()
 RISK_FREE = 0.025
 
 # A plausible correlation structure: equities move together, bonds hedge them.
@@ -49,9 +58,18 @@ cov = corr * np.outer(volatility, volatility)
 
 N = 20000
 weights = rng.dirichlet(np.full(len(ASSETS), 0.7), N)
-port_return = weights @ mean_return
-port_vol = np.sqrt(np.einsum("ij,jk,ik->i", weights, cov, weights))
-sharpe = (port_return - RISK_FREE) / port_vol
+
+# One row per randomly weighted portfolio -- the shape a Monte Carlo sweep's
+# own output table is in, before the frontier is picked out of the cloud.
+portfolios = pl.DataFrame({
+    "volatility": np.sqrt(np.einsum("ij,jk,ik->i", weights, cov, weights)),
+    "return": weights @ mean_return,
+})
+portfolios = portfolios.with_columns(
+    ((pl.col("return") - RISK_FREE) / pl.col("volatility")).alias("sharpe"))
+port_vol = portfolios["volatility"].to_numpy()
+port_return = portfolios["return"].to_numpy()
+sharpe = portfolios["sharpe"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(9.6, 6.2))
 

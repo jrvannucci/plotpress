@@ -24,6 +24,7 @@ negative region of the right panel is shaded, and it is the one place a signed
 quantity crossing zero justifies breaking the fill into two colours.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30], float)
@@ -55,13 +56,23 @@ colors = ["#%02x%02x%02x" % tuple(lut[i])
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 5.2))
 ax_curve, ax_spread = axes
 
+# One row per (date, maturity) point -- the shape a term-structure history is
+# actually published in, before the 2s10s spread is computed from it.
+curves = pl.concat([
+    pl.DataFrame({"date": label, "maturity": MATURITIES,
+                  "yield": nelson_siegel(level, slope, curvature)})
+    for label, level, slope, curvature in DATES
+])
+
 spreads, positions = [], np.arange(len(DATES), dtype=float)
 for (label, level, slope, curvature), color in zip(DATES, colors):
-    yields = nelson_siegel(level, slope, curvature)
-    ax_curve.plot(MATURITIES, yields, color=color, linewidth=1.8, label=label)
-    ax_curve.scatter(MATURITIES, yields, s=4.5, color=color)
-    spreads.append(float(np.interp(10.0, MATURITIES, yields)
-                         - np.interp(2.0, MATURITIES, yields)))
+    date_curve = curves.filter(pl.col("date") == label)
+    maturity = date_curve["maturity"].to_numpy()
+    yields = date_curve["yield"].to_numpy()
+    ax_curve.plot(maturity, yields, color=color, linewidth=1.8, label=label)
+    ax_curve.scatter(maturity, yields, s=4.5, color=color)
+    spreads.append(float(np.interp(10.0, maturity, yields)
+                         - np.interp(2.0, maturity, yields)))
 
 ax_curve.set_xscale("log")
 ax_curve.set_xticks(MATURITIES, [f"{m:g}" for m in MATURITIES])
