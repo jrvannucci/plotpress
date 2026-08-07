@@ -22,6 +22,7 @@ across the family, and drawing it puts the reason the curves bend where they do
 directly on the figure.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 V_TH = 0.45                                        # threshold voltage (V)
@@ -37,16 +38,27 @@ colors = ["#%02x%02x%02x" % tuple(lut[i])
 
 fig, ax = plotpress.subplots(figsize=(8.2, 5.4))
 
-knee_v, knee_i = [], []
-for vgs, color in zip(vgs_values, colors):
+# One row per (Vgs, Vds) sweep point -- the shape a parameter analyser's own
+# I-V sweep is in, before one curve per gate bias is picked out of it.
+sweeps = []
+for vgs in vgs_values:
     overdrive = vgs - V_TH
     if overdrive <= 0:
         continue
     linear = K * (overdrive * vds - 0.5 * vds ** 2)
     saturation = 0.5 * K * overdrive ** 2 * (1.0 + LAMBDA * (vds - overdrive))
     ids = np.where(vds < overdrive, linear, saturation)
-    ax.plot(vds, ids * 1e3, color=color, linewidth=1.8,
-            label=f"Vgs = {vgs:.1f} V")
+    sweeps.append(pl.DataFrame({"vgs": vgs, "vds": vds, "ids": ids}))
+family = pl.concat(sweeps)
+
+knee_v, knee_i = [], []
+for vgs, color in zip(vgs_values, colors):
+    overdrive = vgs - V_TH
+    if overdrive <= 0:
+        continue
+    run = family.filter(pl.col("vgs") == vgs)
+    ax.plot(run["vds"].to_numpy(), run["ids"].to_numpy() * 1e3, color=color,
+            linewidth=1.8, label=f"Vgs = {vgs:.1f} V")
     knee_v.append(overdrive)
     knee_i.append(0.5 * K * overdrive ** 2 * 1e3)
 

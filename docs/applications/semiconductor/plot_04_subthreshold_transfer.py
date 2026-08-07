@@ -25,6 +25,7 @@ degrades the subthreshold slope, and the two changes are only separable when
 both axes are present.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 vgs = np.linspace(-0.4, 1.8, 500)
@@ -41,8 +42,14 @@ def transfer(vth, subthreshold_mv_per_decade, beta=1.6e-3):
     return I_OFF + 1.0 / (1.0 / np.maximum(weak, 1e-30) + 1.0 / np.maximum(strong, 1e-30))
 
 
-fresh = transfer(0.45, 72.0)
-stressed = transfer(0.61, 108.0)
+# One row per gate-bias step -- the shape a parameter analyser's own transfer
+# sweep is in, before the two devices' curves are drawn on log and sqrt axes.
+transfer_sweep = pl.DataFrame({
+    "vgs": vgs, "fresh": transfer(0.45, 72.0), "stressed": transfer(0.61, 108.0),
+})
+vgs = transfer_sweep["vgs"].to_numpy()
+fresh = transfer_sweep["fresh"].to_numpy()
+stressed = transfer_sweep["stressed"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(8.6, 5.6))
 ax.plot(vgs, fresh, color="#1f77b4", linewidth=1.8, label="fresh (log axis)")

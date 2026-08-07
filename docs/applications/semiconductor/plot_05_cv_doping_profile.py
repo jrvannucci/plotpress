@@ -22,6 +22,7 @@ spans two, so that panel is log-log; on linear axes the near-surface region --
 the part a device actually uses -- would be compressed into the corner.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1247)
@@ -45,6 +46,12 @@ cap = EPS * AREA / w                               # F
 keep = (bias > 0.02) & (bias < 12.0)
 bias, cap = bias[keep], cap[keep]
 cap_meas = cap * (1.0 + rng.normal(0.0, 0.0025, cap.size))   # 0.25% meter noise
+
+# One row per bias step -- the shape an LCR meter's own C-V sweep is in,
+# before the doping profile is differentiated from it.
+cv_sweep = pl.DataFrame({"bias": bias, "capacitance": cap_meas})
+bias = cv_sweep["bias"].to_numpy()
+cap_meas = cv_sweep["capacitance"].to_numpy()
 
 inv_c2 = 1.0 / cap_meas ** 2
 # N(w) = 2 / (q eps A^2 d(1/C^2)/dV)

@@ -18,6 +18,7 @@ gradient from a deposition non-uniformity -- reads immediately, as does the
 scratch across the lower right.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(41)
@@ -38,6 +39,16 @@ vt[r > RADIUS - step] = np.nan                    # off-wafer
 # A handling scratch, and a cluster of parametric failures near the notch.
 vt[np.abs(Y + 0.55 * X + 44.0) < 4.0] = np.nan
 vt[(np.hypot(X - 92.0, Y + 96.0) < 20.0) & (rng.random(vt.shape) < 0.55)] = np.nan
+
+# One row per die -- the shape a wafer prober's own test-log export is in,
+# before it is gridded for the mesh. Off-wafer and failed dies ride along as
+# nan in the value column; the x/y die-position columns stay finite.
+dielog = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "vt": vt.ravel()}).sort(["y", "x"])
+x = dielog["x"].unique().sort().to_numpy()
+y = dielog["y"].unique().sort().to_numpy()
+vt = dielog["vt"].to_numpy().reshape(y.size, x.size)
+X, Y = np.meshgrid(x, y)
+r = np.hypot(X, Y)
 
 dev = vt - TARGET
 lim = float(np.nanmax(np.abs(dev)))

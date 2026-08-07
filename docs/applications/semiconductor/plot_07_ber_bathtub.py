@@ -25,6 +25,7 @@ The eye opening quoted at the target BER is the horizontal distance between the
 two extrapolated walls, which is the number the link budget is spent from.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(555)
@@ -50,6 +51,12 @@ left_edge, right_edge = DJ / 2.0, 1.0 - DJ / 2.0
 ber = 0.5 * (gaussian_tail((ui - left_edge) / RJ)
              + gaussian_tail((right_edge - ui) / RJ))
 ber = np.clip(ber, 1e-18, 0.5)
+
+# One row per sampling phase -- the shape a dual-Dirac fit's own model curve
+# is in, before the measurable region is split out and given test noise.
+model = pl.DataFrame({"ui": ui, "ber": ber})
+ui = model["ui"].to_numpy()
+ber = model["ber"].to_numpy()
 
 measured = ber >= MEASURABLE
 # Counting statistics: a measured BER of p over N bits has relative error
