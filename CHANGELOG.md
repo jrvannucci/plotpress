@@ -82,6 +82,15 @@ is derived from it at build time rather than written down anywhere in the source
   cross-resonance ZX-rate map, SQUID switching probability, single-shot
   readout fidelity's two-dimensional (frequency, integration-time) optimum,
   and error-amplification gate calibration.
+- Ten gate-calibration/tune-up examples in the quantum devices gallery: DRAG
+  coefficient calibration from amplified leakage, an AllXY amplitude-scaling
+  sweep, a CZ gate's `|1,1>`-`|0,2>` avoided-crossing chevron and its
+  conditional-phase calibration, static `ZZ` crosstalk nulling via a tunable
+  coupler, flux-line crosstalk from a tilted spectroscopy arch, active-reset
+  residual population falling exponentially with rounds, a single-qubit
+  gate's amplitude/duration speed limit against leakage, a single-shot
+  readout IQ blob histogram, and CPMG dynamical-decoupling coherence
+  extension.
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
