@@ -17,6 +17,7 @@ scale heights, which is how the atmosphere actually stacks. Isotherms drawn over
 the mesh let the tropopause be traced by eye.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 lat = np.linspace(-90.0, 90.0, 340)          # degrees
@@ -39,10 +40,20 @@ temperature = np.where(
     t_surface - LAPSE * z_trop + 1.8 * (z - z_trop),   # stratospheric inversion
 )
 
+# One row per (latitude, pressure) grid point -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+field = pl.DataFrame({
+    "lat": LAT.ravel(), "pressure_hpa": P.ravel(), "temperature": temperature.ravel(),
+}).sort(["pressure_hpa", "lat"])
+
+lat_axis = field["lat"].unique().sort().to_numpy()
+pressure_axis = field["pressure_hpa"].unique().sort().to_numpy()
+temperature = field["temperature"].to_numpy().reshape(pressure_axis.size, lat_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.2))
-mesh = ax.pcolormesh(lat, pressure, temperature, cmap="inferno")
-ax.contour(LAT, P, temperature, levels=[200.0, 220.0, 240.0, 260.0, 280.0],
-           colors="white")
+mesh = ax.pcolormesh(lat_axis, pressure_axis, temperature, cmap="inferno")
+ax.contour(lat_axis, pressure_axis, temperature,
+           levels=[200.0, 220.0, 240.0, 260.0, 280.0], colors="white")
 fig.colorbar(mesh, ax=ax).set_title("K")
 ax.set_yscale("log")
 ax.invert_yaxis()

@@ -26,6 +26,7 @@ it is smooth -- plotting the raw squared pressure gives a noisy trace whose
 slope cannot be fitted reliably.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1922)
@@ -43,7 +44,15 @@ impulse += rng.normal(0.0, 10.0 ** (NOISE_FLOOR / 20.0) * 0.55, t.size)
 
 # Schroeder backward integration: integrate the squared response from the end.
 energy = np.cumsum(impulse[::-1] ** 2)[::-1]
-curve = 10.0 * np.log10(energy / energy[0])
+
+# One row per time sample of the backward-integrated decay curve -- the
+# shape the analyzer actually logs, before any fit range is selected from it.
+decay = pl.DataFrame({
+    "time_s": t,
+    "level_db": 10.0 * np.log10(energy / energy[0]),
+})
+t = decay["time_s"].to_numpy()
+curve = decay["level_db"].to_numpy()
 
 RANGES = [(-5.0, -25.0, "T20", "#1f77b4"), (-5.0, -35.0, "T30", "#d62728")]
 

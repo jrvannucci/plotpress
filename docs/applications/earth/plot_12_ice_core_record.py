@@ -20,6 +20,7 @@ while the numbers still count backwards the way the field quotes them. The
 glacial terminations are shaded to give the eye something to align against.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(11)
@@ -41,13 +42,19 @@ co2 = 245.0 + 22.0 * saw + rng.normal(0.0, 2.5, age.size)
 CO2_COLOR = "#2ca02c"
 TEMP_COLOR = "#8c564b"
 
+# One row per ice-core depth sample -- the shape the two proxy records are
+# actually measured and archived in, before either is drawn on its own axis.
+core = pl.DataFrame({"age_kyr": age, "co2_ppmv": co2, "temp_anomaly_c": temp})
+
 fig, ax = plotpress.subplots(figsize=(9.0, 5.0))
-ax.plot(age, co2, color=CO2_COLOR, linewidth=1.1, label="CO2 (ppmv)")
+ax.plot(core["age_kyr"].to_numpy(), core["co2_ppmv"].to_numpy(),
+        color=CO2_COLOR, linewidth=1.1, label="CO2 (ppmv)")
 ax.set_ylabel("CO2 (ppmv)")
 ax.tick_params(labelcolor=CO2_COLOR, color=CO2_COLOR)
 
 ax2 = ax.twinx()
-ax2.plot(age, temp, color=TEMP_COLOR, linewidth=1.1, alpha=0.85,
+ax2.plot(core["age_kyr"].to_numpy(), core["temp_anomaly_c"].to_numpy(),
+         color=TEMP_COLOR, linewidth=1.1, alpha=0.85,
          label="temperature anomaly (degC)")
 ax2.set_ylabel("temperature anomaly (degC)")
 ax2.tick_params(labelcolor=TEMP_COLOR, color=TEMP_COLOR)

@@ -25,6 +25,7 @@ rather than extrapolated -- the fade is visibly not linear, and extrapolating a
 sublinear curve linearly overstates the life.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2018)
@@ -51,14 +52,18 @@ for temp, k, deficit, color in CELLS:
     efficiency = 1.0 - deficit * (1.0 + 400.0 / (cycles + 250.0))
     efficiency += rng.normal(0.0, 2.5e-5, cycles.size)
 
-    ax.plot(cycles, capacity, color=color, linewidth=1.8,
-            label=f"{temp} degC capacity")
-    ax2.plot(cycles, efficiency, color=color, linewidth=1.1, linestyle="--",
-             alpha=0.85, label=f"{temp} degC efficiency")
+    # One row per charge/discharge cycle -- the shape the cycler's own log
+    # is in, before the end-of-life cycle is picked out of it.
+    log = pl.DataFrame({"cycle": cycles, "capacity": capacity, "efficiency": efficiency})
 
-    below = np.nonzero(capacity <= EOL)[0]
-    if below.size:
-        n_eol = int(cycles[below[0]])
+    ax.plot(log["cycle"].to_numpy(), log["capacity"].to_numpy(), color=color,
+            linewidth=1.8, label=f"{temp} degC capacity")
+    ax2.plot(log["cycle"].to_numpy(), log["efficiency"].to_numpy(), color=color,
+             linewidth=1.1, linestyle="--", alpha=0.85, label=f"{temp} degC efficiency")
+
+    below = log.filter(pl.col("capacity") <= EOL)
+    if below.height:
+        n_eol = below["cycle"][0]
         ax.scatter([n_eol], [EOL], s=8.0, color=color)
         # Both callouts sit on the one clear band below every curve. They all
         # point at the same horizontal line, so placing each beside its own

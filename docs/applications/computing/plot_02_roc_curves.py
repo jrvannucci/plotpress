@@ -26,6 +26,7 @@ would make two models drawn from different runs incomparable at a glance, which
 is the one thing this figure is for.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1971)
@@ -35,6 +36,10 @@ PREVALENCE = 0.015
 
 labels = rng.random(N) < PREVALENCE
 n_pos = int(labels.sum())
+
+# One row per test case's ground truth -- shared by every model scored
+# against it below.
+cases = pl.DataFrame({"label": labels})
 
 MODELS = [
     ("strong model", 2.9, "#1f77b4"),
@@ -46,8 +51,11 @@ MODELS = [
 def curves(separation):
     """Scores from two Gaussians; returns ROC and PR points."""
     score = rng.normal(0.0, 1.0, N) + separation * labels
-    order = np.argsort(-score)
-    hit = labels[order]
+    # One row per case again, now with this model's score, ranked highest
+    # score first -- the order a classifier's own scored output is read in.
+    ranked = cases.with_columns(pl.Series("score", score)).sort(
+        "score", descending=True)
+    hit = ranked["label"].to_numpy()
 
     tp = np.cumsum(hit)
     fp = np.cumsum(~hit)

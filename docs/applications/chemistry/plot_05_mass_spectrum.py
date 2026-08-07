@@ -21,6 +21,7 @@ height. And the loss of 15 mass units from the molecular ion is a methyl group
 leaving, which localises where it was attached.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 # (m/z, relative intensity %) -- fragments of a chlorinated aromatic.
@@ -33,19 +34,25 @@ FRAGMENTS = [
 MOLECULAR_ION = 156
 BASE_PEAK = 91
 
-mz = np.array([m for m, _ in FRAGMENTS], dtype=float)
-intensity = np.array([i for _, i in FRAGMENTS], dtype=float)
+# One row per detected fragment ion -- exactly the peak-list table a mass
+# spectrometer's own library search exports.
+fragments = pl.DataFrame({
+    "mz": [m for m, _ in FRAGMENTS],
+    "intensity": [i for _, i in FRAGMENTS],
+}, schema={"mz": pl.Float64, "intensity": pl.Float64})
 
 fig, ax = plotpress.subplots(figsize=(9.6, 5.4))
-ax.stem(mz, intensity, linecolor="#1f77b4", markercolor="#1f77b4")
+ax.stem(fragments["mz"].to_numpy(), fragments["intensity"].to_numpy(),
+        linecolor="#1f77b4", markercolor="#1f77b4")
 
 # Label only peaks worth naming: everything above 10% plus the molecular ion.
-for m, i in zip(mz, intensity):
+for row in fragments.iter_rows(named=True):
+    m, i = row["mz"], row["intensity"]
     if i >= 12.0 or m == MOLECULAR_ION:
         ax.text(m, i + 2.5, f"{m:.0f}", ha="center", fontsize=8, color="#333333")
 
-m_plus_2 = float(intensity[mz == MOLECULAR_ION + 2][0])
-m_plus_0 = float(intensity[mz == MOLECULAR_ION][0])
+m_plus_2 = fragments.filter(pl.col("mz") == MOLECULAR_ION + 2)["intensity"].item()
+m_plus_0 = fragments.filter(pl.col("mz") == MOLECULAR_ION)["intensity"].item()
 
 ax.annotate(f"M+ ({MOLECULAR_ION})", xy=(MOLECULAR_ION, m_plus_0),
             xytext=(118.0, 88.0), arrowprops={"color": "#d62728"},

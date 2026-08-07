@@ -25,6 +25,7 @@ number worth optimising, and it is not the same as the fraction of peak, which
 is what a naive summary would report for the memory-bound kernels.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 PEAK_GFLOPS = 1840.0                               # vectorised, with FMA
@@ -62,12 +63,17 @@ ax.text(0.021, 6.0, f"memory bound\nslope 1 = {BANDWIDTH_GBS:.0f} GB/s",
 ax.text(60.0, PEAK_GFLOPS * 1.16, "compute bound", fontsize=9, color="#333333",
         ha="center")
 
-for name, oi, achieved in KERNELS:
-    attainable = min(oi * BANDWIDTH_GBS, PEAK_GFLOPS)
-    ax.scatter([oi], [achieved], s=8.0, color="#1f77b4")
-    ax.text(oi * 1.16, achieved * 0.86,
-            f"{name}\n{100 * achieved / attainable:.0f}% of roof", fontsize=8,
-            color="#1f77b4")
+# One row per profiled kernel -- exactly the shape a profiler's own summary
+# table comes in.
+kernels = pl.DataFrame(KERNELS, schema=["name", "intensity", "achieved"],
+                       orient="row").with_columns(
+    pl.min_horizontal(pl.col("intensity") * BANDWIDTH_GBS, PEAK_GFLOPS).alias("attainable")
+)
+for row in kernels.iter_rows(named=True):
+    ax.scatter([row["intensity"]], [row["achieved"]], s=8.0, color="#1f77b4")
+    ax.text(row["intensity"] * 1.16, row["achieved"] * 0.86,
+            f"{row['name']}\n{100 * row['achieved'] / row['attainable']:.0f}% of roof",
+            fontsize=8, color="#1f77b4")
 
 ax.set_xscale("log")
 ax.set_yscale("log")

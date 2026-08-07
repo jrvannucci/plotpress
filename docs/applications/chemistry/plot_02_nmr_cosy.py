@@ -18,6 +18,7 @@ volumes are integrated from contour levels, and the lowest contour sets what
 counts as signal above the noise.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(13)
@@ -43,10 +44,22 @@ for i, j in COUPLED:                            # symmetric cross peaks
     spectrum += peak(a, b, -0.55) + peak(b, a, -0.55)
 spectrum += rng.normal(0.0, 0.006, spectrum.shape)
 
-lim = float(np.abs(spectrum).max())
+# One row per (F1, F2) grid point -- sorted before the reshape below so the
+# pivot back to a grid is correct regardless of row order.
+grid = pl.DataFrame({
+    "f1_ppm": F1.ravel(),
+    "f2_ppm": F2.ravel(),
+    "intensity": spectrum.ravel(),
+}).sort(["f2_ppm", "f1_ppm"])
+
+f1_axis = grid["f1_ppm"].unique().sort().to_numpy()
+f2_axis = grid["f2_ppm"].unique().sort().to_numpy()
+spectrum = grid["intensity"].to_numpy().reshape(f2_axis.size, f1_axis.size)
+lim = float(grid["intensity"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(6.8, 6.4))
-mesh = ax.pcolormesh(ppm, ppm, spectrum, cmap="RdBu", vmin=-lim, vmax=lim)
-ax.contour(F1, F2, spectrum, levels=[-0.30, -0.12, 0.12, 0.30, 0.60],
+mesh = ax.pcolormesh(f1_axis, f2_axis, spectrum, cmap="RdBu", vmin=-lim, vmax=lim)
+ax.contour(f1_axis, f2_axis, spectrum, levels=[-0.30, -0.12, 0.12, 0.30, 0.60],
            colors="#444444")
 fig.colorbar(mesh, ax=ax).set_title("a.u.")
 ax.set_aspect("equal")

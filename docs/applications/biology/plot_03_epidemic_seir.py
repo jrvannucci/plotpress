@@ -21,6 +21,7 @@ a decoration: susceptibles were never depleted enough for the epidemic to end,
 which is the point the figure is making.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 POP = 1_000_000
@@ -49,8 +50,18 @@ for k in range(n - 1):
     I[k + 1] = I[k] + dt * (new_infectious - new_removed)
     R[k + 1] = R[k] + dt * new_removed
 
+# One row per simulated day -- the shape the integrator's own trajectory log
+# is in, before any compartment is drawn.
+trajectory = pl.DataFrame({
+    "day": t, "susceptible": S, "exposed": E, "infectious": I, "removed": R,
+})
+
 fig, ax = plotpress.subplots(figsize=(9.6, 5.6))
-ax.stackplot(t, S / 1e6, E / 1e6, I / 1e6, R / 1e6,
+ax.stackplot(trajectory["day"].to_numpy(),
+             trajectory["susceptible"].to_numpy() / 1e6,
+             trajectory["exposed"].to_numpy() / 1e6,
+             trajectory["infectious"].to_numpy() / 1e6,
+             trajectory["removed"].to_numpy() / 1e6,
              colors=["#1f77b4", "#ff7f0e", "#d62728", "#2ca02c"],
              labels=["susceptible", "exposed", "infectious", "removed"],
              alpha=0.85)
@@ -58,17 +69,17 @@ ax.axvspan(INTERVENTION[0], INTERVENTION[1], color="#000000", alpha=0.14,
            label="measures in force")
 
 ax2 = ax.twinx()
-ax2.plot(t, I / 1e3, color="#111111", linewidth=1.6,
-         label="infectious (right axis)")
+ax2.plot(trajectory["day"].to_numpy(), trajectory["infectious"].to_numpy() / 1e3,
+         color="#111111", linewidth=1.6, label="infectious (right axis)")
 ax2.set_ylabel("infectious (thousands)")
 ax2.set_ylim(0.0, None)
 
-peak = int(np.argmax(I))
+peak_row = trajectory.sort("infectious", descending=True).row(0, named=True)
 # The callout goes where the stack has already settled, not next to the peak:
 # beside it is solidly inside the removed band, and black on green is unreadable.
-ax2.annotate(f"peak {I[peak] / 1e3:.0f}k on day {t[peak]:.0f}",
-             xy=(t[peak], I[peak] / 1e3),
-             xytext=(t[peak] + 55.0, I[peak] / 1e3 * 0.90),
+ax2.annotate(f"peak {peak_row['infectious'] / 1e3:.0f}k on day {peak_row['day']:.0f}",
+             xy=(peak_row["day"], peak_row["infectious"] / 1e3),
+             xytext=(peak_row["day"] + 55.0, peak_row["infectious"] / 1e3 * 0.90),
              arrowprops={"color": "#ffffff"}, fontsize=9,
              color="#ffffff")
 

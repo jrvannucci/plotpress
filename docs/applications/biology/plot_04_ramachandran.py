@@ -23,6 +23,7 @@ distinguishable from empty space, which is what a validation reader is looking
 for.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1963)
@@ -52,11 +53,15 @@ psi = np.concatenate(psi)
 phi = (phi + 180.0) % 360.0 - 180.0
 psi = (psi + 180.0) % 360.0 - 180.0
 
+# One row per residue -- exactly the shape a structure database query
+# returns, before the dihedral pairs are ever binned.
+residues = pl.DataFrame({"phi": phi, "psi": psi})
+
 fig, ax = plotpress.subplots(figsize=(7.2, 6.6))
 # Colour the log of the count: the basins are ~1000x denser than the bridges,
 # and on a linear ramp everything but the two basins would be the same colour.
-hb = ax.hexbin(phi, psi, gridsize=62, cmap="magma", mincnt=1,
-               norm=plotpress.LogNorm())
+hb = ax.hexbin(residues["phi"].to_numpy(), residues["psi"].to_numpy(),
+               gridsize=62, cmap="magma", mincnt=1, norm=plotpress.LogNorm())
 
 bar = fig.colorbar(hb, ax=ax)
 bar.set_title("residues\nper bin")

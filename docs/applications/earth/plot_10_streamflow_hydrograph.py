@@ -20,6 +20,7 @@ bounds, which on a log axis renders as a constant-width ribbon. The band widens
 visibly above the highest gauged flow, where the rating is extrapolated.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(7)
@@ -44,10 +45,19 @@ q *= np.exp(rng.normal(0.0, 0.015, t.size))
 HIGHEST_GAUGED = 120.0                             # m3/s
 frac = 0.08 + 0.27 * np.clip(np.log10(q / HIGHEST_GAUGED), 0.0, None)
 
+# One row per gauge reading -- the shape the station's own record is
+# logged in, before the rating-curve uncertainty band is drawn around it.
+record = pl.DataFrame({
+    "hour": t, "discharge": q,
+    "discharge_lo": q * (1.0 - frac), "discharge_hi": q * (1.0 + frac),
+})
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.0))
-ax.fill_between(t, q * (1.0 - frac), q * (1.0 + frac), color="#1f77b4",
+ax.fill_between(record["hour"].to_numpy(), record["discharge_lo"].to_numpy(),
+                record["discharge_hi"].to_numpy(), color="#1f77b4",
                 alpha=0.25, label="rating uncertainty")
-ax.plot(t, q, color="#1f77b4", linewidth=1.4, label="discharge")
+ax.plot(record["hour"].to_numpy(), record["discharge"].to_numpy(),
+        color="#1f77b4", linewidth=1.4, label="discharge")
 ax.axhline(HIGHEST_GAUGED, color="#d62728", linestyle="--", linewidth=1.0,
            label="highest gauged flow")
 

@@ -25,6 +25,7 @@ taking over the culture -- which on a log axis is unmistakable as a second
 straight segment, and on a linear axis would be a barely visible upturn.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2718)
@@ -41,11 +42,12 @@ CONDITIONS = [
 OD_BLANK = 0.008                                   # sterile-medium reading
 N_REPLICATES = 3
 
-fig, ax = plotpress.subplots(figsize=(8.6, 5.6))
-
+# One row per (condition, replicate, timepoint) plate-reader well -- the
+# shape the reader's own export actually comes in, before replicates are
+# ever summarized into a mean and a range.
+readings = []
 for label, lag, rate, carrying, regrowth, color in CONDITIONS:
-    curves = []
-    for _ in range(N_REPLICATES):
+    for replicate in range(N_REPLICATES):
         # Logistic growth after a lag: exponential early, saturating late.
         r = rate * rng.normal(1.0, 0.06)
         onset = lag * rng.normal(1.0, 0.10)
@@ -58,12 +60,26 @@ for label, lag, rate, carrying, regrowth, color in CONDITIONS:
             resistant = 0.004 * np.exp(r2 * np.clip(t - r2_onset, 0.0, None))
             od = od + np.minimum(resistant, 1.2)
         # Plate-reader noise is additive on OD, so it dominates at low density.
-        curves.append(od + OD_BLANK + rng.normal(0.0, 0.004, t.size))
-    curves = np.array(curves)
+        od = od + OD_BLANK + rng.normal(0.0, 0.004, t.size)
+        readings.append(pl.DataFrame({
+            "condition": label, "replicate": replicate, "time_h": t, "od600": od,
+        }))
+readings = pl.concat(readings)
 
-    ax.fill_between(t, curves.min(axis=0), curves.max(axis=0), color=color,
-                    alpha=0.2)
-    ax.plot(t, curves.mean(axis=0), color=color, linewidth=1.7, label=label)
+fig, ax = plotpress.subplots(figsize=(8.6, 5.6))
+
+for label, lag, rate, carrying, regrowth, color in CONDITIONS:
+    summary = (readings.filter(pl.col("condition") == label)
+               .group_by("time_h", maintain_order=True)
+               .agg(pl.col("od600").min().alias("od_min"),
+                    pl.col("od600").max().alias("od_max"),
+                    pl.col("od600").mean().alias("od_mean"))
+               .sort("time_h"))
+
+    ax.fill_between(summary["time_h"].to_numpy(), summary["od_min"].to_numpy(),
+                    summary["od_max"].to_numpy(), color=color, alpha=0.2)
+    ax.plot(summary["time_h"].to_numpy(), summary["od_mean"].to_numpy(),
+            color=color, linewidth=1.7, label=label)
 
 ax.axhline(OD_BLANK, color="#888888", linestyle=":", linewidth=1.2)
 ax.text(0.2, OD_BLANK * 1.15, "blank", fontsize=9, color="#666666")

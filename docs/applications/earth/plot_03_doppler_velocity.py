@@ -20,6 +20,7 @@ sharp discontinuity it is, rather than being flattened by autoscaling to
 whatever extreme the fold produced.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(61)
@@ -49,6 +50,20 @@ radial += rng.normal(0.0, 0.8, radial.shape)
 # Velocity folding: anything past Nyquist wraps into the opposite sign.
 folded = np.angle(np.exp(1j * np.pi * radial / NYQUIST)) * NYQUIST / np.pi
 folded[R > 105.0] = np.nan                          # beyond the last gate
+
+# One row per (range, azimuth) radar cell -- sorted before the reshape below
+# so the pivot back to a grid is correct regardless of row order. The
+# display grid (x, y) is curvilinear, so it is reshaped alongside the
+# velocity rather than treated as a separable axis.
+scan = pl.DataFrame({
+    "range_km": R.ravel(), "azimuth_rad": AZ.ravel(),
+    "x": X.ravel(), "y": Y.ravel(), "velocity": folded.ravel(),
+}).sort(["azimuth_rad", "range_km"])
+
+grid_shape = (scan["azimuth_rad"].n_unique(), scan["range_km"].n_unique())
+X = scan["x"].to_numpy().reshape(grid_shape)
+Y = scan["y"].to_numpy().reshape(grid_shape)
+folded = scan["velocity"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(6.8, 6.2))
 mesh = ax.pcolormesh(X, Y, folded, cmap="RdBu_r", vmin=-NYQUIST, vmax=NYQUIST)

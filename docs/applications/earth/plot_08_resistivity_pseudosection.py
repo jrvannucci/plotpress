@@ -16,6 +16,7 @@ does that in the colour mapping, and the colorbar ticks land on decades.
 The data is strictly positive, which is what makes a log scale admissible.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 x = np.linspace(0.0, 200.0, 340)          # electrode position (m)
@@ -30,12 +31,22 @@ rho *= 1.0 + 60.0 / (1.0 + np.exp(-(D - 34.0) / 5.0))
 rho /= 1.0 + 6.0 * np.exp(-((X - 70.0) ** 2) / 380.0 - ((D - 18.0) ** 2) / 70.0)
 rho *= 1.0 + 14.0 * np.exp(-((X - 145.0) ** 2) / 260.0 - ((D - 12.0) ** 2) / 40.0)
 
+# One row per (position, pseudo-depth) sounding -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+soundings = pl.DataFrame({
+    "position_m": X.ravel(), "depth_m": D.ravel(), "resistivity": rho.ravel(),
+}).sort(["depth_m", "position_m"])
+
+x_axis = soundings["position_m"].unique().sort().to_numpy()
+depth_axis = soundings["depth_m"].unique().sort().to_numpy()
+rho = soundings["resistivity"].to_numpy().reshape(depth_axis.size, x_axis.size)
+
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 4.2))
-linear = axes[0].pcolormesh(x, depth, rho, cmap="viridis")
+linear = axes[0].pcolormesh(x_axis, depth_axis, rho, cmap="viridis")
 axes[0].set_title("linear norm")
 fig.colorbar(linear, ax=axes[0]).set_title("ohm m")
 
-log = axes[1].pcolormesh(x, depth, rho, cmap="viridis", norm=plotpress.LogNorm())
+log = axes[1].pcolormesh(x_axis, depth_axis, rho, cmap="viridis", norm=plotpress.LogNorm())
 axes[1].set_title("LogNorm")
 fig.colorbar(log, ax=axes[1]).set_title("ohm m")
 

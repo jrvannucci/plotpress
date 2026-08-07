@@ -17,6 +17,7 @@ Travel time increases downward, so the y axis is inverted -- depth sections are
 read from the surface down.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(7)
@@ -44,9 +45,19 @@ for t0, dip, curve, refl in [(0.35, 0.030, 0.000, 0.9),
 
 section += 0.04 * rng.standard_normal(section.shape)   # ambient noise
 
-lim = float(np.abs(section).max())
+# One row per (offset, time) trace sample -- sorted before the reshape
+# below so the pivot back to a grid is correct regardless of row order.
+traces = pl.DataFrame({
+    "offset_km": X.ravel(), "time_s": T.ravel(), "amplitude": section.ravel(),
+}).sort(["time_s", "offset_km"])
+
+offset_axis = traces["offset_km"].unique().sort().to_numpy()
+time_axis = traces["time_s"].unique().sort().to_numpy()
+section = traces["amplitude"].to_numpy().reshape(time_axis.size, offset_axis.size)
+lim = float(traces["amplitude"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.2))
-mesh = ax.pcolormesh(x, t, section, cmap="RdBu", vmin=-lim, vmax=lim)
+mesh = ax.pcolormesh(offset_axis, time_axis, section, cmap="RdBu", vmin=-lim, vmax=lim)
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("amplitude")
 ax.invert_yaxis()

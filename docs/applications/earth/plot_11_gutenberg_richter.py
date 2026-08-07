@@ -22,6 +22,7 @@ trimming the axis is the honest version -- the reader can see the roll-off and
 judge whether ``Mc`` was chosen sensibly.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2024)
@@ -37,21 +38,35 @@ mags = M_MIN + rng.exponential(1.0 / (B_TRUE * np.log(10.0)), n_events)
 detected = rng.random(n_events) < 1.0 / (1.0 + np.exp(-(mags - M_COMPLETE) / 0.18))
 mags = mags[detected]
 
-bins = np.arange(M_MIN, mags.max() + 0.1, 0.1)
-cumulative = np.array([(mags >= m).sum() for m in bins], dtype=float)
-keep = cumulative > 0
-bins, cumulative = bins[keep], cumulative[keep]
+# One row per detected earthquake -- exactly the catalogue a seismic network
+# actually publishes, before it is ever binned into a magnitude-frequency
+# curve.
+catalogue = pl.DataFrame({"magnitude": mags})
 
-complete = bins >= M_COMPLETE
-fit = np.polyfit(bins[complete], np.log10(cumulative[complete]), 1)
+bins = np.arange(M_MIN, catalogue["magnitude"].max() + 0.1, 0.1)
+mags_arr = catalogue["magnitude"].to_numpy()
+cumulative = np.array([(mags_arr >= m).sum() for m in bins], dtype=float)
+
+# One row per magnitude bin of the cumulative curve.
+curve = pl.DataFrame({
+    "magnitude": bins, "cumulative": cumulative,
+}).filter(pl.col("cumulative") > 0).with_columns(
+    (pl.col("magnitude") >= M_COMPLETE).alias("complete")
+)
+
+complete_curve = curve.filter(pl.col("complete"))
+below_curve = curve.filter(~pl.col("complete"))
+fit = np.polyfit(complete_curve["magnitude"].to_numpy(),
+                 np.log10(complete_curve["cumulative"].to_numpy()), 1)
 b_value = -fit[0]
 
 fig, ax = plotpress.subplots(figsize=(7.2, 5.4))
-ax.scatter(bins[~complete], cumulative[~complete], s=26, color="#bbbbbb",
-           label="below completeness")
-ax.scatter(bins[complete], cumulative[complete], s=30, color="#1f77b4",
-           label="catalogue (cumulative)")
-ax.plot(bins[complete], 10.0 ** np.polyval(fit, bins[complete]),
+ax.scatter(below_curve["magnitude"].to_numpy(), below_curve["cumulative"].to_numpy(),
+           s=26, color="#bbbbbb", label="below completeness")
+ax.scatter(complete_curve["magnitude"].to_numpy(), complete_curve["cumulative"].to_numpy(),
+           s=30, color="#1f77b4", label="catalogue (cumulative)")
+ax.plot(complete_curve["magnitude"].to_numpy(),
+        10.0 ** np.polyval(fit, complete_curve["magnitude"].to_numpy()),
         color="#d62728", linewidth=1.6,
         label=f"fit: b = {b_value:.2f}")
 ax.axvline(M_COMPLETE, color="#666666", linestyle=":", linewidth=1.2,

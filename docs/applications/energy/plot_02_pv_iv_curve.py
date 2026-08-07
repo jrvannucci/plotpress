@@ -25,6 +25,7 @@ Fill factor, the ratio of the MPP rectangle to the Isc-Voc rectangle, is
 annotated for the reference condition, with that rectangle drawn.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 Q_KT = 1.0 / 0.02585                               # 1/thermal voltage at 300 K
@@ -57,29 +58,35 @@ for g, color in IRRADIANCE:
     keep = (voltage >= 0.0) & (current >= 0.0)
     voltage, current = voltage[keep], current[keep]
 
-    power = voltage * current
-    mpp = int(np.argmax(power))
-    peak_power = max(peak_power, float(power[mpp]))
+    # One row per swept diode-voltage sample that stayed in range -- the
+    # shape a curve tracer's own sweep log is in, before the maximum power
+    # point is picked out of it.
+    sweep = pl.DataFrame({
+        "voltage": voltage, "current": current, "power": voltage * current,
+    })
+    mpp = sweep.sort("power", descending=True).row(0, named=True)
+    peak_power = max(peak_power, mpp["power"])
 
-    ax.plot(voltage, current, color=color, linewidth=1.9,
-            label=f"{g} W/m2")
-    ax2.plot(voltage, power, color=color, linewidth=1.2, linestyle="--")
-    ax.scatter([voltage[mpp]], [current[mpp]], s=8.0, color=color)
-    ax2.scatter([voltage[mpp]], [power[mpp]], s=8.0, color=color)
+    ax.plot(sweep["voltage"].to_numpy(), sweep["current"].to_numpy(),
+            color=color, linewidth=1.9, label=f"{g} W/m2")
+    ax2.plot(sweep["voltage"].to_numpy(), sweep["power"].to_numpy(),
+             color=color, linewidth=1.2, linestyle="--")
+    ax.scatter([mpp["voltage"]], [mpp["current"]], s=8.0, color=color)
+    ax2.scatter([mpp["voltage"]], [mpp["power"]], s=8.0, color=color)
 
     if g == 1000:
-        v_oc = float(voltage.max())                # where the current reaches 0
-        fill = power[mpp] / (i_ph * v_oc)
-        ax.plot([0, voltage[mpp], voltage[mpp]], [current[mpp], current[mpp], 0],
+        v_oc = float(sweep["voltage"].max())        # where the current reaches 0
+        fill = mpp["power"] / (i_ph * v_oc)
+        ax.plot([0, mpp["voltage"], mpp["voltage"]], [mpp["current"], mpp["current"], 0],
                 color="#333333", linestyle=":", linewidth=1.2)
         ax.plot([0, v_oc, v_oc], [i_ph, i_ph, 0], color="#888888",
                 linestyle=":", linewidth=1.0)
         # Close to the point it names, in the gap between two curves -- a
         # callout parked in the far corner needs an arrow across the whole plot
         # to reach back, and that arrow crosses everything on the way.
-        ax.annotate(f"MPP {power[mpp]:.0f} W\nfill factor {fill:.2f}",
-                    xy=(voltage[mpp], current[mpp]),
-                    xytext=(voltage[mpp] - 9.0, current[mpp] - 2.4),
+        ax.annotate(f"MPP {mpp['power']:.0f} W\nfill factor {fill:.2f}",
+                    xy=(mpp["voltage"], mpp["current"]),
+                    xytext=(mpp["voltage"] - 9.0, mpp["current"] - 2.4),
                     arrowprops={"color": "#333333"}, fontsize=9)
 
 ax.set_xlim(0.0, 40.0)

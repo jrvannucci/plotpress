@@ -23,6 +23,7 @@ would swamp everything else -- and the figure says so instead of quietly
 dropping it.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(9)
@@ -60,6 +61,13 @@ for centre, height, width, tail, _ in PEAKS:
 signal += rng.normal(0.0, 2.2, t.size)
 
 baseline = 8.0 + 1.6 * t                           # what the integrator fitted
+
+# One row per detector sample -- the shape the instrument's own trace export
+# is in, before any integration window is drawn on it.
+trace = pl.DataFrame({"time_min": t, "signal": signal, "baseline": baseline})
+t = trace["time_min"].to_numpy()
+signal = trace["signal"].to_numpy()
+baseline = trace["baseline"].to_numpy()
 
 # Integration windows: back to baseline where possible, a perpendicular drop at
 # the valley between the two xylenes.
