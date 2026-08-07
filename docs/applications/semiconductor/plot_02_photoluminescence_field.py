@@ -21,6 +21,7 @@ log scale admissible at all -- a floor is added for the detector background so
 no cell is zero.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 E0 = 1.6180              # zero-field emission energy (eV)
@@ -52,6 +53,14 @@ def lorentzian(detuning, width):
 intensity = (lorentzian(E - lower, LINEWIDTH) / norm
              + weight_upper * lorentzian(E - upper, LINEWIDTH) / norm)
 intensity += BACKGROUND
+
+# One row per (field, energy) spectrometer bin -- the shape a field-swept PL
+# scan is actually recorded in, before it is gridded for the mesh.
+sweep = pl.DataFrame({"energy": E.ravel(), "field": B.ravel(), "intensity": intensity.ravel()}) \
+    .sort(["field", "energy"])
+energy = sweep["energy"].unique().sort().to_numpy()
+field = sweep["field"].unique().sort().to_numpy()
+intensity = sweep["intensity"].to_numpy().reshape(field.size, energy.size)
 
 fig, axes = plotpress.subplots(1, 2, figsize=(11.5, 4.6))
 linear = axes[0].pcolormesh(energy, field, intensity, cmap="magma")

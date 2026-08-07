@@ -26,6 +26,7 @@ margin and the vertical extent the voltage margin, which together are what a
 compliance mask is checked against.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1010)
@@ -63,8 +64,11 @@ v_all = wave[centres[:, None] + offsets[None, :]]
 phase = offsets / SPS * UI
 t_all = phase[None, :] + rng.normal(0.0, RJ * UI, (centres.size, 1))
 
-t_all = t_all.ravel()
-v_all = v_all.ravel()
+# One row per folded sample -- the shape a scope's own eye-diagram acquisition
+# is in, before it is binned into the persistence histogram.
+samples = pl.DataFrame({"t": t_all.ravel(), "v": v_all.ravel()})
+t_all = samples["t"].to_numpy()
+v_all = samples["v"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(8.6, 5.6))
 counts, im = ax.hist2d(t_all, v_all, bins=(360, 260), cmap="inferno",
