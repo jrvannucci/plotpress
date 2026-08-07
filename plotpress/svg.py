@@ -187,6 +187,17 @@ def axes_metadata(fig):
             "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
             "minor": bool(ax._minor_ticks_on),
+            # Raw tick_params() overrides (Style field -> value), so the
+            # client's pan/zoom tick-rebuild can reproduce a per-axis style
+            # instead of always falling back to the figure-wide default --
+            # only present when this axes actually has an override, to keep
+            # the common (unstyled) case's payload as small as before.
+            "tick_style": {
+                "x": ax._tick_overrides["x"] or None,
+                "y": ax._tick_overrides["y"] or None,
+                "xminor": ax._minor_tick_overrides["x"] or None,
+                "yminor": ax._minor_tick_overrides["y"] or None,
+            },
             # Surfaced on extracted points as axes_title (falling back to a
             # generated "axes N" when untitled), so a multi-panel export
             # always identifies which panel a marker came from by name

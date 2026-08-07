@@ -458,6 +458,36 @@ def test_axes_metadata_zlabel_from_shared_colorbar_reaches_every_parent():
         assert payload[str(i)]["zlabel"] == "temperature (degC)"
 
 
+def test_axes_metadata_carries_tick_style_overrides():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[0].tick_params(axis="x", color="#d62728", labelsize=14)
+    axes[0].tick_params(axis="y", color="#2ca02c")
+    axes[0].minorticks_on()
+    axes[0].tick_params(which="minor", width=2.0)
+    axes[1].plot([0, 1], [1, 0])   # no overrides
+    meta = axes_metadata(fig)
+
+    ts0 = meta[0]["tick_style"]
+    assert ts0["x"] == {"spine_color": "#d62728", "tick_label_size": 14}
+    assert ts0["y"] == {"spine_color": "#2ca02c"}
+    # tick_params(which='minor') with axis='both' (the default) writes both.
+    assert ts0["xminor"] == {"tick_width": 2.0}
+    assert ts0["yminor"] == {"tick_width": 2.0}
+
+    ts1 = meta[1]["tick_style"]
+    assert ts1 == {"x": None, "y": None, "xminor": None, "yminor": None}
+
+    # And the embedded interactive payload must carry the same overrides, so
+    # the client's pan/zoom tick-rebuild can reproduce them.
+    html = fig.to_html(interactive=True)
+    m = re.search(r'id="plotpress-meta">(.*?)</script>', html, re.S)
+    payload = json.loads(m.group(1))
+    assert payload["0"]["tick_style"]["x"] == {"spine_color": "#d62728", "tick_label_size": 14}
+
+
 def test_axes_metadata_carries_minor_ticks_flag():
     from plotpress.svg import axes_metadata
 

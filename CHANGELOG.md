@@ -22,6 +22,35 @@ is derived from it at build time rather than written down anywhere in the source
   embedding. This affected several of the real-application gallery examples,
   whose data has genuine masked regions (e.g. `chemistry/plot_01_excitation_
   emission`'s excised Rayleigh/second-order bands).
+- A per-axis `tick_params()` style override (`color`, `width`, `labelsize`,
+  `labelcolor`) rendered correctly in the initial static SVG but silently
+  reverted to the figure's default style the moment that axes was panned or
+  zoomed in interactive HTML -- the client's tick-rebuild read only the
+  figure-wide style payload, never the per-axes override. It now carries the
+  override through the embedded metadata and reproduces it on every rebuild.
+- **Extract panel/`window.plotpressGetMarkers()` bugs**, all in the
+  interactive HTML's JS toolbar:
+  - CSV export had no RFC 4180 field quoting -- a comma, quote, or newline in
+    any string value (annotation text, `axes_title`, a pie label, a
+    `set_pick_context()` value) shifted every column after it out of
+    alignment. Fields are now quoted per spec.
+  - A series' `values={...}` dict was merged onto its picked record with no
+    collision guard, so a key sharing a name with a structured field
+    (`kind`, `x`, `y`, `index`, `axes`) silently overwrote it -- the same
+    hazard `set_pick_context` was already protected against, in the other
+    direction. The structured field now always wins, for both mechanisms.
+  - Point Pick's fallback for a series too large to embed for picking (over
+    `to_html()`'s default `pick_max_points=20000`) compared the click
+    against that series' raw, pre-pan/zoom SVG geometry -- after the axes
+    was panned or zoomed, a click resolved to whatever vertex happened to
+    sit at that pixel position in the *stale* coordinate space, not the
+    datum actually under the cursor. It now maps the click through the same
+    affine the pan/zoom view transform uses before comparing.
+  - `plot_frames`' slider scrub silently reverted an "Annotate Point" note's
+    custom text back to the auto-generated `"x=.., y=.."` readout, because
+    the frame-update path was the one place that re-laid out a pin without
+    going through the helper that preserves a user-typed label -- pan/zoom
+    and arrow-key stepping already did this correctly.
 
 ### Added
 
