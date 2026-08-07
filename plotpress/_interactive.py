@@ -473,6 +473,23 @@ _JS_SOURCE = r"""
     return ticks;
   }
 
+  // Effective tick style for one axis: `ov` (a raw tick_params() override, or
+  // null/undefined) layered onto `base` field-by-field -- mirrors Python's
+  // `Style.copy(**overrides)`. `base` is the figure-wide STYLE for a major
+  // axis, or the already-resolved major style for that axis' minor ticks
+  // (Axes.tick_params(which='minor') itself layers onto the major override,
+  // not the figure default -- see svg._render_axes).
+  function effTickStyle(base, ov) {
+    if (!ov) return base;
+    return {
+      ts: ov.tick_size !== undefined ? ov.tick_size : base.ts,
+      tw: ov.tick_width !== undefined ? ov.tick_width : base.tw,
+      fs: ov.tick_label_size !== undefined ? ov.tick_label_size : base.fs,
+      col: ov.spine_color !== undefined ? ov.spine_color : base.col,
+      text: ov.text_color !== undefined ? ov.text_color : base.text,
+    };
+  }
+
   // Rebuild an axes' grid + ticks + numeric labels from its current limits.
   function rebuildTicks(key) {
     var om = META[key];
@@ -482,10 +499,21 @@ _JS_SOURCE = r"""
     var m = CUR[key];
     var xr = axisTicks(m.xmin, m.xmax, m.xscale);
     var yr = axisTicks(m.ymin, m.ymax, m.yscale);
-    var ts = STYLE.tick_size, fs = STYLE.tick_label_size, parts = [];
+    var parts = [];
     var xTop = om.xside === 'top', yRight = om.yside === 'right';
     var xAxis = xTop ? m.y : m.y + m.h, xSign = xTop ? -1 : 1;
     var yAxis = yRight ? m.x + m.w : m.x, ySign = yRight ? 1 : -1;
+
+    // Per-axis effective style -- tick_params(axis='x'/'y', ...) overrides
+    // (see Axes.tick_params) survive this rebuild instead of always falling
+    // back to the figure-wide default the moment a styled axes is panned or
+    // zoomed.
+    var globalStyle = { ts: STYLE.tick_size, tw: STYLE.tick_width,
+                        fs: STYLE.tick_label_size, col: STYLE.spine, text: STYLE.text };
+    var tso = om.tick_style || {};
+    var xStyle = effTickStyle(globalStyle, tso.x);
+    var yStyle = effTickStyle(globalStyle, tso.y);
+
     if (om.grid) {
       var gl = [];
       xr.ticks.forEach(function (xt) { var px = toPixel(m, xt, m.ymin).x;
@@ -494,43 +522,50 @@ _JS_SOURCE = r"""
         gl.push('<line x1="' + m.x.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (m.x + m.w).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>'); });
       parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + STYLE.grid_alpha + '">' + gl.join('') + '</g>');
     }
-    var marks = [], labels = [];
+    var xmarks = [], ymarks = [], labels = [];
     xr.ticks.forEach(function (xt, i) {
       var px = toPixel(m, xt, m.ymin).x;
-      var ly = xAxis + xSign * ts + (xTop ? -3 : fs);
-      marks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * ts).toFixed(2) + '"/>');
-      labels.push('<text x="' + px.toFixed(2) + '" y="' + ly.toFixed(2) + '" text-anchor="middle" font-size="' + fs + '" fill="' + STYLE.text + '">' + xr.labels[i] + '</text>');
+      var ly = xAxis + xSign * xStyle.ts + (xTop ? -3 : xStyle.fs);
+      xmarks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * xStyle.ts).toFixed(2) + '"/>');
+      labels.push('<text x="' + px.toFixed(2) + '" y="' + ly.toFixed(2) + '" text-anchor="middle" font-size="' + xStyle.fs + '" fill="' + xStyle.text + '">' + xr.labels[i] + '</text>');
     });
     yr.ticks.forEach(function (yt, i) {
       var py = toPixel(m, m.xmin, yt).y;
-      var lx = yAxis + ySign * ts + (yRight ? 2 : -2);
-      marks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * ts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
-      labels.push('<text x="' + lx.toFixed(2) + '" y="' + (py + fs * 0.35).toFixed(2) + '" text-anchor="' + (yRight ? 'start' : 'end') + '" font-size="' + fs + '" fill="' + STYLE.text + '">' + yr.labels[i] + '</text>');
+      var lx = yAxis + ySign * yStyle.ts + (yRight ? 2 : -2);
+      ymarks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * yStyle.ts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
+      labels.push('<text x="' + lx.toFixed(2) + '" y="' + (py + yStyle.fs * 0.35).toFixed(2) + '" text-anchor="' + (yRight ? 'start' : 'end') + '" font-size="' + yStyle.fs + '" fill="' + yStyle.text + '">' + yr.labels[i] + '</text>');
     });
-    parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + marks.join('') + '</g>');
+    parts.push('<g stroke="' + xStyle.col + '" stroke-width="' + xStyle.tw + '">' + xmarks.join('') + '</g>');
+    parts.push('<g stroke="' + yStyle.col + '" stroke-width="' + yStyle.tw + '">' + ymarks.join('') + '</g>');
     parts.push(labels.join(''));
     if (om.minor) {
       // Unlabeled, drawn shorter than the major marks -- mirrors
-      // svg._render_minor_ticks exactly (same 0.6x length convention).
-      var mts = ts * 0.6, mmarks = [];
+      // svg._render_minor_ticks exactly (same 0.6x length convention, and
+      // the same "minor override layers onto the resolved major style").
+      var xMinorStyle = effTickStyle(xStyle, tso.xminor);
+      var yMinorStyle = effTickStyle(yStyle, tso.yminor);
+      var xmts = xMinorStyle.ts * 0.6, ymts = yMinorStyle.ts * 0.6;
+      var xmmarks = [], ymmarks = [];
       jsMinorTicks(xr.ticks, xr.step, m.xmin, m.xmax, m.xscale).forEach(function (xt) {
         var px = toPixel(m, xt, m.ymin).x;
-        mmarks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * mts).toFixed(2) + '"/>');
+        xmmarks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * xmts).toFixed(2) + '"/>');
       });
       jsMinorTicks(yr.ticks, yr.step, m.ymin, m.ymax, m.yscale).forEach(function (yt) {
         var py = toPixel(m, m.xmin, yt).y;
-        mmarks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * mts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
+        ymmarks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * ymts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
       });
-      parts.push('<g stroke="' + STYLE.spine + '" stroke-width="' + STYLE.tick_width + '">' + mmarks.join('') + '</g>');
+      parts.push('<g stroke="' + xMinorStyle.col + '" stroke-width="' + xMinorStyle.tw + '">' + xmmarks.join('') + '</g>');
+      parts.push('<g stroke="' + yMinorStyle.col + '" stroke-width="' + yMinorStyle.tw + '">' + ymmarks.join('') + '</g>');
     }
     g.innerHTML = parts.join('');
   }
 
-  // Remap the artist group from original limits (META) to current (CUR).
-  function applyAxesTransform(key) {
+  // The affine that remaps the artist group from its original limits (META)
+  // to the current ones (CUR) -- i.e. exactly the CSS matrix(...) transform
+  // applyAxesTransform() puts on <g id="zoom{key}">. Factored out so
+  // nearestVertex() can invert it too (see there for why that matters).
+  function zoomAffine(key) {
     var o = META[key], c = CUR[key];
-    var g = document.getElementById('zoom' + key);
-    if (!g) return;
     // Work in transformed (log-aware), direction-aware space so the remap
     // stays affine. Both sets carry the same inversion flags, so an inverted
     // axis simply zooms/pans in its own direction.
@@ -541,11 +576,19 @@ _JS_SOURCE = r"""
     var sy = (ofy1 - ofy0) / (cfy1 - cfy0);
     var tx = o.x * (1 - sx) + (ofx0 - cfx0) / (cfx1 - cfx0) * o.w;
     var ty = o.y * (1 - sy) + (cfy1 - ofy1) / (cfy1 - cfy0) * o.h;
-    if (Math.abs(sx - 1) < 1e-9 && Math.abs(sy - 1) < 1e-9 &&
-        Math.abs(tx) < 1e-6 && Math.abs(ty) < 1e-6) {
+    return { sx: sx, sy: sy, tx: tx, ty: ty };
+  }
+
+  // Remap the artist group from original limits (META) to current (CUR).
+  function applyAxesTransform(key) {
+    var g = document.getElementById('zoom' + key);
+    if (!g) return;
+    var t = zoomAffine(key);
+    if (Math.abs(t.sx - 1) < 1e-9 && Math.abs(t.sy - 1) < 1e-9 &&
+        Math.abs(t.tx) < 1e-6 && Math.abs(t.ty) < 1e-6) {
       g.removeAttribute('transform');
     } else {
-      g.setAttribute('transform', 'matrix(' + sx + ',0,0,' + sy + ',' + tx + ',' + ty + ')');
+      g.setAttribute('transform', 'matrix(' + t.sx + ',0,0,' + t.sy + ',' + t.tx + ',' + t.ty + ')');
     }
   }
 
@@ -754,8 +797,19 @@ _JS_SOURCE = r"""
     return null;
   }
 
-  // Geometry fallback for series too large to embed (x/y only).
+  // Geometry fallback for series too large to embed (x/y only). The raw
+  // d/cx/cy attributes queried here are whatever svg.py wrote at export time
+  // -- pixel positions in the *original* (pre-pan/zoom) axes limits, i.e. the
+  // zoom{i} group's local space before applyAxesTransform() puts a CSS
+  // matrix(...) on it. `p` (from toUser(e)) is root/current-view space, the
+  // space that matrix maps *into* -- comparing them directly, as this used
+  // to, silently returned the nearest vertex in the wrong space the moment
+  // the axes had been panned or zoomed. Map p through the inverse of that
+  // same affine first, then map the winning point back, so both the search
+  // and the returned pixel position agree with what's actually on screen.
   function nearestVertex(i, p) {
+    var t = zoomAffine(i);
+    var lp = { x: (p.x - t.tx) / t.sx, y: (p.y - t.ty) / t.sy };
     var best = null, bd = Infinity;
     document.querySelectorAll('[id^="s' + i + '_"]').forEach(function (el) {
       var tag = el.tagName.toLowerCase(), pts = [];
@@ -771,11 +825,11 @@ _JS_SOURCE = r"""
         });
       }
       for (var q = 0; q < pts.length; q++) {
-        var d = (pts[q].x - p.x) * (pts[q].x - p.x) + (pts[q].y - p.y) * (pts[q].y - p.y);
+        var d = (pts[q].x - lp.x) * (pts[q].x - lp.x) + (pts[q].y - lp.y) * (pts[q].y - lp.y);
         if (d < bd) { bd = d; best = pts[q]; }
       }
     });
-    return best;
+    return best ? { x: best.x * t.sx + t.tx, y: best.y * t.sy + t.ty } : null;
   }
 
   function fmt(v) {
@@ -981,7 +1035,11 @@ _JS_SOURCE = r"""
       var s = seriesOf(anchor), j = +pin.dataset.index;
       rec.axes = +s.axes; rec.kind = anchor.kind; rec.index = j;
       rec.x = s.x[j]; rec.y = s.y[j];
-      if (s.vals) for (var k in s.vals) rec[k] = s.vals[k][j];
+      // s.vals comes from the plotting call's own pick_values={...} -- an
+      // arbitrary, user-chosen key (e.g. "kind") must not clobber the
+      // structured fields just set above, same rule set_pick_context
+      // follows below for its own axes-level context.
+      if (s.vals) for (var k in s.vals) if (!(k in rec)) rec[k] = s.vals[k][j];
     } else if (pin.dataset.annotation) {
       rec.kind = 'annotation';
       rec.text = pin.querySelector('text').textContent;
@@ -1029,17 +1087,23 @@ _JS_SOURCE = r"""
   }
   window.plotpressGetMarkers = getMarkers;   // programmatic access
 
+  // RFC 4180 field quoting -- a bare comma/quote/newline (annotation text,
+  // an axes_title, a pie label, a set_pick_context() string) otherwise
+  // shifts every column after it in that row.
+  function csvField(v) {
+    var s = v === undefined || v === null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
   function toCSV(recs) {
     if (!recs.length) return '';
     var keys = [];
     recs.forEach(function (r) {
       for (var k in r) if (keys.indexOf(k) < 0) keys.push(k);
     });
-    var lines = [keys.join(',')];
+    var lines = [keys.map(csvField).join(',')];
     recs.forEach(function (r) {
-      lines.push(keys.map(function (k) {
-        return r[k] === undefined ? '' : r[k];
-      }).join(','));
+      lines.push(keys.map(function (k) { return csvField(r[k]); }).join(','));
     });
     return lines.join('\n');
   }
@@ -1229,7 +1293,12 @@ _JS_SOURCE = r"""
     for (var i = 0; i < pins.length; i++) {
       var pin = pins[i];
       var a = resolve(pinAnchor(pin), +pin.dataset.index);  // uses current frame
-      if (a) layoutPin(pin, a.px, a.py, a.label);
+      // pinLabel(), not a.label directly -- an Annotate Point note's
+      // customLabel has to survive a frame-slider scrub the same way it
+      // already survives pan/zoom (relayoutPins) and arrow-key stepping
+      // (stepPin), or scrubbing silently stomps the user's text back to the
+      // auto-generated readout.
+      if (a) layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
     }
   }
 

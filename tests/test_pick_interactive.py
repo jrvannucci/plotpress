@@ -110,6 +110,68 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     assert n == 0, "a click in the margin created %d marker(s)" % n
 
 
+def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
+    """Regression: toCSV() joined fields with a bare comma/newline and no
+    RFC 4180 quoting -- a value containing one (annotation text, axes_title,
+    a set_pick_context() string, ...) shifted every column after it in that
+    row out of alignment. Round-tripping through Python's own csv module is
+    the authoritative check that the quoting is actually well-formed, not
+    just "contains some quote characters somewhere"."""
+    import csv as csv_mod
+    import io
+
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    ax.set_pick_context(note='comma, and "quote"')
+    path = tmp_path / "csv_escape.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 1.0, 1.0)
+    _click_mode(page, "Point Pick", ux, uy)
+
+    csv_text = page.evaluate(
+        """() => {
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Extract') b.click();
+          });
+          return document.querySelector('.plotpress-extract textarea').value;
+        }""")
+
+    parsed = list(csv_mod.reader(io.StringIO(csv_text)))
+    assert len(parsed) == 2, "expected a header row and one data row: %r" % parsed
+    header, row = parsed
+    assert header.count("note") == 1
+    assert row[header.index("note")] == 'comma, and "quote"'
+
+
+def test_pick_values_key_does_not_clobber_structured_fields(page, tmp_path):
+    """Regression: a series' values={...} dict was merged onto the exported
+    record with no collision guard, so a key sharing a name with a
+    structured field (kind, x, y, index, axes) silently overwrote it --
+    unlike Axes.set_pick_context, which explicitly protects those fields."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.scatter([0.0, 1.0, 2.0], [0.0, 1.0, 4.0],
+               values={"kind": [99.0, 98.0, 97.0], "index": [-1.0, -2.0, -3.0]})
+    path = tmp_path / "values_collision.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 1.0, 1.0)
+    markers = _click_mode(page, "Point Pick", ux, uy)
+    assert len(markers) == 1
+    assert markers[0]["kind"] == "points", (
+        "values={'kind': ...} clobbered the structured kind field: %r" % markers[0])
+    assert markers[0]["index"] == 1, (
+        "values={'index': ...} clobbered the structured index field: %r" % markers[0])
+
+
 def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
     """set_pickable(False) blocks Point Pick on that axes without disabling
     Span/Zoom -- a figure can restrict picking to a single panel while every
@@ -188,6 +250,97 @@ def test_minor_ticks_reposition_on_zoom(page, tmp_path):
         "() => document.getElementById('ticks0').querySelectorAll('line').length")
     assert after != before, (
         "tick mark count did not change after zoom -- minor ticks are frozen")
+
+
+def test_tick_params_style_survives_zoom(page, tmp_path):
+    """Regression: rebuildTicks() read only the figure-wide STYLE payload, so
+    a per-axis tick_params() override (color, width, labelsize, ...) rendered
+    correctly on the initial static SVG but silently reverted to the default
+    style the moment the axes was panned or zoomed."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 10.0])
+    ax.tick_params(axis="x", color="#d62728", width=3.0)
+    ax.tick_params(axis="y", color="#2ca02c")
+    path = tmp_path / "tick_style_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    stroke_query = (
+        "() => Array.from(document.getElementById('ticks0').querySelectorAll('g[stroke]'))"
+        ".map(g => g.getAttribute('stroke'))")
+
+    before = page.evaluate(stroke_query)
+    assert "#d62728" in before and "#2ca02c" in before, (
+        "initial render did not honor tick_params colors: %r" % before)
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
+    box = page.eval_on_selector(
+        "#plotpress-svg",
+        "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
+    page.mouse.move(box["x"] + box["w"] / 2, box["y"] + box["h"] / 2)
+    for _ in range(15):
+        page.mouse.wheel(0, -100)   # negative deltaY zooms in
+
+    after = page.evaluate(stroke_query)
+    assert "#d62728" in after and "#2ca02c" in after, (
+        "tick_params() colors reverted to the default style after zoom: %r" % after)
+
+
+def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
+    """Regression: nearestVertex() -- the fallback Point Pick uses for a
+    series too large to embed in the pick payload (over to_html()'s default
+    pick_max_points=20000) -- compared the click against that series' raw
+    SVG geometry, which is fixed in the axes' *original* pre-zoom limits.
+    After the axes was zoomed, a click resolved to whatever vertex happened
+    to sit at that pixel position in the stale, pre-zoom coordinate space --
+    a wrong, sometimes wildly-off datum, not the one under the cursor.
+
+    zoomAxesAt() keeps the data value under the cursor fixed while it zooms,
+    so wheel-zooming and then clicking at the *same* screen position must
+    still resolve to (roughly) the same data point if the fallback is
+    reading the right coordinate space."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    x = np.linspace(0.0, 10.0, 25000)   # over the 20000-point embed cap
+    y = np.sin(x)
+    fig, ax = plotpress.subplots()
+    ax.plot(x, y)
+    path = tmp_path / "large_series_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    target_x, target_y = 5.0, float(np.sin(5.0))
+    cx, cy = page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          return [c.x, c.y];
+        }""",
+        px(fig, 0, target_x, target_y))
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
+    page.mouse.move(cx, cy)
+    for _ in range(15):
+        page.mouse.wheel(0, -100)   # zoom in around (cx, cy), invariant there
+
+    markers = _click_mode(page, "Point Pick",
+                           *px(fig, 0, target_x, target_y))
+    assert len(markers) == 1
+    m = markers[0]
+    assert abs(m["x"] - target_x) < 0.5, (
+        "picked x is far from the zoomed-in cursor position: %r" % m)
+    assert abs(m["y"] - target_y) < 0.5, (
+        "picked y is far from the zoomed-in cursor position: %r" % m)
 
 
 def _drag_pan(page, x0, y0, x1, y1):
@@ -360,6 +513,46 @@ def test_annotate_point_locks_a_note_to_the_nearest_datum(page, tmp_path):
     assert len(stepped) == 1
     assert stepped[0]["index"] == 3
     assert stepped[0]["text"] == "peak here", "custom text must not be lost on step"
+
+
+def test_annotate_point_note_survives_frame_slider_scrub(page, tmp_path):
+    """Regression: updateFramePins() (fired whenever a plot_frames slider
+    moves) called layoutPin() directly instead of through the pinLabel()
+    helper every other re-layout path uses -- pan/zoom (relayoutPins) and
+    arrow-key stepping (stepPin) both already went through pinLabel(), so
+    only the frame-slider path silently stomped a user's Annotate Point note
+    back to the auto-generated "x=.., y=.." readout on every scrub."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    Y = np.array([x * (f + 1) for f in range(4)])   # frame f: y = x * (f + 1)
+    fig, ax = plotpress.subplots()
+    ax.plot_frames(x, Y, slider_label="t")
+    path = tmp_path / "frame_annotate.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, x[2], Y[0][2])   # frame 0's vertex at x[2]
+    markers = _click_mode(page, "Annotate Point", ux, uy, prompt_text="watch me")
+    assert len(markers) == 1 and markers[0]["text"] == "watch me"
+
+    page.evaluate(
+        """() => {
+          const input = document.querySelector('.plotpress-slider input[type=range]');
+          input.value = 2;
+          input.dispatchEvent(new Event('input', {bubbles: true}));
+        }""")
+
+    label = page.evaluate(
+        "() => document.querySelector('.plotpress-pin text').textContent")
+    assert label == "watch me", (
+        "custom annotation text was stomped back to the auto-readout on "
+        "frame change: %r" % label)
+
+    after = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after) == 1 and after[0]["text"] == "watch me"
 
 
 def test_annotate_point_on_a_pie_miss_makes_no_marker(page, tmp_path):
