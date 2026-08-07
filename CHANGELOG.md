@@ -74,6 +74,14 @@ is derived from it at build time rather than written down anywhere in the source
   measurement and explains the axis, scale and colour choices it forces. Every
   figure is also embedded live, with the interactive toolbar. The plot-type
   reference gallery is unchanged and now lives on its own page.
+- Ten more superconducting-qubit examples in the quantum devices gallery, all
+  `pcolormesh` parameter sweeps: TLS defects wandering through a T1-vs-
+  frequency-vs-time map, a Ramsey chevron and a separate Ramsey-vs-flux
+  dephasing map, flux-swept 0-1/two-photon 0-2 spectroscopy for anharmonicity,
+  photon-number splitting, multi-photon ladder spectroscopy, a signed
+  cross-resonance ZX-rate map, SQUID switching probability, single-shot
+  readout fidelity's two-dimensional (frequency, integration-time) optimum,
+  and error-amplification gate calibration.
 - `hexbin` and `hist2d` accept `norm` / `vmin` / `vmax`, matching `pcolormesh`
   and `imshow`. Bin counts routinely span decades, and a linear ramp paints
   everything but the densest bin the same colour.
