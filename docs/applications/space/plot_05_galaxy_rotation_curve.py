@@ -21,6 +21,7 @@ the gap is many sigma wide, not one noisy point. Velocities add in quadrature,
 which is why the total is a root-sum-square of the components rather than a sum.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1933)
@@ -39,12 +40,34 @@ v_halo = 155.0 * np.sqrt(1.0 - (2.8 / r) * np.arctan(r / 2.8))
 v_visible = np.sqrt(v_bulge ** 2 + v_disc ** 2 + v_gas ** 2)
 v_total = np.sqrt(v_visible ** 2 + v_halo ** 2)
 
+# One row per model radius -- the shape a mass-decomposition model's own
+# output table is in, before it is compared against the observations.
+model = pl.DataFrame({
+    "r": r, "v_bulge": v_bulge, "v_disc": v_disc, "v_gas": v_gas,
+    "v_visible": v_visible, "v_halo": v_halo, "v_total": v_total,
+})
+r = model["r"].to_numpy()
+v_bulge = model["v_bulge"].to_numpy()
+v_disc = model["v_disc"].to_numpy()
+v_gas = model["v_gas"].to_numpy()
+v_visible = model["v_visible"].to_numpy()
+v_halo = model["v_halo"].to_numpy()
+v_total = model["v_total"].to_numpy()
+
 # Observations: optical rotation inside 12 kpc, HI beyond, noisier and sparser.
 r_opt = np.linspace(0.8, 12.0, 22)
 r_hi = np.linspace(13.0, 29.0, 11)
+
+# One row per telescope pointing -- the shape a rotation-curve survey's own
+# observation log is in, before it is overlaid on the mass model.
 r_obs = np.concatenate([r_opt, r_hi])
 err = np.concatenate([np.full(r_opt.size, 7.0), np.full(r_hi.size, 15.0)])
-v_obs = np.interp(r_obs, r, v_total) + rng.normal(0.0, err)
+observations = pl.DataFrame({
+    "r": r_obs, "err": err, "v_obs": np.interp(r_obs, r, v_total) + rng.normal(0.0, err),
+})
+r_obs = observations["r"].to_numpy()
+err = observations["err"].to_numpy()
+v_obs = observations["v_obs"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(8.2, 5.4))
 ax.plot(r, v_bulge, color="#9467bd", linestyle="--", linewidth=1.2, label="bulge")

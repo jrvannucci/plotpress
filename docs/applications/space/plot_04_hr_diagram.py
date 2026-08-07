@@ -22,6 +22,7 @@ then shows through as tone, and the sparse giant branch stays visible instead of
 being drowned.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(5150)
@@ -52,6 +53,16 @@ mv_giant = (3.0 - 4.2 * s ** 1.4) + rng.normal(0.0, 0.25, N_GIANT)
 u = rng.random(N_WD)
 bv_wd = -0.15 + 0.75 * u + rng.normal(0.0, 0.05, N_WD)
 mv_wd = 10.8 + 3.2 * u + rng.normal(0.0, 0.35, N_WD)
+
+# One row per catalogued star, one table per population -- the shape a
+# photometric survey's own star catalogue is in, before it is split by
+# evolutionary stage for the colour-magnitude diagram.
+main_seq = pl.DataFrame({"bv": bv_main, "mv": mv_main})
+giants = pl.DataFrame({"bv": bv_giant, "mv": mv_giant})
+white_dwarfs = pl.DataFrame({"bv": bv_wd, "mv": mv_wd})
+bv_main, mv_main = main_seq["bv"].to_numpy(), main_seq["mv"].to_numpy()
+bv_giant, mv_giant = giants["bv"].to_numpy(), giants["mv"].to_numpy()
+bv_wd, mv_wd = white_dwarfs["bv"].to_numpy(), white_dwarfs["mv"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(7.0, 7.4))
 ax.scatter(bv_main, mv_main, s=2.6, color="#1f77b4", alpha=0.18,
