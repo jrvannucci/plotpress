@@ -110,6 +110,53 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     assert n == 0, "a click in the margin created %d marker(s)" % n
 
 
+def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
+    """set_pickable(False) blocks Point Pick on that axes without disabling
+    Span/Zoom -- a figure can restrict picking to a single panel while every
+    other tool still works everywhere."""
+    import plotpress
+    from pick_cases import px
+
+    fig, (left, right) = plotpress.subplots(1, 2)
+    left.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    right.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    right.set_pickable(False)
+    path = tmp_path / "unpickable.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    target_px = px(fig, 1, 1.0, 1.0)   # a real, drawn datum on the right axes
+    n = page.evaluate(
+        """(p) => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button')
+            .forEach(b => { if (b.textContent === 'Point Pick') b.click(); });
+          const pt = svg.createSVGPoint();
+          pt.x = p[0]; pt.y = p[1];
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          (document.elementFromPoint(c.x, c.y) || svg).dispatchEvent(
+            new MouseEvent('click', {bubbles: true, clientX: c.x, clientY: c.y}));
+          return window.plotpressGetMarkers().length;
+        }""", target_px)
+    assert n == 0, "clicking a datum on a set_pickable(False) axes created a marker"
+
+    zoomed = page.evaluate(
+        """(p) => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button')
+            .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
+          const pt = svg.createSVGPoint();
+          pt.x = p[0]; pt.y = p[1];
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          const el = document.elementFromPoint(c.x, c.y) || svg;
+          el.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100
+          }));
+          return document.getElementById('zoom1').getAttribute('transform') !== null;
+        }""", target_px)
+    assert zoomed, "Zoom must still work on a set_pickable(False) axes"
+
+
 def test_minor_ticks_reposition_on_zoom(page, tmp_path):
     """Regression: rebuildTicks() only recomputed major ticks on pan/zoom;
     minorticks_on()'s marks stayed frozen at their initial positions instead

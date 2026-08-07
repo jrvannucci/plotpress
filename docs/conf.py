@@ -192,6 +192,21 @@ def _build_usage_demos():
         fig3, "usage_frames",
         "plot_frames adds a play/pause/step slider over an extra dimension.")
 
+    fig4, (ax4l, ax4r) = plotpress.subplots(1, 2, figsize=(6, 4))
+    x4 = np.linspace(0, 10, 200)
+    ax4l.plot(x4, np.sin(x4), color="#d62728")
+    ax4l.set_title("Sensor A")
+    ax4l.set_pick_context(edge_color="red", unit="V")
+    ax4r.plot(x4, np.cos(x4), color="#1f77b4")   # no title -- axes_title falls back
+    ax4r.set_pickable(False)
+    _write_usage_demo(
+        fig4, "usage_pick_context",
+        "Point Pick the left panel: its axes_title (\"Sensor A\") and "
+        "set_pick_context() keys (edge_color, unit) ride along on the marker. "
+        "The right panel has set_pickable(False), so clicking it does "
+        "nothing -- and were it pickable, its axes_title would fall back to "
+        "a generated \"axes 1\" since it has no title of its own.")
+
 
 _build_usage_demos()
 

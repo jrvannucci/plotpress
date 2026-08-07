@@ -10,8 +10,33 @@ is derived from it at build time rather than written down anywhere in the source
 
 ## [Unreleased]
 
+### Fixed
+
+- A `NaN`/`Infinity` anywhere in a figure's data (a masked heatmap region, a
+  dropped-out channel, a divide-by-zero) silently disabled the *entire*
+  interactive toolbar, not just picking on the affected series. `json.dumps`'s
+  default `allow_nan=True` emitted those as bare, unquoted tokens -- valid
+  Python, not valid JSON -- so the browser's strict `JSON.parse` threw on the
+  very first one and none of the embedded payload (meta, pick data, style,
+  sliders) loaded. Non-finite floats are now sanitized to `null` before
+  embedding. This affected several of the real-application gallery examples,
+  whose data has genuine masked regions (e.g. `chemistry/plot_01_excitation_
+  emission`'s excised Rayleigh/second-order bands).
+
 ### Added
 
+- **Per-axes point-picking control.** `Axes.set_pickable(False)` excludes an
+  axes from Point Pick/Annotate Point (Span, Zoom and Annotate Free are
+  unaffected), so a figure can restrict picking to a single panel.
+  `Axes.set_pick_context(**kwargs)` attaches arbitrary key/value context that
+  rides along on every record picked from that axes -- e.g. surfacing a
+  per-panel spine color -- without clobbering the picked data's own fields.
+  Every picked/extracted record now always carries `axes_title`, falling back
+  to a generated `"axes N"` when the axes has no title of its own instead of
+  omitting the field. Every record also now carries `xlabel`/`ylabel` and
+  `zlabel` (from any colorbar attached to that axes -- shared across several
+  axes via `fig.colorbar(mesh, ax=[...])` reports the same label for each of
+  them), so a value pulled out of context still says what it means.
 - **Real applications gallery** — a second, separate gallery of 100+ worked
   figures built from the data real measurements produce, grouped into fifteen
   fields (earth science, astronomy, medical imaging, biology, chemistry,

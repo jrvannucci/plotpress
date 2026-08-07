@@ -208,6 +208,8 @@ class Axes:
         self._axis_off = False
         self._visible = True
         self._facecolor = None     # None -> the style's axes_facecolor
+        self._pickable = True      # False excludes this axes from Point Pick/Annotate Point
+        self._pick_context = {}    # extra key/value pairs merged onto this axes' pick records
         self._xmargin = 0.05
         self._ymargin = 0.05
         self._subplotspec = None   # SubplotSpec (figure.py) for tight_layout
@@ -1056,6 +1058,40 @@ class Axes:
 
     def get_visible(self):
         return self._visible
+
+    def set_pickable(self, pickable=True):
+        """Include or exclude this axes from Point Pick / Annotate Point.
+
+        ``False`` makes this axes behave, for those two tools only, as if a
+        click there landed outside every axes -- so restricting picking to
+        one panel of a figure is ``set_pickable(False)`` on the others. Span,
+        Zoom, and Annotate Free are unaffected; every axes is pickable by
+        default.
+        """
+        self._pickable = bool(pickable)
+
+    def get_pickable(self):
+        return self._pickable
+
+    def set_pick_context(self, **kwargs):
+        """Attach extra key/value context to this axes' point-picking output.
+
+        Every marker/annotation record extracted from this axes -- CSV/JSON
+        via the toolbar's Extract panel, or ``window.plotpressGetMarkers()``
+        -- carries these keys alongside its own fields, e.g.::
+
+            ax.set_pick_context(edge_color=ax.spines["top"].get_color())
+
+        so a click on that panel reports which one it came from by more than
+        a bare index or title. A context key that collides with a structured
+        field the record already sets (``x``, ``y``, ``kind``, ...) is
+        ignored for that record -- the picked data always wins. Calling this
+        again adds to, rather than replaces, the existing context.
+        """
+        self._pick_context.update(kwargs)
+
+    def get_pick_context(self):
+        return dict(self._pick_context)
 
     def remove(self):
         """Detach this axes from its figure.

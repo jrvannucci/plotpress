@@ -49,14 +49,55 @@ Picked values carry any extra per-point dimensions. A ``pcolormesh``/``imshow``/
 ``contour`` cell reports its ``z`` value; a scatter reports its ``c`` value;
 and arbitrary named dimensions attach via ``values=`` on the plotting call.
 
+Every picked record also carries ``axes`` (the source axes' index) and
+``axes_title`` -- the axes' own title, or a generated ``"axes N"`` when it has
+none, so a multi-panel export always identifies its source panel by name, not
+just a bare index. ``xlabel``/``ylabel`` carry that axes' own axis labels, and
+``zlabel`` carries the title of any colorbar attached to it (this library's
+own convention for labeling what a colorbar's scale means is
+``fig.colorbar(mesh, ax=ax).set_title("units")``) -- a colorbar shared across
+several axes via ``fig.colorbar(mesh, ax=[a, b])`` reports the same
+``zlabel`` for each of them. Together these mean a value pulled out of
+context (a CSV row, a JSON dict) still says what it means, not just a bare
+number.
+
+:meth:`~plotpress.axes.Axes.set_pick_context` attaches further, axes-level
+key/value context that rides along on every record picked from that axes --
+useful for identifying a panel by more than its title, e.g. surfacing a
+per-panel spine color:
+
+.. code-block:: python
+
+   ax.set_pick_context(edge_color="red")
+   # a click on this axes now reports {..., "edge_color": "red", ...}
+
+A context key that collides with a structured field the record already sets
+(``x``, ``y``, ``kind``, ...) is ignored for that record -- the picked data
+always wins. See :doc:`../auto_examples/axes_features/plot_11_spine_color_grid`
+for a worked example, and the live figure in :doc:`../usage`.
+
+:meth:`~plotpress.axes.Axes.set_pickable` (default ``True``) excludes an axes
+from **Point Pick** and **Annotate Point** -- a click there behaves as if it
+missed every axes. **Span**, **Zoom**, and **Annotate Free** are unaffected,
+so a figure can restrict picking to a single panel while every other tool
+still works everywhere:
+
+.. code-block:: python
+
+   for ax in other_axes:
+       ax.set_pickable(False)   # only the remaining axes stays pickable
+
+See :doc:`../auto_examples/axes_features/plot_13_pickable` for a worked
+example, and the live figure in :doc:`../usage`.
+
 Extracting markers to Python
 ----------------------------
 
 The **Extract** button opens a panel to copy/download the current markers and
 annotations as **CSV or JSON**. Each record is a dict, e.g.::
 
-    {"axes": 0, "kind": "mesh", "x": 0.95, "y": 1.05, "z": 0.397}
-    {"axes": 0, "kind": "annotation", "x": 3.5, "y": 0.36, "text": "peak"}
+    {"axes": 0, "axes_title": "axes 0", "kind": "mesh", "x": 0.95, "y": 1.05, "z": 0.397}
+    {"axes": 0, "axes_title": "axes 0", "kind": "annotation", "x": 3.5, "y": 0.36, "text": "peak"}
 
 For a blocking "pick session" that hands the markers straight back to the
 kernel, use the native window:

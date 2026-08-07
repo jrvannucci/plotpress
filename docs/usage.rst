@@ -86,6 +86,19 @@ extra dimension.
 
 .. include:: _static/interactive/usage_frames.rst.inc
 
+Every picked/extracted record carries ``axes`` and ``axes_title`` -- the
+axes' own title, or a generated ``"axes N"`` when it has none, so a
+multi-panel export always names its source panel.
+:meth:`~plotpress.axes.Axes.set_pick_context` attaches further per-axes
+key/value context (e.g. a panel's own color) that rides along on every record
+picked from it, and :meth:`~plotpress.axes.Axes.set_pickable` excludes an
+axes from Point Pick/Annotate Point entirely -- Span, Zoom, and Annotate Free
+are unaffected. See :doc:`user_guide/interactivity` for the full picture, and
+:doc:`auto_examples/axes_features/plot_11_spine_color_grid` for
+``set_pick_context`` used to surface a per-panel spine color.
+
+.. include:: _static/interactive/usage_pick_context.rst.inc
+
 Log scales, aspect, layout
 --------------------------
 

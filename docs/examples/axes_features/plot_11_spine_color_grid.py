@@ -6,6 +6,11 @@ Setting all four sides of ``ax.spines`` to the same color gives an axes a
 single-color box outline -- looping that over a grid gives every panel its
 own, which is a handy way to color-code panels that belong to different
 groups or datasets.
+
+``set_pick_context`` carries that same color into the interactive point-pick
+output: exported as ``interactive=True``, a click on any panel reports its
+own ``edge_color`` alongside the picked point, so extracted data still
+identifies which color-coded panel it came from even outside the figure.
 """
 import numpy as np
 import plotpress
@@ -20,5 +25,6 @@ for ax, color, phase in zip(axes.ravel(), colors, range(4)):
         spine.set_color(color)
         spine.set_linewidth(2.0)
     ax.set_title(color)
+    ax.set_pick_context(edge_color=color)
 fig.suptitle("one spine color per axes")
 fig.tight_layout()

@@ -75,6 +75,10 @@ def test_method_names_are_a_subset_of_matplotlib():
         # YAxis wrapper objects (flat Axes methods are the whole API), so they
         # live directly on Axes instead.
         "tick_top", "tick_bottom", "tick_left", "tick_right",
+        # matplotlib's picking is a different, event-based mpl_connect system
+        # with no per-axes on/off switch or attachable metadata -- these
+        # control plotpress's own interactive-HTML point picking instead.
+        "set_pickable", "get_pickable", "set_pick_context", "get_pick_context",
     }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")

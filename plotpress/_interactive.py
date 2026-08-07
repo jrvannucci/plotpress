@@ -305,6 +305,15 @@ _JS_SOURCE = r"""
     }
     return null;
   }
+  // Point Pick / Annotate Point only -- an axes with pickable=false (see
+  // Axes.set_pickable) is treated as if the click missed every axes, so a
+  // figure can restrict those two tools to a single panel by disabling the
+  // rest. Span, Zoom, and Annotate Free go through axesAt() directly and
+  // ignore this flag.
+  function pickableAxesAt(p) {
+    var a = axesAt(p);
+    return (a && a.m.pickable === false) ? null : a;
+  }
   function fwd(v, s) { return s === 'log' ? Math.log10(v) : v; }
   function inv(u, s) { return s === 'log' ? Math.pow(10, u) : u; }
 
@@ -993,12 +1002,23 @@ _JS_SOURCE = r"""
     // An "Annotate Point" note's user text rides alongside its anchor's own
     // structured fields (x/y/z/...) set above, rather than replacing them.
     if (pin.dataset.customLabel !== undefined) rec.text = pin.dataset.customLabel;
-    // Identify the source panel by name, not just its bare index -- omitted
-    // when that axes has no title set, so an untitled figure's export stays
-    // uncluttered.
+    // Identify the source panel by name, not just its bare index -- falls
+    // back to a generated name when that axes has no title set, so every
+    // record carries one. xlabel/ylabel/zlabel (zlabel from any colorbar
+    // attached to this axes, shared or not) ride along too, so a value
+    // pulled out of context still says what it means, not just a bare
+    // number. Any per-axes context (Axes.set_pick_context) rides along as
+    // well, without clobbering a structured field of the same name (x, y,
+    // kind, ...) that the picked data itself already set.
     if (rec.axes !== undefined) {
       var am = META[rec.axes];
-      if (am && am.title) rec.axes_title = am.title;
+      rec.axes_title = (am && am.title) ? am.title : ('axes ' + rec.axes);
+      rec.xlabel = am ? am.xlabel : '';
+      rec.ylabel = am ? am.ylabel : '';
+      rec.zlabel = am ? am.zlabel : '';
+      if (am && am.context) {
+        for (var ck in am.context) if (!(ck in rec)) rec[ck] = am.context[ck];
+      }
     }
     return rec;
   }
@@ -1113,7 +1133,7 @@ _JS_SOURCE = r"""
   // fallback -- a pie axes only has its wedges to pick, so a click that
   // misses every one of them is a genuine miss, not "no data nearby".
   function resolvePickTarget(e) {
-    var p = toUser(e), a = axesAt(p);
+    var p = toUser(e), a = pickableAxesAt(p);
     if (!a) return null;
     var m = a.m;
     var np = nearestPoint(a.i, m, p);
@@ -1179,7 +1199,7 @@ _JS_SOURCE = r"""
     var ref = resolvePickTarget(e);
     if (ref === 'blocked') return;
     if (ref) { addAnchoredPin(ref, ref.index); return; }
-    var p = toUser(e), a = axesAt(p);
+    var p = toUser(e), a = pickableAxesAt(p);
     if (!a) return;
     var v = nearestVertex(a.i, p) || p;              // large-series fallback
     var dd = toData(a.m, v.x, v.y);
