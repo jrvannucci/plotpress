@@ -23,6 +23,7 @@ without touching anything. Try the live version's two annotate tools for the
 kind of note that is yours alone, not the author's.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(7)
@@ -41,14 +42,20 @@ drift = np.where(t < GAP_DAY, pre_drift, post_drift)
 returns = drift + rng.normal(0.0, vol, DAYS)
 returns[GAP_DAY] += 0.085          # the earnings gap itself
 
-price = 62.0 * np.exp(np.cumsum(returns))
+# One row per trading day -- the shape a price series is actually recorded
+# in, before the earnings-gap day is picked out of it.
+daily = pl.DataFrame({"day": t, "return": returns,
+                       "price": 62.0 * np.exp(np.cumsum(returns))})
+t = daily["day"].to_numpy()
+price = daily["price"].to_numpy()
+gap = daily.row(GAP_DAY, named=True)
 
 fig, ax = plotpress.subplots(figsize=(9, 4.5))
 ax.plot(t, price, color="#1f77b4", linewidth=1.3)
 ax.axvspan(GAP_DAY, DAYS - 1, color="#2ca02c", alpha=0.08)
-ax.annotate(f"earnings gap: +{returns[GAP_DAY] * 100:.0f}% in one day",
-            xy=(GAP_DAY, price[GAP_DAY]),
-            xytext=(GAP_DAY - 22, price[GAP_DAY] * 1.12),
+ax.annotate(f"earnings gap: +{gap['return'] * 100:.0f}% in one day",
+            xy=(GAP_DAY, gap["price"]),
+            xytext=(GAP_DAY - 22, gap["price"] * 1.12),
             arrowprops={"color": "#333333"}, fontsize=9)
 ax.set_xlabel("trading day")
 ax.set_ylabel("price")

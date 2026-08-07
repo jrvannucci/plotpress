@@ -26,6 +26,7 @@ present and an uncertain future. A contour at the at-the-money level makes the
 term structure legible as a line rather than as a colour gradient.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 moneyness = np.linspace(0.70, 1.30, 220)          # strike / forward
@@ -47,12 +48,22 @@ curvature = 1.9 / np.sqrt(T + 0.05)
 iv = atm * (1.0 + skew * log_moneyness + curvature * log_moneyness ** 2)
 iv = np.clip(iv, 0.06, 0.75)
 
+# One row per (expiry, moneyness) quote -- the shape a vol-surface data feed
+# is actually published in, before it is gridded for the mesh.
+quotes = pl.DataFrame({
+    "moneyness": M.ravel(), "expiry": T.ravel(),
+    "implied_vol": iv.ravel(),
+}).sort(["expiry", "moneyness"])
+moneyness_axis = quotes["moneyness"].unique().sort().to_numpy()
+expiry_axis = quotes["expiry"].unique().sort().to_numpy()
+iv = quotes["implied_vol"].to_numpy().reshape(expiry_axis.size, moneyness_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(9.6, 6.0))
-mesh = ax.pcolormesh(moneyness, expiry, iv, cmap="magma")
+mesh = ax.pcolormesh(moneyness_axis, expiry_axis, iv, cmap="magma")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("implied\nvolatility")
 
-ax.contour(moneyness, expiry, iv, levels=[0.16, 0.20, 0.24, 0.30, 0.40],
+ax.contour(moneyness_axis, expiry_axis, iv, levels=[0.16, 0.20, 0.24, 0.30, 0.40],
            colors="#ffffff")
 ax.axvline(1.0, color="#ffffff", linestyle="--", linewidth=1.4)
 

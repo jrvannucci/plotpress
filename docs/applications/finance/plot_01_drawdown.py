@@ -24,6 +24,7 @@ because time under water is what investors actually leave over, and it is
 invisible in any summary statistic that reports only the maximum.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2015)
@@ -48,6 +49,14 @@ returns = DRIFT + rng.normal(0.0, 1.0, DAYS) * vol + shock
 equity = 100.0 * np.exp(np.cumsum(returns))
 peak = np.maximum.accumulate(equity)
 drawdown = equity / peak - 1.0
+
+# One row per trading day -- the shape a backtest's own equity-curve export
+# is in, before the longest drawdown is picked out of it.
+curve = pl.DataFrame({"year": t, "equity": equity, "peak": peak, "drawdown": drawdown})
+t = curve["year"].to_numpy()
+equity = curve["equity"].to_numpy()
+peak = curve["peak"].to_numpy()
+drawdown = curve["drawdown"].to_numpy()
 
 # Longest stretch below the previous peak.
 underwater = drawdown < -1e-9

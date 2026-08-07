@@ -26,6 +26,7 @@ the two are labelled separately, because the gap between them is what the log
 panel is showing.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1987)
@@ -33,15 +34,19 @@ rng = np.random.default_rng(1987)
 N = 252 * 30
 # Student-t returns: the standard stand-in for the fat tails equity returns have.
 df = 3.6
-returns = rng.standard_t(df, N) * 0.0072 + 0.0003
+
+# One row per trading day -- the shape a returns series is actually recorded
+# in, before its mean, quantiles, and worst day are computed from it.
+daily = pl.DataFrame({"day": np.arange(N), "return": rng.standard_t(df, N) * 0.0072 + 0.0003})
+returns = daily["return"].to_numpy()
 
 mu, sigma = returns.mean(), returns.std()
 grid = np.linspace(-0.12, 0.09, 900)
 normal = np.exp(-0.5 * ((grid - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
 
-var_empirical = float(np.percentile(returns, 1.0))
+var_empirical = float(daily["return"].quantile(0.01, interpolation="linear"))
 var_normal = float(mu - 2.3263 * sigma)
-worst = float(returns.min())
+worst = float(daily["return"].min())
 
 bins = np.linspace(-0.12, 0.09, 130)
 
