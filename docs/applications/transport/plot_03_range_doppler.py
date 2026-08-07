@@ -24,6 +24,7 @@ smear into a testable prediction, and every detection *off* the line is a moving
 object -- which is the discrimination the sensor exists to make.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(77)
@@ -64,6 +65,14 @@ for r0, v0, rcs, _ in TARGETS:
 
 NOISE_FLOOR_DB = 0.0
 power_db = 10.0 * np.log10(np.maximum(power, 1e-3))
+
+# One row per range-Doppler bin -- the shape a radar's own data-cube export
+# is in, before it is gridded for the mesh.
+cube = pl.DataFrame({"range": R.ravel(), "velocity": V.ravel(), "power_db": power_db.ravel()}) \
+    .sort(["velocity", "range"])
+range_axis = cube["range"].unique().sort().to_numpy()
+velocity_axis = cube["velocity"].unique().sort().to_numpy()
+power_db = cube["power_db"].to_numpy().reshape(velocity_axis.size, range_axis.size)
 
 fig, ax = plotpress.subplots(figsize=(9.8, 6.0))
 mesh = ax.pcolormesh(range_axis, velocity_axis, power_db, cmap="viridis",

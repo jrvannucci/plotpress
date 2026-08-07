@@ -27,6 +27,7 @@ lines that shrink the usable envelope in turbulence -- the reason the certified
 envelope and the safe envelope are not the same shape.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 V_S = 52.0                                         # stall speed, 1 g (m/s)
@@ -41,10 +42,18 @@ V_NEG = V_S * np.sqrt(abs(N_MIN))
 # Walk the boundary once: positive stall arc up to Va, along the structural
 # limit to Vne, down to the negative limit, back along it, and down the negative
 # stall arc to the origin. One closed ring, so fill() has a polygon to close.
-pos_arc_v = np.linspace(0.0, V_A, 150)
-pos_arc_n = (pos_arc_v / V_S) ** 2
-neg_arc_v = np.linspace(0.0, V_NEG, 150)
-neg_arc_n = -(neg_arc_v / V_S) ** 2
+#
+# One row per airspeed step along each stall arc -- the shape a flight-test
+# boundary table is in, before the two arcs are joined into the closed polygon.
+pos_arc = pl.DataFrame({"v": np.linspace(0.0, V_A, 150)}).with_columns(
+    n=(pl.col("v") / V_S) ** 2)
+pos_arc_v = pos_arc["v"].to_numpy()
+pos_arc_n = pos_arc["n"].to_numpy()
+
+neg_arc = pl.DataFrame({"v": np.linspace(0.0, V_NEG, 150)}).with_columns(
+    n=-((pl.col("v") / V_S) ** 2))
+neg_arc_v = neg_arc["v"].to_numpy()
+neg_arc_n = neg_arc["n"].to_numpy()
 
 poly_v = np.concatenate([pos_arc_v, [V_NE, V_NE, V_C], neg_arc_v[::-1]])
 poly_n = np.concatenate([pos_arc_n, [N_MAX, 0.0, N_MIN], neg_arc_n[::-1]])

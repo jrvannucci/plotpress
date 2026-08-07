@@ -25,6 +25,7 @@ past it is the capacity drop, a real and much-argued-about effect that this
 presentation makes visible without needing to be asserted.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1935)
@@ -51,6 +52,12 @@ flow = np.where(
     density * FREE_SPEED * np.exp(rng.normal(0.0, 0.035, N)),
 )
 flow = np.clip(flow, 0.0, None)
+
+# One row per five-minute interval -- the shape a loop detector's own record
+# export is in, before it is binned into the hexbin.
+records = pl.DataFrame({"density": density, "flow": flow})
+density = records["density"].to_numpy()
+flow = records["flow"].to_numpy()
 
 fig, ax = plotpress.subplots(figsize=(9.6, 6.0))
 hb = ax.hexbin(density, flow, gridsize=68, cmap="inferno", mincnt=1,
