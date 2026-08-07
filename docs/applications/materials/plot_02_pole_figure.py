@@ -19,6 +19,7 @@ The pattern here is a rolled cubic metal: a strong cube component at the centre
 with satellites near 45 degrees of tilt.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 tilt = np.radians(np.linspace(0.0, 80.0, 200))          # chi, from the pole
@@ -46,6 +47,17 @@ for k in range(4):                                                 # satellites
 for k in range(4):
     mrd += component(np.radians(72.0), np.pi / 4 + k * np.pi / 2,
                      np.radians(10.0), 1.9)
+
+# One row per (chi, phi) goniometer step -- the shape a texture goniometer's
+# own scan log is in, before the curvilinear x/y mesh is reconstructed.
+grid_shape = CHI.shape
+scan = pl.DataFrame({
+    "chi": CHI.ravel(), "phi": PHI.ravel(),
+    "x": X.ravel(), "y": Y.ravel(), "mrd": mrd.ravel(),
+}).sort(["chi", "phi"])
+X = scan["x"].to_numpy().reshape(grid_shape)
+Y = scan["y"].to_numpy().reshape(grid_shape)
+mrd = scan["mrd"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(6.2, 5.8))
 mesh = ax.pcolormesh(X, Y, mrd, cmap="plasma", vmin=0.0)

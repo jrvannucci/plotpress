@@ -27,6 +27,7 @@ though log-spaced bins have unequal widths in the underlying variable; a count
 histogram over unequal bins compares bar heights that mean different things.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(88)
@@ -42,15 +43,18 @@ fig, axes = plotpress.subplots(2, 1, figsize=(9.0, 7.4), sharex=True)
 for ax, (mu, sigma), label, color in [
         (axes[0], BEFORE, "as-received", "#1f77b4"),
         (axes[1], AFTER, "after 4 h at 1050 degC", "#d62728")]:
-    d = rng.lognormal(mu, sigma, N)
+    # One row per measured grain -- the shape a micrograph's own grain-sizing
+    # output is in, before the three competing means are computed from it.
+    grains = pl.DataFrame({"diameter": rng.lognormal(mu, sigma, N)})
+    d = grains["diameter"].to_numpy()
 
     ax.hist(d, bins=bins, color=color, alpha=0.55, edgecolor="#ffffff",
             density=True, label=f"{label} (n={N})")
 
-    arithmetic = d.mean()
-    median = np.median(d)
+    arithmetic = grains["diameter"].mean()
+    median = grains["diameter"].median()
     # Area-weighted: each grain counts in proportion to its cross-section.
-    area_weighted = (d ** 3).sum() / (d ** 2).sum()
+    area_weighted = float((grains["diameter"] ** 3).sum() / (grains["diameter"] ** 2).sum())
 
     for value, name, style in [(median, "median", "-"),
                                (arithmetic, "arithmetic mean", "--"),

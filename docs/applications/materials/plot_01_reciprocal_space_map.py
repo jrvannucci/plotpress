@@ -17,6 +17,7 @@ signal lives. ``LogNorm`` is not a preference here -- on a linear scale the
 film peak is invisible next to the substrate.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 qx = np.linspace(-0.030, 0.030, 340)      # reciprocal lattice units
@@ -35,6 +36,14 @@ intensity += peak(-0.0042, 0.7565, 0.0034, 0.0021, 9.0e3)
 # Diffuse scatter and the analyser streak through the substrate peak.
 intensity += peak(0.0, 0.7715, 0.020, 0.0016, 2.2e3)
 intensity += 12.0
+
+# One row per detector pixel -- the shape an area detector's own frame
+# export is in, before it is gridded for the mesh.
+frame = pl.DataFrame({"qx": QX.ravel(), "qz": QZ.ravel(), "intensity": intensity.ravel()}) \
+    .sort(["qz", "qx"])
+qx = frame["qx"].unique().sort().to_numpy()
+qz = frame["qz"].unique().sort().to_numpy()
+intensity = frame["intensity"].to_numpy().reshape(qz.size, qx.size)
 
 fig, axes = plotpress.subplots(1, 2, figsize=(11.5, 4.6))
 lin = axes[0].pcolormesh(qx, qz, intensity, cmap="inferno")

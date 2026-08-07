@@ -19,6 +19,7 @@ Points that failed to index -- pits, contamination, the boundaries themselves
 is the standard scan-quality metric, so it goes in the title.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(47)
@@ -38,6 +39,14 @@ grain_map = orientation[np.argmin(d2, axis=-1)]
 # Unindexed points: a handling scratch, plus scattered low-confidence pixels.
 grain_map[np.abs(Y - 0.35 * X - 18.0) < 1.2] = np.nan
 grain_map[rng.random(grain_map.shape) < 0.015] = np.nan
+
+# One row per scan point -- the shape an EBSD indexer's own point-by-point
+# export is in, before it is gridded for the mesh.
+scan = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "orientation": grain_map.ravel()}) \
+    .sort(["y", "x"])
+x = scan["x"].unique().sort().to_numpy()
+y = scan["y"].unique().sort().to_numpy()
+grain_map = scan["orientation"].to_numpy().reshape(y.size, x.size)
 
 indexed = 100.0 * np.isfinite(grain_map).mean()
 fig, ax = plotpress.subplots(figsize=(8.4, 5.4))

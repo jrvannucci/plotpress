@@ -19,6 +19,7 @@ carbon bands vanish within one step of the stage. Interpolating across it would
 invent a gradient where the physics has a step.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(67)
@@ -43,6 +44,14 @@ intensity += band(2690.0, 16.0, np.where(bilayer, 0.9, np.where(on_flake, 2.4, 0
 intensity += band(1450.0, 6.0, np.where(on_flake, 0.0, 0.55))    # substrate line
 intensity += rng.normal(0.0, 0.006, intensity.shape)
 intensity = np.clip(intensity, 0.0, None)
+
+# One row per spectrum sample -- the shape a Raman spectrometer's own line
+# scan export is in, before it is gridded for the mesh.
+scan = pl.DataFrame({"shift": S.ravel(), "position": P.ravel(), "intensity": intensity.ravel()}) \
+    .sort(["position", "shift"])
+shift = scan["shift"].unique().sort().to_numpy()
+position = scan["position"].unique().sort().to_numpy()
+intensity = scan["intensity"].to_numpy().reshape(position.size, shift.size)
 
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 4.4))
 lin = axes[0].pcolormesh(shift, position, intensity, cmap="magma")

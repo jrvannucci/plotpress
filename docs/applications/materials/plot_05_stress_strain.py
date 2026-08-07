@@ -24,6 +24,7 @@ at fracture and is marked there. Ductility -- how far right the curve reaches --
 is as much a design property as the stress it reached.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 ALLOYS = [
@@ -50,10 +51,20 @@ def curve(E_gpa, yield_mpa, uts_mpa, eps_f, n=600):
     return eps, sigma * (1.0 - 0.22 * neck ** 1.6)
 
 
+# One row per strain-gauge sample -- the shape a tensile test's own
+# extensometer log is in, before the yield construction is drawn over it.
+runs = []
+for name, E, sy, uts, eps_f, _ in ALLOYS:
+    eps, sigma = curve(E, sy, uts, eps_f)
+    runs.append(pl.DataFrame({"alloy": name, "strain": eps, "stress": sigma}))
+tests = pl.concat(runs)
+
 fig, ax = plotpress.subplots(figsize=(8.6, 5.8))
 
 for name, E, sy, uts, eps_f, color in ALLOYS:
-    eps, sigma = curve(E, sy, uts, eps_f)
+    run = tests.filter(pl.col("alloy") == name)
+    eps = run["strain"].to_numpy()
+    sigma = run["stress"].to_numpy()
     ax.plot(eps * 1e2, sigma, color=color, linewidth=1.9, label=name)
     ax.scatter([eps[-1] * 1e2], [sigma[-1]], s=11.0, color="#111111")
 

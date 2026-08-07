@@ -24,6 +24,7 @@ actually use is the lower bound, not the mean, and the gap between them is the
 point of the figure.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1954)
@@ -55,11 +56,15 @@ for name, A, b, endurance, color in MATERIALS:
     if endurance is not None:
         life = np.where(stress < endurance, RUN_OUT * 3.0, life)
 
-    failed = life < RUN_OUT
-    ax.scatter(life[failed], stress[failed], s=7.0, color=color,
-               label=f"{name}, failed")
+    # One row per test specimen -- the shape a fatigue lab's own test log is
+    # in, before it is split into failures and censored run-outs.
+    specimens = pl.DataFrame({"stress": stress, "life": life}) \
+        .with_columns((pl.col("life") < RUN_OUT).alias("failed"))
+    failed_rows = specimens.filter(pl.col("failed"))
+    ax.scatter(failed_rows["life"].to_numpy(), failed_rows["stress"].to_numpy(),
+               s=7.0, color=color, label=f"{name}, failed")
     # Run-outs: censored at the stopping point, with an arrow saying so.
-    for s in stress[~failed]:
+    for s in specimens.filter(~pl.col("failed"))["stress"].to_numpy():
         ax.annotate("", xy=(RUN_OUT * 3.2, s), xytext=(RUN_OUT, s),
                     arrowprops={"color": color})
         ax.scatter([RUN_OUT], [s], s=4.0, color=color)
