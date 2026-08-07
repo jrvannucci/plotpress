@@ -20,6 +20,7 @@ tissue of interest, which is exactly setting ``vmin``/``vmax`` rather than
 autoscaling. The soft-tissue window used here is the standard one.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 N = 256
@@ -49,6 +50,23 @@ for k, theta in enumerate(np.radians(angles)):
     sinogram[k] = rotated.sum(axis=0)
 
 detector = np.linspace(-1.0, 1.0, N)
+ANGLE, DETECTOR = np.meshgrid(angles, detector, indexing="ij")
+
+# One row per detector reading -- the shape a CT gantry's own raw projection
+# export is in, before it is gridded for the sinogram mesh.
+projections = pl.DataFrame({
+    "angle": ANGLE.ravel(), "detector": DETECTOR.ravel(), "line_integral": sinogram.ravel(),
+}).sort(["angle", "detector"])
+angles = projections["angle"].unique().sort().to_numpy()
+detector = projections["detector"].unique().sort().to_numpy()
+sinogram = projections["line_integral"].to_numpy().reshape(angles.size, detector.size)
+
+# One row per reconstructed voxel -- the image-domain counterpart, gridded
+# the same way once the reconstruction has been applied.
+image = pl.DataFrame({"x": X.ravel(), "y": Y.ravel(), "hu": phantom.ravel()}) \
+    .sort(["y", "x"])
+g = image["x"].unique().sort().to_numpy()
+phantom = image["hu"].to_numpy().reshape(g.size, g.size)
 
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 4.8))
 sino = axes[0].pcolormesh(detector, angles, sinogram, cmap="viridis")

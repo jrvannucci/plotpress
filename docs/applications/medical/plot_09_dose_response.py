@@ -21,6 +21,7 @@ pattern and a reason EC50 estimates are less precise than the tidy fitted curve
 suggests.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(404)
@@ -48,7 +49,16 @@ for name, ec50, slope, bottom, color in COMPOUNDS:
     # steepest, so a small pipetting error moves the reading the most.
     spread = 0.02 + 0.10 * truth * (1.0 - truth)
     wells = truth[:, None] + rng.normal(0.0, spread[:, None], (doses.size, 3))
-    mean, sem = wells.mean(axis=1), wells.std(axis=1, ddof=1) / np.sqrt(3)
+
+    # One row per well -- the shape a plate reader's own raw output is in,
+    # before triplicate wells are aggregated into a mean and standard error.
+    plate = pl.DataFrame({"dose": np.repeat(doses, 3), "viability": wells.ravel()})
+    stats = plate.group_by("dose", maintain_order=True).agg(
+        pl.col("viability").mean().alias("mean"),
+        (pl.col("viability").std(ddof=1) / np.sqrt(3)).alias("sem"),
+    )
+    mean = stats["mean"].to_numpy()
+    sem = stats["sem"].to_numpy()
 
     covered = ec50 < doses.max()
     ax.errorbar(doses, mean, yerr=sem, color=color, marker="o", markersize=5.0,

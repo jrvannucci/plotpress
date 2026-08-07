@@ -18,6 +18,7 @@ The stimulus arrives at t = 2 s; the recruitment sweep after it is what the
 sort makes visible.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(37)
@@ -42,6 +43,15 @@ trace *= (T >= onset)
 # Slow baseline drift, each cell with its own phase, plus shot noise.
 drift = 0.05 * np.sin(2.0 * np.pi * (T / 11.0 + rng.random((N_CELLS, 1))))
 dff = trace + drift + rng.normal(0.0, 0.025, trace.shape)
+
+# One row per (cell, time sample) recording -- the shape a two-photon
+# acquisition's own trace export is in, before it is gridded for the mesh.
+CELL, TIME = np.meshgrid(cells, time, indexing="ij")
+recording = pl.DataFrame({"cell": CELL.ravel(), "time": TIME.ravel(), "dff": dff.ravel()}) \
+    .sort(["cell", "time"])
+cells = recording["cell"].unique().sort().to_numpy()
+time = recording["time"].unique().sort().to_numpy()
+dff = recording["dff"].to_numpy().reshape(cells.size, time.size)
 
 lim = float(np.abs(dff).max())
 fig, ax = plotpress.subplots(figsize=(8.4, 5.2))
