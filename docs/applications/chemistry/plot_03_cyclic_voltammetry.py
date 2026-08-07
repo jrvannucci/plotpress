@@ -19,6 +19,7 @@ couple. On this map that shows up as the anodic and cathodic ridges staying at
 constant potential while brightening upward.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 potential = np.linspace(-0.45, 0.55, 380)      # V vs reference
@@ -41,11 +42,23 @@ capacitive = 0.06 * (V / scan_rate.max()) * np.tanh((E - E_HALF) / 0.10)
 
 current = faradaic + capacitive
 
-lim = float(np.abs(current).max())
+# One row per swept (potential, scan rate) point -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+sweep = pl.DataFrame({
+    "potential_v": E.ravel(),
+    "scan_rate_mvs": V.ravel(),
+    "current": current.ravel(),
+}).sort(["scan_rate_mvs", "potential_v"])
+
+potential_axis = sweep["potential_v"].unique().sort().to_numpy()
+scan_rate_axis = sweep["scan_rate_mvs"].unique().sort().to_numpy()
+current = sweep["current"].to_numpy().reshape(scan_rate_axis.size, potential_axis.size)
+lim = float(sweep["current"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.2))
-mesh = ax.pcolormesh(potential, scan_rate, current, cmap="RdBu_r",
+mesh = ax.pcolormesh(potential_axis, scan_rate_axis, current, cmap="RdBu_r",
                      vmin=-lim, vmax=lim)
-ax.contour(E, V, current, levels=[0.0], colors="#333333")
+ax.contour(potential_axis, scan_rate_axis, current, levels=[0.0], colors="#333333")
 fig.colorbar(mesh, ax=ax).set_title("i\n(a.u.)")
 ax.set_xlabel("potential (V vs ref)")
 ax.set_ylabel("scan rate (mV/s)")

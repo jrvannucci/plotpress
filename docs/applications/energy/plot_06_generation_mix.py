@@ -25,6 +25,7 @@ exceeds demand, which is what the top of the stack crossing the demand line
 means physically.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2023)
@@ -52,12 +53,24 @@ curtailed = np.clip(must_run - demand, 0.0, None)
 
 net_load = demand - solar - wind                   # what the dispatchable fleet sees
 
+# One row per hour of the week -- the shape a grid operator's own dispatch
+# log is in, before it is stacked or the steepest ramp is picked out of it.
+dispatch = pl.DataFrame({
+    "day": t, "demand": demand, "nuclear": nuclear, "wind": wind, "solar": solar,
+    "gas": gas, "curtailed": curtailed, "net_load": net_load,
+})
+t = dispatch["day"].to_numpy()
+net_load = dispatch["net_load"].to_numpy()
+curtailed = dispatch["curtailed"].to_numpy()
+
 fig, ax = plotpress.subplots(figsize=(11.4, 5.8))
-ax.stackplot(t, nuclear, wind, solar, gas,
+ax.stackplot(t, dispatch["nuclear"].to_numpy(), dispatch["wind"].to_numpy(),
+             dispatch["solar"].to_numpy(), dispatch["gas"].to_numpy(),
              colors=["#7f7f7f", "#17becf", "#ffd700", "#d62728"],
              labels=["nuclear", "wind", "solar", "gas (dispatchable)"],
              alpha=0.9)
-ax.plot(t, demand, color="#111111", linewidth=1.6, label="demand")
+ax.plot(t, dispatch["demand"].to_numpy(), color="#111111", linewidth=1.6,
+        label="demand")
 ax.plot(t, net_load, color="#1f77b4", linewidth=2.0, linestyle="--",
         label="net load (demand - variable renewables)")
 

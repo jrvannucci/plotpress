@@ -24,6 +24,7 @@ January cold snap; on the right it is the leftmost point of the curve. Being the
 same event in two representations is the point of showing both.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2007)
@@ -44,8 +45,18 @@ load *= np.exp(rng.normal(0.0, 0.035, HOURS))
 snap = np.exp(-((day_of_year - 12.0) ** 2) / (2 * 1.6 ** 2))
 load *= 1.0 + 0.20 * snap
 
-sorted_load = np.sort(load)[::-1]
-peak_hour = int(np.argmax(load))
+# One row per hour of the year -- the shape a grid operator's own demand log
+# is in, before it is sorted into a duration curve.
+demand = pl.DataFrame({"hour": hour, "day_of_year": day_of_year, "load": load})
+peak = demand.sort("load", descending=True).row(0, named=True)
+
+# The same 8760 readings, sorted highest to lowest -- a different table, not
+# a reordering of the one above, since the duration curve deliberately
+# discards which hour each reading came from.
+duration = pl.DataFrame({
+    "rank": np.arange(HOURS),
+    "load": demand["load"].sort(descending=True).to_numpy(),
+})
 
 PLANT = [
     ("nuclear + hydro", 17_000.0, "#1f77b4"),
@@ -57,10 +68,10 @@ PLANT = [
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 5.2))
 ax_time, ax_ldc = axes
 
-ax_time.plot(day_of_year, load / 1e3, color="#555555", linewidth=0.4)
-ax_time.scatter([day_of_year[peak_hour]], [load[peak_hour] / 1e3], s=8.0,
-                color="#d62728")
-ax_time.annotate("annual peak", xy=(day_of_year[peak_hour], load[peak_hour] / 1e3),
+ax_time.plot(demand["day_of_year"].to_numpy(), demand["load"].to_numpy() / 1e3,
+             color="#555555", linewidth=0.4)
+ax_time.scatter([peak["day_of_year"]], [peak["load"] / 1e3], s=8.0, color="#d62728")
+ax_time.annotate("annual peak", xy=(peak["day_of_year"], peak["load"] / 1e3),
                  xytext=(80.0, 48.0), arrowprops={"color": "#d62728"},
                  color="#d62728", fontsize=9)
 ax_time.set_xlim(0.0, 365.0)
@@ -69,7 +80,8 @@ ax_time.set_ylabel("demand (GW)")
 ax_time.set_title("Chronological: when demand happened")
 ax_time.grid(True)
 
-rank = np.arange(HOURS)
+rank = duration["rank"].to_numpy()
+sorted_load = duration["load"].to_numpy()
 base = 0.0
 for name, capacity, color in PLANT:
     top = base + capacity

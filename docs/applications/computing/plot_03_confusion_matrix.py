@@ -25,6 +25,7 @@ cells are annotated, so the eye is not asked to skip eighty zeros to find the
 six numbers that matter.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1024)
@@ -59,6 +60,18 @@ matrix /= matrix.sum(axis=1, keepdims=True)        # rows are probabilities
 counts = np.round(matrix * support[:, None]).astype(int)
 normalised = counts / counts.sum(axis=1, keepdims=True)
 
+# One row per (true class, predicted class) cell -- the shape a classifier's
+# own evaluation report is tabulated in, before it is drawn as an image.
+TRUE_IDX, PRED_IDX = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+cells = pl.DataFrame({
+    "true_idx": TRUE_IDX.ravel(),
+    "pred_idx": PRED_IDX.ravel(),
+    "count": counts.ravel(),
+    "normalised": normalised.ravel(),
+}).sort(["true_idx", "pred_idx"])
+
+normalised = cells["normalised"].to_numpy().reshape(n, n)
+
 # Cap the colour scale below the diagonal: otherwise every off-diagonal cell
 # shares the bottom 30% of the ramp and the confusions are indistinguishable.
 VMAX = 0.30
@@ -69,13 +82,12 @@ im = ax.imshow(normalised, cmap="viridis", vmin=0.0, vmax=VMAX, origin="upper",
 bar = fig.colorbar(im, ax=ax)
 bar.set_title(f"share of\ntrue class\n(capped at {VMAX:g})")
 
-for i in range(n):
-    for j in range(n):
-        if counts[i, j] == 0:
-            continue
-        shade = min(normalised[i, j], VMAX) / VMAX
-        ax.text(j, i, str(counts[i, j]), ha="center", va="center", fontsize=7.5,
-                color="#000000" if shade > 0.55 else "#ffffff")
+for row in cells.iter_rows(named=True):
+    if row["count"] == 0:
+        continue
+    shade = min(row["normalised"], VMAX) / VMAX
+    ax.text(row["pred_idx"], row["true_idx"], str(row["count"]), ha="center",
+            va="center", fontsize=7.5, color="#000000" if shade > 0.55 else "#ffffff")
 
 ax.set_xticks(np.arange(n), CLASSES)
 ax.set_yticks(np.arange(n), CLASSES)

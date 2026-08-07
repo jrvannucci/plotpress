@@ -25,6 +25,7 @@ The diagnostic regions are shaded and named, because an IR spectrum is read by
 region before it is read by peak.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1800)
@@ -53,6 +54,15 @@ absorbance += 0.02 + 0.015 * np.sin(wavenumber / 400.0)          # sloping basel
 absorbance += rng.normal(0.0, 0.0035, wavenumber.size)
 
 transmittance = 100.0 * 10.0 ** (-np.clip(absorbance, 0.0, None))
+
+# One row per scanned wavenumber -- the shape the FTIR's own interferogram
+# export is in, before it is split into transmittance and absorbance panels.
+spectrum = pl.DataFrame({
+    "wavenumber": wavenumber, "transmittance": transmittance, "absorbance": absorbance,
+})
+wavenumber = spectrum["wavenumber"].to_numpy()
+transmittance = spectrum["transmittance"].to_numpy()
+absorbance = spectrum["absorbance"].to_numpy()
 
 REGIONS = [(1500.0, 400.0, "fingerprint", "#ffd7d7"),
            (3200.0, 2700.0, "C-H / O-H stretch", "#d7e8ff")]

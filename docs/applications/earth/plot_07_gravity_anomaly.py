@@ -16,6 +16,7 @@ Contours over the mesh give the interpreter something to trace and measure
 gradients against, which is how basin edges are picked.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 east = np.linspace(0.0, 120.0, 340)      # km
@@ -39,10 +40,20 @@ anomaly = (body(34.0, 58.0, 14.0, 55.0)          # dense mafic intrusion
            + body(20.0, 22.0, 12.0, -20.0))      # salt structure
 anomaly += 0.02 * (E - 60.0)                      # broad regional gradient
 
-lim = float(np.abs(anomaly).max())
+# One row per surveyed (easting, northing) station -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+survey = pl.DataFrame({
+    "east_km": E.ravel(), "north_km": N.ravel(), "anomaly_mgal": anomaly.ravel(),
+}).sort(["north_km", "east_km"])
+
+east_axis = survey["east_km"].unique().sort().to_numpy()
+north_axis = survey["north_km"].unique().sort().to_numpy()
+anomaly = survey["anomaly_mgal"].to_numpy().reshape(north_axis.size, east_axis.size)
+lim = float(survey["anomaly_mgal"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.6))
-mesh = ax.pcolormesh(east, north, anomaly, cmap="coolwarm", vmin=-lim, vmax=lim)
-ax.contour(E, N, anomaly, levels=9, colors="#333333")
+mesh = ax.pcolormesh(east_axis, north_axis, anomaly, cmap="coolwarm", vmin=-lim, vmax=lim)
+ax.contour(east_axis, north_axis, anomaly, levels=9, colors="#333333")
 bar = fig.colorbar(mesh, ax=ax)
 bar.set_title("mGal")
 ax.set_aspect("equal")

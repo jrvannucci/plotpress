@@ -25,6 +25,7 @@ The coherence panel beside it shows where the phase is trustworthy at all --
 vegetation and water decorrelate between passes, and phase there is noise.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(29)
@@ -49,13 +50,26 @@ coherence = np.clip(coherence + rng.normal(0.0, 0.03, E.shape), 0.05, 0.99)
 wrapped = np.where(coherence > 0.35, wrapped,
                    rng.uniform(-np.pi, np.pi, E.shape))
 
+# One row per (easting, northing) pixel -- sorted before the reshape below
+# so the pivot back to a grid is correct regardless of row order.
+pixels = pl.DataFrame({
+    "east_km": E.ravel(), "north_km": N.ravel(),
+    "phase_rad": wrapped.ravel(), "coherence": coherence.ravel(),
+}).sort(["north_km", "east_km"])
+
+east_axis = pixels["east_km"].unique().sort().to_numpy()
+north_axis = pixels["north_km"].unique().sort().to_numpy()
+shape = (north_axis.size, east_axis.size)
+wrapped = pixels["phase_rad"].to_numpy().reshape(shape)
+coherence = pixels["coherence"].to_numpy().reshape(shape)
+
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 4.6))
-ifg = axes[0].pcolormesh(east, north, wrapped, cmap="RdBu",
+ifg = axes[0].pcolormesh(east_axis, north_axis, wrapped, cmap="RdBu",
                          vmin=-np.pi, vmax=np.pi)
 axes[0].set_title("wrapped phase")
 fig.colorbar(ifg, ax=axes[0]).set_title("rad")
 
-coh = axes[1].pcolormesh(east, north, coherence, cmap="gray", vmin=0.0, vmax=1.0)
+coh = axes[1].pcolormesh(east_axis, north_axis, coherence, cmap="gray", vmin=0.0, vmax=1.0)
 axes[1].set_title("coherence")
 fig.colorbar(coh, ax=axes[1])
 

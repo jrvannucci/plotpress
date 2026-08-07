@@ -20,6 +20,7 @@ one looks like a real region of no emission. The colour range is then set by
 fluorescence alone.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 excitation = np.linspace(240.0, 450.0, 320)      # nm
@@ -40,8 +41,20 @@ eem = (fluorophore(275.0, 340.0, 14.0, 22.0, 0.85)     # tryptophan-like
 eem[np.abs(EM - EX) < 14.0] = np.nan
 eem[np.abs(EM - 2.0 * EX) < 18.0] = np.nan
 
+# One row per scanned (excitation, emission) point -- sorted before the
+# reshape below so the pivot back to a grid is correct regardless of order.
+scan = pl.DataFrame({
+    "excitation_nm": EX.ravel(),
+    "emission_nm": EM.ravel(),
+    "intensity": eem.ravel(),
+}).sort(["emission_nm", "excitation_nm"])
+
+excitation_axis = scan["excitation_nm"].unique().sort().to_numpy()
+emission_axis = scan["emission_nm"].unique().sort().to_numpy()
+eem = scan["intensity"].to_numpy().reshape(emission_axis.size, excitation_axis.size)
+
 fig, ax = plotpress.subplots(figsize=(7.2, 5.6))
-mesh = ax.pcolormesh(excitation, emission, eem, cmap="viridis")
+mesh = ax.pcolormesh(excitation_axis, emission_axis, eem, cmap="viridis")
 fig.colorbar(mesh, ax=ax).set_title("R.U.")
 ax.set_xlabel("excitation (nm)")
 ax.set_ylabel("emission (nm)")

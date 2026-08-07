@@ -17,6 +17,7 @@ Cells below the noise floor are ``nan`` rather than a large negative sentinel,
 so clear air stays unpainted and does not drag the colour range down.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(5)
@@ -37,6 +38,20 @@ for cx, cy, peak, spread in [(-45.0, 38.0, 58.0, 130.0), (30.0, -52.0, 44.0, 200
 
 dbz += rng.normal(0.0, 1.2, dbz.shape)
 dbz[dbz < 5.0] = np.nan                # below the noise floor: no echo
+
+# One row per (range, azimuth) radar cell -- sorted before the reshape below
+# so the pivot back to a grid is correct regardless of row order. The
+# display grid (x, y) is curvilinear, so it is reshaped alongside dbz rather
+# than treated as a separable axis.
+scan = pl.DataFrame({
+    "range_km": R.ravel(), "azimuth_rad": AZ.ravel(),
+    "x": X.ravel(), "y": Y.ravel(), "dbz": dbz.ravel(),
+}).sort(["azimuth_rad", "range_km"])
+
+grid_shape = (scan["azimuth_rad"].n_unique(), scan["range_km"].n_unique())
+X = scan["x"].to_numpy().reshape(grid_shape)
+Y = scan["y"].to_numpy().reshape(grid_shape)
+dbz = scan["dbz"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(6.8, 6.2))
 mesh = ax.pcolormesh(X, Y, dbz, cmap="viridis", vmin=5.0, vmax=60.0)

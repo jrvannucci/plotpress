@@ -23,6 +23,7 @@ everything would report an activation energy that describes neither regime, so
 the two are fitted separately and the crossover marked.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(1889)
@@ -49,18 +50,28 @@ def rate(T):
 k = rate(T) * np.exp(rng.normal(0.0, 0.06, T.size))
 sigma = k * 0.07                                   # 7% relative uncertainty
 
-high = T >= T_BREAK
+# One row per temperature run -- the shape a kinetics run log is actually
+# recorded in, before it is split into the two Arrhenius regimes.
+runs = pl.DataFrame({
+    "temp_k": T, "inv_temp_k": inv_T, "rate_k": k, "sigma": sigma,
+    "regime": np.where(T >= T_BREAK, "chemical control", "diffusion control"),
+})
+
 fits = {}
-for name, mask in [("chemical control", high), ("diffusion control", ~high)]:
-    coeffs = np.polyfit(1.0 / T[mask], np.log(k[mask]), 1)
+for name in ("chemical control", "diffusion control"):
+    branch = runs.filter(pl.col("regime") == name)
+    coeffs = np.polyfit(1.0 / branch["temp_k"].to_numpy(),
+                        np.log(branch["rate_k"].to_numpy()), 1)
     fits[name] = (coeffs, -coeffs[0] * R / 1e3)    # slope -> Ea in kJ/mol
 
 fig, ax = plotpress.subplots(figsize=(8.6, 5.8))
-ax.errorbar(inv_T, k, yerr=sigma, color="#1f77b4", marker="o", markersize=5.0,
-            linestyle="none", capsize=3.0, label="measured rate constant")
+ax.errorbar(runs["inv_temp_k"].to_numpy(), runs["rate_k"].to_numpy(),
+            yerr=runs["sigma"].to_numpy(), color="#1f77b4", marker="o",
+            markersize=5.0, linestyle="none", capsize=3.0,
+            label="measured rate constant")
 
 for (name, (coeffs, ea_kj)), color in zip(fits.items(), ["#d62728", "#2ca02c"]):
-    span = (T[high] if name.startswith("chemical") else T[~high])
+    span = runs.filter(pl.col("regime") == name)["temp_k"].to_numpy()
     grid = np.linspace(span.min() - 6.0, span.max() + 6.0, 50)
     ax.plot(1000.0 / grid, np.exp(np.polyval(coeffs, 1.0 / grid)), color=color,
             linewidth=1.8, label=f"{name}: Ea = {ea_kj:.0f} kJ/mol")

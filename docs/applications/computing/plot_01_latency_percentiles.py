@@ -24,6 +24,7 @@ where p99 breached it is shaded, because the SLO is defined on a percentile and
 the breach is the event the on-call engineer is paged for.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(503)
@@ -52,20 +53,31 @@ for p, _ in percentiles:
 
 mean = base * incident * np.exp(0.5 * spread ** 2) * 1.05
 
+# One row per minute of the day -- the shape the monitoring system's own
+# time series export is in, before it is split into percentile bands.
+timeseries = pl.DataFrame({
+    "hour": t,
+    "p50": curves[50], "p90": curves[90], "p99": curves[99], "p99_9": curves[99.9],
+    "mean": mean,
+})
+t = timeseries["hour"].to_numpy()
+
 fig, ax = plotpress.subplots(figsize=(11.0, 5.8))
 
 previous = np.full(MINUTES, 8.0)
 for p, color in percentiles:
-    ax.fill_between(t, previous, curves[p], color=color, alpha=0.20)
-    ax.plot(t, curves[p], color=color, linewidth=1.6, label=f"p{p:g}")
-    previous = curves[p]
+    col = f"p{p:g}".replace(".", "_")
+    values = timeseries[col].to_numpy()
+    ax.fill_between(t, previous, values, color=color, alpha=0.20)
+    ax.plot(t, values, color=color, linewidth=1.6, label=f"p{p:g}")
+    previous = values
 
-ax.plot(t, mean, color="#111111", linewidth=1.4, linestyle="--",
-        label="mean (hides the tail)")
+ax.plot(t, timeseries["mean"].to_numpy(), color="#111111", linewidth=1.4,
+        linestyle="--", label="mean (hides the tail)")
 ax.axhline(SLO_MS, color="#333333", linestyle=":", linewidth=1.6,
            label=f"SLO: p99 < {SLO_MS:.0f} ms")
 
-breach = curves[99] > SLO_MS
+breach = timeseries["p99"].to_numpy() > SLO_MS
 if breach.any():
     lo, hi = t[breach][0], t[breach][-1]
     ax.axvspan(lo, hi, color="#d62728", alpha=0.10)

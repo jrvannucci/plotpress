@@ -19,6 +19,7 @@ the surrounding dielectric carries no current at all and is ``nan``, so it is
 left unpainted rather than plotted as a spurious zero the log could not take.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 x = np.linspace(0.0, 12.0, 380)      # micrometres
@@ -41,12 +42,22 @@ density += 0.6
 
 density = np.where(metal, density, np.nan)
 
+# One row per grid cell -- sorted before the reshape below so the pivot
+# back to a grid is correct regardless of row order.
+field = pl.DataFrame({
+    "x": X.ravel(), "y": Y.ravel(), "density": density.ravel(),
+}).sort(["y", "x"])
+
+x_axis = field["x"].unique().sort().to_numpy()
+y_axis = field["y"].unique().sort().to_numpy()
+density = field["density"].to_numpy().reshape(y_axis.size, x_axis.size)
+
 fig, axes = plotpress.subplots(1, 2, figsize=(12.0, 4.2))
-lin = axes[0].pcolormesh(x, y, density, cmap="inferno")
+lin = axes[0].pcolormesh(x_axis, y_axis, density, cmap="inferno")
 axes[0].set_title("linear norm")
 fig.colorbar(lin, ax=axes[0]).set_title("MA/cm2")
 
-log = axes[1].pcolormesh(x, y, density, cmap="inferno", norm=plotpress.LogNorm())
+log = axes[1].pcolormesh(x_axis, y_axis, density, cmap="inferno", norm=plotpress.LogNorm())
 axes[1].set_title("LogNorm")
 fig.colorbar(log, ax=axes[1]).set_title("MA/cm2")
 

@@ -25,6 +25,7 @@ colour of marker. The sidebands are the finding: gear mesh alone is normal, gear
 mesh flanked by evenly spaced sidebands is a modulated fault.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(3600)
@@ -56,8 +57,16 @@ sidebands = [GEAR_TEETH + n * BPFO for n in (-3, -2, -1, 1, 2, 3)]
 for order in sidebands:
     add_peak(order, 0.0031, width=0.04)
 
+# One row per frequency-domain bin -- the shape the analyzer's own spectrum
+# readout is logged in, before any peak family is picked out of it.
+spectrum_table = pl.DataFrame({
+    "order": orders,
+    "amplitude": spectrum,
+})
+
 fig, ax = plotpress.subplots(figsize=(10.4, 5.8))
-ax.plot(orders, spectrum, color="#333333", linewidth=0.7)
+ax.plot(spectrum_table["order"].to_numpy(), spectrum_table["amplitude"].to_numpy(),
+        color="#333333", linewidth=0.7)
 
 ax.scatter(shaft_orders, [0.22 / k ** 1.5 * 1.6 for k in shaft_orders], s=7.0,
            color="#1f77b4", label="shaft harmonics (normal)")

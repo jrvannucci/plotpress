@@ -15,6 +15,7 @@ The eastward tilt here is a Madden-Julian Oscillation signal at roughly 5 m/s;
 the steeper westward streaks are faster equatorial Rossby waves.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(11)
@@ -31,9 +32,19 @@ olr = -38.0 * envelope * np.cos(mjo_phase) * np.exp(-((DAY - 45.0) ** 2) / 1500.
 olr += -14.0 * np.cos((LON + 2.4 * DAY) / 7.0) * np.exp(-((DAY - 30.0) ** 2) / 900.0)
 olr += rng.normal(0.0, 3.0, olr.shape)
 
-lim = float(np.abs(olr).max())
+# One row per (longitude, day) sample -- sorted before the reshape below so
+# the pivot back to a grid is correct regardless of row order.
+field = pl.DataFrame({
+    "lon": LON.ravel(), "day": DAY.ravel(), "olr": olr.ravel(),
+}).sort(["day", "lon"])
+
+lon_axis = field["lon"].unique().sort().to_numpy()
+day_axis = field["day"].unique().sort().to_numpy()
+olr = field["olr"].to_numpy().reshape(day_axis.size, lon_axis.size)
+lim = float(field["olr"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(7.6, 5.6))
-mesh = ax.pcolormesh(lon, day, olr, cmap="RdBu", vmin=-lim, vmax=lim)
+mesh = ax.pcolormesh(lon_axis, day_axis, olr, cmap="RdBu", vmin=-lim, vmax=lim)
 fig.colorbar(mesh, ax=ax).set_title("W/m2")
 ax.set_xlabel("longitude (deg E)")
 ax.set_ylabel("day")

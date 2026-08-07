@@ -25,6 +25,7 @@ that would actually be shipped, and the overfitting run's minimum is hundreds of
 steps before its training loss stops falling.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(42)
@@ -40,6 +41,9 @@ RUNS = [
 
 fig, ax = plotpress.subplots(figsize=(9.6, 5.8))
 
+# One row per (run, step) logged metric pair -- the shape a training run's
+# own metrics export is in, before the best checkpoint is picked out of it.
+logs = []
 for label, floor, rate, overfit, noise, color in RUNS:
     warm = np.clip(steps / 400.0, 0.05, 1.0)       # learning-rate warmup
     train = floor + 3.4 * (steps * warm) ** -rate
@@ -50,14 +54,23 @@ for label, floor, rate, overfit, noise, color in RUNS:
         val = val + 0.16 * np.clip((steps - overfit) / 6000.0, 0.0, None) ** 1.3
     val *= np.exp(rng.normal(0.0, noise * 0.6, steps.size))
 
-    ax.plot(steps, train, color=color, linewidth=1.5, alpha=0.55)
-    ax.plot(steps, val, color=color, linewidth=1.9, label=label)
+    logs.append(pl.DataFrame({"run": label, "step": steps,
+                              "train_loss": train, "val_loss": val}))
+logs = pl.concat(logs)
 
-    best = int(np.argmin(val))
-    ax.scatter([steps[best]], [val[best]], s=8.0, color=color)
+for label, floor, rate, overfit, noise, color in RUNS:
+    run_log = logs.filter(pl.col("run") == label)
+    ax.plot(run_log["step"].to_numpy(), run_log["train_loss"].to_numpy(),
+            color=color, linewidth=1.5, alpha=0.55)
+    ax.plot(run_log["step"].to_numpy(), run_log["val_loss"].to_numpy(),
+            color=color, linewidth=1.9, label=label)
+
+    best = run_log.sort("val_loss").row(0, named=True)
+    ax.scatter([best["step"]], [best["val_loss"]], s=8.0, color=color)
     if overfit is not None:
-        ax.annotate(f"best checkpoint\nstep {steps[best]}",
-                    xy=(steps[best], val[best]), xytext=(steps[best] * 0.06, 0.34),
+        ax.annotate(f"best checkpoint\nstep {best['step']}",
+                    xy=(best["step"], best["val_loss"]),
+                    xytext=(best["step"] * 0.06, 0.34),
                     arrowprops={"color": color}, color=color, fontsize=9)
 
 ax.text(1.4, 0.31, "solid = validation, faded = training", fontsize=9,

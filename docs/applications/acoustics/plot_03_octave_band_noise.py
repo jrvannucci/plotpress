@@ -26,6 +26,7 @@ usually written in, and it belongs on the figure that shows it is not the whole
 story.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 # Standard third-octave centre frequencies, 25 Hz to 10 kHz.
@@ -60,23 +61,36 @@ total_dba = 10.0 * np.log10(np.sum(10.0 ** ((level + a_weight) / 10.0)))
 
 exceeds = level > limit
 
+# One row per third-octave band -- the shape a real analyzer readout is
+# logged in, before it is ever split into "pass" and "fail" bars.
+bands = pl.DataFrame({
+    "centre_hz": centres,
+    "edge_lo_hz": edges_lo,
+    "edge_hi_hz": edges_hi,
+    "level_db": level,
+    "limit_db": limit,
+    "exceeds": exceeds,
+})
+
 fig, ax = plotpress.subplots(figsize=(10.0, 5.6))
-for lo, hi, band, over in zip(edges_lo, edges_hi, level, exceeds):
+for row in bands.iter_rows(named=True):
     # Width per bar, from that band's own edges: on a log axis a constant width
     # in hertz is a wildly different width on screen at 25 Hz and at 10 kHz.
-    ax.bar([np.sqrt(lo * hi)], [band], width=(hi - lo),
-           color="#d62728" if over else "#1f77b4", edgecolor="#ffffff",
+    ax.bar([np.sqrt(row["edge_lo_hz"] * row["edge_hi_hz"])], [row["level_db"]],
+           width=(row["edge_hi_hz"] - row["edge_lo_hz"]),
+           color="#d62728" if row["exceeds"] else "#1f77b4", edgecolor="#ffffff",
            label=None)
 
-ax.plot(centres, limit, color="#2ca02c", linewidth=2.0, linestyle="--",
-        label="limit curve")
-ax.scatter(centres[exceeds], level[exceeds] + 2.5, s=7.0, color="#d62728",
-           label=f"exceeds limit ({exceeds.sum()} bands)")
+failing = bands.filter(pl.col("exceeds"))
+ax.plot(bands["centre_hz"].to_numpy(), bands["limit_db"].to_numpy(),
+        color="#2ca02c", linewidth=2.0, linestyle="--", label="limit curve")
+ax.scatter(failing["centre_hz"].to_numpy(), failing["level_db"].to_numpy() + 2.5,
+           s=7.0, color="#d62728", label=f"exceeds limit ({failing.height} bands)")
 
 # The bars stop well short of the top of the axes, so the headroom above the
 # high-frequency end is the one place a two-line note does not cross them.
 ax.text(22.0, 98.0, f"A-weighted total = {total_dba:.0f} dBA -- within spec,\n"
-        f"but {exceeds.sum()} tonal bands are not", fontsize=9,
+        f"but {failing.height} tonal bands are not", fontsize=9,
         color="#333333", ha="left", va="top")
 
 ax.set_xscale("log")

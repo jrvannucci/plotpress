@@ -23,6 +23,7 @@ alphabetically -- adjacency is the entire message of a heatmap, and an
 alphabetical row order is noise painted to look like structure.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(3131)
@@ -49,7 +50,20 @@ _, vecs = np.linalg.eigh(corr)
 order = np.argsort(vecs[:, -1])
 z = z[order]
 
-lim = float(np.percentile(np.abs(z), 99))
+# One row per (gene, sample) cell of the final, clustered matrix -- sorted
+# before the reshape below so the pivot back to a grid is correct
+# regardless of row order.
+GENE_ROW, SAMPLE_COL = np.meshgrid(np.arange(N_GENES), np.arange(N_SAMPLES), indexing="ij")
+heatmap = pl.DataFrame({
+    "gene_row": GENE_ROW.ravel(),
+    "sample_col": SAMPLE_COL.ravel(),
+    "z_score": z.ravel(),
+}).sort(["gene_row", "sample_col"])
+
+n_genes = heatmap["gene_row"].n_unique()
+n_samples = heatmap["sample_col"].n_unique()
+z = heatmap["z_score"].to_numpy().reshape(n_genes, n_samples)
+lim = float(heatmap["z_score"].abs().quantile(0.99, interpolation="linear"))
 
 fig, ax = plotpress.subplots(figsize=(9.0, 6.4))
 mesh = ax.pcolormesh(np.arange(N_SAMPLES + 1), np.arange(N_GENES + 1), z,

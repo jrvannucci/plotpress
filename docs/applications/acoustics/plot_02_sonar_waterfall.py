@@ -19,6 +19,7 @@ colour norm stays linear. Beyond the last gated sample there is no measurement
 at all, and those cells are ``nan``.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(53)
@@ -48,6 +49,23 @@ tvg = 1.0 / (spreading * absorption)
 db = 10.0 * np.log10(np.maximum(received * tvg, 1e-3))
 
 db[R > 2300.0] = np.nan                    # beyond the last range gate
+
+# One row per ping cell, in its native (range, bearing) coordinates -- sorted
+# before the reshape below so the pivot back to a grid is correct regardless
+# of row order. The display grid itself (x, y) is curvilinear, so it is
+# reshaped alongside db rather than treated as a separable axis.
+ping = pl.DataFrame({
+    "range_m": R.ravel(),
+    "bearing_rad": B.ravel(),
+    "x": X.ravel(),
+    "y": Y.ravel(),
+    "db": db.ravel(),
+}).sort(["bearing_rad", "range_m"])
+
+grid_shape = (ping["bearing_rad"].n_unique(), ping["range_m"].n_unique())
+X = ping["x"].to_numpy().reshape(grid_shape)
+Y = ping["y"].to_numpy().reshape(grid_shape)
+db = ping["db"].to_numpy().reshape(grid_shape)
 
 fig, ax = plotpress.subplots(figsize=(7.0, 6.0))
 mesh = ax.pcolormesh(X, Y, db, cmap="viridis", vmin=-6.0, vmax=18.0)

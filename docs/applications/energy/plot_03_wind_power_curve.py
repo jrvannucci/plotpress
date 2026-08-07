@@ -26,6 +26,7 @@ see where the real curve departs from it, which is where the blades stop being
 aerodynamically ideal.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 rng = np.random.default_rng(2011)
@@ -53,26 +54,32 @@ power = power * np.exp(rng.normal(0.0, 0.10, N)) + rng.normal(0.0, 45.0, N)
 power = np.clip(power, 0.0, RATED_POWER * 1.06)
 power[speed > CUT_OUT] = 0.0
 
+# One row per ten-minute SCADA record -- exactly the shape the logger's own
+# export is in, before it is ever binned into a power curve.
+records = pl.DataFrame({"speed": speed, "power": power})
+
 bins = np.arange(0.0, 26.0, 0.5)
-idx = np.digitize(speed, bins) - 1
-centres, means, spreads = [], [], []
-for b in range(bins.size - 1):
-    sel = idx == b
-    if sel.sum() >= 20:
-        centres.append(0.5 * (bins[b] + bins[b + 1]))
-        means.append(power[sel].mean())
-        spreads.append(power[sel].std())
-centres = np.array(centres)
+bin_idx = np.digitize(records["speed"].to_numpy(), bins) - 1
+binned = (records.with_columns(pl.Series("bin", bin_idx))
+          .filter((pl.col("bin") >= 0) & (pl.col("bin") < bins.size - 1))
+          .group_by("bin")
+          .agg(pl.col("power").mean().alias("mean_power"),
+               pl.col("power").std().alias("spread"),
+               pl.len().alias("n"))
+          .filter(pl.col("n") >= 20)
+          .sort("bin")
+          .with_columns((pl.col("bin") * 0.5 + 0.25).alias("centre")))
 
 fig, ax = plotpress.subplots(figsize=(9.6, 5.8))
-hb = ax.hexbin(speed, power, gridsize=58, cmap="cividis", mincnt=1,
-               norm=plotpress.LogNorm())
+hb = ax.hexbin(records["speed"].to_numpy(), records["power"].to_numpy(),
+               gridsize=58, cmap="cividis", mincnt=1, norm=plotpress.LogNorm())
 fig.colorbar(hb, ax=ax).set_title("10-min\nrecords")
 
 grid = np.linspace(0.0, 26.0, 400)
 ax.plot(grid, ideal_power(grid), color="#888888", linestyle="--", linewidth=1.4,
         label="cubic + rated reference")
-ax.errorbar(centres, means, yerr=spreads, color="#d62728", marker="o",
+ax.errorbar(binned["centre"].to_numpy(), binned["mean_power"].to_numpy(),
+            yerr=binned["spread"].to_numpy(), color="#d62728", marker="o",
             markersize=3.5, linestyle="-", linewidth=1.6, capsize=2.0,
             label="binned power curve (0.5 m/s bins)")
 

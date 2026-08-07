@@ -18,6 +18,7 @@ Plotting the magnitude instead would merge each antiphase pair and lose the
 structure the mode is.
 """
 import numpy as np
+import polars as pl
 import plotpress
 
 LX, LY = 6.4, 4.6                      # room dimensions (m)
@@ -37,10 +38,22 @@ for nx, ny, weight in MODES:
     pressure += weight * phase * (np.cos(nx * np.pi * X / LX)
                                   * np.cos(ny * np.pi * Y / LY))
 
-lim = float(np.abs(pressure).max())
+# One row per sampled (x, y) point -- sorted before the reshape below so the
+# pivot back to a grid is correct regardless of row order.
+field = pl.DataFrame({
+    "x": X.ravel(),
+    "y": Y.ravel(),
+    "pressure": pressure.ravel(),
+}).sort(["y", "x"])
+
+x_axis = field["x"].unique().sort().to_numpy()
+y_axis = field["y"].unique().sort().to_numpy()
+pressure = field["pressure"].to_numpy().reshape(y_axis.size, x_axis.size)
+lim = float(field["pressure"].abs().max())
+
 fig, ax = plotpress.subplots(figsize=(8.0, 5.4))
-mesh = ax.pcolormesh(x, y, pressure, cmap="coolwarm", vmin=-lim, vmax=lim)
-ax.contour(X, Y, pressure, levels=[0.0], colors="#222222")
+mesh = ax.pcolormesh(x_axis, y_axis, pressure, cmap="coolwarm", vmin=-lim, vmax=lim)
+ax.contour(x_axis, y_axis, pressure, levels=[0.0], colors="#222222")
 fig.colorbar(mesh, ax=ax).set_title("Pa\n(rel.)")
 ax.set_aspect("equal")
 ax.set_xlabel("x (m)")
