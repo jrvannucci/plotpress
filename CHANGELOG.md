@@ -54,6 +54,28 @@ is derived from it at build time rather than written down anywhere in the source
 
 ### Added
 
+- **`Axes.pcolormesh_frames(X, Y, C, ...)`.** The mesh counterpart of
+  `plot_frames()`: `C` carries a leading frame axis, `X`/`Y` stay shared
+  across every frame, and a `FrameQuadMesh` artist animates it through the
+  same slider machinery -- shared or per-axes docked scope, GIF export,
+  interactive HTML scrubbing all included. Each frame is built as its own
+  fully-validated `QuadMesh` (curvilinear/gouraud/descending-axis handling
+  included rather than reimplemented) sharing one `Normalize` autoscaled to
+  every frame's data at once, so the colour scale stays fixed instead of
+  jumping frame to frame. In interactive HTML a mesh frame swaps its
+  `<image>` `href` on scrub rather than recomputing geometry, since every
+  frame shares one grid and only the pixel content changes -- cheaper than
+  the line case, not more expensive. Five new worked examples: a room's
+  modal pressure actually standing still at its nodal lines while
+  oscillating everywhere else, a full 2-D sea-surface-temperature field
+  through the seasonal cycle, the exact closed-form decaying Taylor-Green
+  vortex (a CFD validation case, not merely a demonstration flow), a
+  four-panel reference example exercising both shared and linked-docked
+  slider scopes for meshes, and a size/save-time benchmark against
+  `plot_frames()` showing why: a mesh frame is an independent embedded PNG
+  where a line frame is a raw array, and the growth curves diverge
+  accordingly (megabyte range by 80 frames at a modest resolution, where the
+  equivalent line animation stays in the low hundreds of KiB).
 - **`fig.save(path.gif, fps=10, slider_unit="main")`.** Any
   `Axes.plot_frames()` series now exports to a self-contained looping GIF via
   Pillow, animating through the same frames an interactive HTML slider

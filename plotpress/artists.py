@@ -497,6 +497,44 @@ class QuadMesh(Artist):
         return self.extent()
 
 
+class FrameQuadMesh(Artist):
+    """A pcolormesh whose color data has an extra dimension scrubbed by a slider.
+
+    ``C`` is ``(n_frames, ny, nx)``; ``X``/``Y`` are shared across every frame,
+    exactly as ``pcolormesh()`` takes them -- only the color data animates, the
+    grid itself does not. Each frame is built as its own fully-validated
+    :class:`QuadMesh` (curvilinear detection, gouraud node coordinates,
+    descending-axis normalization all included, rather than reimplemented),
+    sharing one :class:`~plotpress.colors.Normalize` autoscaled to *every*
+    frame's data at once -- so the colour scale stays fixed rather than
+    jumping frame to frame, the same reason a shared colorbar is pinned to one
+    ``vmin``/``vmax`` across several axes.
+    """
+
+    def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
+                 shading="flat", label=None, alpha=1.0):
+        C = np.asarray(C, dtype=float)
+        if C.ndim != 3:
+            raise ValueError(
+                "pcolormesh_frames() requires C with shape (n_frames, ny, nx)")
+        self.n_frames = C.shape[0]
+        shared_norm = resolve_norm(norm, vmin, vmax)
+        shared_norm.autoscale_none(C)          # fits every frame at once
+        self.frames = [QuadMesh(X, Y, C[f], cmap=cmap, norm=shared_norm,
+                                shading=shading) for f in range(self.n_frames)]
+        self.lut = self.frames[0].lut
+        self.norm = self.frames[0].norm
+        self.label = label
+        self.alpha = alpha
+        self.slider_unit = "main"  # set by Axes.pcolormesh_frames
+
+    def frame_mesh(self, f):
+        return self.frames[f]
+
+    def data_bounds(self):
+        return self.frames[0].extent()
+
+
 def _as_colors(color, n):
     """Normalize a color arg to a per-item list of length n."""
     if isinstance(color, (list, tuple, np.ndarray)) and len(color) == n \

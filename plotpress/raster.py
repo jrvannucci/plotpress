@@ -14,8 +14,8 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Pie, Polygon, Quiver, ScatterCollection, Span, Stem, Text,
-    Violin,
+    FrameLine2D, FrameQuadMesh, Pie, Polygon, Quiver, ScatterCollection, Span,
+    Stem, Text, Violin,
 )
 from .colors import colorbar_ticks, to_hex
 # Which files can draw a given font stack is declared once, in fonts/families,
@@ -382,6 +382,16 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
         _polyline(draw, tr.xy(x0, y0), _rgb(artist.color),
                   max(1, int(round(artist.linewidth * S))),
                   _DASH.get(artist.linestyle))
+    elif isinstance(artist, FrameQuadMesh):
+        # Same animate_unit rule as FrameLine2D above -- substitute that
+        # frame's own fully-realized QuadMesh so this hits the ordinary
+        # QuadMesh path in artist_to_prims, image flip/orientation included.
+        f = frame if artist.slider_unit == animate_unit else 0
+        f = min(f, artist.n_frames - 1)
+        mesh_prims = artist_to_prims(artist.frame_mesh(f), tr, 0, 0,
+                                     size_scale=st.dpi / 72.0 * S)
+        for p in mesh_prims or []:
+            _draw_prim(p, S, draw, canvas)
     elif isinstance(artist, Bars):
         _bars(artist, tr, S, draw)
     elif isinstance(artist, Stem):

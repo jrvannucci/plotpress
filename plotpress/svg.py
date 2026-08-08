@@ -17,8 +17,9 @@ import numpy as np
 
 from .artists import (
     Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, Image, Line2D, LineCollection, Pie, Polygon, PolyCollection,
-    QuadMesh, Quiver, ScatterCollection, Span, Stem, Text, Violin, _edges_from,
+    FrameLine2D, FrameQuadMesh, Image, Line2D, LineCollection, Pie, Polygon,
+    PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text,
+    Violin, _edges_from,
 )
 from .colors import colorbar_ticks
 from .png import png_data_uri
@@ -660,6 +661,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             continue
         if isinstance(artist, FrameLine2D):
             _render_frameline(artist, tr, index, k, body)
+        elif isinstance(artist, FrameQuadMesh):
+            _render_framequadmesh(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
             _render_bars(artist, tr, index, k, body)
         elif isinstance(artist, Stem):
@@ -864,25 +867,65 @@ def _render_frameline(art: FrameLine2D, tr, ai, k, body):
     )
 
 
+def _render_framequadmesh(art: FrameQuadMesh, tr, ai, k, body):
+    """Render frame 0 statically; the slider JS swaps ``href`` for other frames.
+
+    Unlike a frame line's ``d``, the image's ``x``/``y``/``width``/``height``
+    never need to be recomputed on scrub: every frame shares one X/Y grid, so
+    only the pixel content -- which frame's colours -- changes.
+    """
+    prims = artist_to_prims(art.frame_mesh(0), tr, ai, k)
+    if not prims:
+        return
+    p = prims[0]
+    uri = png_data_uri(p.rgba)
+    label = _esc(art.label) if art.label else ""
+    body.append(
+        f'<image class="plotpress-series plotpress-framemesh" id="s{ai}_{k}" '
+        f'data-label="{label}" x="{_fmt(p.x)}" y="{_fmt(p.y)}" '
+        f'width="{_fmt(p.w)}" height="{_fmt(p.h)}" preserveAspectRatio="none" '
+        f'style="image-rendering:pixelated" href="{uri}"/>'
+    )
+
+
 def frame_data(fig):
-    """Per-axes slider-frame data: all frames' x/Y for JS to redraw on scrub."""
+    """Per-axes slider-frame data for JS to redraw on scrub: all frames' x/Y
+    for a line, or every frame's rendered image for JS to swap in for a mesh.
+    """
     frames = {}
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar:
             continue
         entries = []
+        tr = None  # built lazily: only a FrameQuadMesh needs it, and every
+                   # frame of one shares an X/Y grid, so once per axes suffices.
         for k, art in enumerate(ax.artists):
-            if not isinstance(art, FrameLine2D):
-                continue
-            shared = art.X.ndim == 1
-            entry = {"id": f"s{i}_{k}", "unit": art.slider_unit,
-                     "shared_x": bool(shared)}
-            if shared:
-                entry["x"] = _round_list(art.X)
-            else:
-                entry["x"] = [_round_list(art.X[f]) for f in range(art.n_frames)]
-            entry["Y"] = [_round_list(art.Y[f]) for f in range(art.n_frames)]
-            entries.append(entry)
+            if isinstance(art, FrameLine2D):
+                shared = art.X.ndim == 1
+                entry = {"id": f"s{i}_{k}", "unit": art.slider_unit,
+                         "shared_x": bool(shared)}
+                if shared:
+                    entry["x"] = _round_list(art.X)
+                else:
+                    entry["x"] = [_round_list(art.X[f]) for f in range(art.n_frames)]
+                entry["Y"] = [_round_list(art.Y[f]) for f in range(art.n_frames)]
+                entries.append(entry)
+            elif isinstance(art, FrameQuadMesh):
+                if tr is None:
+                    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+                    (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+                    px_left, px_top, px_w, px_h = _effective_rect(
+                        ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
+                    xlim_t = (xmax, xmin) if ax._xinverted else (xmin, xmax)
+                    ylim_t = (ymax, ymin) if ax._yinverted else (ymin, ymax)
+                    tr = LinearTransform(xlim_t, ylim_t, (px_left, px_top, px_w, px_h),
+                                         xscale=ax._xscale, yscale=ax._yscale)
+                hrefs = []
+                for f in range(art.n_frames):
+                    mesh_prims = artist_to_prims(art.frame_mesh(f), tr, i, k)
+                    hrefs.append(png_data_uri(mesh_prims[0].rgba) if mesh_prims else "")
+                entries.append({"id": f"s{i}_{k}", "unit": art.slider_unit,
+                                "hrefs": hrefs})
         if entries:
             frames[i] = entries
     return frames

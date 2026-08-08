@@ -70,7 +70,7 @@ def test_method_names_are_a_subset_of_matplotlib():
           if not n.startswith("_") and callable(getattr(spax, n))}
     mpl = {n for n in dir(mpax) if not n.startswith("_")}
     intentional_extras = {
-        "kdeplot", "ecdfplot", "rugplot", "plot_frames",
+        "kdeplot", "ecdfplot", "rugplot", "plot_frames", "pcolormesh_frames",
         # matplotlib puts these on ax.xaxis/ax.yaxis; plotpress has no XAxis/
         # YAxis wrapper objects (flat Axes methods are the whole API), so they
         # live directly on Axes instead.
