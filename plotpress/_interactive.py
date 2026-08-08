@@ -1311,6 +1311,12 @@ _JS_SOURCE = r"""
         if (e.unit !== unit) return;
         var el = document.getElementById(e.id);
         if (!el) return;
+        if (e.hrefs) {
+          // A mesh: every frame shares one X/Y grid, so only the pixel
+          // content changes -- swap the image, not its position.
+          el.setAttribute('href', e.hrefs[f]);
+          return;
+        }
         var xs = e.shared_x ? e.x : e.x[f];
         var ys = e.Y[f], d = '';
         for (var j = 0; j < ys.length; j++) {

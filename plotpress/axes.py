@@ -15,9 +15,9 @@ import numpy as np
 
 from .artists import (
     Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, HLine, Image, Line2D, LineCollection, Pie, PolyCollection,
-    Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span, Stem, Text, Violin,
-    VLine,
+    FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection, Pie,
+    PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
+    Stem, Text, Violin, VLine,
 )
 from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
 from .ticker import log_ticks, nice_ticks
@@ -369,6 +369,47 @@ class Axes:
                         shading=shading)
         self.artists.append(mesh)
         return mesh
+
+    def pcolormesh_frames(self, *args, slider_values=None, slider_label="frame",
+                          shared=True, slider_group=None, cmap="viridis",
+                          norm=None, vmin=None, vmax=None, shading="flat",
+                          label=None, alpha=1.0):
+        """Plot 4-D data as a pcolormesh with a slider over the extra dimension.
+
+        Signatures: ``pcolormesh_frames(C)`` or ``pcolormesh_frames(X, Y, C)``,
+        matching :meth:`pcolormesh` except ``C`` carries a leading frame axis --
+        shape ``(n_frames, ny, nx)`` rather than ``(ny, nx)``. ``X``/``Y`` are
+        shared across every frame; only the color data animates. The colour
+        scale is autoscaled to every frame's data at once, so it stays fixed
+        while scrubbing rather than jumping frame to frame.
+
+        Slider scope and ``slider_values``/``slider_label`` match
+        :meth:`plot_frames` exactly -- see there for ``shared``/``slider_group``.
+        """
+        if len(args) == 1:
+            X = Y = None
+            C = args[0]
+        elif len(args) == 3:
+            X, Y, C = args
+        else:
+            raise TypeError("pcolormesh_frames() takes C or X, Y, C")
+
+        art = FrameQuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
+                            shading=shading, label=label, alpha=alpha)
+        axes_index = self.figure.axes.index(self)
+        if shared:
+            unit, index, is_global, axes_key = "main", None, True, None
+        else:
+            unit = f"ax{axes_index}"
+            index = slider_group if slider_group is not None else unit
+            is_global, axes_key = False, axes_index
+        art.slider_unit = unit
+        self.artists.append(art)
+        self.figure._register_slider(
+            unit, index, art.n_frames, slider_values, slider_label,
+            is_global, axes_key,
+        )
+        return art
 
     def bar(self, x, height, width=0.8, bottom=0.0, color=None, edgecolor=None,
             linewidth=0.8, label=None, alpha=1.0):

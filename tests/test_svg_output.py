@@ -839,6 +839,84 @@ def test_plot_frames_registers_slider_and_embeds_frames():
     assert "plotpress-sliders" not in fig.to_html(interactive=False)
 
 
+def test_pcolormesh_frames_registers_slider_and_embeds_hrefs():
+    from plotpress.svg import frame_data
+
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 1, 6)
+    y = np.linspace(0, 1, 5)
+    X, Y = np.meshgrid(x, y)
+    C = np.stack([np.sin(X + phase) * np.cos(Y) for phase in np.linspace(0, 1, 4)])
+    mesh = ax.pcolormesh_frames(x, y, C, slider_values=range(4), slider_label="t")
+
+    assert set(fig._sliders) == {"main"}
+    assert fig._sliders["main"]["n"] == 4
+    assert fig._sliders["main"]["label"] == "t"
+    assert mesh.n_frames == 4
+
+    frames = frame_data(fig)
+    entry = frames[0][0]
+    assert entry["unit"] == "main"
+    assert len(entry["hrefs"]) == 4
+    assert all(h.startswith("data:image/png;base64,") for h in entry["hrefs"])
+    # Frames genuinely differ -- not the same image four times.
+    assert len(set(entry["hrefs"])) == 4
+
+    html = fig.to_html(interactive=True)
+    assert 'id="plotpress-frames"' in html and 'id="plotpress-sliders"' in html
+    # Static SVG shows frame 0 as an <image>, no slider payload.
+    svg = fig.to_svg()
+    assert "plotpress-framemesh" in svg
+    assert "plotpress-sliders" not in fig.to_html(interactive=False)
+
+
+def test_pcolormesh_frames_shares_one_colour_scale_across_frames():
+    fig, ax = plotpress.subplots()
+    # Frame 0 alone spans [-1, 1]; frame 1 alone spans [-5, 5]. A colour scale
+    # fitted per frame would jump; one fitted to the whole animation must not.
+    C = np.stack([np.array([[-1.0, 1.0]]), np.array([[-5.0, 5.0]])])
+    mesh = ax.pcolormesh_frames(C)
+    assert mesh.norm.vmin == -5.0
+    assert mesh.norm.vmax == 5.0
+    assert mesh.frame_mesh(0).norm.vmin == -5.0
+    assert mesh.frame_mesh(1).norm.vmax == 5.0
+
+
+def test_pcolormesh_frames_rejects_2d_input():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="n_frames"):
+        ax.pcolormesh_frames(np.zeros((4, 4)))  # missing the frame axis
+
+
+def test_pcolormesh_frames_requires_matching_n_frames_with_plot_frames():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot_frames(np.arange(3), np.zeros((5, 3)))       # main, n=5
+    with pytest.raises(ValueError):
+        axes[1].pcolormesh_frames(np.zeros((4, 6, 6)))        # main, n=4 -- mismatch
+
+
+def test_save_gif_animates_pcolormesh_frames(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 1, 8)
+    y = np.linspace(0, 1, 6)
+    X, Y = np.meshgrid(x, y)
+    C = np.stack([np.sin(X + phase) for phase in np.linspace(0, 2, 5)])
+    ax.pcolormesh_frames(x, y, C)
+
+    p = tmp_path / "mesh.gif"
+    fig.save(str(p), fps=5)
+    im = Image.open(str(p))
+    assert im.n_frames == 5
+    im.seek(0)
+    first = np.array(im.convert("RGB"))
+    im.seek(2)
+    later = np.array(im.convert("RGB"))
+    assert not np.array_equal(first, later)
+
+
 def test_shared_false_gives_each_axes_its_own_docked_unit():
     from plotpress.svg import frame_data
 
