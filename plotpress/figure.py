@@ -741,17 +741,19 @@ class Figure:
     def save(self, path: str, interactive: bool = False, scale: int = 2,
              pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
              pick_max_points: int = 20000, fps: int = 10,
-             slider_unit: str = "main"):
+             slider_unit: str = "main", label_frames: bool = True):
         """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``, or ``.gif``.
 
         All formats work with the standard install (PNG is a supersampled
         raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
         ``pick_max_points`` apply only to interactive HTML (see
         :meth:`to_html`). ``.gif`` needs at least one :meth:`Axes.plot_frames`
-        series -- it animates through that series' frames at ``fps``, the
-        same data an interactive HTML slider scrubs through, as a
-        self-contained looping file; ``slider_unit`` picks which slider
-        drives the animation for figures with more than one (see
+        or :meth:`Axes.pcolormesh_frames` series -- it animates through that
+        series' frames at ``fps``, the same data an interactive HTML slider
+        scrubs through, as a self-contained looping file; ``slider_unit``
+        picks which slider drives the animation for figures with more than
+        one, and ``label_frames`` stamps each frame with its slider value
+        since a GIF has no slider to show it on (see
         :func:`plotpress.raster.save_gif`).
         """
         lower = path.lower()
@@ -770,7 +772,8 @@ class Figure:
             return save_pdf(self, path)
         elif lower.endswith(".gif"):
             from .raster import save_gif
-            return save_gif(self, path, fps=fps, scale=scale, slider_unit=slider_unit)
+            return save_gif(self, path, fps=fps, scale=scale,
+                           slider_unit=slider_unit, label_frames=label_frames)
         else:
             raise ValueError(
                 "save() supports .svg/.html/.png/.pdf/.gif (got %r)" % path)
