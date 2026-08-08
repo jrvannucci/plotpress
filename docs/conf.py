@@ -212,13 +212,17 @@ _build_usage_demos()
 
 
 def _plotpress_scraper(block, block_vars, gallery_conf):
-    """Save any new ``plotpress.Figure`` created by an example to a PNG.
+    """Save any new ``plotpress.Figure`` created by an example to an image.
 
     Mirrors sphinx-gallery's matplotlib scraper, but scans the example's globals
     (plotpress has no global figure registry) and rasterizes via the built-in
-    Pillow backend. Examples in :data:`INTERACTIVE_SECTIONS` additionally get a
-    live interactive copy embedded below the static image -- the PNG stays,
-    because sphinx-gallery builds its thumbnails from it.
+    Pillow backend. A figure with a ``plot_frames()`` series saves as an
+    animated GIF instead of a static PNG -- sphinx-gallery's own thumbnailer
+    (``sphinx_gallery.gen_rst.save_thumbnail``) copies a ``.gif`` byte for byte
+    rather than re-encoding it, so both the gallery page's image and its
+    thumbnail play the animation rather than freezing on frame 0. Examples in
+    :data:`INTERACTIVE_SECTIONS` additionally get a live interactive copy
+    embedded below the image.
     """
     from sphinx_gallery.scrapers import figure_rst
 
@@ -230,7 +234,15 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
         if isinstance(value, plotpress.Figure) and id(value) not in seen:
             seen.add(id(value))
             path = next(it)
-            value.save(path, scale=2)      # PNG via plotpress.raster
+            if value._sliders:
+                # image_path_iterator only ever hands out a .png path; swap
+                # the extension so _find_image_ext (and save_thumbnail's
+                # copyfile-for-gif branch) pick up the animation instead.
+                path = os.path.splitext(path)[0] + ".gif"
+                from plotpress.raster import save_gif
+                save_gif(value, path, fps=10, scale=2)
+            else:
+                value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
             if interactive:
                 embeds.append(_interactive_embed(value, path))
