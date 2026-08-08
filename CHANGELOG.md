@@ -76,6 +76,14 @@ is derived from it at build time rather than written down anywhere in the source
   where a line frame is a raw array, and the growth curves diverge
   accordingly (megabyte range by 80 frames at a modest resolution, where the
   equivalent line animation stays in the low hundreds of KiB).
+- **`fig.save(path.gif, label_frames=True)` stamps each frame with its
+  slider value.** A GIF has no slider to read the current value off of, so by
+  default the exported frame now carries a small top-right label (`t = 1.57`,
+  `month = 8`) reusing the slider's own value formatting and `slider_label`.
+  Set `label_frames=False` to opt back out to a bare render. Works the same
+  for both `plot_frames()` line series and `pcolormesh_frames()` meshes,
+  since it's stamped onto the already-rendered raster frame rather than
+  threaded through either artist.
 - **`fig.save(path.gif, fps=10, slider_unit="main")`.** Any
   `Axes.plot_frames()` series now exports to a self-contained looping GIF via
   Pillow, animating through the same frames an interactive HTML slider

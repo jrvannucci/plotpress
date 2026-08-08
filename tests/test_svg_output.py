@@ -181,6 +181,41 @@ def test_save_gif(tmp_path):
     assert not np.array_equal(first, later)    # the sine wave actually moved
 
 
+def test_save_gif_labels_frames_with_the_slider_value(tmp_path):
+    """An exported GIF has no slider to show the current value on, so each
+    frame is stamped with it -- and the stamp changes what a bare frame would
+    render as, since it draws real pixels over the top-right corner."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 2 * np.pi, 40)
+    t = np.linspace(0, 2 * np.pi, 6, endpoint=False)
+    ax.plot_frames(x, np.sin(x[None, :] - t[:, None]), slider_values=t,
+                  slider_label="t")
+    ax.set_ylim(-1.2, 1.2)
+
+    labeled = tmp_path / "labeled.gif"
+    bare = tmp_path / "bare.gif"
+    fig.save(str(labeled), fps=5, label_frames=True)
+    fig.save(str(bare), fps=5, label_frames=False)
+
+    im_labeled = np.array(Image.open(str(labeled)).convert("RGB")).astype(int)
+    im_bare = np.array(Image.open(str(bare)).convert("RGB")).astype(int)
+    assert not np.array_equal(im_labeled, im_bare)
+    # The difference is concentrated in the label corner, not the whole frame
+    # -- the plotted data itself is identical either way. Outside the corner,
+    # the two GIFs still aren't byte-identical: the labeled frame has extra
+    # colors that nudge Pillow's per-file adaptive GIF palette, so a handful
+    # of pixels elsewhere round to a neighboring palette entry. Allow that
+    # quantization noise rather than requiring exact equality.
+    corner_diff = np.abs(im_labeled[:30, -120:] - im_bare[:30, -120:])
+    rest_diff = np.abs(im_labeled[40:, :] - im_bare[40:, :])
+    corner_differs = corner_diff.sum() > 0
+    rest_mostly_matches = (rest_diff.sum(axis=-1) > 0).mean() < 0.01
+    assert corner_differs and rest_mostly_matches
+
+
 def test_save_gif_requires_plot_frames(tmp_path):
     pytest.importorskip("PIL")
     fig, ax = plotpress.subplots()

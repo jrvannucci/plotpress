@@ -141,17 +141,24 @@ def save_png(fig, path, scale=2):
     return path
 
 
-def save_gif(fig, path, fps=10, scale=2, slider_unit="main"):
+def save_gif(fig, path, fps=10, scale=2, slider_unit="main", label_frames=True):
     """Animate a ``plot_frames()`` figure to a looping GIF via Pillow.
 
-    Every ``FrameLine2D`` series registered under ``slider_unit`` (``"main"``,
-    the figure's shared/global slider, by default) is stepped through all of
-    its frames and the results stitched into a looping GIF -- the same data
-    an interactive HTML slider scrubs through, as a self-contained file. A
-    series under a *different* slider unit (an axes-local, non-shared
-    ``plot_frames(..., shared=False)``) stays on its own frame 0 throughout,
-    since only one unit can drive the animation at a time; pass its
-    ``slider_group``/axes unit name to animate that one instead.
+    Every ``FrameLine2D``/``FrameQuadMesh`` series registered under
+    ``slider_unit`` (``"main"``, the figure's shared/global slider, by
+    default) is stepped through all of its frames and the results stitched
+    into a looping GIF -- the same data an interactive HTML slider scrubs
+    through, as a self-contained file. A series under a *different* slider
+    unit (an axes-local, non-shared ``plot_frames(..., shared=False)``) stays
+    on its own frame 0 throughout, since only one unit can drive the
+    animation at a time; pass its ``slider_group``/axes unit name to animate
+    that one instead.
+
+    ``label_frames`` stamps each frame with its slider value in the top-right
+    corner (``"{slider_label} = {value}"``) -- an interactive HTML shows this
+    right next to its slider, and a GIF has no slider to show it on, so
+    without a label an exported frame is anonymous about which one it is.
+    Pass ``False`` for bare frames.
 
     Raises ``ValueError`` if the figure has no ``plot_frames()`` series
     registered under ``slider_unit`` -- there is nothing to animate.
@@ -162,13 +169,33 @@ def save_gif(fig, path, fps=10, scale=2, slider_unit="main"):
             f"no plot_frames() series registered under slider_unit={slider_unit!r}; "
             f"available slider units: {available}"
         )
-    n_frames = fig._sliders[slider_unit]["n"]
-    frames = [figure_to_image(fig, scale=scale, frame=f, animate_unit=slider_unit)
-              for f in range(n_frames)]
+    spec = fig._sliders[slider_unit]
+    frames = []
+    for f in range(spec["n"]):
+        im = figure_to_image(fig, scale=scale, frame=f, animate_unit=slider_unit)
+        if label_frames:
+            _label_frame(im, spec["label"], spec["values"][f])
+        frames.append(im)
     duration_ms = max(1, round(1000.0 / fps))
     frames[0].save(path, format="GIF", save_all=True, append_images=frames[1:],
                    duration=duration_ms, loop=0)
     return path
+
+
+def _label_frame(im, label, value):
+    """Stamp ``label = value`` in the top-right corner, in place."""
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(im)
+    text = f"{label} = {_format_slider_value(value)}"
+    pad = 10
+    _text(draw, im.width - pad, pad, text, (17, 17, 17), _font(13.0, None),
+          ha="right", va="top", outline=(255, 255, 255), stroke=2.5)
+
+
+def _format_slider_value(v):
+    """An integral slider value (a day, a month) reads as ``5``, not ``5.0``."""
+    return str(int(v)) if float(v).is_integer() else f"{v:.3g}"
 
 
 def save_pdf(fig, path):
