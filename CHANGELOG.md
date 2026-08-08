@@ -63,6 +63,21 @@ is derived from it at build time rather than written down anywhere in the source
   panels); every other series holds its frame 0 for that render. Raises
   `ValueError` on a figure with no `plot_frames()` series -- there is
   nothing to animate.
+- **Sixteen GIF-export worked examples**, one in the plot-type reference
+  gallery and one in each of the fifteen real-application fields, each
+  building a genuinely time- or parameter-varying quantity and exporting it
+  with `fig.save(path.gif, ...)`: a duct pulse reflecting off rigid walls
+  (finite-difference wave equation), a morphogen gradient forming by
+  diffusion and degradation, a reaction's UV-vis spectrum crossing its own
+  isosbestic point, a training run's validation loss overfitting live, a
+  hemisphere's seasonal temperature cycle, a week of daily grid load curves,
+  a yield curve un-inverting month by month, a boundary layer diffusing from
+  an impulsively started plate (Stokes' first problem), a control chart and
+  a tensile test and an ECG strip each revealed the way their instruments
+  actually produce them, a Rabi chevron taken apart into its line cuts, a
+  MOSFET's output family swept continuously in gate voltage, a pulsar
+  profile emerging from noise as more pulses are folded, and an airfoil's
+  stall angle creeping outward with Reynolds number.
 - **Per-axes point-picking control.** `Axes.set_pickable(False)` excludes an
   axes from Point Pick/Annotate Point (Span, Zoom and Annotate Free are
   unaffected), so a figure can restrict picking to a single panel.
