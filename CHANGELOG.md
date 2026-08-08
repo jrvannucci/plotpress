@@ -77,7 +77,13 @@ is derived from it at build time rather than written down anywhere in the source
   actually produce them, a Rabi chevron taken apart into its line cuts, a
   MOSFET's output family swept continuously in gate voltage, a pulsar
   profile emerging from noise as more pulses are folded, and an airfoil's
-  stall angle creeping outward with Reynolds number.
+  stall angle creeping outward with Reynolds number. The docs build's own
+  image scraper (`docs/conf.py`) now captures any figure with a
+  `plot_frames()` series as that same animated GIF rather than a frame-0
+  PNG snapshot -- sphinx-gallery copies a `.gif` byte for byte for its
+  thumbnail rather than re-encoding it, so both the gallery page and its
+  thumbnail grid play the animation, not just the sixteen examples' own
+  `fig.save()` calls.
 - **Per-axes point-picking control.** `Axes.set_pickable(False)` excludes an
   axes from Point Pick/Annotate Point (Span, Zoom and Annotate Free are
   unaffected), so a figure can restrict picking to a single panel.
