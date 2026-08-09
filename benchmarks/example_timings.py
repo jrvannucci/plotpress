@@ -94,6 +94,12 @@ def measure():
 
         svg_s, svg = _best(fig.to_svg)
         html_s, html = _best(lambda: fig.to_html(interactive=True))
+        # binary_pick_data=True is the default measured just above; time the
+        # opt-out too, so the docs can show the tradeoff on real figures
+        # rather than only the synthetic payload the feature was prototyped
+        # against.
+        json_s, json_html = _best(
+            lambda: fig.to_html(interactive=True, binary_pick_data=False))
 
         rows.append({
             "name": name[:-3],                     # strip .py
@@ -103,10 +109,13 @@ def measure():
             "svg_kib": _kib(svg),
             "html_ms": html_s * 1e3,
             "html_kib": _kib(html),
+            "json_html_ms": json_s * 1e3,
+            "json_html_kib": _kib(json_html),
         })
         print(f"{name:34s} axes={n_axes:<4d} "
               f"svg={svg_s*1e3:7.1f}ms/{_kib(svg):8.1f}KiB  "
-              f"html={html_s*1e3:7.1f}ms/{_kib(html):8.1f}KiB")
+              f"html(binary)={html_s*1e3:7.1f}ms/{_kib(html):8.1f}KiB  "
+              f"html(json)={json_s*1e3:7.1f}ms/{_kib(json_html):8.1f}KiB")
     return rows
 
 
@@ -169,6 +178,67 @@ def _fmt_kib(kib: float) -> str:
     return f"{kib/1024:.1f} MiB" if kib >= 1024 else f"{kib:.0f} KiB"
 
 
+def write_binary_comparison_rst(rows):
+    """RST for binary vs. JSON pick-data payload, across every example above.
+
+    ``fig.to_html()``'s ``binary_pick_data`` default (base64 float32 bytes
+    instead of JSON number text for long arrays) against the plain-JSON
+    payload it replaces, on the same figures the table above already timed --
+    not just the synthetic mesh payload the feature was originally prototyped
+    and chosen against.
+    """
+    lines = [
+        "Binary vs. JSON pick data",
+        "--------------------------",
+        "",
+        "``fig.to_html()``/``fig.save(...html)`` embed long point-pick arrays"
+        " (mesh ``z`` grids, animated line frames) as base64 float32 bytes by"
+        " default (``binary_pick_data=True``) rather than JSON number text."
+        " Below is every example above, both ways: most are small enough that"
+        " neither the array-length threshold nor the file size difference"
+        " matters: the JSON version is well under a point-pick array's own"
+        " threshold to begin with. It shows up once a mesh or a long series"
+        " does most of the work, which is exactly the ``scale/`` rows.",
+        "",
+        ".. list-table::",
+        "   :header-rows: 1",
+        "   :widths: 30 11 11 11 11 8 8",
+        "",
+        "   * - Example",
+        "     - Binary",
+        "     - Binary size",
+        "     - JSON",
+        "     - JSON size",
+        "     - Size",
+        "     - Time",
+    ]
+    for r in rows:
+        size_ratio = (r["json_html_kib"] / r["html_kib"]
+                      if r["html_kib"] > 0 else 1.0)
+        time_ratio = (r["json_html_ms"] / r["html_ms"]
+                      if r["html_ms"] > 0 else 1.0)
+        lines += [
+            f"   * - :ref:`{r['name']} <{r['ref']}>`",
+            f"     - {r['html_ms']:.1f} ms",
+            f"     - {_fmt_kib(r['html_kib'])}",
+            f"     - {r['json_html_ms']:.1f} ms",
+            f"     - {_fmt_kib(r['json_html_kib'])}",
+            f"     - {size_ratio:.2f}x",
+            f"     - {time_ratio:.2f}x",
+        ]
+    lines += [
+        "",
+        "\"Size\"/\"Time\" are JSON relative to binary -- 2.0x under Size means"
+        " the JSON payload is twice the binary one's size; under Time means it"
+        " took twice as long to build. A ratio near 1.0x on a small figure"
+        " means the encoder found nothing worth switching: every array in it"
+        " was already under the threshold where a base64 wrapper costs more"
+        " than it saves.",
+        "",
+    ]
+    return lines
+
+
 def write_rst(rows, comparison=None):
     lines = [
         "Performance",
@@ -227,6 +297,7 @@ def write_rst(rows, comparison=None):
         " coarser, value.",
         "",
     ]
+    lines += write_binary_comparison_rst(rows)
     with open(OUT_RST, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"\nwrote {OUT_RST}")

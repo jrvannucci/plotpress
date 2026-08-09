@@ -8,10 +8,12 @@ mutable state.
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
 import time
+import warnings
 
 import numpy as np
 
@@ -680,7 +682,7 @@ class Figure:
 
     def to_html(self, interactive: bool = True, wait_extract: bool = False,
                 pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
-                pick_max_points: int = 20000) -> str:
+                pick_max_points: int = 20000, binary_pick_data: bool = True) -> str:
         """Serialize to a self-contained HTML document.
 
         ``pick_precision`` sets the decimal places of the embedded point-pick
@@ -694,6 +696,21 @@ class Figure:
         cap is block-averaged down to it rather than dropped, so a click still
         answers with a real, if coarser, value; a series over the point cap
         falls back to a geometry-only x/y readout.
+
+        ``binary_pick_data`` embeds long numeric arrays (mesh z grids, animated
+        line frames) as base64 float32/float16 bytes instead of JSON number
+        text -- roughly half the size at effectively the same decode speed as
+        JSON, benchmarked against gzip compressing the JSON instead (smaller,
+        but 5-7x slower to decode: ``DecompressionStream`` overhead dominates
+        at these payload sizes). It also restructures the per-axes metadata
+        payload column-wise (one array per field instead of one object per
+        axes), which matters once a figure has hundreds of axes: that
+        payload has no long arrays of its own, so its cost is JSON key names
+        repeated once per axes rather than a big number array -- columnar
+        layout states each key once, and the numeric columns that leaves
+        then get the same binary encoding. Set ``False`` for the exact
+        plain-JSON payload, e.g. to inspect it by hand or diff it against an
+        older plotpress version.
         """
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
@@ -703,10 +720,26 @@ class Figure:
             from ._interactive import INTERACTIVE_JS
             from .svg import axes_metadata, frame_data, pick_data, style_payload
 
-            meta = _json_payload(axes_metadata(self))
-            pick = _json_payload(pick_data(self, max_points=pick_max_points,
-                                           max_mesh_cells=pick_max_mesh_cells,
-                                           precision=pick_precision))
+            pick_dict = pick_data(self, max_points=pick_max_points,
+                                  max_mesh_cells=pick_max_mesh_cells,
+                                  precision=pick_precision)
+            meta_dict = axes_metadata(self)
+            if binary_pick_data:
+                pick_dict = _encode_binary_arrays(pick_dict, precision=pick_precision)
+                # meta has no long arrays of its own to swap for bytes -- its
+                # cost on a many-axes figure is ~25 JSON key names repeated
+                # once per axes instead of once total. Columnarizing states
+                # each key once; the numeric columns that leaves (x/y/w/h/
+                # xmin/xmax/ymin/ymax) then qualify for the same binary
+                # encoding pick data just got. Only "cols" goes through the
+                # encoder -- "index" is a short run of small sequential axes
+                # indices, cheaper as plain JSON text than as a base64-wrapped
+                # buffer, and the client indexes it directly as object keys.
+                meta_dict = _columnarize_meta(meta_dict)
+                meta_dict["cols"] = _encode_binary_arrays(meta_dict["cols"],
+                                                          precision=pick_precision)
+            meta = _json_payload(meta_dict)
+            pick = _json_payload(pick_dict)
             styl = _json_payload(style_payload(self))
             payloads = (
                 f'<script type="application/json" id="plotpress-meta">{meta}</script>'
@@ -714,7 +747,14 @@ class Figure:
                 f'<script type="application/json" id="plotpress-style">{styl}</script>'
             )
             if self._sliders:
-                frames = _json_payload(frame_data(self))
+                frames_dict = frame_data(self)
+                if binary_pick_data:
+                    # frame_data() always rounds to 6 decimals (svg._round_list,
+                    # module-level -- unlike pick_data() it takes no precision
+                    # argument), so the float16 safety check has to match that,
+                    # not whatever pick_precision the caller passed.
+                    frames_dict = _encode_binary_arrays(frames_dict, precision=6)
+                frames = _json_payload(frames_dict)
                 sliders = _json_payload(self._sliders)
                 payloads += (
                     f'<script type="application/json" id="plotpress-frames">{frames}</script>'
@@ -740,20 +780,20 @@ class Figure:
 
     def save(self, path: str, interactive: bool = False, scale: int = 2,
              pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
-             pick_max_points: int = 20000, fps: int = 10,
-             slider_unit: str = "main", label_frames: bool = True):
+             pick_max_points: int = 20000, binary_pick_data: bool = True,
+             fps: int = 10, slider_unit: str = "main", label_frames: bool = True):
         """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``, or ``.gif``.
 
         All formats work with the standard install (PNG is a supersampled
         raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
-        ``pick_max_points`` apply only to interactive HTML (see
-        :meth:`to_html`). ``.gif`` needs at least one :meth:`Axes.plot_frames`
-        or :meth:`Axes.pcolormesh_frames` series -- it animates through that
-        series' frames at ``fps``, the same data an interactive HTML slider
-        scrubs through, as a self-contained looping file; ``slider_unit``
-        picks which slider drives the animation for figures with more than
-        one, and ``label_frames`` stamps each frame with its slider value
-        since a GIF has no slider to show it on (see
+        ``pick_max_points``/``binary_pick_data`` apply only to interactive
+        HTML (see :meth:`to_html`). ``.gif`` needs at least one
+        :meth:`Axes.plot_frames` or :meth:`Axes.pcolormesh_frames` series --
+        it animates through that series' frames at ``fps``, the same data an
+        interactive HTML slider scrubs through, as a self-contained looping
+        file; ``slider_unit`` picks which slider drives the animation for
+        figures with more than one, and ``label_frames`` stamps each frame
+        with its slider value since a GIF has no slider to show it on (see
         :func:`plotpress.raster.save_gif`).
         """
         lower = path.lower()
@@ -761,7 +801,8 @@ class Figure:
             content = self.to_html(interactive=interactive,
                                    pick_precision=pick_precision,
                                    pick_max_mesh_cells=pick_max_mesh_cells,
-                                   pick_max_points=pick_max_points)
+                                   pick_max_points=pick_max_points,
+                                   binary_pick_data=binary_pick_data)
         elif lower.endswith(".svg"):
             content = self.to_svg()
         elif lower.endswith(".png"):
@@ -1044,6 +1085,109 @@ def _sanitize_nan(obj):
         return {k: _sanitize_nan(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_sanitize_nan(v) for v in obj]
+    return obj
+
+
+def _columnarize_meta(meta):
+    """``{axes_index: {field: value, ...}, ...}`` -> one array per field.
+
+    ``axes_metadata()`` has no long arrays of its own -- every field is a
+    single scalar per axes -- so on a figure with hundreds of axes its cost
+    is ~25 JSON key names (``"tick_style"``, ``"secondary_dim"``, ...)
+    repeated in full for every one of them, not a big number array
+    :func:`_encode_binary_arrays` could shrink. Restructuring to one array
+    per field states each key name once total; the client rebuilds the exact
+    original per-axes shape from it (see ``_interactive.py``'s
+    ``expandColumnarMeta``), so nothing downstream that reads
+    ``META[axesIndex].field`` has to change. The axes index itself isn't
+    contiguous (colorbar/3-D/hidden axes are excluded upstream), so it rides
+    along as its own array rather than being assumed to be ``range(n)``.
+    """
+    index = list(meta.keys())
+    if not index:
+        return {"keys": [], "index": [], "cols": {}}
+    keys = list(next(iter(meta.values())).keys())
+    cols = {k: [meta[i][k] for i in index] for k in keys}
+    return {"keys": keys, "index": index, "cols": cols}
+
+
+_BINARY_ARRAY_MIN_LEN = 32  # below this, base64+wrapper overhead loses to plain JSON
+
+
+def _fits_float16(arr, precision):
+    """Whether ``arr`` (float64) survives a float16 round trip losing nothing
+    beyond what rounding to ``precision`` decimals already gave up.
+
+    float16 has ~3 significant decimal digits and overflows past +-65504, so
+    this can't be decided from ``precision`` alone -- a value in the
+    thousands loses digits precision=6 promised to keep, and one past 65504
+    overflows to Infinity outright. Casting down and back and comparing
+    catches both: NaN/+Inf/-Inf must map to themselves exactly (an
+    overflowing finite value shows up as a spurious Infinity here), and every
+    finite value must still match to within half the last decimal place
+    ``precision`` rounded to.
+    """
+    if arr.size == 0:
+        return True
+    nan, posinf, neginf = np.isnan(arr), np.isposinf(arr), np.isneginf(arr)
+    finite = ~(nan | posinf | neginf)
+    # A value past float16's range overflowing to Infinity here is expected
+    # and handled below (it fails the mask comparison, so float32 is used
+    # instead) -- not a bug to warn about on every large-magnitude figure,
+    # which binary_pick_data's default-on status would otherwise do.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        f16_as_f64 = arr.astype(np.float16).astype(np.float64)
+    if not (np.array_equal(np.isnan(f16_as_f64), nan)
+            and np.array_equal(np.isposinf(f16_as_f64), posinf)
+            and np.array_equal(np.isneginf(f16_as_f64), neginf)):
+        return False
+    if not finite.any():
+        return True
+    tol = 0.5 * 10.0 ** -precision
+    return np.allclose(f16_as_f64[finite], arr[finite], atol=tol, rtol=0)
+
+
+def _encode_binary_arrays(obj, precision=6):
+    """Replace long flat number lists with a base64 float16/float32 buffer.
+
+    A mesh z grid or a long line series embeds as JSON number *text*
+    (``"0.707107,0.6,..."``) by default -- verbose, and every value has to be
+    re-parsed digit by digit on the JS side. Swapping those arrays for
+    ``{"__f32__": "<base64>"}`` (or ``{"__f16__": ...}`` where that loses
+    nothing -- see :func:`_fits_float16`) and reinterpreting the bytes
+    client-side benchmarked at roughly half the embedded size and stayed
+    close to ``JSON.parse``-level decode speed, where matching that size with
+    gzip instead cost 5-7x the decode time -- ``DecompressionStream``'s
+    per-call overhead dominates at these payload sizes. See the benchmark
+    this was validated against for the numbers.
+
+    At the library's default ``precision=6``, float16's ~3 significant
+    digits essentially never clears the round-trip check, so this only
+    starts choosing float16 once a caller lowers ``pick_precision`` enough
+    for it to matter -- consistent with what that parameter has always
+    promised: lower precision, smaller file.
+
+    Float32/float16 both natively represent NaN/Infinity, so a masked mesh
+    cell or dropped-out channel survives the round trip without the ``None``
+    substitution :func:`_sanitize_nan` has to do for plain JSON numbers --
+    this only ever touches arrays that go through this encoder, not
+    everything else in the payload, so short arrays keep exact ``_sanitize_nan``
+    behavior.
+    """
+    if isinstance(obj, dict):
+        return {k: _encode_binary_arrays(v, precision) for k, v in obj.items()}
+    if isinstance(obj, list):
+        if (len(obj) >= _BINARY_ARRAY_MIN_LEN
+                and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                        for v in obj)):
+            arr = np.asarray(obj, dtype=np.float64)
+            if _fits_float16(arr, precision):
+                return {"__f16__": base64.b64encode(
+                    arr.astype(np.float16).tobytes()).decode("ascii")}
+            arr32 = arr.astype(np.float32)
+            return {"__f32__": base64.b64encode(arr32.tobytes()).decode("ascii")}
+        return [_encode_binary_arrays(v, precision) for v in obj]
     return obj
 
 

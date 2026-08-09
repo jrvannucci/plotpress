@@ -61,8 +61,73 @@ _JS_SOURCE = r"""
     });
   }
 
+  // IEEE 754 half-precision (float16) -> plain JS number. There's no native
+  // Float16Array yet, so a mesh/series array narrow enough to fit in
+  // float16 (see figure._fits_float16) decodes through this instead of a
+  // free typed-array view.
+  function halfToFloat(h) {
+    var s = (h & 0x8000) ? -1 : 1, e = (h & 0x7C00) >> 10, f = h & 0x03FF;
+    if (e === 0) return s * Math.pow(2, -14) * (f / 1024);
+    if (e === 0x1F) return f ? NaN : s * Infinity;
+    return s * Math.pow(2, e - 15) * (1 + f / 1024);
+  }
+
+  function b64ToBytes(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  // A long numeric array (a mesh z grid, an animated line's per-frame Y)
+  // embeds as {"__f32__": "<base64>"} or {"__f16__": "<base64>"} rather than
+  // JSON number text -- see figure._encode_binary_arrays for why, and which
+  // width. Reverse it in place: a Float32Array indexes and iterates just
+  // like the plain Array it replaces, so nothing downstream needs to know
+  // which one it got.
+  function reviveBinary(obj) {
+    if (obj && typeof obj === 'object') {
+      if (typeof obj.__f32__ === 'string') {
+        return new Float32Array(b64ToBytes(obj.__f32__).buffer);
+      }
+      if (typeof obj.__f16__ === 'string') {
+        var u16 = new Uint16Array(b64ToBytes(obj.__f16__).buffer);
+        var out = new Float32Array(u16.length);
+        for (var h = 0; h < u16.length; h++) out[h] = halfToFloat(u16[h]);
+        return out;
+      }
+      if (Array.isArray(obj)) {
+        for (var j = 0; j < obj.length; j++) obj[j] = reviveBinary(obj[j]);
+      } else {
+        for (var k in obj) obj[k] = reviveBinary(obj[k]);
+      }
+    }
+    return obj;
+  }
+
+  // meta embeds column-wise (one array per field, one key list total) when
+  // binary_pick_data=True -- see figure._columnarize_meta -- or the plain
+  // {axesIndex: {field: value}} shape when it's False. Detect which (a
+  // legitimate per-axes object never has literal "cols"/"index"/"keys"
+  // properties, since axes indices are plain integers) and always return
+  // the latter, so everything downstream keeps reading
+  // META[axesIndex].field exactly as before either way.
+  function expandColumnarMeta(payload) {
+    if (!payload || !payload.cols || !payload.index || !payload.keys) return payload;
+    var out = {};
+    for (var i = 0; i < payload.index.length; i++) {
+      var entry = {};
+      for (var k = 0; k < payload.keys.length; k++) {
+        var key = payload.keys[k];
+        entry[key] = payload.cols[key][i];
+      }
+      out[payload.index[i]] = entry;
+    }
+    return out;
+  }
+
   var metaEl = document.getElementById('plotpress-meta');
-  var META = metaEl ? JSON.parse(metaEl.textContent) : {};
+  var META = metaEl ? expandColumnarMeta(reviveBinary(JSON.parse(metaEl.textContent))) : {};
   var styleEl = document.getElementById('plotpress-style');
   var STYLE = styleEl ? JSON.parse(styleEl.textContent) : {};
 
@@ -287,7 +352,7 @@ _JS_SOURCE = r"""
 
   // ---- point picking (pick mode) ----------------------------------------
   var pickEl = document.getElementById('plotpress-pick');
-  var PICK = pickEl ? JSON.parse(pickEl.textContent) : {};
+  var PICK = pickEl ? reviveBinary(JSON.parse(pickEl.textContent)) : {};
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
 
   // Highest index (most recently added) first, so an axes nested inside a
@@ -1278,7 +1343,7 @@ _JS_SOURCE = r"""
   // so they scrub together on demand.
   var framesEl = document.getElementById('plotpress-frames');
   var unitsEl = document.getElementById('plotpress-sliders');
-  var FRAMES = framesEl ? JSON.parse(framesEl.textContent) : null;
+  var FRAMES = framesEl ? reviveBinary(JSON.parse(framesEl.textContent)) : null;
   var UNITS = unitsEl ? JSON.parse(unitsEl.textContent) : null;
   var LINKS = {};  // connection index -> [slider api]
   if (FRAMES) {

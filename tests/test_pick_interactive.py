@@ -110,6 +110,113 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     assert n == 0, "a click in the margin created %d marker(s)" % n
 
 
+def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
+    """binary_pick_data's float16 tier (chosen only at low enough
+    pick_precision for a bounded-range mesh -- see figure._fits_float16) has
+    no native Float16Array to fall back on if the hand-written JS decode
+    (_interactive.py's halfToFloat) is wrong, so this drives a real click
+    through it end to end rather than trusting the Python-side round-trip
+    check alone. Every case in the main parametrized suite uses the default
+    pick_precision=6, which never selects float16 (see the module docstring
+    for _encode_binary_arrays), so nothing else in this file exercises this
+    path."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    ny, nx = 40, 50
+    rows, cols = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+    Z = np.sin(rows * 0.3) * np.cos(cols * 0.3)   # bounded to [-1, 1]
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.arange(nx + 1, dtype=float), np.arange(ny + 1, dtype=float), Z)
+
+    html = fig.to_html(interactive=True, pick_precision=2)
+    assert '"__f16__"' in html   # sanity: this figure actually exercises the tier
+    path = tmp_path / "float16_mesh.html"
+    path.write_text(html, encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # Select the tool once: re-clicking an already-active toolbar button
+    # toggles it *off* (single-selection toolbar), which _click_mode's
+    # unconditional click would do on every target after the first.
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Point Pick'
+                                  && !b.classList.contains('active')) b.click(); })""")
+
+    for row, col in [(0, 0), (12, 30), (39, 49), (20, 25)]:
+        ux, uy = px(fig, 0, col + 0.5, row + 0.5)
+        markers = page.evaluate(
+            """([ux, uy]) => {
+              document.querySelectorAll('.plotpress-pin').forEach(p => p.remove());
+              const svg = document.getElementById('plotpress-svg');
+              const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+              const c = pt.matrixTransform(svg.getScreenCTM());
+              const el = document.elementFromPoint(c.x, c.y) || svg;
+              el.dispatchEvent(new MouseEvent('click', {
+                bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+              return window.plotpressGetMarkers();
+            }""", [ux, uy])
+        assert len(markers) == 1, "click at cell (%d, %d) made %d marker(s)" % (
+            row, col, len(markers))
+        got = markers[0]["z"]
+        expected = round(float(Z[row, col]), 2)
+        assert got == pytest.approx(expected, abs=0.01), (
+            "cell (%d, %d): expected z~=%.2f, got %r" % (row, col, expected, got))
+
+
+def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
+    """binary_pick_data's meta payload embeds column-wise on a many-axes
+    figure (see figure._columnarize_meta) and the client rebuilds
+    META[axesIndex] from it -- a bug there (an off-by-one from the excluded
+    hidden axes, say) would misroute a click to the wrong axes' limits, not
+    just report a slightly-off value, so this checks a late axes past a gap
+    in the surviving indices reports both its own axes index and the right
+    datum, not a neighbor's."""
+    import plotpress
+    from pick_cases import px
+
+    fig, axes = plotpress.subplots(6, 6)   # 36 axes: crosses the columnar/
+    flat = axes.ravel()                    # binary-array thresholds too
+    for i, ax in enumerate(flat):
+        ax.plot([0.0, 1.0], [0.0, float(i)])
+    flat[15].set_visible(False)            # gap in the surviving indices
+
+    html = fig.to_html(interactive=True)
+    assert '"cols"' in html   # sanity: this figure actually exercises it
+    path = tmp_path / "many_axes_gap.html"
+    path.write_text(html, encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # Select the tool once: re-clicking an already-active toolbar button
+    # toggles it *off* (single-selection toolbar).
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Point Pick'
+                                  && !b.classList.contains('active')) b.click(); })""")
+
+    for target_i in (30, 3):   # well past the gap, and well before it
+        ux, uy = px(fig, target_i, 1.0, float(target_i))
+        markers = page.evaluate(
+            """([ux, uy]) => {
+              document.querySelectorAll('.plotpress-pin').forEach(p => p.remove());
+              const svg = document.getElementById('plotpress-svg');
+              const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+              const c = pt.matrixTransform(svg.getScreenCTM());
+              const el = document.elementFromPoint(c.x, c.y) || svg;
+              el.dispatchEvent(new MouseEvent('click', {
+                bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+              return window.plotpressGetMarkers();
+            }""", [ux, uy])
+        assert len(markers) == 1, "axes %d: click made %d marker(s)" % (
+            target_i, len(markers))
+        got = markers[0]
+        assert got["axes"] == target_i, (
+            "axes %d: marker reports axes %r (wrong axes -> stale/misaligned "
+            "meta reconstruction)" % (target_i, got["axes"]))
+        assert got["y"] == pytest.approx(float(target_i), abs=1e-3)
+
+
 def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
     """Regression: toCSV() joined fields with a bare comma/newline and no
     RFC 4180 quoting -- a value containing one (annotation text, axes_title,

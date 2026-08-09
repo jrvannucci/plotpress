@@ -196,7 +196,9 @@ def test_2d_axes_still_get_interactive_metadata_alongside_3d():
 
 def test_interactive_html_zoom_is_a_noop_over_3d_axes():
     """End-to-end: the exported HTML's own toolbar has nothing to act on for
-    the 3-D panel (no 'zoom<i>' element key present in its metadata)."""
+    the 3-D panel (no axes entries at all in its metadata, once decoded back
+    from the wire shape -- see _interactive.py's expandColumnarMeta)."""
+    import json
     import re
 
     fig, ax = plotpress.subplots(projection="3d")
@@ -205,4 +207,8 @@ def test_interactive_html_zoom_is_a_noop_over_3d_axes():
     html = fig.to_html(interactive=True)
     meta_json = re.search(
         r'id="plotpress-meta">(.*?)</script>', html, re.S).group(1)
-    assert meta_json.strip() == "{}"
+    payload = json.loads(meta_json)
+    if isinstance(payload, dict) and {"keys", "index", "cols"} <= payload.keys():
+        assert payload["index"] == []
+    else:
+        assert payload == {}

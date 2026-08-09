@@ -54,6 +54,51 @@ is derived from it at build time rather than written down anywhere in the source
 
 ### Added
 
+- **`fig.to_html(binary_pick_data=True)` / `fig.save(...html, binary_pick_data=True)`.**
+  Long embedded point-pick arrays (mesh `z` grids, animated line frames) now
+  encode as base64 float32 bytes instead of JSON number text, on by default.
+  Benchmarked against gzip-compressing the JSON instead (also smaller, but
+  5-7x slower to decode client-side -- `DecompressionStream`'s per-call
+  overhead dominates at these payload sizes) and against the plain-JSON
+  payload it replaces across every example in the plot-type and large-scale
+  galleries (see `docs/performance.rst`'s "Binary vs. JSON pick data"
+  section): roughly half the size on mesh- or line-heavy figures, at
+  JS-decode speed close to `JSON.parse`, and *faster* to build server-side
+  too (`base64.b64encode(arr.tobytes())` beats formatting tens of thousands
+  of floats as JSON text). Float32 also represents `NaN`/`Infinity`
+  natively, so a masked mesh cell survives the round trip without
+  `_sanitize_nan`'s `None` substitution. Short arrays (below a length where
+  the base64 wrapper would cost more than it saves) are left as plain JSON,
+  unaffected either way. Set `binary_pick_data=False` for the exact old
+  payload -- e.g. to hand-inspect it or diff against an older plotpress
+  version.
+
+  An array also drops to float16 (half the float32 size again) wherever a
+  round trip through it loses nothing beyond what `pick_precision` already
+  rounded away, checked per array rather than inferred from the precision
+  number alone -- a value past float16's +-65504 range or finer than its
+  ~3 significant digits falls back to float32 automatically, so lowering
+  `pick_precision` on out-of-range data can't silently corrupt it into
+  `Infinity`. At the library's default `pick_precision=6` this essentially
+  never qualifies (float16 can't hold 6 decimal digits of fidelity), so
+  `pick_precision` now does what it always documented -- lower it, get a
+  smaller file -- instead of being inert once an array was already large
+  enough to binary-encode.
+
+  `binary_pick_data=True` also restructures the embedded per-axes metadata
+  column-wise (one array per field instead of one object per axes). That
+  payload has no long arrays of its own -- every field is a single scalar
+  per axes -- so on a many-axes figure its cost was ~25 JSON key names
+  (`"tick_style"`, `"secondary_dim"`, ...) repeated in full for every axes
+  rather than a big number array the encoding above could shrink. Stating
+  each key once cuts it roughly in half on its own (measured 0.43-0.48x
+  across a 500- and a 900-axes figure); the numeric columns that leaves
+  (`x`/`y`/`w`/`h`/`xmin`/`xmax`/`ymin`/`ymax`) then qualify for the same
+  binary encoding, compounding it further. The axes index itself (not
+  necessarily contiguous -- a colorbar, 3-D, or hidden axes is excluded
+  from this payload wherever it sits) rides along as its own plain-JSON
+  array rather than through the encoder, since a short run of small
+  sequential integers is cheaper as JSON text than base64.
 - **`Axes.pcolormesh_frames(X, Y, C, ...)`.** The mesh counterpart of
   `plot_frames()`: `C` carries a leading frame axis, `X`/`Y` stay shared
   across every frame, and a `FrameQuadMesh` artist animates it through the

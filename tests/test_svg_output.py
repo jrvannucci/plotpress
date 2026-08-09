@@ -1,5 +1,6 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
+import base64
 import json
 import math
 import re
@@ -538,8 +539,7 @@ def test_axes_metadata_zlabel_from_shared_colorbar_reaches_every_parent():
 
     # And the fully-embedded interactive payload must agree.
     html = fig.to_html(interactive=True)
-    m = re.search(r'id="plotpress-meta">(.*?)</script>', html, re.S)
-    payload = json.loads(m.group(1))
+    payload = _meta_from_html(html)
     for i in range(3):
         assert payload[str(i)]["zlabel"] == "temperature (degC)"
 
@@ -569,8 +569,7 @@ def test_axes_metadata_carries_tick_style_overrides():
     # And the embedded interactive payload must carry the same overrides, so
     # the client's pan/zoom tick-rebuild can reproduce them.
     html = fig.to_html(interactive=True)
-    m = re.search(r'id="plotpress-meta">(.*?)</script>', html, re.S)
-    payload = json.loads(m.group(1))
+    payload = _meta_from_html(html)
     assert payload["0"]["tick_style"]["x"] == {"spine_color": "#d62728", "tick_label_size": 14}
 
 
@@ -683,6 +682,252 @@ def test_interactive_html_pick_payload_survives_nan_and_inf():
         start = html.index('id="%s">' % pid) + len('id="%s">' % pid)
         end = html.index("</script>", start)
         json.loads(html[start:end], parse_constant=_reject_bare_constant)
+
+
+def _extract_script_json(html, script_id):
+    start = html.index('id="%s">' % script_id) + len('id="%s">' % script_id)
+    end = html.index("</script>", start)
+    return html[start:end]
+
+
+def _revive_binary(obj):
+    """Python mirror of ``_interactive.py``'s ``reviveBinary``, for tests that
+    need to assert on decoded values rather than just presence of a marker."""
+    if isinstance(obj, dict):
+        if set(obj) == {"__f32__"}:
+            return _decode_f32(obj).tolist()
+        if set(obj) == {"__f16__"}:
+            return np.frombuffer(base64.b64decode(obj["__f16__"]),
+                                 dtype=np.float16).astype(float).tolist()
+        return {k: _revive_binary(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_revive_binary(v) for v in obj]
+    return obj
+
+
+def _meta_from_html(html):
+    """The embedded ``plotpress-meta`` payload, decoded back to its logical
+    ``{axes_index: {field: value}}`` shape regardless of whether
+    ``binary_pick_data`` sent it column-wise (and any numeric column further
+    binary-encoded) -- mirrors ``_interactive.py``'s ``expandColumnarMeta`` +
+    ``reviveBinary`` so meta-content tests can assert on the actual default
+    payload rather than opting out of it."""
+    payload = json.loads(_extract_script_json(html, "plotpress-meta"))
+    if isinstance(payload, dict) and {"keys", "index", "cols"} <= payload.keys():
+        cols = _revive_binary(payload["cols"])
+        return {str(idx): {k: cols[k][i] for k in payload["keys"]}
+                for i, idx in enumerate(payload["index"])}
+    return payload
+
+
+def _decode_f32(marker):
+    return np.frombuffer(base64.b64decode(marker["__f32__"]), dtype=np.float32)
+
+
+def _big_mesh_fig():
+    g = np.linspace(-3, 3, 200)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(X) * np.cos(Y)
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+    return fig
+
+
+def test_binary_pick_data_is_default_and_shrinks_mesh_payload():
+    """A large mesh's pick payload embeds as base64 float32 bytes by default
+    -- roughly half the size of JSON number text, at close to JSON.parse's own
+    decode speed, benchmarked against gzip-compressing the JSON instead (also
+    smaller, but 5-7x slower to decode: DecompressionStream's overhead
+    dominates at these payload sizes, so it isn't what this defaults to)."""
+    from plotpress.svg import pick_data
+
+    fig = _big_mesh_fig()
+    binary_html = fig.to_html(interactive=True)                       # default
+    plain_html = fig.to_html(interactive=True, binary_pick_data=False)
+    assert len(binary_html) < len(plain_html)
+
+    pick = json.loads(_extract_script_json(binary_html, "plotpress-pick"))
+    z_marker = pick["0"]["meshes"][0]["z"]
+    assert isinstance(z_marker, dict) and set(z_marker) == {"__f32__"}
+
+    expected = np.asarray(pick_data(fig)[0]["meshes"][0]["z"], dtype=np.float32)
+    assert np.allclose(_decode_f32(z_marker), expected, atol=1e-5)
+
+
+def test_binary_pick_data_false_matches_plain_json_structure():
+    """Opting out reproduces exactly pick_data()'s own plain-list shape, with
+    no __f32__ markers anywhere -- for hand inspection or diffing against an
+    older plotpress version."""
+    from plotpress.svg import pick_data
+
+    fig = _big_mesh_fig()
+    html = fig.to_html(interactive=True, binary_pick_data=False)
+    pick_json = _extract_script_json(html, "plotpress-pick")
+    pick = json.loads(pick_json)
+    assert pick["0"]["meshes"][0]["z"] == pick_data(fig)[0]["meshes"][0]["z"]
+    # The JS decoder's own source (always embedded) mentions "__f32__" too --
+    # what matters is that the *pick payload itself* carries no markers.
+    assert "__f32__" not in pick_json
+
+
+def test_binary_pick_data_skips_short_arrays():
+    """A handful of numbers (extent, shape) costs more as a base64-wrapped
+    buffer -- the wrapper itself -- than as plain JSON text, so only arrays at
+    or above the size where binary actually wins get encoded."""
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.linspace(0, 1, 16).reshape(4, 4))
+    html = fig.to_html(interactive=True)
+    pick = json.loads(_extract_script_json(html, "plotpress-pick"))
+    mesh = pick["0"]["meshes"][0]
+    assert isinstance(mesh["extent"], list)
+    assert isinstance(mesh["shape"], list)
+    assert isinstance(mesh["z"], list)   # 16 cells: also below the threshold
+
+
+def test_binary_pick_data_preserves_nan_and_inf():
+    """Float32 represents NaN/Infinity natively, so a masked cell in a large
+    mesh survives the binary round trip instead of going through
+    _sanitize_nan's None substitution -- and the surrounding JSON (a base64
+    string) stays valid either way."""
+    g = np.linspace(-3, 3, 200)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(X) * np.cos(Y)
+    Z[0, 0] = float("nan")
+    Z[5, 5] = float("inf")
+    Z[9, 9] = float("-inf")
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+
+    html = fig.to_html(interactive=True)   # must not raise, must stay valid JSON
+    pick = json.loads(_extract_script_json(html, "plotpress-pick"))
+    decoded = _decode_f32(pick["0"]["meshes"][0]["z"])
+    assert np.isnan(decoded).any()
+    assert np.isposinf(decoded).any()
+    assert np.isneginf(decoded).any()
+
+
+def test_save_html_binary_pick_data_flag(tmp_path):
+    fig = _big_mesh_fig()
+    binary_path = tmp_path / "binary.html"
+    plain_path = tmp_path / "plain.html"
+    fig.save(str(binary_path), interactive=True)
+    fig.save(str(plain_path), interactive=True, binary_pick_data=False)
+    assert binary_path.stat().st_size < plain_path.stat().st_size
+
+
+def test_binary_pick_data_uses_float16_at_low_precision_for_bounded_data():
+    """pick_precision has always promised 'lower it, get a smaller file' --
+    but float32 is a fixed 4 bytes/value regardless of how many decimals were
+    rounded off, so a bounded-range mesh (here in [-1, 1]) at low enough
+    precision for float16's ~3 significant digits to lose nothing further
+    should drop to the 2-byte encoding instead, honoring that promise again."""
+    g = np.linspace(-3, 3, 200)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(X) * np.cos(Y)          # bounded to [-1, 1]
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+
+    html2 = fig.to_html(interactive=True, pick_precision=2)
+    html6 = fig.to_html(interactive=True, pick_precision=6)
+    pick2 = json.loads(_extract_script_json(html2, "plotpress-pick"))
+    pick6 = json.loads(_extract_script_json(html6, "plotpress-pick"))
+    z2 = pick2["0"]["meshes"][0]["z"]
+    z6 = pick6["0"]["meshes"][0]["z"]
+
+    assert set(z2) == {"__f16__"}
+    assert set(z6) == {"__f32__"}   # too fine for float16 -- see the module docstring
+    assert len(html2) < len(html6)
+
+    from plotpress.svg import pick_data
+    expected = np.asarray(pick_data(fig, precision=2)[0]["meshes"][0]["z"])
+    got = np.frombuffer(base64.b64decode(z2["__f16__"]), dtype=np.float16).astype(np.float64)
+    assert np.allclose(got, expected, atol=0.005)
+
+
+def test_binary_pick_data_float16_skips_out_of_range_values():
+    """A value past float16's ~65504 ceiling must never be silently encoded
+    as one -- it would overflow to Infinity and corrupt the readout. Even at
+    pick_precision=0 (as coarse as it gets), a mesh with large-magnitude
+    values has to stay on float32."""
+    g = np.linspace(-3, 3, 200)
+    X, Y = np.meshgrid(g, g)
+    Z = (np.sin(X) * np.cos(Y)) * 200000.0   # peaks near +-200000, past float16
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+
+    html = fig.to_html(interactive=True, pick_precision=0)
+    pick = json.loads(_extract_script_json(html, "plotpress-pick"))
+    assert set(pick["0"]["meshes"][0]["z"]) == {"__f32__"}
+
+
+def test_binary_pick_data_float16_preserves_nan_and_inf():
+    g = np.linspace(-3, 3, 200)
+    X, Y = np.meshgrid(g, g)
+    Z = np.sin(X) * np.cos(Y)
+    Z[0, 0] = float("nan")
+    Z[5, 5] = float("inf")
+    Z[9, 9] = float("-inf")
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(g, g, Z)
+
+    html = fig.to_html(interactive=True, pick_precision=2)
+    pick = json.loads(_extract_script_json(html, "plotpress-pick"))
+    z_marker = pick["0"]["meshes"][0]["z"]
+    assert set(z_marker) == {"__f16__"}
+    decoded = np.frombuffer(base64.b64decode(z_marker["__f16__"]), dtype=np.float16)
+    assert np.isnan(decoded).any()
+    assert np.isposinf(decoded.astype(np.float64)).any()
+    assert np.isneginf(decoded.astype(np.float64)).any()
+
+
+def test_columnar_meta_is_default_and_shrinks_many_axes_payload():
+    """A many-axes figure's meta has no long arrays of its own -- its cost is
+    ~25 JSON key names repeated once per axes rather than a big number array
+    -- so it needs its own structural fix distinct from _encode_binary_arrays,
+    gated by the same binary_pick_data flag. See figure._columnarize_meta."""
+    fig, axes = plotpress.subplots(6, 6)   # 36 axes: enough to cross both
+    for ax in axes.ravel():                # the columnar AND binary-array
+        ax.plot([0, 1], [0, 1])            # thresholds for its numeric columns
+
+    binary_html = fig.to_html(interactive=True)                       # default
+    plain_html = fig.to_html(interactive=True, binary_pick_data=False)
+    binary_meta = _extract_script_json(binary_html, "plotpress-meta")
+    plain_meta = _extract_script_json(plain_html, "plotpress-meta")
+    assert len(binary_meta) < len(plain_meta)
+
+    payload = json.loads(binary_meta)
+    assert {"keys", "index", "cols"} <= payload.keys()
+    assert payload["index"] == list(range(36))
+    assert isinstance(payload["cols"]["x"], dict)   # 36 values: binary-encoded too
+
+
+def test_columnar_meta_round_trips_exactly_including_excluded_axes():
+    """Decoding the embedded (columnar, binary-numeric) meta payload must
+    reproduce exactly what axes_metadata() itself computed -- including a
+    gap in the surviving indices, since a hidden (or colorbar, or 3-D) axes
+    is excluded from meta wherever it sits in fig.axes, which
+    _columnarize_meta's own "index rides along as its own array" handling
+    exists for."""
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(3, 4)
+    for i, ax in enumerate(axes.ravel()):
+        ax.plot([0, i + 1], [i, 0])
+    axes.ravel()[5].set_visible(False)   # a gap in the middle of the index run
+
+    expected = axes_metadata(fig)
+    html = fig.to_html(interactive=True)
+    got = _meta_from_html(html)
+
+    assert set(got.keys()) == {str(i) for i in expected.keys()}
+    numeric_fields = {"x", "y", "w", "h", "xmin", "xmax", "ymin", "ymax"}
+    for i, exp_entry in expected.items():
+        got_entry = got[str(i)]
+        for field, exp_val in exp_entry.items():
+            if field in numeric_fields:
+                assert got_entry[field] == pytest.approx(exp_val, abs=0.01), field
+            else:
+                assert got_entry[field] == exp_val, field
 
 
 def test_pick_data_includes_z_c_and_extra_dims():
