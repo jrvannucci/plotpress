@@ -2,7 +2,7 @@
 The Rabi chevron, one detuning at a time
 ============================================
 
-:doc:`plot_06_qubit_chevron` draws the full chevron as a single 2-D map,
+:doc:`plot_01_qubit_chevron` draws the full chevron as a single 2-D map,
 population against both drive detuning and pulse duration at once. This is
 the same data taken apart into its individual line cuts and animated across
 detuning -- the way a Rabi calibration is actually acquired, one detuning's

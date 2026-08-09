@@ -14,7 +14,7 @@ A purity decay visibly slower than the fidelity decay -- exactly the gap
 plotted here -- is the standard diagnostic that a gate set's error budget is
 dominated by coherent miscalibration (an amplitude or phase left slightly
 wrong) rather than genuine decoherence, and is worth chasing with
-:doc:`plot_22_drag_calibration`-style recalibration rather than accepted as
+:doc:`../quantum_gate_calibration/plot_04_drag_calibration`-style recalibration rather than accepted as
 a hardware limit.
 """
 import numpy as np

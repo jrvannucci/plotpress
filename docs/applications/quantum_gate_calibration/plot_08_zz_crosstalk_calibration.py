@@ -15,7 +15,7 @@ gate is being applied to them or not.
 The rate is genuinely signed -- it is a shift of one qubit's frequency
 conditioned on the other's state, positive or negative depending on which
 exchange path dominates -- so, as with the driven cross-resonance rate in
-:doc:`plot_18_cross_resonance_zx_map`, a diverging colormap centered on zero
+:doc:`plot_02_cross_resonance_zx_map`, a diverging colormap centered on zero
 is the only choice that puts the operating point the measurement exists to
 find at a fixed, recognizable color.
 """

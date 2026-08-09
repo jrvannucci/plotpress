@@ -3,7 +3,7 @@ Animated meshes across a subplot grid
 =========================================
 
 ``ax.pcolormesh_frames(x, y, C)`` is the mesh counterpart of
-:doc:`plot_37_plot_frames`: ``C`` carries a leading frame axis, ``x``/``y``
+:doc:`plot_01_plot_frames`: ``C`` carries a leading frame axis, ``x``/``y``
 stay shared across every frame, and the whole animation exports with
 ``fig.save(path, fps=...)`` exactly the same way. This example puts four
 animated panels on one figure to exercise the same slider-scope rules

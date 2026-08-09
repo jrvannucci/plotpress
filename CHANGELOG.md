@@ -324,6 +324,19 @@ is derived from it at build time rather than written down anywhere in the source
 - Annotate is now two separate tools instead of one: **Annotate Point** locks
   a note to the nearest pickable datum, and **Annotate Free** drops it
   anywhere on the figure in figure-fraction coordinates.
+- **Both plot-type reference sections split by subject rather than left as one
+  long flat list.** The quantum devices field's 52 examples are now five
+  fields -- spectroscopy, readout and device maps, coherence and noise, gate
+  calibration, and benchmarking -- since sphinx-gallery only nests one level
+  of subsection per gallery root, so they sit as siblings of the other
+  application fields rather than nested under a single "quantum" page. The
+  plot-type reference gallery's 37 flat examples are now five subsections
+  (pairwise data, statistical distributions, gridded data, multi-axes layout
+  and annotation, animation), alongside the feature-demonstration subsections
+  that already existed (axes & figure manipulation, secondary/inset axes,
+  polar, 3-D, signal processing, seaborn, limitations). `benchmarks/
+  example_timings.py` and `docs/performance.rst` were updated for the new
+  subsection paths.
 
 ## [0.1.0] - 2026-07-26
 

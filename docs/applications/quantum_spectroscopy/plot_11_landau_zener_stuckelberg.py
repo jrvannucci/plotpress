@@ -15,7 +15,7 @@ number of drive quanta, ``eps0 = n fd``, each an ``n``-photon-assisted
 Landau-Zener transition. Its coupling strength is not fixed but breathes with
 drive amplitude as ``J_n(A / fd)``, the Bessel-function sideband weight from
 Floquet theory (the same function that sets the ladder brightness in
-:doc:`plot_42_floquet_sideband_spectroscopy`). Every zero of that Bessel
+:doc:`plot_09_floquet_sideband_spectroscopy`). Every zero of that Bessel
 function extinguishes its resonance locally, and it is exactly those zeros,
 threaded across every stripe at once, that carve the characteristic diamond
 lattice out of an otherwise uniform fan of resonance lines.

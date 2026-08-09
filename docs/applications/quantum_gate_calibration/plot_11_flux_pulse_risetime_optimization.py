@@ -5,7 +5,7 @@ Flux-pulse rise-time optimization for a CZ gate
 Diabatic leakage into ``|0,2>`` at the end of a flux pulse's ramp, swept
 over the ramp's rise time and its target amplitude -- the tune-up that
 shapes a CZ flux pulse once the operating point itself
-(:doc:`plot_24_cz_avoided_crossing_chevron`) is already known. Landau-Zener
+(:doc:`plot_06_cz_avoided_crossing_chevron`) is already known. Landau-Zener
 theory says the leakage left behind by sweeping through an avoided crossing
 falls off exponentially in the *sweep rate*, amplitude divided by rise time
 -- so the same target amplitude leaks less the more slowly it is

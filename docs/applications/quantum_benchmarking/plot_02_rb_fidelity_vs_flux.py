@@ -5,12 +5,12 @@ Single-qubit RB fidelity across the flux-tuning range
 Randomized-benchmarking sequence fidelity, swept over Clifford sequence
 length and the qubit's flux bias -- connecting gate fidelity directly to the
 same flux-noise sensitivity that limits coherence away from the sweet spot
-(:doc:`plot_14_ramsey_dephasing_vs_flux`). Fidelity still decays
+(:doc:`../quantum_coherence_noise/plot_04_ramsey_dephasing_vs_flux`). Fidelity still decays
 exponentially in sequence length at every flux point, so the decay rate
 alone is what changes: steepest away from the sweet spot, where flux noise
 dephases each gate a little more, and shallowest at ``Phi = 0``. Plotting
 the survival probability *above* its random-circuit asymptote on a log
-color scale -- the same convention :doc:`plot_11_randomized_benchmarking`
+color scale -- the same convention :doc:`plot_01_randomized_benchmarking`
 uses for its own decay curves -- is what keeps the whole family of
 straight-ish lines legible across two decades at once instead of flattening
 them all into the same-looking curve near the bottom of a linear scale.

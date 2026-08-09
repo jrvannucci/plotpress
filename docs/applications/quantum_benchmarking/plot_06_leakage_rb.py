@@ -14,7 +14,7 @@ and saturates, since ``|2>`` is nearly a trap once reached, while ordinary
 population continues decaying toward its random-circuit floor. Seeing the
 leakage curve saturate well *before* the survival curve reaches its own
 floor is what tells a calibration engineer to revisit
-:doc:`plot_22_drag_calibration` rather than just accept the survival
+:doc:`../quantum_gate_calibration/plot_04_drag_calibration` rather than just accept the survival
 curve's fitted error rate at face value.
 """
 import numpy as np

@@ -5,7 +5,7 @@ IQ mixer calibration: suppressing the image sideband
 Image (unwanted) sideband power relative to the desired one, swept over the
 amplitude and phase correction applied to the I and Q baseband tones before
 upconversion -- the second half of IQ mixer calibration, run after LO
-leakage is already nulled (:doc:`plot_32_iq_mixer_lo_leakage`). A perfectly
+leakage is already nulled (:doc:`plot_08_iq_mixer_lo_leakage`). A perfectly
 balanced mixer needs equal I/Q amplitude and an exact 90-degree phase
 relationship to cancel the unwanted sideband through destructive
 interference; any gain or phase imbalance leaves a residual image tone at

@@ -4,7 +4,7 @@ Ramsey dephasing across the flux-tuning range
 
 A fixed-frequency Ramsey sequence run at every point along a flux-tunable
 transmon's tuning curve, rather than at one flux bias with detuning swept in
-software (compare :doc:`plot_13_ramsey_chevron`). The qubit is driven at a
+software (compare :doc:`plot_03_ramsey_chevron`). The qubit is driven at a
 constant frequency set exactly on resonance at the flux sweet spot; moving
 away from it detunes the qubit from that fixed drive at the same time as flux
 noise starts dephasing it, since both effects are driven by the same

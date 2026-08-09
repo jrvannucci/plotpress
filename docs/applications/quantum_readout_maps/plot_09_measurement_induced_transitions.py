@@ -6,14 +6,14 @@ Probability that a qubit is kicked out of its computational subspace during
 its own dispersive readout, swept over readout drive power and the
 measurement's duration -- the tune-up that sets an upper bound on readout
 power well before dispersive-approximation validity or resonator punch-out
-(:doc:`plot_05_resonator_punchout`) would otherwise suggest. Above a
+(:doc:`../quantum_spectroscopy/plot_05_resonator_punchout`) would otherwise suggest. Above a
 critical photon number the resonator-qubit system can be driven through a
 chain of avoided crossings with higher transmon levels, kicking the qubit
 out of ``|0>``/``|1>`` altogether; below it, transitions are rare no matter
 how long the measurement runs. That threshold shape -- rare below a critical
 power, common above it, and needing some exposure time to manifest even then
 -- is why operating power is chosen with real margin below where naive SNR
-optimization (:doc:`plot_20_readout_fidelity_optimization`) alone would
+optimization (:doc:`plot_05_readout_fidelity_optimization`) alone would
 place it.
 """
 import numpy as np

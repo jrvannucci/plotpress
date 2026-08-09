@@ -6,7 +6,7 @@ Population transferred from ``|1,1>`` into the leakage level ``|0,2>``,
 swept over the detuning of a tunable coupler and the interaction time -- the
 calibration map for a controlled-phase gate built on this avoided crossing
 between two-*qubit* levels, rather than a single qubit's own drive detuning
-(compare :doc:`plot_06_qubit_chevron`). Bringing ``|1,1>`` and ``|0,2>`` into
+(compare :doc:`plot_01_qubit_chevron`). Bringing ``|1,1>`` and ``|0,2>`` into
 resonance and back once around this crossing accumulates the conditional
 phase a CZ gate needs; the coupler detuning and gate time that do that with
 the *least* residual population left behind in ``|0,2>`` -- reading as the

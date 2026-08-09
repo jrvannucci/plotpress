@@ -26,11 +26,13 @@ import plotpress  # noqa: E402
 from benchmarks import scenarios  # noqa: E402
 
 EX_DIR = os.path.join(ROOT, "docs", "examples")
-# The timings cover the plot-type reference plus the large-scale gallery, which
-# now lives in its own tree. The reference's other subsections (signal, polar,
-# 3-D, ...) are deliberately left out -- they would treble the runtime without
-# adding a distinct shape of figure -- while "scale" holds the stress cases the
-# table exists for.
+# The plot-type reference itself now lives one level down, split by chart
+# family (pairwise data, distributions, gridded data, multi-axes layout,
+# animation) rather than sitting flat in EX_DIR. Its other subsections
+# (axes_features, polar, 3-D, ...) are deliberately left out -- they would
+# treble the runtime without adding a distinct shape of figure -- while
+# "scale" holds the stress cases the table exists for.
+EX_SUBDIRS = ["pairwise", "distributions", "gridded_data", "multi_axes", "animation"]
 SCALE_DIR = os.path.join(ROOT, "docs", "scale")
 OUT_RST = os.path.join(ROOT, "docs", "performance.rst")
 REPEAT = 5
@@ -80,7 +82,9 @@ def measure():
                       for f in os.listdir(directory)
                       if f.startswith("plot_") and f.endswith(".py"))
 
-    names = _examples(EX_DIR, "", "examples")
+    names = []
+    for sub in EX_SUBDIRS:
+        names += _examples(os.path.join(EX_DIR, sub), f"{sub}/", f"examples_{sub}")
     names += _examples(SCALE_DIR, "scale/", "scale")
 
     for name, path, gallery in names:

@@ -15,7 +15,7 @@ interference makes the critical current itself periodic in flux,
 scalloped switching-probability boundary here rather than a flat line.
 
 The quantity being plotted is a probability with fixed limits, the same
-convention :doc:`plot_06_qubit_chevron` uses -- pinning ``vmin=0``/``vmax=1``
+convention :doc:`../quantum_gate_calibration/plot_01_qubit_chevron` uses -- pinning ``vmin=0``/``vmax=1``
 rather than autoscaling keeps that boundary's steepness comparable across
 figures instead of depending on whatever range a given sweep happened to
 cover.

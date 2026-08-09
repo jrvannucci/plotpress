@@ -16,7 +16,7 @@ curve's fitted period.
 The population is bounded in ``[0, 1]`` with no meaningful midpoint of its
 own -- 0.5 is just "no information" from decay, not a physically special
 value the color scale should center on -- so a sequential map pinned to those
-limits is the right choice, the same convention :doc:`plot_06_qubit_chevron`
+limits is the right choice, the same convention :doc:`../quantum_gate_calibration/plot_01_qubit_chevron`
 uses for its Rabi chevron.
 """
 import numpy as np

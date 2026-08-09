@@ -11,7 +11,7 @@ response places it in the IQ plane and spread by the same amplifier and
 thermal noise regardless of which state produced it; the separation between
 the two clouds relative to their common spread is exactly the SNR that sets
 assignment fidelity (compare the frequency/duration optimization in
-:doc:`plot_20_readout_fidelity_optimization`). Rotating the demodulation
+:doc:`plot_05_readout_fidelity_optimization`). Rotating the demodulation
 phase so the line joining the two blob centers lies along the I axis is what
 lets a *single*-quadrature threshold on I alone separate the states, instead
 of a threshold in the full IQ plane.
