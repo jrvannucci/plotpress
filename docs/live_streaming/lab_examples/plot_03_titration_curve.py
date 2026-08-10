@@ -8,38 +8,75 @@ gallery's growing-x-axis example, but with two lab-specific details: ``y``
 is bounded to the pH scale regardless of how far ``x`` grows, and once
 enough of the curve is in, the steepest point (the equivalence point) can be
 found and annotated live rather than only after the run finishes.
+
+Structured the way a real acquisition script would be: a callback that
+receives one drop at a time and pushes it to the plot, fed here by a loop
+simulating a titrator. Swap ``read_next_drop()`` for a real instrument call
+and ``_GalleryLiveArtist`` for ``plotpress.qt.LiveArtist`` and the rest is
+unchanged.
 """
 import numpy as np
 import plotpress
 from plotpress.raster import figure_to_image
 
-TRUE_EQUIV_ML = 24.6
-rng = np.random.default_rng(9)
+
+class _GalleryLiveArtist:
+    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
+    Qt binding to drive a real window with at doc-build time, so this only
+    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
+    a line the same auto x-limits from the data) and nothing else. Swap it
+    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
+    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
+    ``artist.update(...)`` call below needs no other change; just drop each
+    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
+    real ``LiveArtist`` already pushes every frame to the live window
+    itself.
+    """
+
+    def __init__(self, ax, **plot_kwargs):
+        self.ax = ax
+        self.plot_kwargs = plot_kwargs
+        self.last_artist = None
+
+    def update(self, *data):
+        self.ax.cla()
+        if len(data) == 2:
+            x, y = data
+            self.last_artist = self.ax.plot(x, y, **self.plot_kwargs)
+            if len(x):
+                self.ax.set_xlim(float(min(x)), float(max(x)))
+        elif len(data) == 3:
+            x, y, c = data
+            self.last_artist = self.ax.pcolormesh(x, y, c, **self.plot_kwargs)
+        else:
+            raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-def ph_at(volume_ml):
-    # A sigmoid stand-in for a strong-acid/strong-base titration curve.
-    return 7.0 + 6.0 * np.tanh((volume_ml - TRUE_EQUIV_ML) / 1.3)
-
-
-n_drops = 62
-volumes = np.linspace(0.2, 40.0, n_drops)
-
+# ---------------------------------------------------------------------------
+# Live plotting -- this half doesn't change when you swap in a real titrator.
+# ---------------------------------------------------------------------------
+fig, ax = plotpress.subplots(figsize=(6.5, 5))
+curve = _GalleryLiveArtist(ax, color="#2ca02c", linewidth=1.0)
 vs, phs = [], []
 equiv_found_at = None
 _gallery_gif_frames = []
-for i, v in enumerate(volumes):
-    vs.append(v)
-    phs.append(ph_at(v) + 0.05 * rng.standard_normal())
 
-    fig, ax = plotpress.subplots(figsize=(6.5, 5))
-    ax.plot(vs, phs, color="#2ca02c", linewidth=1.0)
-    ax.scatter(vs, phs, color="#2ca02c", s=14)
-    ax.set_xlim(0, 40)
-    ax.set_ylim(0, 14)
+
+def on_new_drop(v, ph):
+    """Called once per drop added -- push the new (volume, pH) reading and
+    redraw, checking whether enough of the curve is in yet to locate and
+    mark the equivalence point.
+    """
+    global equiv_found_at
+    vs.append(v)
+    phs.append(ph)
+
+    curve.update(np.array(vs), np.array(phs))
+    ax.scatter(vs, phs, color="#2ca02c", s=14)   # cla() inside update() wiped this
+    ax.set_xlim(0, 40); ax.set_ylim(0, 14)
     ax.axhline(7.0, color="#888888", linestyle=":", linewidth=1.0)
     ax.set_xlabel("titrant added (mL)"); ax.set_ylabel("pH")
-    ax.set_title(f"Titration in progress -- drop {i + 1}/{n_drops}")
+    ax.set_title(f"Titration in progress -- drop {len(vs)}")
 
     # Once there's enough curve to have crossed the steepest section, find
     # and mark it -- exactly the kind of "annotate as it's discovered"
@@ -55,6 +92,33 @@ for i, v in enumerate(volumes):
                     xytext=(equiv_found_at + 2.0, 12.5), color="#d62728")
 
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
 
+
+# ---------------------------------------------------------------------------
+# Data acquisition -- replace this with your own titrator/pH meter driver.
+# Everything above only needs a (volume, pH) reading handed to
+# on_new_drop() as each drop is added.
+# ---------------------------------------------------------------------------
+TRUE_EQUIV_ML = 24.6
+rng = np.random.default_rng(9)
+N_DROPS = 62
+drop_volumes = np.linspace(0.2, 40.0, N_DROPS)
+
+
+def read_next_drop(volume_ml):
+    """Stand-in for the pH meter reporting a reading after this drop --
+    a sigmoid curve for a strong-acid/strong-base titration, plus noise.
+    """
+    ph = 7.0 + 6.0 * np.tanh((volume_ml - TRUE_EQUIV_ML) / 1.3)
+    return ph + 0.05 * rng.standard_normal()
+
+
+for volume_ml in drop_volumes:
+    on_new_drop(volume_ml, read_next_drop(volume_ml))
+
+# fig (and its axes) is a single, module-level object updated in place
+# across every tick above -- not a fresh one per frame -- so it's still a
+# bare global here and needs an explicit del, or the gallery scraper would
+# also capture it as a redundant static PNG alongside the GIF.
 del fig, ax

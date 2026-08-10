@@ -87,18 +87,24 @@ is derived from it at build time rather than written down anywhere in the source
   overwriting it) and preserves any pins or annotations already on the
   figure, rather than silently discarding both on every call.
 
-  Gets its own top-level gallery section (16 examples) rather than a
+  Gets its own top-level gallery section (18 examples) rather than a
   subsection of the plot-type reference, since a Qt binding isn't available
   at doc-build time to drive a real live window: six examples animate the
   acquisition shapes in the abstract (sparse vs. dense, growing vs. fixed
-  extent), and ten put those shapes into specific instruments -- an
+  extent), and twelve put those shapes into specific instruments -- an
   oscilloscope's rolling buffer, a spectrum analyzer's sweep-and-max-hold, a
   titration's live equivalence-point detection, simultaneous qPCR wells, a
   chromatogram's live peak-calling, an AFM raster scan, a particle
   detector's accumulating (not merely revealed) hit map, cyclic voltammetry
   drawn cycle over cycle, a four-channel bioreactor dashboard (multiple
-  `LiveArtist`s on one figure), and a radio telescope's serpentine sky
-  survey.
+  `LiveArtist`s on one figure), a radio telescope's serpentine sky survey,
+  and two searches driven by the `adaptive` package's own `Learner2D` --
+  concentrating samples on a ring's steep edges and, separately, across
+  four unrelated structures at once, rather than sampling uniformly. Every
+  example is structured the way a real acquisition script would be: a
+  callback that pushes new data to the plot (unchanged if you swap in a
+  real `LiveArtist`) fed by a loop simulating an instrument (the part meant
+  to be replaced with a real driver).
 
 - **`fig.to_html(binary_pick_data=True)` / `fig.save(...html, binary_pick_data=True)`.**
   Long embedded point-pick arrays (mesh `z` grids, animated line frames) now

@@ -16,3 +16,10 @@ sequence a ``LiveArtist`` would show live, frame by frame, as a GIF instead.
 (sparse vs. dense, growing vs. fixed extent); **Lab instrument examples**
 puts those shapes into the specific instruments a working lab actually
 watches update in real time.
+
+Every example is split the same way real acquisition code would be: a
+callback that receives new data and pushes it to the plot (unchanged when
+you swap in a real Qt window), fed by a loop that simulates an instrument
+(the part meant to be replaced with your own driver). Copy one, swap its
+data source for real hardware, and the plotting side needs no other
+change.

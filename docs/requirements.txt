@@ -5,3 +5,4 @@ numpy>=1.21
 pillow>=9
 matplotlib>=3.5
 polars>=1.0
+adaptive>=1.0
