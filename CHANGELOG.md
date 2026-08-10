@@ -12,6 +12,15 @@ is derived from it at build time rather than written down anywhere in the source
 
 ### Fixed
 
+- `plotpress.qt.view()`/`fig.show_qt()` constructed `QApplication([])` --
+  an argv with no program name, which leaves QtWebEngine's internal
+  `base::CommandLine` uninitialized. Depending on platform and Qt/WebEngine
+  version this broke every `QWebEngineView` the app ever created, anywhere
+  from a clean "the program name is not passed to QCoreApplication" error
+  to a hard native crash on the first one -- for any caller who didn't
+  already own a `QApplication` (i.e. `plotpress.qt` used standalone, not
+  inside an existing Qt app). `sys.argv` always carries a program name;
+  `[]` doesn't.
 - A `NaN`/`Infinity` anywhere in a figure's data (a masked heatmap region, a
   dropped-out channel, a divide-by-zero) silently disabled the *entire*
   interactive toolbar, not just picking on the affected series. `json.dumps`'s
@@ -53,6 +62,43 @@ is derived from it at build time rather than written down anywhere in the source
     and arrow-key stepping already did this correctly.
 
 ### Added
+
+- **`plotpress.qt.LiveArtist` -- streamed data in a Qt widget without a full
+  page reload.** `PlotPressWidget.set_figure()` is a full `QWebEngineView`
+  navigation, and that navigation's own cost (teardown, re-parse, toolbar JS
+  re-running from scratch) dominates over rendering: it tops out around 4-5 Hz
+  regardless of how much data is on the figure, from 200 points to 50,000.
+  `LiveArtist` loads the figure once (a normal `set_figure()`, needed to get
+  the toolbar/JS/pick-data in place) and patches the already-loaded page on
+  every call after that -- swapping the visible `<svg>`'s children for a fresh
+  render and refreshing that axes' point-pick payload via
+  `page().runJavaScript()`, in one round trip. Measured at roughly 55 Hz
+  sustained for a 50,000-point line and 140 Hz for a 100x100 mesh, against
+  the 4-5 Hz full-reload ceiling above. Works for both `ax.plot()`-style lines
+  (`artist.update(x, y)`) and `ax.pcolormesh()`-style meshes
+  (`artist.update(x, y, C)`) -- including a mesh that's mostly `NaN` and fills
+  in over time, the common shape for a real 2-D instrument sweep or scope
+  trace, which needs no special handling since `NaN` already renders and
+  picks as "no data" the same as a static figure's masked region -- the
+  live-refreshed pick payload is sanitized the same way the initial static
+  one already is, so a `NaN` doesn't break the point-pick JSON the way an
+  unsanitized one would. A live update also leaves the current pan/zoom
+  view alone (it patches around the toolbar's view state instead of
+  overwriting it) and preserves any pins or annotations already on the
+  figure, rather than silently discarding both on every call.
+
+  Gets its own top-level gallery section (16 examples) rather than a
+  subsection of the plot-type reference, since a Qt binding isn't available
+  at doc-build time to drive a real live window: six examples animate the
+  acquisition shapes in the abstract (sparse vs. dense, growing vs. fixed
+  extent), and ten put those shapes into specific instruments -- an
+  oscilloscope's rolling buffer, a spectrum analyzer's sweep-and-max-hold, a
+  titration's live equivalence-point detection, simultaneous qPCR wells, a
+  chromatogram's live peak-calling, an AFM raster scan, a particle
+  detector's accumulating (not merely revealed) hit map, cyclic voltammetry
+  drawn cycle over cycle, a four-channel bioreactor dashboard (multiple
+  `LiveArtist`s on one figure), and a radio telescope's serpentine sky
+  survey.
 
 - **`fig.to_html(binary_pick_data=True)` / `fig.save(...html, binary_pick_data=True)`.**
   Long embedded point-pick arrays (mesh `z` grids, animated line frames) now

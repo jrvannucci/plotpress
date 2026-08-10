@@ -355,6 +355,17 @@ _JS_SOURCE = r"""
   var PICK = pickEl ? reviveBinary(JSON.parse(pickEl.textContent)) : {};
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
 
+  // PICK is a closure over this IIFE -- unreachable from outside, which is
+  // exactly right for the embedded payload itself, but a live-updating
+  // caller (plotpress.qt.LiveArtist) that patches the SVG in place via
+  // page().runJavaScript() has no other way to keep picking in sync with
+  // what's now on screen. axesIndex/entryJson mirror pick_data()'s own
+  // per-axes shape ({"series":[...],"meshes":[...],"pies":[...]}), so this
+  // is a straight swap, not a merge.
+  window.plotpressUpdatePick = function (axesIndex, entryJson) {
+    PICK[axesIndex] = JSON.parse(entryJson);
+  };
+
   // Highest index (most recently added) first, so an axes nested inside a
   // larger one -- an inset, or a twin/secondary overlaid on its parent --
   // wins the hit test. Ascending order always resolved to whichever axes was

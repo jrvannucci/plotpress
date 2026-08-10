@@ -159,6 +159,65 @@ mesh-heavy figures render (``QWebEngineView.setHtml`` alone caps at ~2 MB). Pass
 ``pick_precision=`` to shrink the embedded point-pick data for big figures, just
 as with :meth:`~plotpress.Figure.to_html`.
 
+Streaming live data
+~~~~~~~~~~~~~~~~~~~
+
+``plot.set_figure(fig)`` redraws by navigating the ``QWebEngineView`` to a
+fresh page -- correct, but that navigation's own cost (teardown, re-parse, the
+toolbar JS re-running from scratch) caps updates around 4-5 Hz regardless of
+how much data is on the figure. For a scope trace, a live sweep, or anything
+else that needs to redraw many times a second, use ``plotpress.qt.LiveArtist``
+instead: it loads the figure once, then patches the *already-loaded* page on
+every subsequent update rather than reloading it.
+
+.. code-block:: python
+
+   from collections import deque
+   import numpy as np
+   from plotpress.qt import PlotPressWidget, LiveArtist
+
+   fig, ax = plotpress.subplots()
+   widget = PlotPressWidget()
+   trace = LiveArtist(widget, fig, ax, color="C0")
+
+   xs, ys = deque(maxlen=500), deque(maxlen=500)
+
+   def on_new_sample(x, y):
+       xs.append(x); ys.append(y)
+       trace.update(np.fromiter(xs, float), np.fromiter(ys, float))
+
+A ``LiveArtist`` targets one axes on one figure. ``update()`` takes the same
+arguments as the plotting call it wraps -- ``update(x, y)`` behaves like
+``ax.plot(x, y)``, ``update(x, y, C)`` like ``ax.pcolormesh(x, y, C)`` -- and
+any extra keyword arguments passed to the constructor (``color``, ``cmap``,
+``vmin``/``vmax``, ...) are forwarded on every call. A mesh that fills in
+progressively -- the common shape for a real 2-D sweep, most of the grid
+unmeasured at first -- needs no special handling: seed it with ``NaN`` and
+fill cells in as they're measured, in whatever order they arrive:
+
+.. code-block:: python
+
+   mesh = LiveArtist(widget, fig, ax, cmap="viridis", vmin=0, vmax=1)
+   grid = np.full((ny, nx), np.nan)
+
+   def on_new_point(row, col, value):
+       grid[row, col] = value
+       mesh.update(x_edges, y_edges, grid)
+
+Measured at roughly 55 Hz sustained for a 50,000-point line and 140 Hz for a
+100x100 mesh, against the full-reload path's 4-5 Hz ceiling -- a ceiling that
+doesn't move with data size, since it comes from the page navigation itself.
+Point picking stays live too: each update refreshes that axes' embedded pick
+data along with the visible SVG (sanitized against ``NaN``/``Infinity`` the
+same way the initial static payload is), so a click always reports what's
+currently on screen rather than data from the first load. The current
+pan/zoom view and any pins or annotations already on the figure both survive
+a live update rather than being reset or discarded.
+
+See the :ref:`live streaming gallery <live_streaming_gallery>` for this
+pattern applied to specific lab instruments -- an oscilloscope, a titration,
+a raster-scanning microscope, and more.
+
 In other desktop GUI toolkits
 ------------------------------
 

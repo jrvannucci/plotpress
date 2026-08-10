@@ -58,9 +58,10 @@ Highlights
 See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
 "Plot types" reference, :ref:`large-scale figures <scale_gallery>` for the cases
 where build time and file size are the constraint -- including a head-to-head
-against matplotlib -- and :ref:`real applications <applications>` for a
-hundred-odd figures built from the data real measurements produce, grouped by
-field.
+against matplotlib -- :ref:`live streaming <live_streaming_gallery>` for
+watching data update in a Qt window as it's collected, and
+:ref:`real applications <applications>` for a hundred-odd figures built from
+the data real measurements produce, grouped by field.
 
 .. toctree::
    :maxdepth: 1
@@ -89,6 +90,12 @@ field.
 
    auto_examples/index
    auto_scale/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Live plotting
+
+   auto_live_streaming/index
 
 .. toctree::
    :maxdepth: 2

@@ -24,7 +24,7 @@ measured time is the fixed JSON/HTML assembly rather than the data itself.
 
 The practical reading is in the annotated points: an 80-frame mesh animation
 at a modest 120x100 resolution is already past a megabyte, where the
-equivalent line animation is a few hundred KiB -- worth knowing before
+equivalent line animation stays under 200 KiB -- worth knowing before
 reaching for ``pcolormesh_frames()`` over a long sequence, and the reason a
 GIF export (:doc:`../../user_guide/interactivity`) is often the better fit
 for sharing a long mesh animation instead of an interactive HTML page.

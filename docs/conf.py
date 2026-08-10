@@ -246,22 +246,43 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             paths.append(path)
             if interactive:
                 embeds.append(_interactive_embed(value, path))
+
+    # A handful of examples (progressive/live-acquisition demos, one
+    # independent Figure per frame) need a colour scale or axis extent that
+    # changes frame to frame -- plot_frames()/pcolormesh_frames()'s shared,
+    # fixed Normalize can't express that, so there's no single animated
+    # plotpress.Figure to scan globals for above. Those scripts render their
+    # own frames (plotpress.raster.figure_to_image) into this list instead;
+    # stitch it into a GIF through the same path iterator so it lands in the
+    # gallery -- and gets thumbnailed -- exactly like any other animation.
+    frames = block_vars["example_globals"].get("_gallery_gif_frames")
+    if frames:
+        path = os.path.splitext(next(it))[0] + ".gif"
+        frames[0].save(path, format="GIF", save_all=True,
+                       append_images=frames[1:], duration=80, loop=0)
+        paths.append(path)
+
     rst = figure_rst(paths, gallery_conf["src_dir"])
     if embeds:
         rst += "\n\n" + "\n".join(embeds)
     return rst
 
 
-# Three galleries, from three source trees. ``examples`` is the plot-type
+# Four galleries, from four source trees. ``examples`` is the plot-type
 # reference -- one figure per method, deliberately minimal. ``scale`` is the
 # large-figure gallery, where build time and file size are the subject rather
 # than a footnote, so its examples are slow by design and belong off the
-# reference page. ``applications`` is the real-application gallery, grouped by
-# field, where the point is the reasoning that leads to the figure rather than
-# the call that draws it.
+# reference page. ``live_streaming`` is a feature deep-dive -- every example
+# animates an acquisition sequence a real ``plotpress.qt.LiveArtist`` would
+# show updating live, first as abstract patterns, then as specific lab
+# instruments -- and gets its own gallery rather than a subsection of
+# ``examples`` because both halves would otherwise crowd out the plot-type
+# reference they'd sit alongside. ``applications`` is the real-application
+# gallery, grouped by field, where the point is the reasoning that leads to
+# the figure rather than the call that draws it.
 sphinx_gallery_conf = {
-    "examples_dirs": ["examples", "scale", "applications"],
-    "gallery_dirs": ["auto_examples", "auto_scale", "auto_applications"],
+    "examples_dirs": ["examples", "scale", "live_streaming", "applications"],
+    "gallery_dirs": ["auto_examples", "auto_scale", "auto_live_streaming", "auto_applications"],
     # Order thumbnails by file name. Every example is numbered (plot_01_...)
     # precisely to fix the reading order, but sphinx-gallery defaults to sorting
     # by *code length*, which buried the line-plot introduction two thirds of
@@ -288,6 +309,8 @@ sphinx_gallery_conf = {
         "examples/signal",
         "examples/seaborn",
         "examples/limitations",
+        "live_streaming/patterns",
+        "live_streaming/lab_examples",
         "applications/earth",
         "applications/space",
         "applications/medical",
