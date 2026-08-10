@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import sys
 import tempfile
 import types
 
@@ -206,7 +207,11 @@ def view(figure, title="plotpress", block=True, interactive=True,
     owns_app = app is None
     if owns_app:
         _enable_webengine_gl()
-        app = _QT.QApplication([])
+        # sys.argv, not [] -- an empty argv leaves QtWebEngine's internal
+        # base::CommandLine uninitialized ("the program name is not passed
+        # to QCoreApplication"), which breaks every QWebEngineView this
+        # QApplication ever creates, not just this one.
+        app = _QT.QApplication(sys.argv)
 
     widget = PlotPressWidget(figure, interactive=interactive,
                               pick_precision=pick_precision)

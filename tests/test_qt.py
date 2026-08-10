@@ -7,6 +7,7 @@ JS hook the widget depends on and the friendly no-binding error.
 import importlib
 import os
 import pathlib
+import sys
 
 import numpy as np
 import pytest
@@ -54,7 +55,7 @@ def test_plotpress_widget_smoke():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     import plotpress.qt as spqt
 
-    app = spqt._QT.QApplication.instance() or spqt._QT.QApplication([])
+    app = spqt._QT.QApplication.instance() or spqt._QT.QApplication(sys.argv)
     fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(16, dtype=float).reshape(4, 4))
 
