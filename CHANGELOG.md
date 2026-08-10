@@ -86,6 +86,10 @@ is derived from it at build time rather than written down anywhere in the source
   view alone (it patches around the toolbar's view state instead of
   overwriting it) and preserves any pins or annotations already on the
   figure, rather than silently discarding both on every call.
+  `LiveArtist.last_artist` exposes whatever `update()` most recently drew
+  (a `Line2D`/`QuadMesh`), for the one thing `update()` itself can't do --
+  refresh a colorbar for an autoscaled mesh, whose old mappable goes stale
+  the moment `update()` clears the axes out from under it.
 
   Gets its own top-level gallery section (18 examples) rather than a
   subsection of the plot-type reference, since a Qt binding isn't available
@@ -101,10 +105,15 @@ is derived from it at build time rather than written down anywhere in the source
   and two searches driven by the `adaptive` package's own `Learner2D` --
   concentrating samples on a ring's steep edges and, separately, across
   four unrelated structures at once, rather than sampling uniformly. Every
-  example is structured the way a real acquisition script would be: a
-  callback that pushes new data to the plot (unchanged if you swap in a
-  real `LiveArtist`) fed by a loop simulating an instrument (the part meant
-  to be replaced with a real driver).
+  example's *rendered* code is copy-paste turnkey against the real
+  `LiveArtist` -- only a `read_next_*()`-style stand-in is meant to be
+  replaced with a real instrument call -- rather than merely structured to
+  resemble it: the doc-build-only harness a Qt-less build needs to render
+  each example as a GIF (a `LiveArtist`-alike that renders a frame instead
+  of pushing one live, the frame capture itself) is real code that
+  actually runs, just marked for sphinx-gallery to execute without
+  displaying, so nothing on the page needs mentally subtracting out before
+  it's usable.
 
 - **`fig.to_html(binary_pick_data=True)` / `fig.save(...html, binary_pick_data=True)`.**
   Long embedded point-pick arrays (mesh `z` grids, animated line frames) now

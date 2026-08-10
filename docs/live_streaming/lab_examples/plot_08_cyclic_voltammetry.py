@@ -23,18 +23,21 @@ for one series at a time.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness: figure_to_image() renders a frame for this page's
+# animation, since there's no Qt window to push one to at doc-build time.
+# Not part of what a real script would need.
 from plotpress.raster import figure_to_image
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real
-# potentiostat.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 V_MIN, V_MAX = -0.2, 0.8   # the sweep window, fixed by the method
 
 fig, ax = plotpress.subplots(figsize=(6.5, 5.5))
 completed_cycles = []   # each: (voltage_full, current_full)
 current_v, current_i = [], []
-_gallery_gif_frames = []
 
 
 def on_new_samples(v_chunk, i_chunk):
@@ -54,7 +57,9 @@ def on_new_samples(v_chunk, i_chunk):
     ax.set_xlabel("potential (V)"); ax.set_ylabel("current (uA)")
     ax.set_title(f"Cyclic voltammetry -- cycle {len(completed_cycles) + 1}/{N_CYCLES}")
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 def on_cycle_complete():
@@ -103,8 +108,10 @@ for cycle_index in range(N_CYCLES):
         on_new_samples(*read_next_chunk(cycle_index, lo, hi))
     on_cycle_complete()
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

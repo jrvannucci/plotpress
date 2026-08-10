@@ -9,35 +9,30 @@ it is the exception: a second, independent line that only ever moves up,
 tracking the highest magnitude seen at each frequency across every sweep so
 far.
 
-Structured the way a real acquisition script would be: a callback that
-receives one finished sweep at a time and pushes it to the plot, fed here
-by a loop simulating the analyzer's own sweep engine. Swap
-``read_next_sweep()`` for a real instrument call and ``_GalleryLiveArtist``
-for ``plotpress.qt.LiveArtist`` and the rest is unchanged -- with one
-detail worth calling out: ``update()`` clears the *whole* axes each call
-(matching the real ``LiveArtist``), so a second series that isn't the one
-wrapped in it -- max-hold here -- has to be redrawn manually every time,
-after ``update()`` returns, not handed to a second ``LiveArtist`` on the
-same axes.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives one finished sweep at
+a time and pushes it to the plot, fed by a loop simulating the analyzer's
+own sweep engine. Only ``read_next_sweep()`` is meant to be replaced, with
+your own instrument call -- with one detail worth calling out along the
+way: ``update()`` clears the *whole* axes each call, so a second series
+that isn't the one wrapped in it -- max-hold here -- has to be redrawn
+manually every time, after ``update()`` returns, not handed to a second
+``LiveArtist`` on the same axes.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line) and renders a frame instead of pushing one to a live window. None
+# of this -- including this whole ignored block -- is part of what a real
+# script using the actual LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -57,16 +52,15 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real analyzer.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 freq = np.linspace(0, 500, 400)   # MHz -- the analyzer's own fixed sweep range
 NOISE_FLOOR_DB = -20.0
 
 fig, ax = plotpress.subplots(figsize=(7, 4.5))
-sweep_line = _GalleryLiveArtist(ax, color="#1f77b4", linewidth=1.0, label="live sweep")
+sweep_line = LiveArtist(ax, color="#1f77b4", linewidth=1.0, label="live sweep")
 max_hold = np.full_like(freq, NOISE_FLOOR_DB)
-_gallery_gif_frames = []
 sweep_count = 0
 
 
@@ -86,7 +80,9 @@ def on_new_sweep(trace):
     ax.set_title(f"Sweep {sweep_count}")
     ax.legend(loc="upper left")
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -113,8 +109,10 @@ def read_next_sweep():
 for _ in range(N_SWEEPS):
     on_new_sweep(read_next_sweep())
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

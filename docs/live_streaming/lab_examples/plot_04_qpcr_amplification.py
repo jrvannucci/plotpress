@@ -10,9 +10,10 @@ protocol (40 cycles), so only the data within that known window grows, not
 the window itself; a threshold line marks the fluorescence level used to
 read off each well's Ct (cycle threshold) the moment its curve crosses it.
 
-Structured the way a real acquisition script would be: a callback that
-receives one cycle's readings across every well at once and redraws, fed
-here by a loop simulating the plate reader. ``plotpress.qt.LiveArtist``
+The code below is exactly what you'd write for real: a callback that
+receives one cycle's readings across every well at once and redraws, fed by
+a loop simulating the plate reader. Only ``read_next_cycle()`` is meant to
+be replaced, with your own instrument call. ``plotpress.qt.LiveArtist``
 wraps exactly one artist per axes, so it doesn't fit several genuinely
 independent, simultaneously-growing lines the way it does the single-trace
 examples elsewhere in this gallery -- with several real lines to manage at
@@ -22,11 +23,16 @@ it through an artist wrapper built for one series at a time.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness: figure_to_image() renders a frame for this page's
+# animation, since there's no Qt window to push one to at doc-build time.
+# Not part of what a real script would need.
 from plotpress.raster import figure_to_image
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real reader.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 N_CYCLES = 40          # fixed by the protocol
 THRESHOLD = 0.3
 WELL_NAMES = [
@@ -39,7 +45,6 @@ fig, ax = plotpress.subplots(figsize=(7.5, 5))
 cycles_seen = []
 traces = {name: [] for name in WELL_NAMES}
 ct_called = {}
-_gallery_gif_frames = []
 
 
 def on_new_cycle(cycle_n, readings):
@@ -64,7 +69,9 @@ def on_new_cycle(cycle_n, readings):
                 + (f" -- {len(ct_called)} well(s) called" if ct_called else ""))
     ax.legend(loc="upper left", ncol=1)
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +108,10 @@ def read_next_cycle(cycle_n):
 for cycle_n in range(1, N_CYCLES + 1):
     on_new_cycle(cycle_n, read_next_cycle(cycle_n))
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

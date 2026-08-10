@@ -239,6 +239,25 @@ class LiveArtist:
         ``ax.pcolormesh()`` (a 3-argument one) on every call -- ``color``,
         ``cmap``, ``vmin``/``vmax``, etc.
 
+    Attributes
+    ----------
+    last_artist : Line2D or QuadMesh or None
+        Whatever the most recent :meth:`update` drew -- ``None`` before the
+        first call. Since ``update()`` clears the whole axes on every call,
+        a colorbar for an autoscaled mesh (no fixed ``vmin``/``vmax``) has
+        to be dropped and redrawn from the new mappable each time too; this
+        is what to hand ``fig.colorbar()`` for that::
+
+            mesh = LiveArtist(widget, fig, ax, cmap="viridis")
+            cbar_ax = None
+
+            def on_new_frame(x, y, c):
+                global cbar_ax
+                mesh.update(x, y, c)
+                if cbar_ax is not None:
+                    fig.delaxes(cbar_ax)
+                cbar_ax = fig.colorbar(mesh.last_artist, ax=ax)
+
     Examples
     --------
     A rolling line, one new sample per call::
@@ -271,6 +290,7 @@ class LiveArtist:
         self.ax = ax
         self.plot_kwargs = plot_kwargs
         self.on_complete = on_complete or (lambda _result: None)
+        self.last_artist = None
         self._loaded = False
 
     def update(self, *data):
@@ -284,13 +304,13 @@ class LiveArtist:
         if len(data) == 2:
             x, y = data
             self.ax.cla()
-            self.ax.plot(x, y, **self.plot_kwargs)
+            self.last_artist = self.ax.plot(x, y, **self.plot_kwargs)
             if len(x):
                 self.ax.set_xlim(float(min(x)), float(max(x)))
         elif len(data) == 3:
             x, y, c = data
             self.ax.cla()
-            self.ax.pcolormesh(x, y, c, **self.plot_kwargs)
+            self.last_artist = self.ax.pcolormesh(x, y, c, **self.plot_kwargs)
         else:
             raise TypeError(
                 "update() takes (x, y) for a line or (x, y, C) for a mesh, "

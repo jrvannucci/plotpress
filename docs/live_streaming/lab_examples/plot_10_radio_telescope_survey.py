@@ -10,31 +10,27 @@ always integrating, never just repositioning. The grid and colour scale are
 both fixed by the survey plan, exactly like the acquisition-pattern
 gallery's raster example -- only the *order* pixels arrive in differs.
 
-Structured the way a real acquisition script would be: a callback that
-receives whatever new pixels the dish reported since the last tick and
-pushes the updated map to the plot, fed here by a loop simulating the
-survey controller. Swap ``read_next_pixels()`` for a real instrument call
-and ``_GalleryLiveArtist`` for ``plotpress.qt.LiveArtist`` and the rest is
-unchanged.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives whatever new pixels
+the dish reported since the last tick and pushes the updated map to the
+plot, fed by a loop simulating the survey controller. Only
+``read_next_pixels()`` is meant to be replaced, with your own instrument
+call.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line) and renders a frame instead of pushing one to a live window. None
+# of this -- including this whole ignored block -- is part of what a real
+# script using the actual LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -54,9 +50,9 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real dish.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 NY, NX = 22, 34                  # declination steps, right-ascension steps
 gx = np.linspace(-1.5, 1.5, NX + 1)   # degrees, RA offset
 gy = np.linspace(-1.0, 1.0, NY + 1)   # degrees, Dec offset
@@ -74,8 +70,7 @@ ax.set_title("On-the-fly sky survey, serpentine scan")
 fig.colorbar(m0, ax=ax)
 fig.tight_layout()
 
-sky_map = _GalleryLiveArtist(ax, cmap="magma", vmin=VMIN, vmax=VMAX)
-_gallery_gif_frames = []
+sky_map = LiveArtist(ax, cmap="magma", vmin=VMIN, vmax=VMAX)
 
 
 def on_new_pixels(pixels):
@@ -89,7 +84,9 @@ def on_new_pixels(pixels):
     ax.set_xlabel("RA offset (deg)"); ax.set_ylabel("Dec offset (deg)")
     ax.set_title("On-the-fly sky survey, serpentine scan")
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -127,11 +124,13 @@ def read_next_pixels(lo, hi):
 for lo in range(0, len(order), PIXELS_PER_TICK):
     hi = min(lo + PIXELS_PER_TICK, len(order))
     on_new_pixels(read_next_pixels(lo, hi))
+
+# sphinx_gallery_start_ignore
 for _ in range(2):   # hold on the fully-filled frame for a moment
     _gallery_gif_frames.append(_gallery_gif_frames[-1])
-
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

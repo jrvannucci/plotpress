@@ -14,30 +14,26 @@ Qt-side shape the test suite's own multi-axes check exercises, and unlike
 each channel gets its *own* axes, so there's no z-ordering conflict to work
 around: four independent ``LiveArtist``\\ s, one per panel.
 
-Structured the way a real acquisition script would be: a callback that
-receives one reading per channel and pushes each to its own panel, fed here
-by a loop simulating the reactor's own logger. Swap ``read_next_reading()``
-for a real instrument call and ``_GalleryLiveArtist`` for
-``plotpress.qt.LiveArtist`` and the rest is unchanged.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives one reading per
+channel and pushes each to its own panel, fed by a loop simulating the
+reactor's own logger. Only ``read_next_reading()`` is meant to be replaced,
+with your own instrument call.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line) and renders a frame instead of pushing one to a live window. None
+# of this -- including this whole ignored block -- is part of what a real
+# script using the actual LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -57,9 +53,9 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real reactor.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 N_HOURS = 48   # the run's planned duration -- fixes every panel's x window
 
 CHANNELS = [
@@ -72,11 +68,10 @@ CHANNELS = [
 fig, axes = plotpress.subplots(2, 2, figsize=(9, 6.5))
 artists = {}
 for (name, color, ylim, unit), ax in zip(CHANNELS, axes.flat):
-    artists[name] = (_GalleryLiveArtist(ax, color=color, linewidth=1.2), ax, ylim, unit)
+    artists[name] = (LiveArtist(ax, color=color, linewidth=1.2), ax, ylim, unit)
 
 t_seen = []
 readings = {name: [] for name, *_ in CHANNELS}
-_gallery_gif_frames = []
 
 
 def on_new_readings(ts, values_list):
@@ -93,7 +88,9 @@ def on_new_readings(ts, values_list):
         ax.set_title(f"{name}{f' ({unit})' if unit else ''}")
         ax.set_xlabel("time (h)")
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -129,8 +126,10 @@ for lo in range(0, len(t_full), STRIDE):
     ts = t_full[lo:hi]
     on_new_readings(ts, [read_next_reading(t) for t in ts])
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, axes
+# sphinx_gallery_end_ignore

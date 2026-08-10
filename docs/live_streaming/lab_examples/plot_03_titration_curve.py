@@ -9,30 +9,26 @@ is bounded to the pH scale regardless of how far ``x`` grows, and once
 enough of the curve is in, the steepest point (the equivalence point) can be
 found and annotated live rather than only after the run finishes.
 
-Structured the way a real acquisition script would be: a callback that
-receives one drop at a time and pushes it to the plot, fed here by a loop
-simulating a titrator. Swap ``read_next_drop()`` for a real instrument call
-and ``_GalleryLiveArtist`` for ``plotpress.qt.LiveArtist`` and the rest is
-unchanged.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives one drop at a time
+and pushes it to the plot, fed by a loop simulating a titrator. Only
+``read_next_drop()`` is meant to be replaced, with your own instrument
+call.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line) and renders a frame instead of pushing one to a live window. None
+# of this -- including this whole ignored block -- is part of what a real
+# script using the actual LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -52,14 +48,13 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real titrator.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 fig, ax = plotpress.subplots(figsize=(6.5, 5))
-curve = _GalleryLiveArtist(ax, color="#2ca02c", linewidth=1.0)
+curve = LiveArtist(ax, color="#2ca02c", linewidth=1.0)
 vs, phs = [], []
 equiv_found_at = None
-_gallery_gif_frames = []
 
 
 def on_new_drop(v, ph):
@@ -92,7 +87,9 @@ def on_new_drop(v, ph):
                     xytext=(equiv_found_at + 2.0, 12.5), color="#d62728")
 
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +114,10 @@ def read_next_drop(volume_ml):
 for volume_ml in drop_volumes:
     on_new_drop(volume_ml, read_next_drop(volume_ml))
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

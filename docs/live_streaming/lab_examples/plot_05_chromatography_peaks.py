@@ -10,35 +10,31 @@ apex has clearly passed (the signal has risen, then fallen back by a
 margin), it gets labeled right where it was found, rather than waiting for
 the whole run to finish and post-processing it.
 
-Structured the way a real acquisition script would be: a callback that
-receives the newest few samples from the detector and pushes them to the
-plot, fed here by a loop simulating the detector's own sample clock. Swap
-``read_detector_samples()`` for a real instrument call and
-``_GalleryLiveArtist`` for ``plotpress.qt.LiveArtist`` and the rest is
-unchanged -- except the peak-labeling block, which checks the buffered
-signal against *known* peak locations only because this is a simulation
-that has to generate its own "true" chromatogram; a real integrator would
-run genuine peak-finding (e.g. ``scipy.signal.find_peaks``) against the
-live buffer instead.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives the newest few
+samples from the detector and pushes them to the plot, fed by a loop
+simulating the detector's own sample clock. Only
+``read_detector_samples()`` is meant to be replaced, with your own
+instrument call -- except the peak-labeling block, which checks the
+buffered signal against *known* peak locations only because this is a
+simulation that has to generate its own "true" chromatogram; a real
+integrator would run genuine peak-finding (e.g. ``scipy.signal.find_peaks``)
+against the live buffer instead.
 """
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line) and renders a frame instead of pushing one to a live window. None
+# of this -- including this whole ignored block -- is part of what a real
+# script using the actual LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -58,16 +54,15 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real detector.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 RUN_LENGTH_MIN = 18.0   # the detector's own fixed run window
 
 fig, ax = plotpress.subplots(figsize=(7.5, 4.5))
-trace_line = _GalleryLiveArtist(ax, color="#8c564b", linewidth=1.2)
+trace_line = LiveArtist(ax, color="#8c564b", linewidth=1.2)
 t_buf, y_buf = [], []
 labeled = []   # retention times already annotated
-_gallery_gif_frames = []
 
 
 def on_new_samples(ts, ys):
@@ -105,7 +100,9 @@ def on_new_samples(ts, ys):
                                 color="#d62728")
 
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +135,10 @@ for lo in range(0, len(t_full), SAMPLES_PER_TICK):
     hi = min(lo + SAMPLES_PER_TICK, len(t_full))
     on_new_samples(*read_detector_samples(lo, hi))
 
+# sphinx_gallery_start_ignore
 # fig (and its axes) is a single, module-level object updated in place
 # across every tick above -- not a fresh one per frame -- so it's still a
 # bare global here and needs an explicit del, or the gallery scraper would
 # also capture it as a redundant static PNG alongside the GIF.
 del fig, ax
+# sphinx_gallery_end_ignore

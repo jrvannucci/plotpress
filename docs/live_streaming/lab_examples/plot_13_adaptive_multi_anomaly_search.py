@@ -13,36 +13,30 @@ does, and has to discover *all four* regions on its own budget, not just
 the first one it stumbles onto, while still not wasting samples on the
 large flat gaps between them.
 
-Structured the way a real acquisition script would be: a callback that
-receives the search's newest batch of measurements and redraws, fed here by
-a loop that asks the learner where to measure next, "measures" it, and
-reports back. Swap ``measure()`` for a real instrument call and
-``_GalleryLiveArtist`` for ``plotpress.qt.LiveArtist`` and the rest is
-unchanged -- the ``adaptive.Learner2D`` driving *where* to measure doesn't
-change at all, live or not.
+The code below is exactly what you'd write against the real
+``plotpress.qt.LiveArtist``: a callback that receives the search's newest
+batch of measurements and redraws, fed by a loop that asks the learner
+where to measure next, "measures" it, and reports back. Only ``measure()``
+is meant to be replaced, with your own instrument call -- the
+``adaptive.Learner2D`` driving *where* to measure doesn't change at all,
+live or not.
 """
 import adaptive
 import numpy as np
 import plotpress
+
+# sphinx_gallery_start_ignore
+# Doc-build-only harness below: there's no Qt binding to drive a real window
+# with at doc-build time, so LiveArtist here reproduces plotpress.qt.
+# LiveArtist's update() exactly (ax.cla(), replot, the same auto x-limits for
+# a line, the same last_artist bookkeeping) and renders a frame instead of
+# pushing one to a live window. None of this -- including this whole
+# ignored block -- is part of what a real script using the actual
+# LiveArtist would need.
 from plotpress.raster import figure_to_image
 
 
-class _GalleryLiveArtist:
-    """Doc-build-only stand-in for ``plotpress.qt.LiveArtist`` -- there's no
-    Qt binding to drive a real window with at doc-build time, so this only
-    reproduces ``update()``'s redraw behavior (``ax.cla()``, replot, and for
-    a line the same auto x-limits from the data) and nothing else. Swap it
-    for ``from plotpress.qt import PlotPressWidget, LiveArtist`` and
-    ``LiveArtist(widget, fig, ax, **plot_kwargs)`` -- every
-    ``artist.update(...)`` call below needs no other change; just drop each
-    callback's trailing ``_gallery_gif_frames.append(...)`` line, since a
-    real ``LiveArtist`` already pushes every frame to the live window
-    itself. ``last_artist`` (the ``Line2D``/``QuadMesh`` the most recent
-    update drew) isn't part of the real API -- it's only here so a script
-    that also needs a per-frame colorbar refresh has something to hand
-    ``fig.colorbar()``.
-    """
-
+class LiveArtist:
     def __init__(self, ax, **plot_kwargs):
         self.ax = ax
         self.plot_kwargs = plot_kwargs
@@ -62,9 +56,9 @@ class _GalleryLiveArtist:
             raise TypeError("update() takes (x, y) or (x, y, C)")
 
 
-# ---------------------------------------------------------------------------
-# Live plotting -- this half doesn't change when you swap in a real search.
-# ---------------------------------------------------------------------------
+_gallery_gif_frames = []
+# sphinx_gallery_end_ignore
+
 BOUNDS = [(0.0, 13.0), (0.0, 10.0)]
 GRID_N = 65          # background resolution -- fixed, so only the
                       # scatter's placement (not the grid) changes
@@ -103,8 +97,7 @@ ax_true.set_title("True field (unknown to the search)")
 ax_true.set_xlabel("x"); ax_true.set_ylabel("y")
 fig.colorbar(m_true, ax=ax_true)
 
-recon_mesh = _GalleryLiveArtist(ax_recon, cmap="inferno")   # no vmin/vmax -- autoscales
-_gallery_gif_frames = []
+recon_mesh = LiveArtist(ax_recon, cmap="inferno")   # no vmin/vmax -- autoscales
 _cbar_ax = None
 
 
@@ -129,7 +122,9 @@ def on_new_batch(xs, ys, recon_grid, sample_xy, npoints, loss):
         fig.delaxes(_cbar_ax)
     _cbar_ax = fig.colorbar(recon_mesh.last_artist, ax=ax_recon)
     fig.tight_layout()
-    _gallery_gif_frames.append(figure_to_image(fig, scale=2))   # gallery-only
+    # sphinx_gallery_start_ignore
+    _gallery_gif_frames.append(figure_to_image(fig, scale=2))
+    # sphinx_gallery_end_ignore
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +162,11 @@ def read_next_batch():
 for _ in range(N_TICKS):
     on_new_batch(*read_next_batch())
 
+# sphinx_gallery_start_ignore
 # fig is a single, module-level Figure updated in place across every tick
 # above -- not a fresh one per frame like most of this gallery's other
 # scripts -- so it's still a bare global here and needs the same explicit
 # del the manual-frame scripts use, or the gallery scraper would also
 # capture it as a redundant static PNG alongside the GIF.
 del fig, ax_true, ax_recon, m_true, recon_mesh
+# sphinx_gallery_end_ignore
