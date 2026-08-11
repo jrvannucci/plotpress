@@ -5,8 +5,9 @@ All notable changes to plotpress are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Versions come from git tags: a release *is* a `v*` tag, and the package version
-is derived from it at build time rather than written down anywhere in the source.
+Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
+package version is derived from it at build time rather than written down
+anywhere in the source.
 
 ## [Unreleased]
 
@@ -502,5 +503,5 @@ polar as projections onto the 2-D core, and no `streamplot`/`barbs`,
 triangulation, geographic projections, animation API, rich text or math
 rendering.
 
-[Unreleased]: https://github.com/jrvannucci/plotpress/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/jrvannucci/plotpress/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jrvannucci/plotpress/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/jrvannucci/plotpress/releases/tag/0.1.0
