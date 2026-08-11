@@ -165,6 +165,126 @@ def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
             "cell (%d, %d): expected z~=%.2f, got %r" % (row, col, expected, got))
 
 
+def test_downsampled_mesh_pick_reads_correct_value(page, tmp_path):
+    """A rectilinear mesh over pick_max_mesh_cells is block-averaged before
+    embedding (see svg._downsample_grid) rather than dropped, so a click
+    still answers with a real value -- covered at the payload-shape level by
+    test_pick_data_omits_oversized_series_but_downsamples_oversized_meshes
+    in test_svg_output.py, but nothing drove a real click through the
+    downsampled cell lookup end to end: every mesh case in pick_cases.py
+    stays under the default cap, so bucketIndex() bucketing a click into a
+    *coarsened* cell (rather than the original grid) was never actually
+    exercised by a browser."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+    from plotpress.svg import pick_data
+
+    ny, nx = 40, 50
+    rows, cols = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+    Z = (rows * nx + cols).astype(float)   # distinct value per cell
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.arange(nx + 1, dtype=float), np.arange(ny + 1, dtype=float), Z)
+
+    CAP = 200
+    pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
+    dny, dnx = pd["shape"]
+    assert dny * dnx <= CAP < ny * nx   # sanity: this really downsamples
+
+    html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+    path = tmp_path / "downsampled_mesh.html"
+    path.write_text(html, encoding="utf-8")
+    page.goto(path.as_uri())
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Point Pick'
+                                  && !b.classList.contains('active')) b.click(); })""")
+
+    xe, ye = pd["xedges"], pd["yedges"]
+    for row, col in [(0, 0), (dny - 1, dnx - 1), (dny // 2, dnx // 2)]:
+        cx = (xe[col] + xe[col + 1]) / 2.0
+        cy = (ye[row] + ye[row + 1]) / 2.0
+        ux, uy = px(fig, 0, cx, cy)
+        markers = page.evaluate(
+            """([ux, uy]) => {
+              document.querySelectorAll('.plotpress-pin').forEach(p => p.remove());
+              const svg = document.getElementById('plotpress-svg');
+              const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+              const c = pt.matrixTransform(svg.getScreenCTM());
+              const el = document.elementFromPoint(c.x, c.y) || svg;
+              el.dispatchEvent(new MouseEvent('click', {
+                bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+              return window.plotpressGetMarkers();
+            }""", [ux, uy])
+        assert len(markers) == 1, "downsampled cell (%d, %d): click made %d marker(s)" % (
+            row, col, len(markers))
+        got = markers[0]["z"]
+        expected = pd["z"][row * dnx + col]
+        assert got == pytest.approx(expected, abs=1e-3), (
+            "downsampled cell (%d, %d): expected z=%r, got %r" % (row, col, expected, got))
+
+
+def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
+    """A curvilinear mesh over the cap downsamples both its z grid *and* its
+    per-cell centers (see svg.pick_data's curvilinear branch, which block-
+    averages xc/yc the same way as z) -- nothing in pick_cases.py builds a
+    curvilinear grid anywhere near pick_max_mesh_cells, so this path was
+    never driven through a real click either."""
+    import math
+
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+    from plotpress.svg import pick_data
+
+    n = 40   # (n-1)*(n-1) = 1521 cells, comfortably over a small cap
+    r = np.linspace(0.3, 1, n)
+    th = np.linspace(0, 1.5 * math.pi, n)
+    R, TH = np.meshgrid(r, th)
+    CX, CY = R * np.cos(TH), R * np.sin(TH)
+    CZ = np.arange((n - 1) * (n - 1), dtype=float).reshape(n - 1, n - 1)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    m = ax.pcolormesh(CX, CY, CZ, cmap="plasma")
+    assert m.curvilinear
+
+    CAP = 200
+    pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
+    dny, dnx = pd["shape"]
+    assert dny * dnx <= CAP < (n - 1) * (n - 1)   # sanity: this really downsamples
+    assert "xc" in pd and "yc" in pd
+
+    html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+    path = tmp_path / "downsampled_curvilinear_mesh.html"
+    path.write_text(html, encoding="utf-8")
+    page.goto(path.as_uri())
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Point Pick'
+                                  && !b.classList.contains('active')) b.click(); })""")
+
+    for idx in (0, dny * dnx // 2, dny * dnx - 1):
+        ux, uy = px(fig, 0, pd["xc"][idx], pd["yc"][idx])
+        markers = page.evaluate(
+            """([ux, uy]) => {
+              document.querySelectorAll('.plotpress-pin').forEach(p => p.remove());
+              const svg = document.getElementById('plotpress-svg');
+              const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+              const c = pt.matrixTransform(svg.getScreenCTM());
+              const el = document.elementFromPoint(c.x, c.y) || svg;
+              el.dispatchEvent(new MouseEvent('click', {
+                bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+              return window.plotpressGetMarkers();
+            }""", [ux, uy])
+        assert len(markers) == 1, "downsampled curvilinear cell %d: click made %d marker(s)" % (
+            idx, len(markers))
+        got = markers[0]["z"]
+        expected = pd["z"][idx]
+        assert got == pytest.approx(expected, abs=1e-3), (
+            "downsampled curvilinear cell %d: expected z=%r, got %r" % (idx, expected, got))
+
+
 def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
     """binary_pick_data's meta payload embeds column-wise on a many-axes
     figure (see figure._columnarize_meta) and the client rebuilds
