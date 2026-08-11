@@ -61,7 +61,7 @@ Homepage = "https://github.com/jrvannucci/plotpress"
 Documentation = "https://jrvannucci.github.io/plotpress/"
 Changelog = "https://github.com/jrvannucci/plotpress/blob/main/CHANGELOG.md"
 
-# Version comes from the git tag: `git tag -a v0.1.0 -m ...` is the release.
+# Version comes from the git tag: `git tag -a 0.1.0 -m ...` is the release.
 [tool.versioningit]
 # Used only when there is no git repository at all -- installing from an sdist
 # that predates this config, say. A normal build never reaches it, and a wheel
@@ -70,10 +70,10 @@ default-version = "0+unknown"
 
 [tool.versioningit.vcs]
 method = "git"
-match = ["v*"]
-# No tags yet. Until the first `v*` tag exists, builds report 0.0.0 plus the
-# commit distance rather than failing, so a fresh clone still installs.
-default-tag = "v0.0.0"
+match = ["[0-9]*"]
+# No tags yet. Until the first bare-version tag exists, builds report 0.0.0
+# plus the commit distance rather than failing, so a fresh clone still installs.
+default-tag = "0.0.0"
 
 [tool.versioningit.format]
 # Tagged commit -> "0.1.0". Anything else says so, so a dev build is never

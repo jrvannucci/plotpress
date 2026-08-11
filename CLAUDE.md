@@ -131,7 +131,7 @@ artifact (git-ignored). Don't hand-edit it or add a literal to `__init__.py`.
 Tagging and publishing are deliberately separate steps, because a PyPI version
 can never be reused:
 
-1. `git tag -a v0.1.0 -m "..."` — the tag *is* the version.
+1. `git tag -a 0.1.0 -m "..."` — the tag *is* the version.
 2. Publish the GitHub Release (or dispatch `release.yml` by hand). The workflow
    refuses to publish anything carrying a `.postN`, `+dirty`, or `0+unknown`
    suffix, which would mean a missing tag or an unclean tree.
