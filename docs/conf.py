@@ -77,6 +77,53 @@ _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 _INTERACTIVE_ROOT = os.path.join(_DOCS_DIR, "applications")
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
+_GIF_DIR = os.path.join(_DOCS_DIR, "_static", "gifs")
+
+
+def _wheel_zoom_frames(fig, cursor_frac, n_steps=16, zoom_factor=0.85,
+                       hold_frames=5, supersample=6, out_size=None):
+    """Reproduce the wheel-zoom-toward-cursor gesture as a sequence of raster
+    frames, for a demo GIF -- there's no browser at doc-build time to drive
+    the real interactive gesture, so this applies ``_interactive.py``'s
+    ``zoomViewAt()`` -- ``view[0] = px - (px - view[0]) * factor`` -- to a
+    shrinking pixel crop of a supersampled render of the same static figure,
+    in place of an SVG viewBox change. Supersampling (well past the crop's
+    final display size) keeps the tightest crop from looking pixelated,
+    standing in for a real SVG viewer's resolution-independent zoom.
+    """
+    from PIL import Image
+    from plotpress.raster import figure_to_image
+
+    base = figure_to_image(fig, scale=supersample)
+    W, H = base.size
+    out_size = out_size or (W // supersample, H // supersample)
+    cx, cy = cursor_frac[0] * W, cursor_frac[1] * H
+    view_x, view_y, view_w, view_h = 0.0, 0.0, float(W), float(H)
+
+    def crop_frame():
+        box = (round(view_x), round(view_y),
+              round(view_x + view_w), round(view_y + view_h))
+        return base.crop(box).resize(out_size, Image.LANCZOS)
+
+    zoom_in = [crop_frame()]
+    for _ in range(n_steps):
+        view_x = cx - (cx - view_x) * zoom_factor
+        view_y = cy - (cy - view_y) * zoom_factor
+        view_w *= zoom_factor
+        view_h *= zoom_factor
+        zoom_in.append(crop_frame())
+    # Hold on the fully zoomed-in frame, then mirror the sequence back out --
+    # a single loop demonstrates both directions of the gesture.
+    return zoom_in + [zoom_in[-1]] * hold_frames + list(reversed(zoom_in))
+
+
+def _write_wheel_zoom_gif(fig, name, cursor_frac, **kwargs):
+    """Write a wheel-zoom-toward-cursor demo GIF into ``_static/gifs/``."""
+    os.makedirs(_GIF_DIR, exist_ok=True)
+    frames = _wheel_zoom_frames(fig, cursor_frac, **kwargs)
+    path = os.path.join(_GIF_DIR, name + ".gif")
+    frames[0].save(path, format="GIF", save_all=True,
+                   append_images=frames[1:], duration=90, loop=0)
 
 
 def _wants_interactive(src_file):
@@ -249,6 +296,37 @@ def _build_usage_demos():
         "exactly as they were.")
 
     _build_usage_report_demo()
+    _build_wheel_zoom_gifs()
+
+
+def _build_wheel_zoom_gifs():
+    """The two GIFs embedded in usage.rst's Zoom bullet, demonstrating the
+    wheel-zoom-toward-cursor gesture (see _wheel_zoom_frames): one on a
+    many-axes grid -- the case a per-axes zoom wouldn't help with, since the
+    cursor is only ever over one tiny panel at a time -- and one on a plain
+    single-axes figure, showing the same gesture works just as directly
+    there.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(1)
+    fig_grid, axes = plotpress.subplots(5, 6, figsize=(16, 9))
+    x = np.linspace(0, 10, 21)
+    y = np.linspace(0, 5, 11)
+    X, Y = np.meshgrid(x, y)
+    for i, ax in enumerate(np.asarray(axes).ravel()):
+        Z = np.sin(X - 0.3 * i) * np.exp(-0.05 * Y)
+        ax.pcolormesh(x, y, Z, cmap="viridis", vmin=-1, vmax=1)
+        ax.set_title(f"panel {i}", fontsize=7)
+        ax.tick_params(labelsize=5)
+    fig_grid.tight_layout()
+    _write_wheel_zoom_gif(fig_grid, "wheel_zoom_many_axes", cursor_frac=(0.32, 0.62))
+
+    fig_one, ax_one = plotpress.subplots(figsize=(6, 4))
+    x1 = np.linspace(0, 10, 300)
+    ax_one.plot(x1, np.sin(x1) * np.exp(-x1 / 12))
+    ax_one.set_xlabel("x"); ax_one.set_ylabel("y")
+    _write_wheel_zoom_gif(fig_one, "wheel_zoom_single_axes", cursor_frac=(0.35, 0.3))
 
 
 def _build_usage_report_demo():

@@ -434,6 +434,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
             .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
+          const before = svg.getAttribute('viewBox');
           const pt = svg.createSVGPoint();
           pt.x = p[0]; pt.y = p[1];
           const c = pt.matrixTransform(svg.getScreenCTM());
@@ -441,9 +442,9 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
           el.dispatchEvent(new WheelEvent('wheel', {
             bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100
           }));
-          return document.getElementById('zoom1').getAttribute('transform') !== null;
+          return svg.getAttribute('viewBox') !== before;
         }""", target_px)
-    assert zoomed, "Zoom must still work on a set_pickable(False) axes"
+    assert zoomed, "Zoom (wheel, whole-figure) must still work over a set_pickable(False) axes"
 
 
 def test_minor_ticks_reposition_on_zoom(page, tmp_path):
@@ -451,6 +452,7 @@ def test_minor_ticks_reposition_on_zoom(page, tmp_path):
     minorticks_on()'s marks stayed frozen at their initial positions instead
     of tracking the new, narrower range."""
     import plotpress
+    from pick_cases import px
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 10.0], [0.0, 10.0])
@@ -462,16 +464,9 @@ def test_minor_ticks_reposition_on_zoom(page, tmp_path):
     before = page.evaluate(
         "() => document.getElementById('ticks0').querySelectorAll('line').length")
 
-    page.evaluate(
-        """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
-    box = page.eval_on_selector(
-        "#plotpress-svg",
-        "el => { const r = el.getBoundingClientRect(); "
-        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
-    page.mouse.move(box["x"] + box["w"] / 2, box["y"] + box["h"] / 2)
-    for _ in range(15):
-        page.mouse.wheel(0, -100)   # negative deltaY zooms in
+    x0, y0 = px(fig, 0, 2.0, 2.0)
+    x1, y1 = px(fig, 0, 8.0, 8.0)
+    _box_zoom(page, x0, y0, x1, y1)   # a per-axes data-space zoom (drag), not wheel
 
     after = page.evaluate(
         "() => document.getElementById('ticks0').querySelectorAll('line').length")
@@ -485,6 +480,7 @@ def test_tick_params_style_survives_zoom(page, tmp_path):
     correctly on the initial static SVG but silently reverted to the default
     style the moment the axes was panned or zoomed."""
     import plotpress
+    from pick_cases import px
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 10.0], [0.0, 10.0])
@@ -502,20 +498,30 @@ def test_tick_params_style_survives_zoom(page, tmp_path):
     assert "#d62728" in before and "#2ca02c" in before, (
         "initial render did not honor tick_params colors: %r" % before)
 
-    page.evaluate(
-        """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
-    box = page.eval_on_selector(
-        "#plotpress-svg",
-        "el => { const r = el.getBoundingClientRect(); "
-        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
-    page.mouse.move(box["x"] + box["w"] / 2, box["y"] + box["h"] / 2)
-    for _ in range(15):
-        page.mouse.wheel(0, -100)   # negative deltaY zooms in
+    x0, y0 = px(fig, 0, 2.0, 2.0)
+    x1, y1 = px(fig, 0, 8.0, 8.0)
+    _box_zoom(page, x0, y0, x1, y1)   # a per-axes data-space zoom (drag), not wheel
 
     after = page.evaluate(stroke_query)
     assert "#d62728" in after and "#2ca02c" in after, (
         "tick_params() colors reverted to the default style after zoom: %r" % after)
+
+
+def _px_at_limits(fig, i, dx, dy, xlim, ylim):
+    """Like ``pick_cases.px()``, but against an explicit ``(xlim, ylim)``
+    instead of the axes' own current limits -- for computing where a datum
+    lands on screen *after* a box-zoom has narrowed the browser's view to a
+    range the Python ``Axes`` object itself never actually changed to.
+    """
+    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.transform import LinearTransform
+
+    ax = fig.axes[i]
+    dpi = fig.style.dpi
+    rect = _effective_rect(ax, *_pixel_rect(ax, fig.figsize[0] * dpi,
+                                            fig.figsize[1] * dpi), xlim, ylim)
+    tr = LinearTransform(xlim, ylim, rect, xscale=ax._xscale, yscale=ax._yscale)
+    return [float(tr.x(dx)), float(tr.y(dy))]
 
 
 def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
@@ -527,10 +533,11 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
     to sit at that pixel position in the stale, pre-zoom coordinate space --
     a wrong, sometimes wildly-off datum, not the one under the cursor.
 
-    zoomAxesAt() keeps the data value under the cursor fixed while it zooms,
-    so wheel-zooming and then clicking at the *same* screen position must
-    still resolve to (roughly) the same data point if the fallback is
-    reading the right coordinate space."""
+    A rubber-band box zoom sets the axes' new data limits directly, so
+    clicking at the *new* on-screen position of a point that was always at
+    (target_x, target_y) must still resolve to (roughly) that same datum if
+    the fallback is reading the post-zoom coordinate space, not a stale
+    pre-zoom one."""
     import numpy as np
     import plotpress
     from pick_cases import px
@@ -544,30 +551,100 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
     page.goto(path.as_uri())
 
     target_x, target_y = 5.0, float(np.sin(5.0))
-    cx, cy = page.evaluate(
-        """([ux, uy]) => {
-          const svg = document.getElementById('plotpress-svg');
-          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
-          const c = pt.matrixTransform(svg.getScreenCTM());
-          return [c.x, c.y];
-        }""",
-        px(fig, 0, target_x, target_y))
+    zoom_xlim, zoom_ylim = (4.0, 6.0), (-1.2, 1.2)   # a narrow window around it
 
-    page.evaluate(
-        """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Zoom') b.click(); })""")
-    page.mouse.move(cx, cy)
-    for _ in range(15):
-        page.mouse.wheel(0, -100)   # zoom in around (cx, cy), invariant there
+    x0, y0 = px(fig, 0, zoom_xlim[0], zoom_ylim[0])
+    x1, y1 = px(fig, 0, zoom_xlim[1], zoom_ylim[1])
+    _box_zoom(page, x0, y0, x1, y1)
 
-    markers = _click_mode(page, "Point Pick",
-                           *px(fig, 0, target_x, target_y))
+    markers = _click_mode(
+        page, "Point Pick", *_px_at_limits(fig, 0, target_x, target_y, zoom_xlim, zoom_ylim))
     assert len(markers) == 1
     m = markers[0]
     assert abs(m["x"] - target_x) < 0.5, (
         "picked x is far from the zoomed-in cursor position: %r" % m)
     assert abs(m["y"] - target_y) < 0.5, (
         "picked y is far from the zoomed-in cursor position: %r" % m)
+
+
+def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_path):
+    """The wheel now zooms the whole figure's SVG viewBox, not a single
+    axes' data range -- the useful gesture on a figure with many small
+    axes, where zooming whatever tiny panel the cursor happens to be over
+    isn't. It must work regardless of which axes (if any) sits under the
+    cursor, must keep the data/user-space point under the cursor fixed
+    (the same point maps to the same screen pixel before and after), and
+    must leave every individual axes' own zoom transform untouched -- that
+    is still driven only by a rubber-band box drag, not the wheel."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(2, 2)
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "wheel_whole_figure.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Zoom') b.click();
+          });
+          const before = svg.getAttribute('viewBox');
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width * 0.3, cy = r.y + r.height * 0.7;
+          const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+          const u0 = pt.matrixTransform(svg.getScreenCTM().inverse());
+          svg.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+          }));
+          const after = svg.getAttribute('viewBox');
+          // Fresh getScreenCTM(): the viewBox just changed, so its inverse
+          // must be re-derived to read what user-space point is now under
+          // the same screen pixel.
+          const u1 = pt.matrixTransform(svg.getScreenCTM().inverse());
+          const zoomTransforms = [0, 1, 2, 3].map(i => {
+            const el = document.getElementById('zoom' + i);
+            return el && el.getAttribute('transform');
+          });
+          return { before, after, u0: {x: u0.x, y: u0.y}, u1: {x: u1.x, y: u1.y},
+                   zoomTransforms };
+        }""")
+    assert out["before"] != out["after"], (
+        "wheel over an axes must still zoom the whole figure, not do nothing")
+    assert out["u0"]["x"] == pytest.approx(out["u1"]["x"], abs=0.5)
+    assert out["u0"]["y"] == pytest.approx(out["u1"]["y"], abs=0.5)
+    assert all(t is None for t in out["zoomTransforms"]), (
+        "wheel must not touch any individual axes' own zoom transform -- "
+        "only a rubber-band box drag should: %r" % out["zoomTransforms"])
+
+
+def _box_zoom(page, x0, y0, x1, y1):
+    """Simulate a real "Zoom"-mode rubber-band drag between two SVG
+    user-space pixel points -- the mechanism that now drives per-axes,
+    data-space zoom (the wheel zooms the whole figure instead; see
+    test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor)."""
+    page.evaluate(
+        """([x0, y0, x1, y1]) => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button')
+            .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
+          function toClient(ux, uy) {
+            const pt = svg.createSVGPoint();
+            pt.x = ux; pt.y = uy;
+            return pt.matrixTransform(svg.getScreenCTM());
+          }
+          const a = toClient(x0, y0), b = toClient(x1, y1);
+          svg.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true, clientX: a.x, clientY: a.y, button: 0}));
+          window.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true, clientX: b.x, clientY: b.y}));
+          window.dispatchEvent(new MouseEvent('mouseup', {
+            bubbles: true, clientX: b.x, clientY: b.y}));
+        }""",
+        [x0, y0, x1, y1])
 
 
 def _drag_pan(page, x0, y0, x1, y1):
@@ -690,6 +767,12 @@ def _click_mode(page, mode_label, ux, uy, prompt_text=None):
     ``prompt_text``, when given, auto-accepts the ``window.prompt()`` an
     Annotate mode raises -- Playwright otherwise auto-dismisses dialogs,
     which would make every annotate click a no-op.
+
+    Fires a real ``mousedown``/``mouseup`` immediately before the ``click``,
+    not just the click itself -- the click handler bails out early if
+    ``moved`` is still set from an *earlier*, unrelated drag (a box-zoom
+    before a click in the same test, say), and only a fresh ``mousedown``
+    resets that flag, exactly as it would for a genuine user click.
     """
     if prompt_text is not None:
         page.once("dialog", lambda d: d.accept(prompt_text))
@@ -702,6 +785,10 @@ def _click_mode(page, mode_label, ux, uy, prompt_text=None):
           const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
           const c = pt.matrixTransform(svg.getScreenCTM());
           const el = document.elementFromPoint(c.x, c.y) || svg;
+          el.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+          el.dispatchEvent(new MouseEvent('mouseup', {
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
           el.dispatchEvent(new MouseEvent('click', {
             bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
           return window.plotpressGetMarkers();

@@ -64,7 +64,22 @@ Interactive HTML and pop-up output carry a self-contained JavaScript toolbar
 active until a tool is selected:
 
 * **Span** -- drag to pan a single plot's data window.
-* **Zoom** -- wheel or box-drag to zoom *one* axes in data space (ticks recompute).
+* **Zoom** -- two distinct gestures. Box-drag zooms *one axes* in data space
+  (ticks recompute). Wheel zooms the *whole figure* instead, centered on the
+  cursor, regardless of which axes (if any) is under it -- the gesture that
+  actually helps on a figure with many small axes, where the cursor is only
+  ever over one tiny panel at a time:
+
+  .. image:: _static/gifs/wheel_zoom_many_axes.gif
+     :alt: Wheel-zooming toward the cursor across a 30-panel pcolormesh grid
+     :width: 480px
+
+  It works just as directly on a single-axes figure:
+
+  .. image:: _static/gifs/wheel_zoom_single_axes.gif
+     :alt: Wheel-zooming toward the cursor on a single-axes line plot
+     :width: 480px
+
 * **Point Pick** -- click to read the nearest data value; arrow keys step along
   the series; right-click deletes. Reports extra dims (``z``, ``c``, ...).
 

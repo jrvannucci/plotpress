@@ -483,6 +483,17 @@ anywhere in the source.
   polar, 3-D, signal processing, seaborn, limitations). `benchmarks/
   example_timings.py` and `docs/performance.rst` were updated for the new
   subsection paths.
+- **The interactive toolbar's Zoom tool now does two distinct things.** A
+  rubber-band box drag still zooms one axes in data space, unchanged. The
+  wheel now zooms the *whole figure* instead of that same one axes -- it
+  rescales the SVG's own viewBox, centered on the cursor, regardless of
+  which axes (if any) is under it, and never touches any axes' data range,
+  ticks, or pick data. A per-axes wheel zoom only ever affected whichever
+  tiny panel the cursor happened to be over, which wasn't a useful "zoom
+  out to see the grid" gesture on a figure with many small axes -- the
+  whole-figure image zoom is. See `docs/usage.rst`'s Zoom bullet for two
+  demo GIFs: one zooming into a cluster of a 30-panel `pcolormesh` grid,
+  one on a plain single-axes line plot.
 
 ## [0.1.0] - 2026-07-26
 

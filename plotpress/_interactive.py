@@ -8,8 +8,13 @@ interactive until a mode is chosen (single selection -- picking one cancels the
 others):
 
 * **Span**  -- drag to pan (grab cursor).
-* **Zoom**  -- drag a rubber-band box to zoom into it; wheel to zoom in/out
-  (crosshair cursor).
+* **Zoom**  -- two distinct gestures (crosshair cursor). Drag a rubber-band
+  box to zoom *one axes* into it, in data space (ticks recompute). Wheel
+  zooms the *whole figure* instead, centered on the cursor, regardless of
+  which axes (if any) is under it -- the useful gesture on a figure with
+  many small axes, where "zoom whatever tiny panel the cursor happens to be
+  over" wouldn't be. It only rescales the SVG's own viewBox, so it never
+  touches any axes' data range, ticks, or pick data.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all.
@@ -50,6 +55,25 @@ _JS_SOURCE = r"""
   function apply() {
     svg.setAttribute('viewBox', view.join(' '));
     positionDocked();
+  }
+
+  // Whole-figure zoom, centered on (px, py) (SVG user-space, i.e. already
+  // in the *current* view -- toUser() accounts for any prior pan/zoom).
+  // Rescales the viewBox only -- it never touches any axes' own data
+  // range, so it's the gesture that works uniformly across a figure with
+  // many small axes, unlike a per-axes data zoom that only affects
+  // whichever panel happens to be under the cursor. Clamped well short of
+  // collapsing to zero size (the point going in forever) or growing so
+  // large toUser()'s inverse-CTM math loses precision (the point going
+  // out forever) -- either would make the gesture feel broken past that.
+  function zoomViewAt(px, py, factor) {
+    var newW = view[2] * factor, newH = view[3] * factor;
+    var minW = home[2] * 0.02, maxW = home[2] * 20;
+    if (newW < minW || newW > maxW) return;
+    view[0] = px - (px - view[0]) * factor;
+    view[1] = py - (py - view[1]) * factor;
+    view[2] = newW; view[3] = newH;
+    apply();
   }
 
   // Map an svg user-space point to pixels within the svg wrapper (honors the
@@ -301,9 +325,8 @@ _JS_SOURCE = r"""
   svg.addEventListener('wheel', function (e) {
     if (mode !== 'zoom') return;
     e.preventDefault();
-    var p = toUser(e), a = axesAt(p);
-    if (!a) return;                          // only zoom the axes under the cursor
-    zoomAxesAt(a.i, p.x, p.y, e.deltaY < 0 ? 0.8 : 1.25);
+    var p = toUser(e);
+    zoomViewAt(p.x, p.y, e.deltaY < 0 ? 0.8 : 1.25);
   }, { passive: false });
 
   svg.addEventListener('mousedown', function (e) {
@@ -756,15 +779,6 @@ _JS_SOURCE = r"""
   function refreshAxes(key) {
     applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
     syncLinked(key);
-  }
-  function zoomAxesAt(key, px, py, factor) {
-    var c = CUR[key], e = edges(c);
-    // Zoom in transformed space (linear for 'linear', decades for 'log').
-    var cxf = e.fx0 + (px - c.x) / c.w * (e.fx1 - e.fx0);
-    var cyf = e.fy1 - (py - c.y) / c.h * (e.fy1 - e.fy0);
-    setXLim(c, cxf - (cxf - e.fx0) * factor, cxf + (e.fx1 - cxf) * factor);
-    setYLim(c, cyf - (cyf - e.fy0) * factor, cyf + (e.fy1 - cyf) * factor);
-    refreshAxes(key);
   }
   function resetAxesOne(key) {
     for (var f in META[key]) CUR[key][f] = META[key][f];

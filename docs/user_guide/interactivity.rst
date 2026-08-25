@@ -20,8 +20,13 @@ The toolbar
    * - **Span**
      - Drag to pan a single plot's data window (log-aware).
    * - **Zoom**
-     - Wheel, or drag a rubber-band box, to zoom *one* axes in **data space** --
-       its ticks recompute and markers keep a constant size.
+     - Two distinct gestures. Drag a rubber-band box to zoom *one axes* in
+       **data space** -- its ticks recompute and markers keep a constant
+       size. Wheel zooms the *whole figure* instead, centered on the cursor,
+       regardless of which axes (if any) is under it -- the useful gesture
+       on a figure with many small axes, where the cursor is only ever over
+       one tiny panel at a time. It only rescales the SVG's own viewBox, so
+       it never touches any axes' data range or ticks.
    * - **Point Pick**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
@@ -43,9 +48,10 @@ The toolbar
        them; toggling it back to "Show Annotations" restores them exactly as
        they were, text included.
 
-Per-axes zoom and pan operate on a single axes' data limits (not an image
-zoom of the whole figure), recomputing that axes' ticks live -- including on log
-scales.
+A box-drag zoom and Span's pan both operate on a single axes' data limits,
+recomputing that axes' ticks live -- including on log scales. The wheel is the
+one *image*-style zoom of the whole figure: it never changes any axes' data
+limits or ticks, only what part of the rendered figure is currently visible.
 
 Point picking reports extra dimensions
 --------------------------------------
