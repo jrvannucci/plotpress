@@ -37,6 +37,11 @@ The toolbar
      - Restore the view; double-click resets just the plot under the cursor.
    * - **Extract**
      - Copy/download all markers + annotations, or return them to Python.
+   * - **Hide Annotations**
+     - A standalone toggle, not a mode -- available regardless of which tool
+       is selected. Hides every pin and annotation without deleting any of
+       them; toggling it back to "Show Annotations" restores them exactly as
+       they were, text included.
 
 Per-axes zoom and pan operate on a single axes' data limits (not an image
 zoom of the whole figure), recomputing that axes' ticks live -- including on log

@@ -22,6 +22,14 @@ others):
   just stays at its fixed figure position.
 * **Reset** -- restore *all* plots' views and deselect (back to inert default).
   In Span/Zoom mode, double-clicking a single plot resets only that plot.
+* **Extract** -- open a panel to copy out picked/annotated points as CSV.
+
+**Hide Annotations** is not a mode -- it's a standalone toggle, available
+regardless of the current mode, that hides every pin/annotation (both
+auto-generated Point Pick markers and user-written Annotate notes) without
+deleting them. Toggling it back to "Show Annotations" brings them all back
+exactly as they were, including any text or selection state -- it only ever
+flips a CSS display rule, never touches the underlying marker data.
 
 Legend entries remain clickable to toggle series regardless of mode.
 """
@@ -172,6 +180,9 @@ _JS_SOURCE = r"""
     'border-radius:4px;padding:0 5px;font-weight:600;color:#2b5bd7}' +
     '.plotpress-pin.selected circle{fill:#2b8cff;r:5}' +
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
+    '.plotpress-hide-annotations .plotpress-pin{display:none}' +
+    '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
+    'color:#2b5bd7}' +
     '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
     '.plotpress-extract{position:fixed;top:56px;right:10px;width:360px;' +
     'max-height:72vh;overflow:auto;background:#fff;border:1px solid #b8b8b8;' +
@@ -193,13 +204,23 @@ _JS_SOURCE = r"""
     { mode: 'note-free', label: 'Annotate Free' },
     { mode: 'reset', label: 'Reset' },
     { action: 'extract', label: 'Extract' },
+    { action: 'toggle-annotations', label: 'Hide Annotations' },
   ];
+  var annotationsHidden = false;
+  function toggleAnnotations(b) {
+    annotationsHidden = !annotationsHidden;
+    svg.classList.toggle('plotpress-hide-annotations', annotationsHidden);
+    b.textContent = annotationsHidden ? 'Show Annotations' : 'Hide Annotations';
+    b.classList.toggle('toggled', annotationsHidden);
+  }
   var buttons = TOOLS.map(function (t) {
     var b = document.createElement('button');
     b.textContent = t.label;
     if (t.mode) b.dataset.mode = t.mode;
     b.addEventListener('click', function () {
-      if (t.action === 'extract') doExtract(); else setMode(t.mode);
+      if (t.action === 'extract') doExtract();
+      else if (t.action === 'toggle-annotations') toggleAnnotations(b);
+      else setMode(t.mode);
     });
     bar.appendChild(b);
     return b;

@@ -335,6 +335,28 @@ anywhere in the source.
 - `import plotpress` resolves `Figure`/`subplots`/`Style`/colormap helpers
   lazily on first access instead of eagerly, keeping a bare `import plotpress`
   cheap for callers who only need `__version__`.
+- **Interactive toolbar: "Hide Annotations".** A standalone toggle (not a
+  mode -- available regardless of which tool is active) that hides every pin
+  and annotation, Point Pick markers and Annotate notes alike, without
+  deleting any of them. It only ever flips a CSS `display` rule on
+  `.plotpress-pin`, so toggling back to "Show Annotations" restores them
+  exactly as they were, including selection state and user-written text.
+  See `docs/usage.rst`'s interactivity section for a live demo.
+- **`plotpress.Report` -- combine several figures into one self-contained
+  HTML file.** Each figure keeps its own independent interactivity (its own
+  toolbar, pan/zoom, point-picking, annotations) because it is embedded in
+  its own `<iframe>` via `srcdoc` rather than spliced into the page directly
+  -- an interactive figure's JS (fixed element ids, a document-level
+  toolbar) assumes it owns the page, so several sharing one page would
+  otherwise collide, the same reason the docs gallery already embeds every
+  live figure this way. `Report.add(figure, title=..., details=...)` appends
+  a figure with an optional heading and longer description, in the order it
+  should appear -- there is no separate ordering mechanism to keep in sync,
+  the call order *is* the display order. `Report.save(path, ...)` forwards
+  `interactive`/`pick_precision`/`pick_max_mesh_cells`/`pick_max_points`/
+  `binary_pick_data` to every figure's own `to_html()`. See `docs/usage.rst`
+  for a live demo combining four figures, each a 5x10 grid of independent
+  `pcolormesh` panels with their own title/axes/ticks/labels/colorbar.
 
 ### Fixed
 

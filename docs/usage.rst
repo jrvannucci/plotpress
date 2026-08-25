@@ -81,6 +81,11 @@ active until a tool is selected:
 * **Reset** / **Extract** -- restore the view, or copy/download all markers and
   annotations as CSV/JSON (or hand them back to the kernel with
   ``fig.show(wait_for_extract=True)``).
+* **Hide Annotations** -- a standalone toggle, not a mode: hides every pin and
+  annotation without deleting any of them. Toggling it back to "Show
+  Annotations" restores them exactly as they were, text included.
+
+.. include:: _static/interactive/usage_hide_annotations.rst.inc
 
 3-D data via ``ax.plot_frames(...)`` adds a play/pause/step **slider** over the
 extra dimension.
@@ -99,6 +104,32 @@ are unaffected. See :doc:`user_guide/interactivity` for the full picture, and
 ``set_pick_context`` used to surface a per-panel spine color.
 
 .. include:: _static/interactive/usage_pick_context.rst.inc
+
+Combining figures into a report
+--------------------------------
+
+:class:`~plotpress.Report` combines several figures into one self-contained
+HTML file. Each figure keeps its own independent interactivity -- its own
+toolbar, pan/zoom, point-picking, annotations -- because it is embedded in its
+own ``<iframe>`` rather than spliced directly into the page: an interactive
+figure's JS assumes it owns the page (fixed element ids, a document-level
+toolbar), so several sharing one page directly would collide. Add figures
+with :meth:`~plotpress.Report.add`, in the order they should appear, with an
+optional title and details for each:
+
+.. code-block:: python
+
+   report = plotpress.Report(title="Weekly QA sweep",
+                             description="Four sensor batches, one figure each.")
+   report.add(fig_a, title="Batch A", details="Baseline run, no anomalies.")
+   report.add(fig_b, title="Batch B", details="Elevated noise floor after 14:00.")
+   report.save("qa_sweep.html")
+
+Below: four figures, each its own 5x10 grid of independent ``pcolormesh``
+panels -- every panel keeping its own title, axes, ticks, labels, and
+colorbar -- combined into a single scrollable report.
+
+.. include:: _static/interactive/usage_report.rst.inc
 
 Log scales, aspect, layout
 --------------------------

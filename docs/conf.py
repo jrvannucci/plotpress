@@ -154,6 +154,36 @@ def _write_usage_demo(fig, name, caption):
         fh.write(rst)
 
 
+def _write_usage_report_demo(report, name, caption, height=760):
+    """Write ``report`` (a :class:`plotpress.Report`) as a live interactive
+    demo for the usage guide; return nothing -- writes both the combined
+    report HTML and an RST snippet ``usage.rst`` pulls in with ``.. include::``.
+
+    Mirrors :func:`_write_usage_demo`, but for a :class:`~plotpress.Report`
+    rather than a single :class:`~plotpress.Figure`: ``Report.save()`` already
+    writes the combined, self-contained HTML file directly, so this only has
+    to point an outer iframe at it. ``height`` is a fixed viewport rather than
+    the figure-size-derived height :func:`_write_usage_demo` computes -- a
+    report stacks several figures, so it scrolls internally instead of trying
+    to show the whole thing at once.
+    """
+    os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
+    report.save(os.path.join(_INTERACTIVE_DIR, name + ".html"))
+    rst = "\n".join([
+        ".. raw:: html",
+        "",
+        '   <div class="plotpress-interactive">',
+        f"     <p><em>{caption}</em></p>",
+        f'     <iframe src="_static/interactive/{name}.html" width="100%" height="{height}"',
+        '             loading="lazy" style="max-width:100%; border:1px solid #ddd;"',
+        '             title="Interactive report"></iframe>',
+        "   </div>",
+        "",
+    ])
+    with open(os.path.join(_INTERACTIVE_DIR, name + ".rst.inc"), "w", encoding="utf-8") as fh:
+        fh.write(rst)
+
+
 def _build_usage_demos():
     """The three live figures embedded in docs/usage.rst's interactivity
     section -- one per toolbar capability the prose there describes."""
@@ -206,6 +236,55 @@ def _build_usage_demos():
         "The right panel has set_pickable(False), so clicking it does "
         "nothing -- and were it pickable, its axes_title would fall back to "
         "a generated \"axes 1\" since it has no title of its own.")
+
+    fig5, ax5 = plotpress.subplots(figsize=(6, 4))
+    x5 = np.linspace(0, 10, 200)
+    ax5.plot(x5, np.sin(x5) + 0.15 * np.cos(3 * x5))
+    ax5.set_xlabel("x"); ax5.set_ylabel("y")
+    _write_usage_demo(
+        fig5, "usage_hide_annotations",
+        "Point Pick a few values along the curve, then click Hide "
+        "Annotations -- every pin disappears without being deleted; click "
+        "it again (now labeled Show Annotations) to bring them all back "
+        "exactly as they were.")
+
+    _build_usage_report_demo()
+
+
+def _build_usage_report_demo():
+    """The Report demo embedded in usage.rst's "Combining figures into a
+    report" section: four independent figures, each a 5x10 grid of its own
+    pcolormesh panels (own title, axes, ticks, labels, colorbar), combined
+    into one file via plotpress.Report -- exercising both "many axes in one
+    figure" and "many figures in one HTML" at once.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    cmaps = ["viridis", "plasma", "magma", "inferno"]
+    report = plotpress.Report(
+        title="Sensor bank sweep",
+        description="Four batches of a 5x10 sensor grid, one figure each.")
+    for i, cmap in enumerate(cmaps):
+        fig, axes = plotpress.subplots(5, 10, figsize=(24, 13))
+        for j, ax in enumerate(np.asarray(axes).ravel()):
+            z = rng.uniform(0, 1, (4, 4)) + 0.5 * np.sin(j)
+            m = ax.pcolormesh(z, cmap=cmap)
+            ax.set_title(f"panel {j}", fontsize=7)
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+            ax.tick_params(labelsize=5)
+            fig.colorbar(m, ax=ax)
+        fig.tight_layout()
+        report.add(fig, title=f"Batch {chr(65 + i)}",
+                   details=f"50 independent sensor panels, cmap={cmap!r}. "
+                           "Each keeps its own title, ticks, labels, and "
+                           "colorbar -- pan/zoom/pick works panel by panel.")
+    _write_usage_report_demo(
+        report, "usage_report",
+        "Four figures, each a 5x10 grid of independent pcolormesh panels, "
+        "combined into one file with plotpress.Report -- every panel in "
+        "every figure keeps its own toolbar-driven interactivity.")
 
 
 _build_usage_demos()

@@ -138,6 +138,83 @@ def test_save_rejects_unknown_extension(tmp_path):
         fig.save(str(tmp_path / "out.xyz"))
 
 
+def test_report_requires_at_least_one_figure(tmp_path):
+    report = plotpress.Report()
+    with pytest.raises(ValueError):
+        report.save(str(tmp_path / "empty.html"))
+
+
+def test_report_add_rejects_non_figure():
+    report = plotpress.Report()
+    with pytest.raises(TypeError):
+        report.add("not a figure")
+
+
+def test_report_embeds_each_figure_via_its_own_iframe_in_order(tmp_path):
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [1, 0])
+    fig3, ax3 = plotpress.subplots()
+    ax3.plot([0, 1], [0, 0])
+
+    report = plotpress.Report(title="Three lines", description="A B C")
+    report.add(fig1, title="First")
+    report.add(fig2, title="Second")
+    report.add(fig3, title="Third")
+    p = tmp_path / "report.html"
+    report.save(str(p))
+    out = p.read_text(encoding="utf-8")
+
+    assert out.count("<iframe") == 3
+    assert "Three lines" in out
+    assert "A B C" in out
+    # Order is document order: "First" before "Second" before "Third".
+    i1, i2, i3 = out.index("First"), out.index("Second"), out.index("Third")
+    assert i1 < i2 < i3
+    # One embedded (escaped) figure document per iframe: the tagged root SVG
+    # element's id appears exactly once per figure, however many times its
+    # own JS separately references that same id by string.
+    assert out.count("id=&quot;plotpress-svg&quot;") == 3
+
+
+def test_report_srcdoc_round_trips_each_figures_own_html(tmp_path):
+    """The escaped ``srcdoc`` must decode back to exactly what
+    ``Figure.to_html()`` produces standalone for that figure -- not a
+    mangled or partially-escaped copy -- and non-default kwargs (here
+    ``pick_precision``/``binary_pick_data``) must reach it unchanged."""
+    import html as html_mod
+
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.arange(20, dtype=float).reshape(4, 5))
+    expected = fig.to_html(interactive=True, pick_precision=2,
+                           binary_pick_data=False)
+
+    report = plotpress.Report()
+    report.add(fig)
+    p = tmp_path / "report_one.html"
+    report.save(str(p), pick_precision=2, binary_pick_data=False)
+    out = p.read_text(encoding="utf-8")
+
+    start = out.index('srcdoc="') + len('srcdoc="')
+    # html.escape() leaves no raw '"' inside the escaped blob, so the first
+    # one found after the opening delimiter is unambiguously the closer.
+    end = out.index('"', start)
+    assert html_mod.unescape(out[start:end]) == expected
+
+
+def test_report_static_mode_embeds_figures_without_the_toolbar(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    report = plotpress.Report()
+    report.add(fig)
+    p = tmp_path / "static_report.html"
+    report.save(str(p), interactive=False)
+    out = p.read_text(encoding="utf-8")
+    assert "plotpress-toolbar" not in out
+    assert "plotpress-svg" in out
+
+
 def test_save_png(tmp_path):
     pytest.importorskip("PIL")
     fig, ax = plotpress.subplots()

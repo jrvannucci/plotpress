@@ -9,6 +9,7 @@ mutable state.
 from __future__ import annotations
 
 import base64
+import html
 import json
 import math
 import os
@@ -1292,3 +1293,122 @@ def _subplot_rect(nrows, ncols, index, sp=None):
     ax_left = left + col * axw * (1 + wspace)
     ax_bottom = bottom + (nrows - 1 - row) * axh * (1 + hspace)
     return (ax_left, ax_bottom, axw, axh)
+
+
+_REPORT_STYLE = (
+    "<style>"
+    "body{margin:0;padding:32px 24px;background:#f5f5f5;"
+    "font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a}"
+    ".plotpress-report{max-width:1100px;margin:0 auto}"
+    ".plotpress-report>h1{font-size:24px;margin:0 0 6px}"
+    ".plotpress-report-description{color:#555;margin:0 0 32px;max-width:70ch}"
+    ".plotpress-report-entry{margin-bottom:44px}"
+    ".plotpress-report-label{font-size:11px;font-weight:600;letter-spacing:.04em;"
+    "text-transform:uppercase;color:#888;margin-bottom:4px}"
+    ".plotpress-report-entry h2{font-size:18px;margin:0 0 4px}"
+    ".plotpress-report-details{color:#555;margin:0 0 14px;max-width:70ch;"
+    "white-space:pre-wrap}"
+    ".plotpress-report-entry iframe{border:1px solid #ddd;border-radius:6px;"
+    "background:#fff;display:block;max-width:100%}"
+    "</style>"
+)
+
+
+class Report:
+    """An ordered collection of figures combined into one self-contained HTML file.
+
+    Each figure keeps its own independent interactivity -- its own toolbar,
+    pan/zoom, point-picking, annotations -- because it is embedded in its own
+    ``<iframe>`` rather than spliced directly into the page. An interactive
+    figure's JS (:mod:`plotpress._interactive`) assumes it owns the page: fixed
+    element ids (``plotpress-svg``, ``plotpress-meta``, ...) and a
+    document-level toolbar, so several figures sharing one page directly would
+    collide -- the same reason the docs gallery embeds every live figure this
+    way (see ``docs/conf.py``'s ``_interactive_embed``). An iframe gives each
+    figure its own document instead, at no real cost to "one file": each
+    figure's already-self-contained HTML (see :meth:`Figure.to_html`) is
+    inlined via the iframe's ``srcdoc`` attribute rather than referenced as a
+    separate file, so the report is still a single, self-contained HTML
+    document with no external requests.
+
+    Add figures with :meth:`add`, in the order they should appear, then write
+    the combined file with :meth:`save`::
+
+        report = plotpress.Report(title="Weekly QA sweep",
+                                  description="Four sensor batches, one figure each.")
+        report.add(fig_a, title="Batch A", details="Baseline run, no anomalies.")
+        report.add(fig_b, title="Batch B", details="Elevated noise floor after 14:00.")
+        report.save("qa_sweep.html")
+    """
+
+    def __init__(self, title: str = None, description: str = None):
+        self.title = title
+        self.description = description
+        self._entries = []   # [(figure, title, details)], in add() order
+
+    def add(self, figure: "Figure", title: str = None, details: str = None) -> "Report":
+        """Append ``figure`` to the report; returns ``self`` so calls can chain.
+
+        ``title`` (a short heading) and ``details`` (a longer description) are
+        optional per-figure annotations rendered above the embedded figure.
+        Figures appear in the HTML in the order they were added -- there is no
+        separate ordering mechanism to keep in sync.
+        """
+        if not isinstance(figure, Figure):
+            raise TypeError("Report.add() expects a Figure, got %r" % (figure,))
+        self._entries.append((figure, title, details))
+        return self
+
+    def save(self, path: str, interactive: bool = True,
+             pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+             pick_max_points: int = 20000, binary_pick_data: bool = True) -> str:
+        """Write every added figure, in order, to one self-contained HTML file.
+
+        ``interactive`` and the ``pick_*``/``binary_pick_data`` arguments are
+        forwarded to each figure's own :meth:`Figure.to_html` -- see there for
+        what they mean. Every figure in the report shares the same settings;
+        call :meth:`Figure.to_html` directly (and write the file yourself) for
+        a mix of interactive and static figures on one page.
+        """
+        if not self._entries:
+            raise ValueError("Report has no figures -- call add() at least once")
+        parts = [
+            "<!doctype html><html><head><meta charset='utf-8'>",
+            f"<title>{html.escape(self.title)}</title>" if self.title else "",
+            _REPORT_STYLE,
+            "</head><body><div class='plotpress-report'>",
+        ]
+        if self.title:
+            parts.append(f"<h1>{html.escape(self.title)}</h1>")
+        if self.description:
+            parts.append('<p class="plotpress-report-description">'
+                         f'{html.escape(self.description)}</p>')
+        for n, (figure, title, details) in enumerate(self._entries, start=1):
+            doc = figure.to_html(interactive=interactive,
+                                 pick_precision=pick_precision,
+                                 pick_max_mesh_cells=pick_max_mesh_cells,
+                                 pick_max_points=pick_max_points,
+                                 binary_pick_data=binary_pick_data)
+            dpi = figure.style.dpi
+            w = int(round(figure.figsize[0] * dpi))
+            h = int(round(figure.figsize[1] * dpi))
+            if interactive:
+                # Room for the toolbar, plus each docked slider strip.
+                h += 96 + 60 * len(figure._sliders or {})
+            iframe_title = html.escape(title) if title else "Figure %d" % n
+            parts.append('<div class="plotpress-report-entry">')
+            parts.append(f'<div class="plotpress-report-label">Figure {n}</div>')
+            if title:
+                parts.append(f"<h2>{html.escape(title)}</h2>")
+            if details:
+                parts.append('<p class="plotpress-report-details">'
+                             f'{html.escape(details)}</p>')
+            parts.append(
+                f'<iframe srcdoc="{html.escape(doc)}" width="{w}" height="{h}" '
+                f'loading="lazy" title="{iframe_title}"></iframe>')
+            parts.append("</div>")
+        parts.append("</div></body></html>")
+        content = "".join(parts)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return path

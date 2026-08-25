@@ -848,3 +848,57 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
     assert m["kind"] == "annotation" and m["text"] == "figure caption"
     assert "axes" not in m, "a margin note has no data coordinate to report"
     assert m["px"] == pytest.approx(2, abs=1) and m["py"] == pytest.approx(2, abs=1)
+
+
+def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
+    """"Hide Annotations" is a standalone toggle, not a mode -- it must hide
+    every pin (Point Pick markers and Annotate notes alike) without deleting
+    any of them, and bringing it back must restore them exactly, including
+    their text."""
+    import plotpress
+    from pick_cases import px
+
+    x, y = [0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0]
+    fig, ax = plotpress.subplots()
+    ax.plot(x, y)
+    path = tmp_path / "hide_annotations.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux0, uy0 = px(fig, 0, x[1], y[1])
+    _click_mode(page, "Point Pick", ux0, uy0)
+    ux1, uy1 = px(fig, 0, x[2], y[2])
+    _click_mode(page, "Annotate Point", ux1, uy1, prompt_text="second point")
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 2
+
+    def toggle_and_read():
+        return page.evaluate(
+            """() => {
+              let btn = null;
+              document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+                if (b.textContent === 'Hide Annotations' ||
+                    b.textContent === 'Show Annotations') btn = b;
+              });
+              btn.click();
+              const pins = document.querySelectorAll('.plotpress-pin');
+              const hiddenCount = Array.from(pins).filter(
+                p => getComputedStyle(p).display === 'none').length;
+              return {
+                label: btn.textContent,
+                pinCount: pins.length,
+                hiddenCount: hiddenCount,
+                markers: window.plotpressGetMarkers(),
+              };
+            }""")
+
+    hidden = toggle_and_read()
+    assert hidden["label"] == "Show Annotations"
+    assert hidden["pinCount"] == 2, "toggling must not delete any pin"
+    assert hidden["hiddenCount"] == 2, "every pin must be visually hidden"
+    assert len(hidden["markers"]) == 2, "marker data must survive while hidden"
+
+    shown = toggle_and_read()
+    assert shown["label"] == "Hide Annotations"
+    assert shown["hiddenCount"] == 0, "toggling back must restore visibility"
+    assert shown["markers"] == hidden["markers"], (
+        "restored markers must carry the exact same data, including text")

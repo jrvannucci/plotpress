@@ -10,6 +10,7 @@ Top level
 
    Figure
    subplots
+   Report
    Style
    Normalize
    get_cmap
@@ -23,6 +24,12 @@ Figure
    :undoc-members:
 
 .. autofunction:: plotpress.subplots
+
+Report
+------
+
+.. autoclass:: plotpress.figure.Report
+   :members:
 
 Axes
 ----
