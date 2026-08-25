@@ -131,6 +131,29 @@ colorbar -- combined into a single scrollable report.
 
 .. include:: _static/interactive/usage_report.rst.inc
 
+Reading data back out of a saved HTML
+---------------------------------------
+
+:func:`~plotpress.load_data` reads the plotted data straight back out of an
+``interactive=True`` HTML file -- the original Python objects that built it
+don't need to still be around. It returns a list of per-figure dicts (one
+item for a bare figure's HTML, one per embedded figure for a
+:class:`~plotpress.Report`'s), each mapping axes index to that panel's
+series/mesh data plus its labels, limits, and scale:
+
+.. code-block:: python
+
+   figures = plotpress.load_data("qa_sweep.html")
+   mesh = figures[0]["axes"][0]["meshes"][0]
+   mesh["x"], mesh["y"]   # 1-D cell-center coordinates
+   mesh["z"]              # 2-D array, shape (ny, nx)
+
+See :doc:`auto_examples/data_roundtrip/plot_01_reload_mesh_grid_as_lines` and
+:doc:`auto_examples/data_roundtrip/plot_02_reload_and_fft_mesh_grid` for two
+worked examples: reloading a 30-panel ``pcolormesh`` grid and replotting one
+x-slice per panel as a line, and reloading the same grid to run a 2-D FFT
+over every panel.
+
 Log scales, aspect, layout
 --------------------------
 

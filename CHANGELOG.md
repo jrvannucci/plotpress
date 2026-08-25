@@ -357,6 +357,23 @@ anywhere in the source.
   `binary_pick_data` to every figure's own `to_html()`. See `docs/usage.rst`
   for a live demo combining four figures, each a 5x10 grid of independent
   `pcolormesh` panels with their own title/axes/ticks/labels/colorbar.
+- **`plotpress.load_data(path)` -- read the plotted data straight back out
+  of a saved interactive HTML file.** Every `interactive=True` file already
+  embeds each axes' full plotted data (as JSON, or as base64 float32/float16
+  under `binary_pick_data=True`) for point-picking; `load_data()` decodes
+  that same payload into plain NumPy arrays instead of re-deriving anything
+  from the drawn SVG. Returns a list of per-figure dicts -- one item for a
+  bare `Figure`'s HTML, one per embedded figure (in order, with its
+  `Report.add(title=, details=)` annotations) for a `Report`'s -- each
+  mapping axes index to that panel's series/mesh/pie data plus its
+  title/labels/limits/scale. A mesh comes back as a 2-D `z` array with its
+  own 1-D `x`/`y` cell-center coordinates, ready for `ax.plot(x, z[row, :])`
+  or `np.fft.fft2(z)` without hand-deriving a grid from edges or extent.
+  Raises `ValueError` on a static SVG or `interactive=False` HTML, which
+  embeds only drawn shapes, nothing to read back. See
+  `docs/examples/data_roundtrip` for two worked examples: reloading a
+  30-panel `pcolormesh` grid and replotting one x-slice per panel as a
+  line, and reloading the same grid to run a 2-D FFT over every panel.
 
 ### Fixed
 

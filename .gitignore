@@ -40,6 +40,7 @@ docs/_build/
 docs/auto_examples/
 docs/auto_applications/
 docs/auto_scale/
+docs/auto_live_streaming/
 docs/sg_execution_times.rst
 
 # Editors / IDEs

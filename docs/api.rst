@@ -11,6 +11,7 @@ Top level
    Figure
    subplots
    Report
+   load_data
    Style
    Normalize
    get_cmap
@@ -30,6 +31,8 @@ Report
 
 .. autoclass:: plotpress.figure.Report
    :members:
+
+.. autofunction:: plotpress.load_data
 
 Axes
 ----

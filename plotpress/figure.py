@@ -13,6 +13,7 @@ import html
 import json
 import math
 import os
+import re
 import time
 import warnings
 
@@ -1412,3 +1413,175 @@ class Report:
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         return path
+
+
+def _decode_binary_arrays(obj):
+    """Reverse :func:`_encode_binary_arrays`: a ``{"__f32__": b64}``/
+    ``{"__f16__": b64}`` leaf becomes a real ``numpy`` array; everything else
+    is walked unchanged. float16 decodes via ``numpy``'s native dtype (exact,
+    unlike the JS side's hand-rolled ``halfToFloat`` -- there is no
+    ``Float16Array`` in a browser, but Python has no such gap).
+    """
+    if isinstance(obj, dict):
+        if set(obj) == {"__f32__"}:
+            return np.frombuffer(base64.b64decode(obj["__f32__"]), dtype=np.float32)
+        if set(obj) == {"__f16__"}:
+            return np.frombuffer(base64.b64decode(obj["__f16__"]),
+                                 dtype=np.float16).astype(np.float64)
+        return {k: _decode_binary_arrays(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode_binary_arrays(v) for v in obj]
+    return obj
+
+
+def _expand_columnar_meta(payload):
+    """Reverse :func:`_columnarize_meta`: ``{"cols", "index", "keys"}`` (one
+    array per field) back to ``{axes_index: {field: value, ...}, ...}``. A
+    plain (non-columnarized) meta payload -- ``binary_pick_data=False`` never
+    columnarizes -- is returned unchanged.
+    """
+    if not (isinstance(payload, dict)
+            and {"cols", "index", "keys"} <= set(payload)):
+        return payload
+    cols, index, keys = payload["cols"], payload["index"], payload["keys"]
+    return {i: {k: cols[k][pos] for k in keys} for pos, i in enumerate(index)}
+
+
+def _extract_json_block(text, element_id):
+    """The parsed JSON body of ``<script type="application/json" id="...">``,
+    or ``None`` if that element isn't in ``text`` at all."""
+    m = re.search(
+        r'<script type="application/json" id="%s">(.*?)</script>' % re.escape(element_id),
+        text, re.DOTALL)
+    return json.loads(m.group(1)) if m else None
+
+
+def _mesh_centers(mesh):
+    """1-D cell-center coordinate arrays for a ``pick_data()`` mesh entry, or
+    ``(None, None)`` for a curvilinear (warped) mesh, which has no separable
+    per-axis coordinates -- only per-cell ``xc``/``yc`` centers.
+    """
+    if mesh.get("curvilinear"):
+        return None, None
+    if "xcoord" in mesh:
+        # A contour's samples: the exact coordinate, not an edge midpoint --
+        # see pick_data()'s own contour branch for why those can differ.
+        return (np.asarray(mesh["xcoord"], dtype=float),
+                np.asarray(mesh["ycoord"], dtype=float))
+    xe = np.asarray(mesh["xedges"], dtype=float)
+    ye = np.asarray(mesh["yedges"], dtype=float)
+    return (xe[:-1] + xe[1:]) / 2.0, (ye[:-1] + ye[1:]) / 2.0
+
+
+def _load_single_figure(text):
+    """Every plotted axes' data out of one figure's own interactive HTML."""
+    pick = _extract_json_block(text, "plotpress-pick")
+    if pick is None:
+        raise ValueError(
+            "no embedded plot data found -- load_data() only works on HTML "
+            "saved with interactive=True (Figure.to_html()/save(..., "
+            "interactive=True) or Report.save()); a static SVG or "
+            "interactive=False HTML embeds only drawn shapes, nothing to "
+            "read back")
+    pick = {int(k): v for k, v in _decode_binary_arrays(pick).items()}
+    meta_raw = _extract_json_block(text, "plotpress-meta") or {}
+    meta = _expand_columnar_meta(_decode_binary_arrays(meta_raw))
+    meta = {int(k): v for k, v in meta.items()}
+
+    axes = {}
+    for i in sorted(set(pick) | set(meta)):
+        entry = pick.get(i, {"series": [], "meshes": [], "pies": []})
+        m = meta.get(i, {})
+        series = []
+        for s in entry.get("series", []):
+            series.append({
+                "kind": s.get("kind"),
+                "x": np.asarray(s["x"], dtype=float),
+                "y": np.asarray(s["y"], dtype=float),
+                "vals": {k: np.asarray(v, dtype=float)
+                        for k, v in s.get("vals", {}).items()},
+            })
+        meshes = []
+        for msh in entry.get("meshes", []):
+            ny, nx = msh["shape"]
+            z = np.asarray(msh["z"], dtype=float).reshape(ny, nx)
+            xc, yc = _mesh_centers(msh)
+            meshes.append({
+                "x": xc, "y": yc, "z": z,
+                "extent": tuple(msh["extent"]),
+                "curvilinear": bool(msh.get("curvilinear", False)),
+            })
+        axes[i] = {
+            "series": series, "meshes": meshes, "pies": entry.get("pies", []),
+            "title": m.get("title"), "xlabel": m.get("xlabel"),
+            "ylabel": m.get("ylabel"), "zlabel": m.get("zlabel"),
+            "xlim": (m["xmin"], m["xmax"]) if "xmin" in m else None,
+            "ylim": (m["ymin"], m["ymax"]) if "ymin" in m else None,
+            "xscale": m.get("xscale"), "yscale": m.get("yscale"),
+        }
+    return axes
+
+
+def _split_report_entries(text):
+    """One chunk of HTML per :class:`Report` entry, each starting at its
+    ``plotpress-report-label`` div (always present, unlike the optional title/
+    details) -- avoids needing to balance nested ``<div>`` tags with regex,
+    which a proper (non-regular) HTML parse would need otherwise.
+    """
+    return text.split('<div class="plotpress-report-label">')[1:]
+
+
+def load_data(path: str):
+    """Read back the plotted data embedded in a self-contained interactive
+    HTML file written by :meth:`Figure.to_html`/:meth:`Figure.save` or
+    :meth:`Report.save`.
+
+    Returns a list of per-figure dicts, one per figure embedded in the file,
+    in the order they appear -- a bare :class:`Figure`'s HTML still comes
+    back as a one-item list, so callers get one return shape regardless of
+    source. Each dict has ``"title"``/``"details"`` (a :class:`Report`
+    entry's own annotations; ``None`` for a bare figure or an entry that had
+    none) and ``"axes"``: ``{index: {...}, ...}``, one entry per plotted
+    axes::
+
+        {"series": [{"kind": "line", "x": array, "y": array,
+                    "vals": {name: array, ...}}, ...],
+         "meshes": [{"x": array,          # 1-D cell centers (None if curvilinear)
+                     "y": array,          # 1-D cell centers (None if curvilinear)
+                     "z": array,          # 2-D, shape (ny, nx), row 0 = ymin
+                     "extent": (xmin, xmax, ymin, ymax),
+                     "curvilinear": bool}, ...],
+         "pies": [...],
+         "title": str | None, "xlabel": str | None, "ylabel": str | None,
+         "zlabel": str | None, "xlim": (float, float) | None,
+         "ylim": (float, float) | None, "xscale": str, "yscale": str}
+
+    Only works on HTML saved with ``interactive=True``: a static SVG or an
+    ``interactive=False`` HTML embeds no data to read back, only drawn
+    shapes, and raises ``ValueError``. Recovered arrays reflect whatever
+    precision/caps were in effect at save time (``pick_precision``,
+    ``pick_max_points``, ``pick_max_mesh_cells``) -- they are not guaranteed
+    bit-exact copies of the original data for a series/mesh that was rounded
+    or capped on the way out.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    if 'srcdoc="' not in text:
+        return [{"title": None, "details": None, "axes": _load_single_figure(text)}]
+
+    figures = []
+    for chunk in _split_report_entries(text):
+        srcdoc_m = re.search(r'srcdoc="(.*?)"', chunk, re.DOTALL)
+        if not srcdoc_m:
+            continue
+        title_m = re.search(r"<h2>(.*?)</h2>", chunk, re.DOTALL)
+        details_m = re.search(
+            r'<p class="plotpress-report-details">(.*?)</p>', chunk, re.DOTALL)
+        doc = html.unescape(srcdoc_m.group(1))
+        figures.append({
+            "title": html.unescape(title_m.group(1)) if title_m else None,
+            "details": html.unescape(details_m.group(1)) if details_m else None,
+            "axes": _load_single_figure(doc),
+        })
+    return figures

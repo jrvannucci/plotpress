@@ -215,6 +215,83 @@ def test_report_static_mode_embeds_figures_without_the_toolbar(tmp_path):
     assert "plotpress-svg" in out
 
 
+def test_load_data_recovers_single_figure_series_and_mesh(tmp_path):
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    y = np.array([0.0, 1.0, 4.0, 9.0])
+    fig, (ax1, ax2) = plotpress.subplots(1, 2)
+    ax1.plot(x, y)
+    ax1.set_xlabel("t"); ax1.set_ylabel("amp"); ax1.set_title("line")
+
+    xm = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    ym = np.array([0.0, 1.0, 2.0, 3.0])
+    Z = np.arange(12.0).reshape(3, 4)
+    m = ax2.pcolormesh(xm, ym, Z, cmap="viridis")
+    ax2.set_title("mesh")
+    fig.colorbar(m, ax=ax2).set_title("val")
+
+    p = tmp_path / "load_single.html"
+    fig.save(str(p), interactive=True)
+    figures = plotpress.load_data(str(p))
+
+    assert len(figures) == 1
+    assert figures[0]["title"] is None and figures[0]["details"] is None
+    axes = figures[0]["axes"]
+    assert set(axes) == {0, 1}
+
+    line = axes[0]["series"][0]
+    assert line["kind"] == "line"
+    assert np.allclose(line["x"], x) and np.allclose(line["y"], y)
+    assert axes[0]["title"] == "line"
+    assert axes[0]["xlabel"] == "t" and axes[0]["ylabel"] == "amp"
+
+    mesh = axes[1]["meshes"][0]
+    assert np.allclose(mesh["x"], (xm[:-1] + xm[1:]) / 2.0)
+    assert np.allclose(mesh["y"], (ym[:-1] + ym[1:]) / 2.0)
+    assert np.allclose(mesh["z"], Z)
+    assert axes[1]["zlabel"] == "val"
+
+
+def test_load_data_recovers_report_figures_in_order_with_titles(tmp_path):
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    fig2, ax2 = plotpress.subplots()
+    z = np.arange(20.0).reshape(4, 5)
+    ax2.pcolormesh(z, cmap="plasma")
+
+    report = plotpress.Report(title="T", description="D")
+    report.add(fig1, title="First", details="details one")
+    report.add(fig2, title="Second", details="details two")
+    p = tmp_path / "load_report.html"
+    report.save(str(p))
+    figures = plotpress.load_data(str(p))
+
+    assert len(figures) == 2
+    assert figures[0]["title"] == "First" and figures[0]["details"] == "details one"
+    assert figures[1]["title"] == "Second" and figures[1]["details"] == "details two"
+    assert np.allclose(figures[1]["axes"][0]["meshes"][0]["z"], z)
+
+
+def test_load_data_works_with_plain_json_meta(tmp_path):
+    """binary_pick_data=False never columnarizes meta -- load_data() must
+    handle both the columnar (int-keyed index) and plain (string-keyed dict)
+    shapes the same way."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    p = tmp_path / "load_plain_json.html"
+    fig.save(str(p), interactive=True, binary_pick_data=False)
+    figures = plotpress.load_data(str(p))
+    assert np.allclose(figures[0]["axes"][0]["series"][0]["y"], [0.0, 1.0, 4.0])
+
+
+def test_load_data_raises_on_static_html(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    p = tmp_path / "static.html"
+    fig.save(str(p), interactive=False)
+    with pytest.raises(ValueError):
+        plotpress.load_data(str(p))
+
+
 def test_save_png(tmp_path):
     pytest.importorskip("PIL")
     fig, ax = plotpress.subplots()
