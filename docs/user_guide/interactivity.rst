@@ -49,9 +49,11 @@ The toolbar
        they were, text included.
 
 A box-drag zoom and Span's pan both operate on a single axes' data limits,
-recomputing that axes' ticks live -- including on log scales. The wheel is the
-one *image*-style zoom of the whole figure: it never changes any axes' data
-limits or ticks, only what part of the rendered figure is currently visible.
+recomputing that axes' ticks live -- including on log scales. Ctrl+wheel (or
+a trackpad pinch) is the one *image*-style zoom of the whole figure: it never
+changes any axes' data limits or ticks, only what part of the rendered figure
+is currently visible. A plain wheel, without Ctrl, is left to scroll the page
+instead -- it never zooms.
 
 Point picking reports extra dimensions
 --------------------------------------

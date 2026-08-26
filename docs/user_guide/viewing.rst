@@ -89,13 +89,16 @@ Evaluating a figure in a notebook cell displays it **inline as static SVG**
    (``Figure._repr_svg_``).
 
 For the **interactive** toolbar *inside* a notebook, embed the self-contained
-HTML in an ``<iframe>`` (which isolates and runs the inlined JS):
+HTML in an ``<iframe>`` (which isolates and runs the inlined JS). Pass
+``standalone=False`` -- meant exactly for embedding in a container you don't
+control the size of -- so the figure scales to fill the iframe instead of
+sitting at a fixed pixel size with empty space centered around it:
 
 .. code-block:: python
 
    from IPython.display import HTML
 
-   html = fig.to_html(interactive=True).replace('"', "&quot;")
+   html = fig.to_html(interactive=True, standalone=False).replace('"', "&quot;")
    HTML(f'<iframe srcdoc="{html}" width="720" height="520" '
         f'style="border:0"></iframe>')
 

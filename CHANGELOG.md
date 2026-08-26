@@ -13,6 +13,13 @@ anywhere in the source.
 
 ### Changed
 
+- The interactive toolbar's whole-figure wheel zoom now requires Ctrl
+  (matching the standard browser/OS convention -- a trackpad pinch is
+  already reported as a wheel event with `ctrlKey` set, so that gesture
+  works unchanged). A plain wheel, even with Zoom selected, now scrolls the
+  page instead of always hijacking it to zoom the figure -- the figure
+  could previously make the enclosing page unscrollable wherever it
+  appeared, which is a worse default than requiring one held key.
 - Docs build: a gallery figure with more than 6 axes (currently only
   `docs/examples/data_roundtrip`'s 30-panel grids) now links to its full
   standalone interactive HTML in a new page instead of embedding it in a
@@ -25,6 +32,41 @@ anywhere in the source.
 
 ### Fixed
 
+- `Report` embedded each figure at its own fixed pixel size, centered by
+  `Figure.to_html()`'s standalone body style inside a same-size `<iframe>` --
+  narrower than most browser windows, and, whenever the iframe's fixed
+  height (a flat +96px "room for the toolbar" guess, regardless of whether
+  the figure actually had one docked) didn't match the centered figure's
+  own height, split the difference into empty grey bands above and below
+  it. `Figure.to_html()` gains a `standalone` parameter (`Report` now passes
+  `False`): the SVG scales to fill whatever width its container gives it
+  instead of sitting at a fixed size, and the page no longer forces itself
+  to a full viewport tall. Each `Report` iframe now stretches to the full
+  width of the page and a small resize script settles its height to the
+  real rendered content -- exactly the figure, plus real reserved space per
+  docked slider strip, nothing left over.
+
+  A `plot_frames()`/`pcolormesh_frames()` figure needed a second, deeper
+  fix: the div it wraps the SVG in (to position docked sliders over it) was
+  hardcoded `display:inline-block`, which shrink-wraps to the SVG's own
+  fixed width/height attributes regardless of any CSS on the SVG -- a
+  circular size dependency that silently undid the scaling above for any
+  figure with a slider. That wrapper's sizing now comes from the same
+  standalone-aware stylesheet as everything else, not a hardcoded inline style.
+
+  Toolbar/slider clearance is now real body padding inside the embedded
+  document itself (a new `_toolbar_clearance()` helper), not a guessed
+  iframe height: dropping the old flat +96px guess had also silently
+  removed the only thing keeping the toolbar (`position:fixed`, so it
+  otherwise takes no layout space of its own) from drawing over a legend or
+  colorbar in a figure's top-right corner once nothing else reserved room
+  for it. The docs build's own gallery and `usage.rst` demo embeds
+  (`docs/conf.py`) shared the exact same bug -- `standalone=True` plus a
+  flat height guess -- and now use this same fix. The report resize script
+  also no longer risks collapsing a `loading="lazy"` entry that hasn't
+  loaded yet to near-zero height if a resize fires before the reader
+  scrolls to it, and skips re-measuring an iframe whose width hasn't
+  changed since its last fit.
 - `pcolormesh_frames()` (a `pcolormesh` with a slider over an extra
   dimension) had no pick data at all, at any frame -- `frame_data()` only
   ever embedded each frame's rendered PNG for the slider to swap in, never

@@ -180,15 +180,17 @@ def test_report_embeds_each_figure_via_its_own_iframe_in_order(tmp_path):
 
 def test_report_srcdoc_round_trips_each_figures_own_html(tmp_path):
     """The escaped ``srcdoc`` must decode back to exactly what
-    ``Figure.to_html()`` produces standalone for that figure -- not a
-    mangled or partially-escaped copy -- and non-default kwargs (here
+    ``Figure.to_html(standalone=False)`` produces for that figure -- Report
+    embeds each figure so its SVG fills the iframe's own width rather than
+    centering at a fixed size, not a mangled or partially-escaped copy of the
+    standalone document -- and non-default kwargs (here
     ``pick_precision``/``binary_pick_data``) must reach it unchanged."""
     import html as html_mod
 
     fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(20, dtype=float).reshape(4, 5))
     expected = fig.to_html(interactive=True, pick_precision=2,
-                           binary_pick_data=False)
+                           binary_pick_data=False, standalone=False)
 
     report = plotpress.Report()
     report.add(fig)
@@ -213,6 +215,113 @@ def test_report_static_mode_embeds_figures_without_the_toolbar(tmp_path):
     out = p.read_text(encoding="utf-8")
     assert "plotpress-toolbar" not in out
     assert "plotpress-svg" in out
+
+
+def test_toolbar_clearance_reserves_space_only_when_interactive():
+    from plotpress.figure import _toolbar_clearance
+
+    assert _toolbar_clearance(False, 0) == (0, 0)
+    assert _toolbar_clearance(False, 3) == (0, 0)   # static report: no toolbar either
+    assert _toolbar_clearance(True, 0) == (44, 0)
+    assert _toolbar_clearance(True, 2) == (44, 120)
+
+
+def test_to_html_standalone_false_pads_body_for_toolbar_and_sliders():
+    """Regression: standalone=False's SVG sits flush against the body's own
+    edges (no flex-centering slack to silently absorb the fixed-position
+    toolbar/slider strip the way standalone=True's full-viewport centering
+    does) -- dropping the old (inaccurate) fixed-height guess this replaced
+    left the toolbar with no reserved space at all, free to draw over
+    whatever's in the figure's own top-right corner (a legend, a colorbar)."""
+    import numpy as np
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    assert "padding:44px 0 0px" in fig.to_html(standalone=False)
+    assert "padding:0px 0 0px" in fig.to_html(standalone=False, interactive=False)
+
+    x = np.linspace(0, 1, 5)
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot_frames(x, np.array([x, x * 2]))
+    assert "padding:44px 0 60px" in fig2.to_html(standalone=False)
+
+
+def test_to_html_standalone_false_scales_svg_and_drops_centering():
+    """standalone=False is what Report (and anything else embedding the HTML
+    in a container it doesn't control the size of) needs: the SVG must scale
+    to fill whatever width it's given rather than sit at its own fixed pixel
+    size, and the page must not force itself to a full viewport tall -- that
+    combination is what left a large empty band above and below a figure
+    centered in a shorter iframe."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+
+    standalone = fig.to_html(standalone=True)
+    assert "min-height:100vh" in standalone
+    assert "width:100%;height:auto" not in standalone
+
+    embedded = fig.to_html(standalone=False)
+    assert "min-height:100vh" not in embedded
+    assert "justify-content:center" not in embedded
+    assert "width:100%;height:auto" in embedded
+
+
+def _report_entry_doc(report_html, index=0):
+    """Unescape and return the Nth embedded figure's own HTML document from
+    a saved Report file's srcdoc-carrying iframes, in order."""
+    import html as html_mod
+
+    starts = [m.start() for m in re.finditer(r'srcdoc="', report_html)]
+    start = starts[index] + len('srcdoc="')
+    end = report_html.index('"', start)
+    return html_mod.unescape(report_html[start:end])
+
+
+def test_report_embeds_figures_at_full_width_not_a_fixed_pixel_size(tmp_path):
+    """Regression: each iframe used to carry a fixed width/height matching
+    the figure's own pixel size -- narrower than most browser windows, and
+    centered by Figure.to_html's standalone body style, which together left
+    a figure looking small and padded with empty space rather than filling
+    the report."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4])
+    report = plotpress.Report()
+    report.add(fig)
+    p = tmp_path / "wide_report.html"
+    report.save(str(p))
+    out = p.read_text(encoding="utf-8")
+
+    assert 'width="' not in out.split("<iframe", 1)[1].split(">", 1)[0]
+    assert "width:100%" in out          # .plotpress-report-entry iframe CSS
+    assert "contentDocument" in out     # the resize script that fits height
+    # No sliders -- only the toolbar's own fixed 44px clearance, none below.
+    assert "padding:44px 0 0px" in _report_entry_doc(out)
+
+
+def test_report_reserves_space_per_docked_slider_via_body_padding(tmp_path):
+    """Toolbar/slider clearance is real body padding inside the embedded
+    figure's own document (Figure.to_html, standalone=False) -- not a
+    separate out-of-band attribute the resize script has to add back in --
+    so the iframe's measured scrollHeight already includes it."""
+    x = np.linspace(0, 1, 5)
+    Y = np.array([x, x * 2, x * 3])
+    fig, ax = plotpress.subplots()
+    ax.plot_frames(x, Y)
+    report = plotpress.Report()
+    report.add(fig)
+    p = tmp_path / "slider_report.html"
+    report.save(str(p))
+    doc = _report_entry_doc(p.read_text(encoding="utf-8"))
+    assert "padding:44px 0 60px" in doc
+
+    # A static (non-interactive) report has no toolbar or slider strip to
+    # reserve space for, regardless of the figure's own slider data.
+    report2 = plotpress.Report()
+    report2.add(fig)
+    p2 = tmp_path / "slider_report_static.html"
+    report2.save(str(p2), interactive=False)
+    doc2 = _report_entry_doc(p2.read_text(encoding="utf-8"))
+    assert "padding:0px 0 0px" in doc2
 
 
 def test_load_data_recovers_single_figure_series_and_mesh(tmp_path):

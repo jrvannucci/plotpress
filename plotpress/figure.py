@@ -684,8 +684,18 @@ class Figure:
 
     def to_html(self, interactive: bool = True, wait_extract: bool = False,
                 pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
-                pick_max_points: int = 20000, binary_pick_data: bool = True) -> str:
+                pick_max_points: int = 20000, binary_pick_data: bool = True,
+                standalone: bool = True) -> str:
         """Serialize to a self-contained HTML document.
+
+        ``standalone`` (default) centers the figure at its natural pixel size
+        on a full-height page -- right for a file opened directly in its own
+        tab. Set it ``False`` when this HTML is going into a container you
+        don't control the size of (an ``<iframe>`` embedding it, say, as
+        :class:`Report` does): the SVG instead scales to fill whatever width
+        it is given, and the page no longer forces itself to at least a full
+        viewport tall, which centering a shorter figure inside would
+        otherwise pad with empty space above and below it.
 
         ``pick_precision`` sets the decimal places of the embedded point-pick
         arrays (the mesh z grids dominate the file size for mesh-heavy figures);
@@ -765,12 +775,39 @@ class Figure:
             config = ("<script>window.PLOTPRESS_WAIT_EXTRACT=true;</script>"
                       if wait_extract else "")
             script = config + payloads + f"<script>{INTERACTIVE_JS}</script>"
+        # position:fixed (the toolbar, and any docked slider strip) never
+        # takes real layout space itself, so nothing stops it from drawing
+        # over the SVG unless something else reserves that space. A full
+        # viewport tall of flex-centering slack makes that a non-issue for a
+        # standalone page; embedded, the SVG sits flush against the body's
+        # edges, so real padding takes over that job instead.
+        if standalone:
+            body_style = ("body{margin:0;background:#f5f5f5;display:flex;"
+                          "justify-content:center;align-items:center;min-height:100vh}")
+            wrap_display = "inline-block"   # shrink-wrapped to the SVG's own
+                                             # size, so centering centers the
+                                             # figure, not an oversized box
+        else:
+            top_pad, bottom_pad = _toolbar_clearance(interactive, len(self._sliders or {}))
+            body_style = f"body{{margin:0;padding:{top_pad}px 0 {bottom_pad}px}}"
+            wrap_display = "block"   # stretches to the container's full width
+                                     # -- #plotpress-svg's own width:100% (below)
+                                     # needs a definite (non-auto) containing
+                                     # block to resolve against, or the browser
+                                     # falls back to its fixed width/height
+                                     # attributes instead, undoing the scaling
+        svg_style = (
+            "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2)}" if standalone
+            else "#plotpress-svg{cursor:default;display:block;width:100%;height:auto}"
+        )
+        # A plot_frames()/pcolormesh_frames() figure wraps the SVG in a div
+        # (for positioning docked sliders over it) -- position:relative in
+        # both modes so a docked slider box (position:absolute inside it)
+        # anchors correctly; only whether it shrink-wraps or stretches differs.
+        wrap_style = f".plotpress-svg-wrap{{position:relative;line-height:0;display:{wrap_display}}}"
         return (
             "<!doctype html><html><head><meta charset='utf-8'>"
-            "<style>body{margin:0;background:#f5f5f5;display:flex;"
-            "justify-content:center;align-items:center;min-height:100vh}"
-            "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2)}"
-            "</style></head><body>"
+            f"<style>{body_style}{svg_style}{wrap_style}</style></head><body>"
             f"{svg}{script}</body></html>"
         )
 
@@ -1150,6 +1187,29 @@ def _fits_float16(arr, precision):
     return np.allclose(f16_as_f64[finite], arr[finite], atol=tol, rtol=0)
 
 
+def _toolbar_clearance(interactive, n_sliders):
+    """(top, bottom) pixels to reserve so the fixed-position toolbar and any
+    docked slider strip don't draw over the figure itself.
+
+    Both are ``position:fixed`` (see ``_interactive.py``'s ``.plotpress-toolbar``/
+    ``.plotpress-sliders``), so neither ever takes real layout space on its
+    own -- something else has to set aside room for them, or they sit on top
+    of whatever's really there. Used both for a ``standalone=False``
+    document's own body padding (:meth:`Figure.to_html`) and for sizing an
+    ``<iframe>`` around one (:meth:`Report.save`, and the docs build's own
+    gallery/usage embeds in ``docs/conf.py``), so a figure looks the same
+    either way it ends up on a page.
+
+    44px clears the toolbar's own ~28px button height (``padding:6px 11px``
+    plus its ~14px line height, see ``.plotpress-toolbar button``) plus its
+    10px offset from the top, with a few px to spare. 60px per slider matches
+    each docked strip's own footprint (``.plotpress-slider``).
+    """
+    if not interactive:
+        return 0, 0
+    return 44, 60 * n_sliders
+
+
 def _encode_binary_arrays(obj, precision=6):
     """Replace long flat number lists with a base64 float16/float32 buffer.
 
@@ -1296,11 +1356,16 @@ def _subplot_rect(nrows, ncols, index, sp=None):
     return (ax_left, ax_bottom, axw, axh)
 
 
+_REPORT_MAX_WIDTH = 1600   # .plotpress-report's own max-width, below --
+                           # Report.save() reuses this for its iframes'
+                           # starting height guess, so the two never drift
+                           # apart the way a second hardcoded number would.
+
 _REPORT_STYLE = (
     "<style>"
-    "body{margin:0;padding:32px 24px;background:#f5f5f5;"
+    "body{margin:0;padding:24px 16px;background:#f5f5f5;"
     "font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a}"
-    ".plotpress-report{max-width:1100px;margin:0 auto}"
+    f".plotpress-report{{max-width:{_REPORT_MAX_WIDTH}px;margin:0 auto}}"
     ".plotpress-report>h1{font-size:24px;margin:0 0 6px}"
     ".plotpress-report-description{color:#555;margin:0 0 32px;max-width:70ch}"
     ".plotpress-report-entry{margin-bottom:44px}"
@@ -1309,9 +1374,45 @@ _REPORT_STYLE = (
     ".plotpress-report-entry h2{font-size:18px;margin:0 0 4px}"
     ".plotpress-report-details{color:#555;margin:0 0 14px;max-width:70ch;"
     "white-space:pre-wrap}"
+    # width:100% (not max-width) -- this is what actually stretches each
+    # figure to fill the report's own width instead of sitting at whatever
+    # fixed pixel size the figure happened to be created at.
     ".plotpress-report-entry iframe{border:1px solid #ddd;border-radius:6px;"
-    "background:#fff;display:block;max-width:100%}"
+    "background:#fff;display:block;width:100%}"
     "</style>"
+)
+
+# Resizes each report iframe to its actual rendered content height instead of
+# a fixed guess -- the SVG inside scales to fill whatever width the iframe is
+# given (see Figure.to_html's standalone=False), so a static height computed
+# once at save() time would either clip it (a narrower guess than the reader's
+# actual browser width lets the figure grow to) or leave empty space below it
+# (a wider one). srcdoc iframes share their parent's origin, so the page can
+# read contentDocument directly -- no postMessage handshake needed. Toolbar
+# and docked-slider clearance need no separate accounting here: they're real
+# body padding inside the embedded document itself (see Figure.to_html's
+# standalone=False branch), so scrollHeight already includes them.
+#
+# fit() no-ops until an iframe's own `load` marks it dataset.loaded -- a
+# below-the-fold entry (loading="lazy") can still receive the debounced
+# resize handler's sweep before it has ever loaded, and measuring an
+# unloaded/placeholder document's near-zero scrollHeight would collapse its
+# still-showing initial height guess for no reason. It also skips an iframe
+# whose rendered width hasn't changed since its last fit -- on a fixed
+# aspect ratio, that means its needed height hasn't either.
+_REPORT_RESIZE_JS = (
+    "<script>(function(){"
+    "function fit(f){"
+    "var d=f.contentDocument;if(!d||!d.body||!f.dataset.loaded)return;"
+    "var w=f.clientWidth;if(f.dataset.fitWidth===String(w))return;"
+    "f.dataset.fitWidth=String(w);"
+    "f.style.height=d.body.scrollHeight+'px';}"
+    "var frames=document.querySelectorAll('.plotpress-report-entry iframe');"
+    "frames.forEach(function(f){f.addEventListener('load',function(){"
+    "f.dataset.loaded='1';fit(f);});});"
+    "var t;window.addEventListener('resize',function(){"
+    "clearTimeout(t);t=setTimeout(function(){frames.forEach(fit);},120);});"
+    "})();</script>"
 )
 
 
@@ -1389,13 +1490,23 @@ class Report:
                                  pick_precision=pick_precision,
                                  pick_max_mesh_cells=pick_max_mesh_cells,
                                  pick_max_points=pick_max_points,
-                                 binary_pick_data=binary_pick_data)
+                                 binary_pick_data=binary_pick_data,
+                                 standalone=False)
             dpi = figure.style.dpi
-            w = int(round(figure.figsize[0] * dpi))
-            h = int(round(figure.figsize[1] * dpi))
-            if interactive:
-                # Room for the toolbar, plus each docked slider strip.
-                h += 96 + 60 * len(figure._sliders or {})
+            natural_w = figure.figsize[0] * dpi
+            natural_h = figure.figsize[1] * dpi
+            top_pad, bottom_pad = _toolbar_clearance(interactive, len(figure._sliders or {}))
+            # A starting guess only -- the resize script (_REPORT_RESIZE_JS)
+            # corrects this to the real rendered height right after the
+            # iframe loads, once it knows how wide the reader's own browser
+            # actually made it. Guessing at .plotpress-report's own max
+            # rendered width (rather than the figure's own pixel size, often
+            # much narrower) keeps that first correction small; toolbar/slider
+            # clearance is exact, not guessed, since it's baked into the
+            # embedded document's own body padding either way (Figure.to_html,
+            # standalone=False) -- scrollHeight will already include it.
+            guess_w = _REPORT_MAX_WIDTH - 2 * 16 - 2 * 1   # body padding, iframe border
+            h = round(guess_w * natural_h / natural_w) + top_pad + bottom_pad
             iframe_title = html.escape(title) if title else "Figure %d" % n
             parts.append('<div class="plotpress-report-entry">')
             parts.append(f'<div class="plotpress-report-label">Figure {n}</div>')
@@ -1405,9 +1516,10 @@ class Report:
                 parts.append('<p class="plotpress-report-details">'
                              f'{html.escape(details)}</p>')
             parts.append(
-                f'<iframe srcdoc="{html.escape(doc)}" width="{w}" height="{h}" '
+                f'<iframe srcdoc="{html.escape(doc)}" height="{h}" '
                 f'loading="lazy" title="{iframe_title}"></iframe>')
             parts.append("</div>")
+        parts.append(_REPORT_RESIZE_JS)
         parts.append("</div></body></html>")
         content = "".join(parts)
         with open(path, "w", encoding="utf-8") as f:

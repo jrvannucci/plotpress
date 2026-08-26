@@ -9,12 +9,14 @@ others):
 
 * **Span**  -- drag to pan (grab cursor).
 * **Zoom**  -- two distinct gestures (crosshair cursor). Drag a rubber-band
-  box to zoom *one axes* into it, in data space (ticks recompute). Wheel
-  zooms the *whole figure* instead, centered on the cursor, regardless of
-  which axes (if any) is under it -- the useful gesture on a figure with
-  many small axes, where "zoom whatever tiny panel the cursor happens to be
-  over" wouldn't be. It only rescales the SVG's own viewBox, so it never
-  touches any axes' data range, ticks, or pick data.
+  box to zoom *one axes* into it, in data space (ticks recompute). Ctrl+wheel
+  (or a trackpad pinch, which the browser reports the same way) zooms the
+  *whole figure* instead, centered on the cursor, regardless of which axes
+  (if any) is under it -- the useful gesture on a figure with many small
+  axes, where "zoom whatever tiny panel the cursor happens to be over"
+  wouldn't be. It only rescales the SVG's own viewBox, so it never touches
+  any axes' data range, ticks, or pick data. A plain wheel (no Ctrl) is left
+  alone to scroll the page as it would over any other content.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all.
@@ -323,7 +325,12 @@ _JS_SOURCE = r"""
 
   // ---- pan / zoom drivers ------------------------------------------------
   svg.addEventListener('wheel', function (e) {
-    if (mode !== 'zoom') return;
+    // Ctrl (or a trackpad pinch, which the browser reports as a wheel event
+    // with ctrlKey already set) only -- a plain scroll must fall through to
+    // the page's own scrolling untouched, the same as it would over any
+    // other content, rather than this figure hijacking it just because Zoom
+    // happens to be the active tool.
+    if (mode !== 'zoom' || !e.ctrlKey) return;
     e.preventDefault();
     var p = toUser(e);
     zoomViewAt(p.x, p.y, e.deltaY < 0 ? 0.8 : 1.25);
@@ -1586,11 +1593,15 @@ _JS_SOURCE = r"""
   }
 
   if (UNITS && FRAMES) {
-    // Wrap the SVG so docked sliders can be positioned over it.
+    // Wrap the SVG so docked sliders can be positioned over it. Sized by the
+    // .plotpress-svg-wrap rule in the page's own <style> (see Figure.to_html),
+    // not inline here -- standalone shrink-wraps it to the SVG's natural size
+    // for flex-centering; embedded (standalone=False) stretches it to the
+    // container's width so #plotpress-svg's own width:100% has a definite,
+    // non-circular size to resolve against instead of falling back to the
+    // SVG's fixed width/height attributes.
     wrap = document.createElement('div');
-    wrap.style.position = 'relative';
-    wrap.style.display = 'inline-block';
-    wrap.style.lineHeight = '0';
+    wrap.className = 'plotpress-svg-wrap';
     svg.parentNode.insertBefore(wrap, svg);
     wrap.appendChild(svg);
 

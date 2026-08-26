@@ -6,6 +6,10 @@ import sys
 sys.path.insert(0, os.path.abspath(".."))
 
 import plotpress  # noqa: E402
+# Shared with Figure.to_html/Report.save so a gallery/usage embed's iframe is
+# sized by the exact same toolbar/slider clearance math the embedded document
+# itself uses, rather than a second, easily-drifting guess -- see there.
+from plotpress.figure import _toolbar_clearance  # noqa: E402
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
@@ -163,8 +167,14 @@ def _interactive_embed(fig, image_path):
     """
     os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
     name = os.path.splitext(os.path.basename(image_path))[0] + ".html"
+    # standalone=False -- not for the width-scaling this normally opts into
+    # (the iframe below stays fixed at the figure's own native pixel size,
+    # not stretched), but for its real, precise top/bottom body padding: a
+    # standalone=True document only reserves toolbar/slider clearance via
+    # flex-centering slack, which splits evenly top and bottom and so can't
+    # express "44px above, 0-or-more below" -- exactly what's needed here.
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True))
+        fh.write(fig.to_html(interactive=True, standalone=False))
 
     # Example pages are built at auto_applications/<section>/ (or
     # auto_examples/<section>/), two levels below the HTML root _static sits
@@ -188,8 +198,8 @@ def _interactive_embed(fig, image_path):
 
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
-    # Room for the toolbar and any slider strip below the figure itself.
-    height = int(round(fig.figsize[1] * dpi)) + 96
+    top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}))
+    height = int(round(fig.figsize[1] * dpi)) + top_pad + bottom_pad
     return "\n".join([
         ".. raw:: html",
         "",
@@ -218,11 +228,15 @@ def _write_usage_demo(fig, name, caption):
     up from a gallery page, not two).
     """
     os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
+    # standalone=False for the same reason _interactive_embed() uses it: real,
+    # asymmetric top/bottom body padding for the toolbar/slider clearance,
+    # which flex-centering's evenly-split slack can't express.
     with open(os.path.join(_INTERACTIVE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True))
+        fh.write(fig.to_html(interactive=True, standalone=False))
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
-    height = int(round(fig.figsize[1] * dpi)) + 96
+    top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}))
+    height = int(round(fig.figsize[1] * dpi)) + top_pad + bottom_pad
     rst = "\n".join([
         ".. raw:: html",
         "",
@@ -282,9 +296,9 @@ def _build_usage_demos():
     ax1.set_xlabel("x"); ax1.set_ylabel("y"); ax1.legend()
     _write_usage_demo(
         fig1, "usage_pan_zoom_pick",
-        "Span to pan, Zoom to zoom (wheel or box-drag), Point Pick to read a "
-        "value -- the scatter series also carries a phase value, surfaced "
-        "when a marker is picked.")
+        "Span to pan, Zoom to zoom (ctrl+wheel or box-drag), Point Pick to "
+        "read a value -- the scatter series also carries a phase value, "
+        "surfaced when a marker is picked.")
 
     fig2, ax2 = plotpress.subplots(figsize=(6, 4))
     x2 = np.linspace(0, 10, 300)

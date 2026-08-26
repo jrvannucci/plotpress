@@ -440,11 +440,12 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
           const c = pt.matrixTransform(svg.getScreenCTM());
           const el = document.elementFromPoint(c.x, c.y) || svg;
           el.dispatchEvent(new WheelEvent('wheel', {
-            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100,
+            ctrlKey: true
           }));
           return svg.getAttribute('viewBox') !== before;
         }""", target_px)
-    assert zoomed, "Zoom (wheel, whole-figure) must still work over a set_pickable(False) axes"
+    assert zoomed, "Zoom (ctrl+wheel, whole-figure) must still work over a set_pickable(False) axes"
 
 
 def test_minor_ticks_reposition_on_zoom(page, tmp_path):
@@ -568,14 +569,14 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
 
 
 def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_path):
-    """The wheel now zooms the whole figure's SVG viewBox, not a single
-    axes' data range -- the useful gesture on a figure with many small
-    axes, where zooming whatever tiny panel the cursor happens to be over
-    isn't. It must work regardless of which axes (if any) sits under the
-    cursor, must keep the data/user-space point under the cursor fixed
-    (the same point maps to the same screen pixel before and after), and
-    must leave every individual axes' own zoom transform untouched -- that
-    is still driven only by a rubber-band box drag, not the wheel."""
+    """Ctrl+wheel zooms the whole figure's SVG viewBox, not a single axes'
+    data range -- the useful gesture on a figure with many small axes,
+    where zooming whatever tiny panel the cursor happens to be over isn't.
+    It must work regardless of which axes (if any) sits under the cursor,
+    must keep the data/user-space point under the cursor fixed (the same
+    point maps to the same screen pixel before and after), and must leave
+    every individual axes' own zoom transform untouched -- that is still
+    driven only by a rubber-band box drag, not the wheel."""
     import numpy as np
     import plotpress
 
@@ -598,7 +599,8 @@ def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_pa
           const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
           const u0 = pt.matrixTransform(svg.getScreenCTM().inverse());
           svg.dispatchEvent(new WheelEvent('wheel', {
-            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300,
+            ctrlKey: true
           }));
           const after = svg.getAttribute('viewBox');
           // Fresh getScreenCTM(): the viewBox just changed, so its inverse
@@ -613,12 +615,47 @@ def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_pa
                    zoomTransforms };
         }""")
     assert out["before"] != out["after"], (
-        "wheel over an axes must still zoom the whole figure, not do nothing")
+        "ctrl+wheel over an axes must still zoom the whole figure, not do nothing")
     assert out["u0"]["x"] == pytest.approx(out["u1"]["x"], abs=0.5)
     assert out["u0"]["y"] == pytest.approx(out["u1"]["y"], abs=0.5)
     assert all(t is None for t in out["zoomTransforms"]), (
         "wheel must not touch any individual axes' own zoom transform -- "
         "only a rubber-band box drag should: %r" % out["zoomTransforms"])
+
+
+def test_plain_wheel_without_ctrl_does_not_zoom_and_is_not_captured(page, tmp_path):
+    """A plain scroll (no Ctrl) must leave the figure's own view untouched
+    and must not be preventDefault()'d -- the page should scroll normally
+    underneath the figure, exactly as it would over any other content, even
+    while Zoom is the active tool."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "wheel_no_ctrl.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Zoom') b.click();
+          });
+          const before = svg.getAttribute('viewBox');
+          const r = svg.getBoundingClientRect();
+          const ev = new WheelEvent('wheel', {
+            bubbles: true, cancelable: true,
+            clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: -300
+          });
+          const notCancelled = svg.dispatchEvent(ev);   // false if preventDefault() ran
+          return { before, after: svg.getAttribute('viewBox'), notCancelled };
+        }""")
+    assert out["before"] == out["after"], (
+        "a plain wheel (no Ctrl) must not zoom the figure")
+    assert out["notCancelled"], (
+        "a plain wheel must not be preventDefault()'d -- the page must "
+        "still be free to scroll under the figure")
 
 
 def _box_zoom(page, x0, y0, x1, y1):
@@ -1082,3 +1119,174 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
     assert shown["hiddenCount"] == 0, "toggling back must restore visibility"
     assert shown["markers"] == hidden["markers"], (
         "restored markers must carry the exact same data, including text")
+
+
+def test_standalone_false_scales_a_slider_figures_svg_to_its_container(page, tmp_path):
+    """Regression: a plot_frames()/pcolormesh_frames() figure wraps the SVG in
+    a div (so docked sliders can be positioned over it) that was hardcoded to
+    display:inline-block -- shrink-wrapping it to the SVG's own fixed
+    width/height attributes regardless of any CSS on the SVG itself. Combined
+    with standalone=False's #plotpress-svg{width:100%} (see Report, which
+    embeds every figure this way), that circular sizing left the SVG's
+    percentage width unresolvable, so it silently fell back to its native
+    pixel size -- exactly the bug this figure type has, and a plain (no
+    slider) figure does not."""
+    import numpy as np
+    import plotpress
+
+    x = np.linspace(0, 1, 50)
+    Y = np.array([np.sin(2 * np.pi * x + t) for t in np.linspace(0, 2, 4)])
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot_frames(x, Y)
+    path = tmp_path / "slider_scale.html"
+    path.write_text(fig.to_html(standalone=False), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    result = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          return {svgWidth: svg.getBoundingClientRect().width,
+                  bodyWidth: document.body.getBoundingClientRect().width};
+        }""")
+    assert result["svgWidth"] == pytest.approx(result["bodyWidth"], abs=1), (
+        "the SVG did not scale to fill its container: %r" % result)
+
+
+def test_standalone_true_still_shrink_wraps_a_slider_figure(page, tmp_path):
+    """The other side of the regression above: fixing standalone=False's
+    wrap-div sizing (moved from a hardcoded inline style to a standalone-aware
+    CSS class, see Figure.to_html) must not change standalone=True's own
+    behavior -- a slider figure opened directly in its own tab should still
+    render at its natural pixel size, shrink-wrapped and centered, not
+    suddenly stretched to fill the browser window."""
+    import numpy as np
+    import plotpress
+
+    x = np.linspace(0, 1, 50)
+    Y = np.array([np.sin(2 * np.pi * x + t) for t in np.linspace(0, 2, 4)])
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot_frames(x, Y)
+    path = tmp_path / "slider_standalone.html"
+    path.write_text(fig.to_html(standalone=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    result = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          const wrap = svg.parentElement;
+          return {svgWidth: svg.getBoundingClientRect().width,
+                  svgHeight: svg.getBoundingClientRect().height,
+                  wrapWidth: wrap.getBoundingClientRect().width,
+                  wrapClass: wrap.className};
+        }""")
+    assert result["wrapClass"] == "plotpress-svg-wrap"
+    assert result["svgWidth"] == pytest.approx(600, abs=1)    # figsize(6,4) @ 100 dpi
+    assert result["svgHeight"] == pytest.approx(400, abs=1)
+    assert result["wrapWidth"] == pytest.approx(600, abs=1), (
+        "the wrap div did not shrink-wrap to the SVG's natural size: %r" % result)
+
+
+def test_report_stretches_a_slider_figure_to_the_iframes_width(page, tmp_path):
+    """The same regression as above, exercised through the real Report path
+    (rather than Figure.to_html directly) -- the iframe's own resize script
+    must also settle on the true, scaled height, not a tiny one measured
+    before the fix would have made the SVG collapse to its native size."""
+    import numpy as np
+    import plotpress
+
+    x = np.linspace(0, 1, 50)
+    Y = np.array([np.sin(2 * np.pi * x + t) for t in np.linspace(0, 2, 4)])
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot_frames(x, Y)
+    report = plotpress.Report()
+    report.add(fig)
+    path = tmp_path / "slider_report.html"
+    report.save(str(path))
+    page.goto(path.as_uri())
+    page.wait_for_timeout(200)
+
+    result = page.evaluate(
+        """() => {
+          const f = document.querySelector('.plotpress-report-entry iframe');
+          const svg = f.contentDocument.getElementById('plotpress-svg');
+          return {svgWidth: svg.getBoundingClientRect().width,
+                  iframeWidth: f.getBoundingClientRect().width,
+                  iframeHeight: f.getBoundingClientRect().height};
+        }""")
+    # svgWidth is the iframe's *content* box; iframeWidth (its border box, per
+    # _REPORT_STYLE's 1px iframe border) runs 2px wider -- both within a
+    # couple px is "scaled to fill it", not coincidentally close.
+    assert result["svgWidth"] == pytest.approx(result["iframeWidth"], abs=3)
+    # height = width * (4/6), plus the toolbar's fixed 44px clearance and the
+    # one docked slider's 60px allowance -- both are real body padding inside
+    # the embedded document now (Figure.to_html, standalone=False), so
+    # scrollHeight (what the resize script measures) already includes them.
+    expected_h = result["svgWidth"] * 4 / 6 + 44 + 60
+    assert result["iframeHeight"] == pytest.approx(expected_h, abs=3)
+
+
+def test_standalone_false_toolbar_does_not_overlap_the_svg(page, tmp_path):
+    """Regression: the toolbar is position:fixed, so it takes no layout
+    space of its own -- something else has to reserve room for it, or it
+    draws directly over whatever's in the figure's own top-right corner (a
+    legend, here). standalone=False's SVG sits flush against the body's
+    edges rather than getting centering slack to absorb this, so the body
+    padding Figure.to_html now adds for exactly this case has to actually be
+    there, not just present in the CSS text but overridden or miscomputed."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], label="x")
+    ax.legend(loc="upper right")
+    path = tmp_path / "toolbar_clearance.html"
+    path.write_text(fig.to_html(standalone=False), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    result = page.evaluate(
+        """() => {
+          const toolbar = document.querySelector('.plotpress-toolbar');
+          const svg = document.getElementById('plotpress-svg');
+          const t = toolbar.getBoundingClientRect(), s = svg.getBoundingClientRect();
+          return {toolbarBottom: t.bottom, svgTop: s.top};
+        }""")
+    assert result["toolbarBottom"] <= result["svgTop"], (
+        "the toolbar overlaps the top of the figure: %r" % result)
+
+
+def test_report_resize_does_not_collapse_a_not_yet_loaded_lazy_entry(page, tmp_path):
+    """Regression: the resize-fit script used to measure and resize every
+    report iframe unconditionally, including one that is loading="lazy" and
+    hasn't fired its own `load` event yet (still far below the fold) -- its
+    placeholder document's near-zero scrollHeight collapsed that entry's
+    still-showing initial height guess to almost nothing the moment any
+    resize event fired, well before the reader ever scrolled near it."""
+    import numpy as np
+    import plotpress
+
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [1, 0])
+
+    report = plotpress.Report()
+    report.add(fig1)
+    report.add(fig2)
+    path = tmp_path / "lazy_report.html"
+    report.save(str(path))
+    page.goto(path.as_uri())
+
+    result = page.evaluate(
+        """() => {
+          const iframes = Array.from(document.querySelectorAll('.plotpress-report-entry iframe'));
+          const second = iframes[1];
+          const before = {loaded: !!second.dataset.loaded, height: second.getAttribute('height')};
+          window.dispatchEvent(new Event('resize'));
+          return {before: before, secondHeightAfter: second.style.height};
+        }""")
+    if result["before"]["loaded"]:
+        pytest.skip("second iframe already loaded before the page settled -- "
+                    "nothing to regress-test here in this environment")
+    # Unloaded means fit() must have no-op'd: no inline style height was ever
+    # set, so the browser still shows the initial `height` attribute's guess.
+    assert result["secondHeightAfter"] == "", (
+        "resize touched an iframe that had not loaded yet: %r" % result)

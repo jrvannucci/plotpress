@@ -65,10 +65,12 @@ active until a tool is selected:
 
 * **Span** -- drag to pan a single plot's data window.
 * **Zoom** -- two distinct gestures. Box-drag zooms *one axes* in data space
-  (ticks recompute). Wheel zooms the *whole figure* instead, centered on the
-  cursor, regardless of which axes (if any) is under it -- the gesture that
-  actually helps on a figure with many small axes, where the cursor is only
-  ever over one tiny panel at a time:
+  (ticks recompute). Ctrl+wheel (or a trackpad pinch) zooms the *whole
+  figure* instead, centered on the cursor, regardless of which axes (if
+  any) is under it -- the gesture that actually helps on a figure with many
+  small axes, where the cursor is only ever over one tiny panel at a time.
+  A plain wheel (no Ctrl) is left alone to scroll the page, exactly as it
+  would over any other content:
 
   .. image:: _static/gifs/wheel_zoom_many_axes.gif
      :alt: Wheel-zooming toward the cursor across a 30-panel pcolormesh grid
