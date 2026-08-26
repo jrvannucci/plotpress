@@ -296,6 +296,50 @@ def _curvilinear_centers(X, Y, ny, nx):
     return cx, cy
 
 
+def _quadmesh_pick_entry(art, max_mesh_cells, precision):
+    """The geometry + z data pick_data() embeds for one plain QuadMesh.
+
+    Factored out so a FrameQuadMesh can reuse it once per frame (see
+    frame_data()) instead of duplicating this branch -- every frame shares
+    one X/Y grid, so only C differs, but each frame still needs its own
+    downsampled z at whatever cell the click lands in.
+    """
+    def _round_list(a):
+        return _rl(a, precision)
+
+    grid = art.C
+    curvilinear = art.curvilinear
+    if curvilinear:
+        ny0 = min(grid.shape[0], art.X.shape[0] - 1)
+        nx0 = min(grid.shape[1], art.X.shape[1] - 1)
+        grid = grid[:ny0, :nx0]
+    else:
+        ny0, nx0 = grid.shape
+    xmin, xmax, ymin, ymax = art.extent()
+    z = _downsample_grid(grid, max_mesh_cells)
+    ny, nx = z.shape
+    entry = {
+        "extent": [round(xmin, 6), round(xmax, 6), round(ymin, 6), round(ymax, 6)],
+        "shape": [int(ny), int(nx)],
+        "z": _round_list(z),
+        "name": "z",
+        "curvilinear": bool(curvilinear),
+    }
+    if curvilinear:
+        cx, cy = _curvilinear_centers(art.X, art.Y, ny0, nx0)
+        if (ny, nx) != (ny0, nx0):
+            cx, cy = _downsample_grid(cx, max_mesh_cells), _downsample_grid(cy, max_mesh_cells)
+        entry["xc"], entry["yc"] = _round_list(cx), _round_list(cy)
+    else:
+        if (ny, nx) == (ny0, nx0):
+            xe, ye = art.cell_edges()
+        else:
+            xe = np.linspace(xmin, xmax, nx + 1)
+            ye = np.linspace(ymin, ymax, ny + 1)
+        entry["xedges"], entry["yedges"] = _round_list(xe), _round_list(ye)
+    return entry
+
+
 def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
     """Per-axes data payload for point picking (values incl. z and beyond).
 
@@ -888,9 +932,10 @@ def _render_framequadmesh(art: FrameQuadMesh, tr, ai, k, body):
     )
 
 
-def frame_data(fig):
+def frame_data(fig, max_mesh_cells=60000):
     """Per-axes slider-frame data for JS to redraw on scrub: all frames' x/Y
-    for a line, or every frame's rendered image for JS to swap in for a mesh.
+    for a line, or every frame's rendered image (for JS to swap in) plus its
+    z grid (for picking) for a mesh.
     """
     frames = {}
     for i, ax in enumerate(fig.axes):
@@ -920,12 +965,26 @@ def frame_data(fig):
                     ylim_t = (ymax, ymin) if ax._yinverted else (ymin, ymax)
                     tr = LinearTransform(xlim_t, ylim_t, (px_left, px_top, px_w, px_h),
                                          xscale=ax._xscale, yscale=ax._yscale)
-                hrefs = []
+                hrefs, zs, geom = [], [], None
                 for f in range(art.n_frames):
-                    mesh_prims = artist_to_prims(art.frame_mesh(f), tr, i, k)
+                    fm = art.frame_mesh(f)
+                    mesh_prims = artist_to_prims(fm, tr, i, k)
                     hrefs.append(png_data_uri(mesh_prims[0].rgba) if mesh_prims else "")
-                entries.append({"id": f"s{i}_{k}", "unit": art.slider_unit,
-                                "hrefs": hrefs})
+                    # Every frame shares one X/Y grid (see FrameQuadMesh's own
+                    # docstring), so the geometry half of the pick entry --
+                    # extent/shape/edges or curvilinear centers -- is identical
+                    # frame to frame; keep it once instead of repeating it
+                    # n_frames times, and collect only the part that actually
+                    # varies (z) into its own per-frame list.
+                    entry = _quadmesh_pick_entry(fm, max_mesh_cells, precision=6)
+                    zs.append(entry.pop("z"))
+                    if geom is None:
+                        geom = entry
+                mesh_entry = {"id": f"s{i}_{k}", "unit": art.slider_unit,
+                              "hrefs": hrefs, "z": zs}
+                if geom is not None:
+                    mesh_entry.update(geom)
+                entries.append(mesh_entry)
         if entries:
             frames[i] = entries
     return frames

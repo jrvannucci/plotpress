@@ -869,6 +869,99 @@ def test_annotate_point_note_survives_frame_slider_scrub(page, tmp_path):
     assert len(after) == 1 and after[0]["text"] == "watch me"
 
 
+def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
+    """Regression: frame_data()'s FrameQuadMesh branch only ever embedded
+    each frame's rendered PNG (for redraw) -- never its raw z grid -- and
+    pick_data() only ever handles a plain (non-frame) QuadMesh, so a
+    pcolormesh_frames() axes had no pick data anywhere, at any frame. Point
+    Pick and Annotate Point silently produced no marker at all on one,
+    however precisely a click landed on a cell."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    Z = np.arange(20.0).reshape(4, 5)
+    frames = np.stack([Z, Z + 100.0, Z + 200.0])   # 3 frames, same grid
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh_frames(frames, cmap="viridis")
+    path = tmp_path / "meshframe_pick.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 2.5, 1.5)   # center of cell (row=1, col=2)
+    markers = _click_mode(page, "Point Pick", ux, uy)
+    assert len(markers) == 1
+    m = markers[0]
+    assert m["kind"] == "meshframe"
+    assert m["z"] == float(Z[1, 2])   # frame 0's value
+
+    # Scrub to frame 2 -- the same pin must keep its position (the grid is
+    # shared across frames; only C animates) but report the new frame's value.
+    page.evaluate(
+        """() => {
+          const input = document.querySelector('.plotpress-slider input[type=range]');
+          input.value = 2;
+          input.dispatchEvent(new Event('input', {bubbles: true}));
+        }""")
+    after = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after) == 1
+    assert after[0]["x"] == m["x"] and after[0]["y"] == m["y"]
+    assert after[0]["z"] == float(Z[1, 2] + 200.0)
+
+
+def test_pcolormesh_frames_pick_arrow_key_steps_to_neighboring_cell(page, tmp_path):
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    Z = np.arange(20.0).reshape(4, 5)
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh_frames(np.stack([Z, Z + 100.0]), cmap="viridis")
+    path = tmp_path / "meshframe_step.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
+    _click_mode(page, "Point Pick", ux, uy)
+    page.evaluate("() => document.querySelector('.plotpress-pin').dispatchEvent("
+                  "new MouseEvent('click', {bubbles: true}))")
+    page.keyboard.press("ArrowRight")
+    after = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after) == 1
+    assert after[0]["z"] == float(Z[1, 3]), (
+        "arrow-key stepping did not move to the neighboring cell: %r" % after)
+
+
+def test_pcolormesh_frames_curvilinear_pick_uses_nearest_cell_center(page, tmp_path):
+    """A warped (curvilinear) pcolormesh_frames() grid must pick via nearest
+    cell center just like a plain curvilinear pcolormesh does -- not crash
+    for lack of xedges/yedges, which only a rectilinear mesh has."""
+    import math
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    n = 8
+    r = np.linspace(0.3, 1.0, n)
+    th = np.linspace(0, 1.5 * math.pi, n)
+    R, TH = np.meshgrid(r, th)
+    X, Y = R * np.cos(TH), R * np.sin(TH)
+    Z0 = np.arange((n - 1) * (n - 1), dtype=float).reshape(n - 1, n - 1)
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    ax.pcolormesh_frames(X, Y, np.stack([Z0, Z0 + 50.0]), cmap="plasma")
+    path = tmp_path / "meshframe_curvi.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    i, j = 3, 3
+    ccx = float((X[i, j] + X[i, j + 1] + X[i + 1, j] + X[i + 1, j + 1]) / 4.0)
+    ccy = float((Y[i, j] + Y[i, j + 1] + Y[i + 1, j] + Y[i + 1, j + 1]) / 4.0)
+    ux, uy = px(fig, 0, ccx, ccy)
+    markers = _click_mode(page, "Point Pick", ux, uy)
+    assert len(markers) == 1
+    assert markers[0]["z"] == float(Z0[i, j])
+
+
 def test_annotate_point_on_a_pie_miss_makes_no_marker(page, tmp_path):
     """A pie axes only has its wedges to pick -- "Annotate Point" missing all
     of them must make no marker, same as Point Pick, not fall back to a

@@ -749,7 +749,7 @@ class Figure:
                 f'<script type="application/json" id="plotpress-style">{styl}</script>'
             )
             if self._sliders:
-                frames_dict = frame_data(self)
+                frames_dict = frame_data(self, max_mesh_cells=pick_max_mesh_cells)
                 if binary_pick_data:
                     # frame_data() always rounds to 6 decimals (svg._round_list,
                     # module-level -- unlike pick_data() it takes no precision

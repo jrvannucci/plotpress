@@ -882,6 +882,43 @@ _JS_SOURCE = r"""
     return null;
   }
 
+  // A pcolormesh_frames() mesh under a data coordinate -> anchor ref, exactly
+  // like meshAt() above but sourced from FRAMES (per-frame z, geometry shared
+  // across frames) instead of the static PICK payload -- a slider-driven mesh
+  // has no entry in PICK at all (see frame_data()), so a click on one used to
+  // find nothing to pick, however close to a cell center.
+  function meshFrameAt(key, dx, dy, p) {
+    var entries = FRAMES && FRAMES[key];
+    if (!entries) return null;
+    var m = CUR[key];
+    for (var t = 0; t < entries.length; t++) {
+      var mesh = entries[t];
+      if (!mesh.z) continue;   // a frame-line entry, not a frame-mesh one
+      var e = mesh.extent;
+      var c0 = toPixel(m, e[0], e[2]), c1 = toPixel(m, e[1], e[3]);
+      var px0 = Math.min(c0.x, c1.x) - 2, px1 = Math.max(c0.x, c1.x) + 2;
+      var py0 = Math.min(c0.y, c1.y) - 2, py1 = Math.max(c0.y, c1.y) + 2;
+      if (p.x < px0 || p.x > px1 || p.y < py0 || p.y > py1) continue;
+      dx = Math.min(e[1], Math.max(e[0], dx));
+      dy = Math.min(e[3], Math.max(e[2], dy));
+      if (mesh.curvilinear) {
+        var best = -1, bd = Infinity;
+        for (var c = 0; c < mesh.xc.length; c++) {
+          var q = toPixel(m, mesh.xc[c], mesh.yc[c]);
+          var dd = (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y);
+          if (dd < bd) { bd = dd; best = c; }
+        }
+        if (best < 0) continue;
+        return { kind: 'meshframe', axes: key, id: mesh.id, unit: mesh.unit, index: best };
+      }
+      var nx = mesh.shape[1];
+      var col = bucketIndex(mesh.xedges, dx), row = bucketIndex(mesh.yedges, dy);
+      return { kind: 'meshframe', axes: key, id: mesh.id, unit: mesh.unit,
+               index: row * nx + col };
+    }
+    return null;
+  }
+
   // Pie wedge under a pixel point -> anchor ref (steppable by wedge).
   function pieCenter(m, pie) {
     return { cx: m.x + m.w / 2, cy: m.y + m.h / 2,
@@ -1029,6 +1066,19 @@ _JS_SOURCE = r"""
       return { px: q.x, py: q.y, index: idx, label: 'x=' + fmt(cc.x) + ', y=' +
                fmt(cc.y) + ', ' + (mesh.name || 'z') + '=' + fmt(mesh.z[idx]) };
     }
+    if (anchor.kind === 'meshframe') {
+      var rec = FRAME_INDEX[anchor.id];
+      if (!rec) return null;
+      var mesh = rec.entry, f = CURRENT_FRAME[mesh.unit] || 0;
+      var nx = mesh.shape[1], ny = mesh.shape[0];
+      var idx = Math.max(0, Math.min(nx * ny - 1, index));
+      var cc = meshCellCenter(mesh, idx);
+      // The cell's own position never changes frame to frame (mesh_frames'
+      // X/Y are shared, only C animates) -- only the value in its label does.
+      var q = toPixel(CUR[rec.axesKey], cc.x, cc.y);
+      return { px: q.x, py: q.y, index: idx, label: 'x=' + fmt(cc.x) + ', y=' +
+               fmt(cc.y) + ', ' + (mesh.name || 'z') + '=' + fmt(mesh.z[f][idx]) };
+    }
     var s = seriesOf(anchor);
     if (!s) return null;
     var j = Math.max(0, Math.min(s.x.length - 1, index));
@@ -1062,8 +1112,9 @@ _JS_SOURCE = r"""
       var n = PICK[anchor.axes].pies[anchor.pie].fracs.length;
       return index + ((dir === 'right' || dir === 'up') ? 1 : -1) + n;  // resolve wraps
     }
-    if (anchor.kind === 'mesh') {
-      var mesh = PICK[anchor.axes].meshes[anchor.mesh];
+    if (anchor.kind === 'mesh' || anchor.kind === 'meshframe') {
+      var mesh = anchor.kind === 'mesh' ? PICK[anchor.axes].meshes[anchor.mesh]
+                                        : FRAME_INDEX[anchor.id].entry;
       var nx = mesh.shape[1], ny = mesh.shape[0];
       var row = Math.floor(index / nx), col = index % nx;
       if (dir === 'right') col = Math.min(nx - 1, col + 1);
@@ -1083,6 +1134,8 @@ _JS_SOURCE = r"""
     var k = pin.dataset.kind;
     if (!k) return null;   // mesh-less fallback pins aren't steppable
     if (k === 'frame') return { kind: 'frame', id: pin.dataset.frameId, unit: pin.dataset.frameUnit };
+    if (k === 'meshframe') return { kind: 'meshframe', axes: pin.dataset.axes,
+                                    id: pin.dataset.frameId, unit: pin.dataset.frameUnit };
     if (k === 'mesh') return { kind: 'mesh', axes: pin.dataset.axes, mesh: +pin.dataset.mesh };
     if (k === 'pie') return { kind: 'pie', axes: pin.dataset.axes, pie: +pin.dataset.pie };
     return { kind: 'points', axes: pin.dataset.axes, series: +pin.dataset.series,
@@ -1101,6 +1154,9 @@ _JS_SOURCE = r"""
     g.dataset.index = a.index;
     if (text !== undefined) { g.dataset.customLabel = text; g.classList.add('plotpress-note'); }
     if (anchor.kind === 'frame') {
+      g.dataset.frameId = anchor.id; g.dataset.frameUnit = anchor.unit;
+    } else if (anchor.kind === 'meshframe') {
+      g.dataset.axes = anchor.axes;
       g.dataset.frameId = anchor.id; g.dataset.frameUnit = anchor.unit;
     } else if (anchor.kind === 'mesh') {
       g.dataset.axes = anchor.axes; g.dataset.mesh = anchor.mesh;
@@ -1142,6 +1198,13 @@ _JS_SOURCE = r"""
       rec.axes = +anchor.axes; rec.kind = 'mesh'; rec.index = idx;
       rec.x = cc.x; rec.y = cc.y;
       rec[mesh.name || 'z'] = mesh.z[idx];
+    } else if (anchor && anchor.kind === 'meshframe') {
+      var mesh = FRAME_INDEX[anchor.id].entry, idx = +pin.dataset.index;
+      var f = CURRENT_FRAME[mesh.unit] || 0;
+      var cc = meshCellCenter(mesh, idx);
+      rec.axes = +anchor.axes; rec.kind = 'meshframe'; rec.index = idx;
+      rec.x = cc.x; rec.y = cc.y;
+      rec[mesh.name || 'z'] = mesh.z[f][idx];
     } else if (anchor) {
       var s = seriesOf(anchor), j = +pin.dataset.index;
       rec.axes = +s.axes; rec.kind = anchor.kind; rec.index = j;
@@ -1285,6 +1348,7 @@ _JS_SOURCE = r"""
     if (!FRAMES || !FRAMES[axesKey]) return null;
     var best = null;
     FRAMES[axesKey].forEach(function (e) {
+      if (!e.Y) return;   // a frame-mesh entry, not a frame-line one -- see meshFrameAt()
       var f = CURRENT_FRAME[e.unit] || 0;
       var xs = e.shared_x ? e.x : e.x[f], ys = e.Y[f];
       for (var j = 0; j < ys.length; j++) {
@@ -1314,7 +1378,7 @@ _JS_SOURCE = r"""
     var np = nearestPoint(a.i, m, p);
     var fp = nearestFrameVertex(a.i, m, p);
     var d = toData(m, p.x, p.y);
-    var mesh = meshAt(a.i, d.x, d.y, p);
+    var mesh = meshAt(a.i, d.x, d.y, p) || meshFrameAt(a.i, d.x, d.y, p);
     var pieHit = pieAt(a.i, p);
 
     var cand = null;

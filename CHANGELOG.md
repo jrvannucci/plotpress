@@ -13,6 +13,18 @@ anywhere in the source.
 
 ### Fixed
 
+- `pcolormesh_frames()` (a `pcolormesh` with a slider over an extra
+  dimension) had no pick data at all, at any frame -- `frame_data()` only
+  ever embedded each frame's rendered PNG for the slider to swap in, never
+  its raw z grid, and `pick_data()` only ever handles a plain (non-frame)
+  `QuadMesh`. Point Pick and Annotate Point silently produced no marker on
+  one, however precisely a click landed on a cell. Frame meshes now embed a
+  z grid per frame (rectilinear and curvilinear both); a picked cell keeps
+  its position across a slider scrub (the grid is shared across frames --
+  only the color data animates) while its reported value updates to the
+  new frame's, and it steps to neighboring cells by arrow key exactly like
+  a plain mesh pick does. `plot_frames()` (a line with a slider) already
+  picked correctly and is unaffected.
 - `plotpress.qt.view()`/`fig.show_qt()` constructed `QApplication([])` --
   an argv with no program name, which leaves QtWebEngine's internal
   `base::CommandLine` uninitialized. Depending on platform and Qt/WebEngine

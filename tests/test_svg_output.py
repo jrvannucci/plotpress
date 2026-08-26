@@ -1333,6 +1333,16 @@ def test_pcolormesh_frames_registers_slider_and_embeds_hrefs():
     # Frames genuinely differ -- not the same image four times.
     assert len(set(entry["hrefs"])) == 4
 
+    # Regression: frame_data() used to embed only the rendered hrefs, nothing
+    # numeric -- a pcolormesh_frames() axes had no pick data at all, at any
+    # frame (see the meshframe picking tests in test_pick_interactive.py).
+    assert entry["shape"] == [5, 6]
+    assert len(entry["z"]) == 4                     # one z grid per frame, flattened
+    assert np.allclose(entry["z"][0], mesh.frame_mesh(0).C.ravel())
+    assert np.allclose(entry["z"][2], mesh.frame_mesh(2).C.ravel())
+    assert entry["z"][0] != entry["z"][1]           # frames genuinely differ
+    assert "xedges" in entry and "yedges" in entry  # rectilinear, not curvilinear
+
     html = fig.to_html(interactive=True)
     assert 'id="plotpress-frames"' in html and 'id="plotpress-sliders"' in html
     # Static SVG shows frame 0 as an <image>, no slider payload.
