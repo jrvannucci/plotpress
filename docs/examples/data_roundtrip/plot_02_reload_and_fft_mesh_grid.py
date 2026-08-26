@@ -39,8 +39,10 @@ def _build_source_html():
 
 
 source_path = _build_source_html()
-figures = plotpress.load_data(source_path)
-axes_data = figures[0]["axes"]
+data = plotpress.load_data(source_path)
+# A bare (non-Report) figure has no report-level title of its own, so it
+# falls back to the same "Figure N" label a Report page would show it under.
+axes_data = data["Figure 1"]["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # 2-D FFT every panel's mesh, replotting the (log-scaled, zero-frequency
@@ -48,7 +50,7 @@ axes_data = figures[0]["axes"]
 # ---------------------------------------------------------------------------
 fig, axes = plotpress.subplots(5, 6, figsize=(16, 9))
 for i, ax in enumerate(np.asarray(axes).ravel()):
-    mesh = axes_data[i]["meshes"][0]
+    mesh = axes_data[f"panel {i}"]["meshes"][0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(mesh["z"])))
     ax.pcolormesh(np.log1p(spectrum), cmap="magma")
     ax.set_title(f"panel {i}", fontsize=7)

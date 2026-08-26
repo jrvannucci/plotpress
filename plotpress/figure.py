@@ -1531,18 +1531,30 @@ def _split_report_entries(text):
     return text.split('<div class="plotpress-report-label">')[1:]
 
 
-def load_data(path: str):
+def _title_keyed_axes(axes):
+    """Re-key an int-indexed axes dict by each axes' own title, falling back
+    to ``"axes {i}"`` when it has none -- the same fallback a picked record's
+    ``axes_title`` already uses (see ``_interactive.py``'s
+    ``resolvePickTarget``), so both surfaces name an untitled axes the same
+    way.
+    """
+    return {(axes[i].get("title") or f"axes {i}"): axes[i] for i in sorted(axes)}
+
+
+def load_data(path: str, by_index: bool = False):
     """Read back the plotted data embedded in a self-contained interactive
     HTML file written by :meth:`Figure.to_html`/:meth:`Figure.save` or
     :meth:`Report.save`.
 
-    Returns a list of per-figure dicts, one per figure embedded in the file,
-    in the order they appear -- a bare :class:`Figure`'s HTML still comes
-    back as a one-item list, so callers get one return shape regardless of
-    source. Each dict has ``"title"``/``"details"`` (a :class:`Report`
-    entry's own annotations; ``None`` for a bare figure or an entry that had
-    none) and ``"axes"``: ``{index: {...}, ...}``, one entry per plotted
-    axes::
+    By default, returns a dict keyed by each figure's own title (a
+    :class:`Report` entry's :meth:`Report.add` title; a generated
+    ``"Figure N"`` -- 1-based, matching the label a :class:`Report` page
+    itself shows -- for an entry with none, or for a bare :class:`Figure`'s
+    HTML, which has no report-level title at all). Each figure's own value
+    has ``"details"`` (a `Report` entry's longer description, or ``None``)
+    and ``"axes"``: itself a dict keyed by each axes' own title, falling
+    back to ``"axes {index}"`` (matching a picked record's ``axes_title``
+    fallback) for an untitled one::
 
         {"series": [{"kind": "line", "x": array, "y": array,
                     "vals": {name: array, ...}}, ...],
@@ -1556,6 +1568,16 @@ def load_data(path: str):
          "zlabel": str | None, "xlim": (float, float) | None,
          "ylim": (float, float) | None, "xscale": str, "yscale": str}
 
+    Title keys are convenient but not guaranteed unique -- two figures (or
+    two axes within one figure) sharing the same title collide, and the
+    later one wins. Pass ``by_index=True`` when that matters, or when a
+    stable, order-based key is simply more useful than a name: this returns
+    a list of per-figure dicts instead (one per figure embedded in the file,
+    in the order they appear -- a bare figure's HTML still comes back as a
+    one-item list), each with the same ``"title"``/``"details"``/``"axes"``
+    shape as above except ``"axes"`` is keyed by plain integer index rather
+    than title.
+
     Only works on HTML saved with ``interactive=True``: a static SVG or an
     ``interactive=False`` HTML embeds no data to read back, only drawn
     shapes, and raises ``ValueError``. Recovered arrays reflect whatever
@@ -1568,20 +1590,28 @@ def load_data(path: str):
         text = f.read()
 
     if 'srcdoc="' not in text:
-        return [{"title": None, "details": None, "axes": _load_single_figure(text)}]
+        figures = [{"title": None, "details": None, "axes": _load_single_figure(text)}]
+    else:
+        figures = []
+        for chunk in _split_report_entries(text):
+            srcdoc_m = re.search(r'srcdoc="(.*?)"', chunk, re.DOTALL)
+            if not srcdoc_m:
+                continue
+            title_m = re.search(r"<h2>(.*?)</h2>", chunk, re.DOTALL)
+            details_m = re.search(
+                r'<p class="plotpress-report-details">(.*?)</p>', chunk, re.DOTALL)
+            doc = html.unescape(srcdoc_m.group(1))
+            figures.append({
+                "title": html.unescape(title_m.group(1)) if title_m else None,
+                "details": html.unescape(details_m.group(1)) if details_m else None,
+                "axes": _load_single_figure(doc),
+            })
 
-    figures = []
-    for chunk in _split_report_entries(text):
-        srcdoc_m = re.search(r'srcdoc="(.*?)"', chunk, re.DOTALL)
-        if not srcdoc_m:
-            continue
-        title_m = re.search(r"<h2>(.*?)</h2>", chunk, re.DOTALL)
-        details_m = re.search(
-            r'<p class="plotpress-report-details">(.*?)</p>', chunk, re.DOTALL)
-        doc = html.unescape(srcdoc_m.group(1))
-        figures.append({
-            "title": html.unescape(title_m.group(1)) if title_m else None,
-            "details": html.unescape(details_m.group(1)) if details_m else None,
-            "axes": _load_single_figure(doc),
-        })
-    return figures
+    if by_index:
+        return figures
+
+    out = {}
+    for n, entry in enumerate(figures, start=1):
+        key = entry["title"] or f"Figure {n}"
+        out[key] = {**entry, "axes": _title_keyed_axes(entry["axes"])}
+    return out

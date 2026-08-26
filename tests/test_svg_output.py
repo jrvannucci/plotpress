@@ -231,27 +231,30 @@ def test_load_data_recovers_single_figure_series_and_mesh(tmp_path):
 
     p = tmp_path / "load_single.html"
     fig.save(str(p), interactive=True)
-    figures = plotpress.load_data(str(p))
+    data = plotpress.load_data(str(p))
 
-    assert len(figures) == 1
-    assert figures[0]["title"] is None and figures[0]["details"] is None
-    axes = figures[0]["axes"]
-    assert set(axes) == {0, 1}
+    # A bare figure has no report-level title, so it falls back to the same
+    # 1-based "Figure N" label a Report page itself would show it under.
+    assert list(data.keys()) == ["Figure 1"]
+    fig_entry = data["Figure 1"]
+    assert fig_entry["title"] is None and fig_entry["details"] is None
+    axes = fig_entry["axes"]
+    assert set(axes) == {"line", "mesh"}
 
-    line = axes[0]["series"][0]
+    line = axes["line"]["series"][0]
     assert line["kind"] == "line"
     assert np.allclose(line["x"], x) and np.allclose(line["y"], y)
-    assert axes[0]["title"] == "line"
-    assert axes[0]["xlabel"] == "t" and axes[0]["ylabel"] == "amp"
+    assert axes["line"]["title"] == "line"
+    assert axes["line"]["xlabel"] == "t" and axes["line"]["ylabel"] == "amp"
 
-    mesh = axes[1]["meshes"][0]
+    mesh = axes["mesh"]["meshes"][0]
     assert np.allclose(mesh["x"], (xm[:-1] + xm[1:]) / 2.0)
     assert np.allclose(mesh["y"], (ym[:-1] + ym[1:]) / 2.0)
     assert np.allclose(mesh["z"], Z)
-    assert axes[1]["zlabel"] == "val"
+    assert axes["mesh"]["zlabel"] == "val"
 
 
-def test_load_data_recovers_report_figures_in_order_with_titles(tmp_path):
+def test_load_data_recovers_report_figures_keyed_by_title_in_order(tmp_path):
     fig1, ax1 = plotpress.subplots()
     ax1.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     fig2, ax2 = plotpress.subplots()
@@ -263,12 +266,45 @@ def test_load_data_recovers_report_figures_in_order_with_titles(tmp_path):
     report.add(fig2, title="Second", details="details two")
     p = tmp_path / "load_report.html"
     report.save(str(p))
-    figures = plotpress.load_data(str(p))
+    data = plotpress.load_data(str(p))
 
-    assert len(figures) == 2
-    assert figures[0]["title"] == "First" and figures[0]["details"] == "details one"
-    assert figures[1]["title"] == "Second" and figures[1]["details"] == "details two"
+    assert list(data.keys()) == ["First", "Second"]   # in add() order
+    assert data["First"]["title"] == "First" and data["First"]["details"] == "details one"
+    assert data["Second"]["title"] == "Second" and data["Second"]["details"] == "details two"
+    assert np.allclose(data["Second"]["axes"]["axes 0"]["meshes"][0]["z"], z)
+
+
+def test_load_data_by_index_returns_a_list_keyed_by_position(tmp_path):
+    """by_index=True is the escape hatch from title-keying -- e.g. for
+    figures/axes whose titles aren't unique, or when a stable positional key
+    is simply more useful than a name."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    fig2, ax2 = plotpress.subplots()
+    z = np.arange(20.0).reshape(4, 5)
+    ax2.pcolormesh(z, cmap="plasma")
+
+    report = plotpress.Report()
+    report.add(fig1, title="First")
+    report.add(fig2, title="Second")
+    p = tmp_path / "load_report_by_index.html"
+    report.save(str(p))
+
+    figures = plotpress.load_data(str(p), by_index=True)
+    assert isinstance(figures, list) and len(figures) == 2
+    assert figures[0]["title"] == "First" and figures[1]["title"] == "Second"
+    assert set(figures[0]["axes"]) == {0}   # int-keyed, not title-keyed
     assert np.allclose(figures[1]["axes"][0]["meshes"][0]["z"], z)
+
+
+def test_load_data_falls_back_to_generated_titles_when_untitled(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [1.0, 0.0])   # no set_title() -- axes has none
+    p = tmp_path / "load_untitled.html"
+    fig.save(str(p), interactive=True)
+    data = plotpress.load_data(str(p))
+    assert list(data.keys()) == ["Figure 1"]
+    assert list(data["Figure 1"]["axes"].keys()) == ["axes 0"]
 
 
 def test_load_data_works_with_plain_json_meta(tmp_path):
@@ -279,8 +315,9 @@ def test_load_data_works_with_plain_json_meta(tmp_path):
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     p = tmp_path / "load_plain_json.html"
     fig.save(str(p), interactive=True, binary_pick_data=False)
-    figures = plotpress.load_data(str(p))
-    assert np.allclose(figures[0]["axes"][0]["series"][0]["y"], [0.0, 1.0, 4.0])
+    data = plotpress.load_data(str(p))
+    assert np.allclose(data["Figure 1"]["axes"]["axes 0"]["series"][0]["y"],
+                       [0.0, 1.0, 4.0])
 
 
 def test_load_data_raises_on_static_html(tmp_path):

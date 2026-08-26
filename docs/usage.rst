@@ -151,17 +151,23 @@ Reading data back out of a saved HTML
 
 :func:`~plotpress.load_data` reads the plotted data straight back out of an
 ``interactive=True`` HTML file -- the original Python objects that built it
-don't need to still be around. It returns a list of per-figure dicts (one
-item for a bare figure's HTML, one per embedded figure for a
-:class:`~plotpress.Report`'s), each mapping axes index to that panel's
+don't need to still be around. It returns a dict keyed by each figure's own
+title (one entry for a bare figure's HTML, one per embedded figure for a
+:class:`~plotpress.Report`'s -- a generated ``"Figure N"`` for one with no
+title of its own), each mapping its own axes' titles to that panel's
 series/mesh data plus its labels, limits, and scale:
 
 .. code-block:: python
 
-   figures = plotpress.load_data("qa_sweep.html")
-   mesh = figures[0]["axes"][0]["meshes"][0]
+   data = plotpress.load_data("qa_sweep.html")
+   mesh = data["Batch A"]["axes"]["axes 0"]["meshes"][0]
    mesh["x"], mesh["y"]   # 1-D cell-center coordinates
    mesh["z"]              # 2-D array, shape (ny, nx)
+
+Title keys are convenient but not guaranteed unique -- pass ``by_index=True``
+when two figures or two axes share a title, or a positional key is simply
+more useful: this returns a plain list of per-figure dicts instead, each
+with its axes keyed by integer index rather than title.
 
 See :doc:`auto_examples/data_roundtrip/plot_01_reload_mesh_grid_as_lines` and
 :doc:`auto_examples/data_roundtrip/plot_02_reload_and_fft_mesh_grid` for two

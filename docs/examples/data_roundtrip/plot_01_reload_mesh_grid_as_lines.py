@@ -13,11 +13,13 @@ The source figure below -- a 30-panel grid of independent sensor sweeps,
 each its own ``pcolormesh`` -- is built and saved here only to have a
 self-contained interactive file to load back from; in practice this file
 could equally well already exist from an earlier run, with none of this
-module in scope. ``load_data()`` returns each panel's mesh as a 2-D ``z``
-array plus its own 1-D ``x``/``y`` cell-center coordinates, so slicing a
-fixed row out of ``z`` and pairing it with ``x`` is exactly the ``(x, y)``
-pair ``ax.plot()`` expects -- no re-deriving the grid from the mesh's
-edges or extent by hand.
+module in scope. ``load_data()`` keys each panel by its own title by
+default -- so ``"panel 5"`` reads back as ``"panel 5"``, not a bare index
+that has to line up with however the grid was built -- and returns each
+panel's mesh as a 2-D ``z`` array plus its own 1-D ``x``/``y`` cell-center
+coordinates, so slicing a fixed row out of ``z`` and pairing it with ``x``
+is exactly the ``(x, y)`` pair ``ax.plot()`` expects -- no re-deriving the
+grid from the mesh's edges or extent by hand.
 """
 import os
 import tempfile
@@ -47,8 +49,10 @@ def _build_source_html():
 
 
 source_path = _build_source_html()
-figures = plotpress.load_data(source_path)
-axes_data = figures[0]["axes"]          # a single (non-Report) figure's axes
+data = plotpress.load_data(source_path)
+# A bare (non-Report) figure has no report-level title of its own, so it
+# falls back to the same "Figure N" label a Report page would show it under.
+axes_data = data["Figure 1"]["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # Slice every panel's mesh along x at the same fixed row -- one 1-D line per
@@ -58,7 +62,7 @@ ROW = 5   # a fixed y index, the same across every panel
 
 fig, axes = plotpress.subplots(5, 6, figsize=(16, 9))
 for i, ax in enumerate(np.asarray(axes).ravel()):
-    mesh = axes_data[i]["meshes"][0]
+    mesh = axes_data[f"panel {i}"]["meshes"][0]
     ax.plot(mesh["x"], mesh["z"][ROW, :], color="C0")
     ax.set_title(f"panel {i}", fontsize=7)
     ax.tick_params(labelsize=5)
