@@ -42,6 +42,28 @@
     max-width: 100%;
 }
 
+/* A many-panel figure links to its full standalone page instead of embedding
+ * (see docs/conf.py's _interactive_embed) -- style that link like a button so
+ * it reads as the primary way to explore the figure, not an afterthought. */
+.plotpress-interactive-large {
+    padding: 12px 16px;
+    background: #f0f6ff;
+    border: 1px solid #b9c6ef;
+    border-radius: 6px;
+}
+.plotpress-open-full {
+    display: inline-block;
+    padding: 8px 16px;
+    background: #2b8cff;
+    color: #fff !important;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none !important;
+}
+.plotpress-open-full:hover {
+    background: #1a72e0;
+}
+
 /* Below the theme's tablet breakpoint the sidebar collapses and the content
  * spans the viewport, so drop the cap rather than fight it. */
 @media screen and (max-width: 768px) {

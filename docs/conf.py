@@ -72,9 +72,22 @@ html_context = {
 # gallery-wide: switching it on for the plot-type reference too would add
 # megabytes of mostly-redundant payload for figures that have nothing to
 # explore. The real-application gallery is the one worth exploring, so it gets
-# live figures throughout.
+# live figures throughout; data_roundtrip's figures are themselves the point
+# of those examples (load_data() reads plotted data back out of exactly this
+# kind of file), so they get the same treatment.
 _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
-_INTERACTIVE_ROOT = os.path.join(_DOCS_DIR, "applications")
+_INTERACTIVE_ROOTS = (
+    os.path.join(_DOCS_DIR, "applications"),
+    os.path.join(_DOCS_DIR, "examples", "data_roundtrip"),
+)
+
+# More axes than any hand-authored example currently uses (the largest
+# `docs/applications` figure has 3) -- a many-panel grid like data_roundtrip's
+# 30-axes figures, cramped into a fixed-size iframe, stops being a meaningful
+# interactive experience: most panels would be too small to usefully pick or
+# zoom into. Past this, the gallery page links to the full standalone HTML
+# instead of embedding it, so it opens as its own real page at full size.
+_LARGE_AXES_THRESHOLD = 6
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
 _GIF_DIR = os.path.join(_DOCS_DIR, "_static", "gifs")
@@ -128,31 +141,55 @@ def _write_wheel_zoom_gif(fig, name, cursor_frac, **kwargs):
 
 def _wants_interactive(src_file):
     """True if this example lives under a gallery configured for live figures."""
-    return os.path.abspath(src_file).startswith(_INTERACTIVE_ROOT + os.sep)
+    ap = os.path.abspath(src_file)
+    return any(ap.startswith(root + os.sep) for root in _INTERACTIVE_ROOTS)
 
 
 def _interactive_embed(fig, image_path):
     """Write ``fig`` as self-contained interactive HTML; return an RST raw block.
 
-    The figure goes in an ``<iframe>`` rather than being spliced into the page.
-    Each interactive figure carries its own copy of the toolbar script and its
-    own element ids, so several on one page -- or one alongside the theme's own
-    JavaScript -- would otherwise collide. An iframe gives each its own document
-    and costs nothing, since the HTML is already self-contained and makes no
-    external requests.
+    The standalone file is always written -- a large figure's link (below)
+    points at exactly the same file a small one embeds. A figure with more
+    than :data:`_LARGE_AXES_THRESHOLD` axes links to it instead of embedding
+    it: a many-panel grid crammed into a fixed-size ``<iframe>`` would leave
+    most panels too small to usefully pick or zoom into, so the page instead
+    opens the file as its own full-size tab -- a real page, not a preview of
+    one. A small figure still goes in an ``<iframe>`` rather than being
+    spliced into the page: each interactive figure carries its own copy of
+    the toolbar script and its own element ids, so several on one page -- or
+    one alongside the theme's own JavaScript -- would otherwise collide. An
+    iframe gives each its own document and costs nothing, since the HTML is
+    already self-contained and makes no external requests.
     """
     os.makedirs(_INTERACTIVE_DIR, exist_ok=True)
     name = os.path.splitext(os.path.basename(image_path))[0] + ".html"
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
         fh.write(fig.to_html(interactive=True))
 
+    # Example pages are built at auto_applications/<section>/ (or
+    # auto_examples/<section>/), two levels below the HTML root _static sits
+    # in, in both galleries this function serves.
+    src = "../../_static/interactive/" + name
+    n_axes = sum(1 for ax in fig.axes if not ax._is_colorbar)
+    if n_axes > _LARGE_AXES_THRESHOLD:
+        return "\n".join([
+            ".. raw:: html",
+            "",
+            '   <div class="plotpress-interactive plotpress-interactive-large">',
+            f"     <p>This figure has {n_axes} panels &mdash; too many to "
+            "usefully embed at a fixed size.</p>",
+            f'     <p><a class="plotpress-open-full" href="{src}" '
+            'target="_blank" rel="noopener">Open the full interactive '
+            "example in a new page</a> to pick a tool, then zoom, pan, "
+            "point-pick or annotate any panel.</p>",
+            "   </div>",
+            "",
+        ])
+
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
     # Room for the toolbar and any slider strip below the figure itself.
     height = int(round(fig.figsize[1] * dpi)) + 96
-    # Example pages are built at auto_applications/<section>/, two levels below
-    # the HTML root that _static sits in.
-    src = "../../_static/interactive/" + name
     return "\n".join([
         ".. raw:: html",
         "",
@@ -497,4 +534,14 @@ sphinx_gallery_conf = {
     "remove_config_comments": True,
     "download_all_examples": False,
     "line_numbers": False,
+    # Off, not sphinx-gallery's default: most examples end with a bare
+    # fig.tight_layout() (or another Figure/Axes method returning self for
+    # chaining) as their last statement, and sphinx-gallery's default
+    # Jupyter-cell-like behavior -- printing the last expression's repr when
+    # it isn't None -- turned that into a stray "<plotpress.figure.Figure
+    # object at 0x...>" line on nearly every gallery page. plotpress has no
+    # methods meant to be read as a cell's "output value" the way a
+    # DataFrame or a matplotlib Axes sometimes is, so there is nothing this
+    # would usefully capture.
+    "capture_repr": (),
 }

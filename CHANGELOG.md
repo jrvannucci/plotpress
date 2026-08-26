@@ -11,6 +11,18 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Changed
+
+- Docs build: a gallery figure with more than 6 axes (currently only
+  `docs/examples/data_roundtrip`'s 30-panel grids) now links to its full
+  standalone interactive HTML in a new page instead of embedding it in a
+  fixed-size `<iframe>` -- most of a many-panel grid's panels would be too
+  small to usefully pick or zoom into at iframe size. Also disables
+  sphinx-gallery's default last-expression capture (`capture_repr`), which
+  printed a stray `<plotpress.figure.Figure object at 0x...>` line on
+  nearly every gallery page, since most examples end with a bare
+  `fig.tight_layout()` (returns `self`) as their last statement.
+
 ### Fixed
 
 - `pcolormesh_frames()` (a `pcolormesh` with a slider over an extra
