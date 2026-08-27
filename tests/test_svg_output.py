@@ -1872,6 +1872,211 @@ def test_figure_legend_absent_without_the_call():
     assert "plotpress-legend" not in fig.to_svg()
 
 
+# -- Figure.group() ----------------------------------------------------------
+
+def _grid_2x2():
+    fig, axes = plotpress.subplots(2, 2, figsize=(6, 5))
+    for ax in axes.ravel():
+        ax.plot([0, 1], [0, 1])
+    return fig, axes
+
+
+def test_group_draws_a_box_wrapping_its_axes():
+    fig, axes = _grid_2x2()
+    fig.group("Left column", [axes[0, 0], axes[1, 0]])
+    root = _parse(fig.to_svg())
+    rects = root.findall(f".//{NS}rect")
+    # background rect + one per axes' own facecolor + the group's own box.
+    assert any(r.get("fill") == "none" for r in rects)
+    texts = [t.text for t in root.findall(f".//{NS}text")]
+    assert "Left column" in texts
+
+
+def test_group_box_bounds_the_union_of_its_axes_with_padding():
+    from plotpress.svg import _group_axes_extra, _pixel_rect
+
+    fig, axes = _grid_2x2()
+    fig.group("Top row", [axes[0, 0], axes[0, 1]], pad=5.0)
+    svg = fig.to_svg()   # settles layout (incl. the group's own margin band)
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    st = fig.style
+    r00, r01 = _pixel_rect(axes[0, 0], W, H), _pixel_rect(axes[0, 1], W, H)
+    e00, e01 = _group_axes_extra(axes[0, 0], st), _group_axes_extra(axes[0, 1], st)
+    root = _parse(svg)
+    box = [r for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"][0]
+    x0 = min(r00[0] - e00[2], r01[0] - e01[2]) - 5.0
+    y0 = min(r00[1] - e00[0], r01[1] - e01[0]) - 5.0
+    x1 = max(r00[0] + r00[2] + e00[3], r01[0] + r01[2] + e01[3]) + 5.0
+    y1 = max(r00[1] + r00[3] + e00[1], r01[1] + r01[3] + e01[1]) + 5.0
+    assert float(box.get("x")) == pytest.approx(x0, abs=0.5)
+    assert float(box.get("y")) == pytest.approx(y0, abs=0.5)
+    assert float(box.get("width")) == pytest.approx(x1 - x0, abs=0.5)
+    assert float(box.get("height")) == pytest.approx(y1 - y0, abs=0.5)
+
+
+def test_group_title_position_and_style():
+    fig, axes = _grid_2x2()
+    fig.group("Right side", [axes[0, 1], axes[1, 1]], color="#d62728",
+             linestyle=":", title_position="right")
+    root = _parse(fig.to_svg())
+    box = [r for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"][0]
+    assert box.get("stroke") == "#d62728"
+    assert box.get("stroke-dasharray") == "1,3"
+    title = [t for t in root.findall(f".//{NS}text") if t.text == "Right side"][0]
+    assert title.get("text-anchor") == "start"   # sits to the right of the box
+    assert float(title.get("x")) > float(box.get("x")) + float(box.get("width"))
+
+
+def test_group_box_includes_axis_labels_and_tick_labels_not_just_the_plot_rect():
+    """Regression: the box wrapped only ax._rect (the bare spine box), so an
+    axes' own xlabel/ylabel and tick numbers -- all drawn *outside* that
+    rect -- ended up sitting outside the group's box entirely, or with the
+    box edge cutting straight through them."""
+    from plotpress.svg import _pixel_rect
+
+    fig, axes = _grid_2x2()
+    ax = axes[0, 0]
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("value")
+    fig.group("Group", [ax], pad=2.0)
+    svg = fig.to_svg()
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    r = _pixel_rect(ax, W, H)
+    root = _parse(svg)
+    box = [b for b in root.findall(f".//{NS}rect") if b.get("fill") == "none"][0]
+    bx0, by0 = float(box.get("x")), float(box.get("y"))
+    bx1 = bx0 + float(box.get("width"))
+    by1 = by0 + float(box.get("height"))
+    # The box must reach further out than the bare plot rect in the
+    # directions the axis labels/tick numbers actually occupy.
+    assert bx0 < r[0], "box left edge does not clear the ylabel/tick numbers"
+    assert by1 > r[1] + r[3], "box bottom edge does not clear the xlabel/tick numbers"
+    # And every text element (xlabel, ylabel, tick numbers, the axes' own
+    # title if any) must land strictly inside those bounds.
+    for t in root.findall(f".//{NS}text"):
+        if t.text in ("time (s)", "value"):
+            tx, ty = float(t.get("x")), float(t.get("y"))
+            assert bx0 <= tx <= bx1, "%r sits outside the box horizontally" % t.text
+            assert by0 <= ty <= by1, "%r sits outside the box vertically" % t.text
+
+
+def test_group_facing_the_outer_edge_reserves_layout_margin():
+    """A group's title, when it faces the grid's own outer edge, needs a
+    tight_layout() band reserved for it just like a suptitle/colorbar/figure
+    legend does -- otherwise it (or the box, over a titled top row) draws
+    off the canvas or on top of the outermost panels."""
+    fig, axes = _grid_2x2()
+    for ax in axes.ravel():
+        ax.set_title("panel")
+    fig.tight_layout()
+    before = [a._rect for a in axes.ravel()]
+
+    fig.group("Top row", [axes[0, 0], axes[0, 1]], title_position="top")
+    fig.tight_layout()
+    after = [a._rect for a in axes.ravel()]
+    # Shorter, and its own top edge pushed further down the canvas -- more
+    # top margin reserved than a plain per-axes title band alone would need.
+    assert all(n[3] < b[3] for b, n in zip(before, after))
+    assert all((n[1] + n[3]) < (b[1] + b[3]) for b, n in zip(before, after))
+
+
+def test_group_not_facing_the_outer_edge_reserves_no_margin():
+    """An interior group (its title-facing edge is a row/col gap, not the
+    figure's own outer edge) is left to that existing gap -- growing the
+    whole grid's margin for it would be wrong for every other row/col."""
+    fig1, axes1 = _grid_2x2()
+    fig1.tight_layout()
+    without_group = [a._rect for a in axes1.ravel()]
+
+    fig2, axes2 = _grid_2x2()
+    # Bottom row grouped with a *top*-facing title: doesn't reach row 0.
+    fig2.group("Interior", [axes2[1, 0], axes2[1, 1]], title_position="top")
+    fig2.tight_layout()
+    with_group = [a._rect for a in axes2.ravel()]
+    assert with_group == without_group
+
+
+def test_group_spanning_multiple_rows_still_reserves_top_margin():
+    """Regression: the outer-edge check used to require *every* axes in the
+    group to share row0 == 0, so a group spanning a whole column-band (every
+    row, a handful of columns) -- which does reach row 0, just not made up
+    entirely of row-0 axes -- silently reserved no margin at all, and its
+    title clipped the top of the canvas. The check has to be "the group's
+    bounding box reaches row 0", i.e. the *minimum* row0 among its axes."""
+    fig1, axes1 = plotpress.subplots(3, 3, figsize=(6, 6))
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig1.tight_layout()
+    before = [a._rect for a in axes1.ravel()]
+
+    fig2, axes2 = plotpress.subplots(3, 3, figsize=(6, 6))
+    for ax in axes2.ravel():
+        ax.plot([0, 1], [0, 1])
+    # Spans all 3 rows of column 0 -- touches row 0, but most of its axes
+    # (rows 1-2) do not have row0 == 0 themselves.
+    fig2.group("Left column", list(axes2[:, 0]), title_position="top")
+    fig2.tight_layout()
+    after = [a._rect for a in axes2.ravel()]
+    assert all((n[1] + n[3]) < (b[1] + b[3]) for b, n in zip(before, after)), (
+        "a multi-row group touching the top edge reserved no top margin")
+
+
+def test_group_margin_reservation_does_not_widen_interior_row_gaps():
+    """Regression: the group's own margin reservation was added to the same
+    top_px/bottom_px/etc. accumulators that also seed the *interior* row/col
+    gap (gap_h/gap_w) -- a group's title only ever faces an outer edge, so
+    folding its reservation into those inflated every gap between every row
+    or column in the grid, not just the true outer margin."""
+    fig1, axes1 = plotpress.subplots(3, 2, figsize=(6, 6))
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig1.tight_layout()
+    gap_without_group = axes1[0, 0]._rect[1] - (axes1[1, 0]._rect[1] + axes1[1, 0]._rect[3])
+
+    fig2, axes2 = plotpress.subplots(3, 2, figsize=(6, 6))
+    for ax in axes2.ravel():
+        ax.plot([0, 1], [0, 1])
+    # A large title, so its reservation would be easy to spot leaking into
+    # the interior row gap if it weren't properly excluded from it.
+    fig2.group("A tall group title", list(axes2[:, 0]), title_position="top",
+              fontsize=40)
+    fig2.tight_layout()
+    gap_with_group = axes2[0, 0]._rect[1] - (axes2[1, 0]._rect[1] + axes2[1, 0]._rect[3])
+
+    assert gap_with_group == pytest.approx(gap_without_group, abs=0.5), (
+        "a group's own margin reservation leaked into the interior row gap: "
+        "%r vs %r" % (gap_with_group, gap_without_group))
+
+
+def test_group_renders_in_both_backends():
+    from plotpress import raster
+
+    fig, axes = _grid_2x2()
+    fig.group("A", [axes[0, 0], axes[0, 1]])
+    assert "A" in fig.to_svg()
+    assert raster.figure_to_image(fig, scale=1) is not None
+
+
+def test_group_rejects_empty_or_foreign_axes_and_bad_title_position():
+    fig, axes = _grid_2x2()
+    with pytest.raises(ValueError, match="at least one axes"):
+        fig.group("bad", [])
+
+    other_fig, other_ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must belong to this figure"):
+        fig.group("bad", [other_ax])
+
+    with pytest.raises(ValueError, match="title_position"):
+        fig.group("bad", [axes[0, 0]], title_position="center")
+
+
+def test_group_absent_without_the_call():
+    fig, _ = _grid_2x2()
+    svg = fig.to_svg()
+    assert _parse(svg) is not None   # still well-formed
+    assert "stroke-dasharray" not in svg
+
+
 # -- mesh orientation and inverted axes -------------------------------------
 
 def _mesh_image_box(draw):

@@ -22,11 +22,11 @@ The toolbar
    * - **Zoom**
      - Two distinct gestures. Drag a rubber-band box to zoom *one axes* in
        **data space** -- its ticks recompute and markers keep a constant
-       size. Wheel zooms the *whole figure* instead, centered on the cursor,
-       regardless of which axes (if any) is under it -- the useful gesture
-       on a figure with many small axes, where the cursor is only ever over
-       one tiny panel at a time. It only rescales the SVG's own viewBox, so
-       it never touches any axes' data range or ticks.
+       size. Ctrl+wheel zooms the *whole figure* instead, centered on the
+       cursor, regardless of which axes (if any) is under it -- the useful
+       gesture on a figure with many small axes, where the cursor is only
+       ever over one tiny panel at a time. It only rescales the SVG's own
+       viewBox, so it never touches any axes' data range or ticks.
    * - **Point Pick**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
@@ -47,6 +47,16 @@ The toolbar
        is selected. Hides every pin and annotation without deleting any of
        them; toggling it back to "Show Annotations" restores them exactly as
        they were, text included.
+   * - **Save As**
+     - Download the current page -- pan/zoom, every pin/annotation, hidden
+       legend series, Hide Annotations -- as a new, equally self-contained
+       HTML file. Reopening it resumes this exact session, not just what was
+       originally plotted.
+   * - **Save**
+     - The same, but tries to overwrite the file this page was opened from
+       instead of downloading a new one. That needs the File System Access
+       API (Chromium, a secure context); anywhere it's unavailable this
+       falls back to the same download Save As does.
 
 A box-drag zoom and Span's pan both operate on a single axes' data limits,
 recomputing that axes' ticks live -- including on log scales. Ctrl+wheel (or

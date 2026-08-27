@@ -38,6 +38,17 @@ deleting them. Toggling it back to "Show Annotations" brings them all back
 exactly as they were, including any text or selection state -- it only ever
 flips a CSS display rule, never touches the underlying marker data.
 
+**Save As** downloads the current page -- pan/zoom, every pin/annotation,
+hidden-legend-series toggles, and Hide Annotations -- as a new, equally
+self-contained HTML file: reopening it resumes exactly where this session
+left off, not just what was originally plotted. **Save** does the same but
+tries to overwrite the file this page was opened from instead of downloading
+a new one; that needs the File System Access API (Chromium, a secure
+context), so elsewhere it falls back to the same download Save As does.
+Both work the same way inside a :class:`~plotpress.Report`'s embedded
+figure -- each panel is its own independent document, so saving from one
+saves only that panel, not the whole report.
+
 Legend entries remain clickable to toggle series regardless of mode.
 """
 
@@ -45,6 +56,13 @@ _JS_SOURCE = r"""
 (function () {
   var svg = document.getElementById('plotpress-svg');
   if (!svg) return;
+  // Captured before anything below mutates the DOM (the toolbar, its
+  // injected <style>, sliders, ...) -- Save/Save As (far below) rebuild a
+  // fresh copy of the page from this, plus one new payload script tag, so
+  // the saved file's own toolbar script starts from the same clean slate
+  // this one did rather than duplicating whatever this session has already
+  // added to the live document.
+  var ORIGINAL_DOC_HTML = document.documentElement.outerHTML;
   var SVGNS = 'http://www.w3.org/2000/svg';
   var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
   var home = vb.slice();
@@ -231,6 +249,8 @@ _JS_SOURCE = r"""
     { mode: 'reset', label: 'Reset' },
     { action: 'extract', label: 'Extract' },
     { action: 'toggle-annotations', label: 'Hide Annotations' },
+    { action: 'save', label: 'Save' },
+    { action: 'save-as', label: 'Save As' },
   ];
   var annotationsHidden = false;
   function toggleAnnotations(b) {
@@ -246,6 +266,8 @@ _JS_SOURCE = r"""
     b.addEventListener('click', function () {
       if (t.action === 'extract') doExtract();
       else if (t.action === 'toggle-annotations') toggleAnnotations(b);
+      else if (t.action === 'save') overwriteCurrentPage();
+      else if (t.action === 'save-as') saveAsNewPage();
       else setMode(t.mode);
     });
     bar.appendChild(b);
@@ -1173,6 +1195,7 @@ _JS_SOURCE = r"""
       g.dataset.axes = anchor.axes; g.dataset.series = anchor.series;
       g.dataset.ptype = anchor.ptype;
     }
+    return g;
   }
 
   function pinLabel(pin, autoLabel) {
@@ -1349,6 +1372,183 @@ _JS_SOURCE = r"""
     }
   }
   window.plotpressExtract = doExtract;
+
+  // ---- save/save as: persist the current pan/zoom, pins, and toggles ----
+  // A plain data-only re-serve (Extract) is not "resume where I left off" --
+  // this rebuilds the whole page instead, from the same clean pre-mutation
+  // snapshot (ORIGINAL_DOC_HTML) every save starts from, plus one new
+  // payload script tag the bootstrap below reads back on the saved file's
+  // own next load.
+  function serializePins() {
+    var out = [];
+    document.querySelectorAll('.plotpress-pin').forEach(function (pin) {
+      var d = {};
+      for (var k in pin.dataset) d[k] = pin.dataset[k];
+      out.push({
+        data: d, note: pin.classList.contains('plotpress-note'),
+        selected: pin === selectedPin,
+        text: pin.querySelector('text').textContent,
+      });
+    });
+    return out;
+  }
+
+  // Rebuilds each pin the same way it was first created: an anchored pin
+  // (data.kind set -- Point Pick/Annotate Point) through addAnchoredPin(),
+  // which re-resolves its position from the *current* (already-restored)
+  // view via pinAnchor()/resolve() exactly as a fresh click would; a free
+  // annotation or the large-series geometry fallback (no data.kind) directly,
+  // converting its own saved data-space x/y through the current view when it
+  // has one, or at its saved fixed figure position when it doesn't.
+  function restorePins(saved) {
+    var toSelect = null;
+    saved.forEach(function (rec) {
+      var g;
+      if (rec.data.kind) {
+        var scratch = document.createElementNS(SVGNS, 'g');
+        for (var k in rec.data) scratch.dataset[k] = rec.data[k];
+        var anchor = pinAnchor(scratch);
+        if (!anchor) return;
+        g = addAnchoredPin(anchor, +rec.data.index, rec.data.customLabel);
+      } else {
+        var px, py;
+        if (rec.data.axes !== undefined && CUR[rec.data.axes]) {
+          var q = toPixel(CUR[rec.data.axes], +rec.data.x, +rec.data.y);
+          px = q.x; py = q.y;
+        } else {
+          px = +rec.data.px; py = +rec.data.py;
+        }
+        g = addPin(px, py, rec.text);
+        for (var k2 in rec.data) g.dataset[k2] = rec.data[k2];
+      }
+      if (!g) return;
+      if (rec.note) g.classList.add('plotpress-note');
+      if (rec.selected) toSelect = g;
+    });
+    selectPin(toSelect);
+  }
+
+  function buildSaveState() {
+    var axesView = {};
+    Object.keys(CUR).forEach(function (k) {
+      var c = CUR[k];
+      axesView[k] = { xmin: c.xmin, xmax: c.xmax, ymin: c.ymin, ymax: c.ymax };
+    });
+    var hiddenLabels = [];
+    document.querySelectorAll('.plotpress-series').forEach(function (s) {
+      if (s.style.display !== 'none') return;
+      var label = s.getAttribute('data-label');
+      if (hiddenLabels.indexOf(label) < 0) hiddenLabels.push(label);
+    });
+    return {
+      view: view.slice(), axes: axesView, pins: serializePins(),
+      annotationsHidden: annotationsHidden, hiddenLegendLabels: hiddenLabels,
+    };
+  }
+
+  function applySavedState(state) {
+    if (!state) return;
+    if (state.view) { view = state.view.slice(); apply(); }
+    if (state.axes) {
+      Object.keys(state.axes).forEach(function (k) {
+        if (!CUR[k]) return;
+        var a = state.axes[k], c = CUR[k];
+        c.xmin = a.xmin; c.xmax = a.xmax; c.ymin = a.ymin; c.ymax = a.ymax;
+        refreshAxes(k);
+      });
+    }
+    if (state.annotationsHidden) {
+      var toggleBtn = buttons.filter(function (b) {
+        return b.textContent === 'Hide Annotations' || b.textContent === 'Show Annotations';
+      })[0];
+      if (toggleBtn) toggleAnnotations(toggleBtn);
+    }
+    (state.hiddenLegendLabels || []).forEach(function (label) {
+      document.querySelectorAll('.plotpress-legend text').forEach(function (t) {
+        if (t.textContent === label) t.style.opacity = '0.4';
+      });
+      document.querySelectorAll('.plotpress-series').forEach(function (s) {
+        if (s.getAttribute('data-label') === label) s.style.display = 'none';
+      });
+    });
+    if (state.pins) restorePins(state.pins);   // last: needs the view above already in place
+  }
+
+  function buildSaveHTML() {
+    // A stale payload from an earlier save has to come out through a real
+    // DOM (DOMParser), not a raw string/regex replace against
+    // ORIGINAL_DOC_HTML: that string is the *whole* page, which includes
+    // this very script's own source -- and this function's source text
+    // necessarily spells out id="plotpress-saved-state" itself (to build
+    // and to look for that same tag). A regex scanning raw text can't tell
+    // that occurrence apart from a genuine tag and matches from there
+    // instead, non-greedily eating everything up to the real </script> that
+    // ends the whole interactive script -- silently truncating every saved
+    // copy's own toolbar script mid-function. A parsed DOM has no such
+    // ambiguity: getElementById only ever matches a real element, never
+    // text sitting inside another element's own content.
+    var doc = new DOMParser().parseFromString(ORIGINAL_DOC_HTML, 'text/html');
+    var stale = doc.getElementById('plotpress-saved-state');
+    if (stale) stale.remove();
+    var script = doc.createElement('script');
+    script.type = 'application/json';
+    script.id = 'plotpress-saved-state';
+    // Escaped the same way figure._json_payload() escapes every other
+    // embedded payload: raw text elements serialize verbatim, so a saved
+    // annotation whose text happened to contain "</script>" would otherwise
+    // round-trip into literally invalid, unparseable markup.
+    script.textContent = JSON.stringify(buildSaveState())
+      .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+    // As the *first* child of body, not appended at the end: the toolbar
+    // script that reads this back runs synchronously the moment the parser
+    // reaches its own closing tag, before it has seen any later sibling --
+    // appended after it, this element would not exist in the DOM yet at the
+    // point document.getElementById('plotpress-saved-state') looks for it.
+    doc.body.insertBefore(script, doc.body.firstChild);
+    return '<!doctype html>' + doc.documentElement.outerHTML;
+  }
+
+  function suggestedFilename() {
+    var t = (document.title || 'plotpress-figure').replace(/[^\w.-]+/g, '_').toLowerCase();
+    return /\.html?$/.test(t) ? t : t + '.html';
+  }
+
+  function downloadHTML(htmlText, filename) {
+    var blob = new Blob([htmlText], { type: 'text/html' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function saveAsNewPage() {
+    downloadHTML(buildSaveHTML(), suggestedFilename());
+  }
+
+  // True in-place overwrite needs the File System Access API (Chromium, a
+  // secure context only) to get a writable handle back to a file the user
+  // picks -- a page can never be handed a handle to the exact file it was
+  // itself opened from (file:// has no such API), so "overwrite" is really
+  // "pick a destination, defaulting to this file's own name" rather than a
+  // silent, prompt-free write. Anywhere that API is unavailable (Firefox,
+  // Safari, a non-secure origin), this falls back to the same download
+  // saveAsNewPage() does -- always a new file there, never a true overwrite.
+  function overwriteCurrentPage() {
+    var htmlText = buildSaveHTML();
+    if (!window.showSaveFilePicker) { downloadHTML(htmlText, suggestedFilename()); return; }
+    window.showSaveFilePicker({
+      suggestedName: suggestedFilename(),
+      types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }],
+    }).then(function (handle) {
+      return handle.createWritable().then(function (w) {
+        return w.write(htmlText).then(function () { return w.close(); });
+      });
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;   // user cancelled the picker
+      downloadHTML(htmlText, suggestedFilename());
+    });
+  }
 
   // Nearest vertex of an animated (frame) series at its current frame.
   function nearestFrameVertex(axesKey, m, p) {
@@ -1655,6 +1855,12 @@ _JS_SOURCE = r"""
               e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : null;
     if (dir) { e.preventDefault(); stepPin(selectedPin, dir); }
   });
+
+  // Applied last: replays a Save/Save As from an earlier session (view,
+  // pins, toggles) now that every function/data structure above exists to
+  // do it with -- see buildSaveState()/applySavedState() above.
+  var savedStateEl = document.getElementById('plotpress-saved-state');
+  if (savedStateEl) applySavedState(JSON.parse(savedStateEl.textContent));
 })();
 """
 

@@ -143,6 +143,7 @@ class Figure:
         self._supxlabel = None
         self._supylabel = None
         self._fig_texts = []         # set by Figure.text(); each a dict of kwargs
+        self._groups = []            # set by Figure.group(); each a dict of kwargs
 
         # tight_layout is re-applied at render time if anything it measured has
         # changed since -- see _settle_layout.
@@ -204,6 +205,39 @@ class Figure:
             "size": fontsize, "color": color,
         })
 
+    def group(self, title, axes, linestyle="--", color="black", linewidth=1.5,
+             title_position="top", pad=8.0, fontsize=None):
+        """Draw a labeled box around a set of axes -- e.g. a cluster of
+        related panels in a larger grid.
+
+        ``axes`` is any subset of this figure's own axes, typically adjacent
+        cells in a subplot grid; the box is the tight bounding rectangle of
+        their individual positions (nothing about grid adjacency is
+        checked) -- expanded to also clear each axes' own tick labels, axis
+        labels, and title, not just its bare plot rect -- plus ``pad`` pixels
+        of clearance on every side. ``title_position`` is one of
+        ``"top"``/``"bottom"``/``"left"``/``"right"``, placing ``title`` just
+        outside that edge of the box. Returns ``self`` for chaining; several
+        groups may be added to one figure.
+        """
+        if not axes:
+            raise ValueError("group() needs at least one axes")
+        for ax in axes:
+            if ax not in self.axes:
+                raise ValueError("group() axes must belong to this figure")
+        if title_position not in ("top", "bottom", "left", "right"):
+            raise ValueError(
+                "title_position must be 'top', 'bottom', 'left', or 'right', "
+                f"got {title_position!r}")
+        self._groups.append({
+            "title": title, "axes": list(axes), "linestyle": linestyle,
+            "color": color, "linewidth": float(linewidth),
+            "title_position": title_position, "pad": float(pad),
+            "fontsize": fontsize,
+        })
+        self._layout_dirty = True
+        return self
+
     def set_size_inches(self, w, h=None):
         """Resize the figure. Accepts ``(w, h)`` or two separate arguments."""
         if h is None:
@@ -240,6 +274,7 @@ class Figure:
         self._supxlabel = None
         self._supylabel = None
         self._fig_texts = []
+        self._groups = []
         self._tight_pad = None
         self._layout_dirty = False
         self._align_x_axes = _ALIGN_UNSET
@@ -450,15 +485,56 @@ class Figure:
         if self._supylabel:
             left_px += (self._supylabel.get("size") or st.label_size * 1.2) + 6
 
+        # A group's title, when it faces the grid's own outer edge, needs the
+        # same kind of band reserved -- otherwise it (or the box itself, for
+        # a top-facing title over a titled top row) draws off the canvas or
+        # over the outermost panels. A group that doesn't reach that edge
+        # (an interior cluster) has its title in a row/col gap instead, which
+        # this does not touch -- reserving hspace/wspace for one arbitrary
+        # interior group would grow it for every row/col, not just that one.
+        # Kept separate from left_px/top_px/etc. themselves: those also seed
+        # gap_w/gap_h below (the interior row/col gap), and unlike a twin's
+        # decorations -- which can genuinely sit on an interior boundary --
+        # a group's title only ever faces an *outer* edge (checked below), so
+        # it must never widen every interior gap along with it.
+        group_top_px = group_bottom_px = group_left_px = group_right_px = 0.0
+        for g in self._groups:
+            g_specs = [ax for ax in g["axes"] if ax._subplotspec is not None]
+            if not g_specs:
+                continue
+            size = g["fontsize"] or st.title_size
+            # 1.3x size -- not 1x -- for the same reason title_px above adds
+            # a flat +8 rather than measuring real glyph ascent: bundled font
+            # metrics here only cover advance widths (see fonts/), not
+            # vertical extents, so this errs generous rather than risk the
+            # title's own glyphs clipping the top of the canvas.
+            extent = g["pad"] + size * 1.3 + 10
+            pos = g["title_position"]
+            # "Touches that edge" -- the group's bounding box reaches row 0 /
+            # the last row / column 0 / the last column -- not "every one of
+            # its axes sits in that single row/col": a group spanning several
+            # rows in a column-band (say) still needs a top-margin band for
+            # its top-facing title even though most of its own axes are in
+            # rows 1+, same as one spanning a single row would.
+            if pos == "top" and min(ax._subplotspec.row0 for ax in g_specs) == 0:
+                group_top_px += extent
+            elif pos == "bottom" and max(ax._subplotspec.row1 for ax in g_specs) == nrows - 1:
+                group_bottom_px += extent
+            elif pos == "left" and min(ax._subplotspec.col0 for ax in g_specs) == 0:
+                group_left_px += extent
+            elif pos == "right" and max(ax._subplotspec.col1 for ax in g_specs) == ncols - 1:
+                group_right_px += extent
+
         edge = pad * min(Wpx, Hpx) + 4
-        left = (left_px + edge) / Wpx
-        right = 1 - (right_px + edge) / Wpx
-        bottom = (bottom_px + edge) / Hpx
-        top = 1 - (top_px + edge) / Hpx
+        left = (left_px + group_left_px + edge) / Wpx
+        right = 1 - (right_px + group_right_px + edge) / Wpx
+        bottom = (bottom_px + group_bottom_px + edge) / Hpx
+        top = 1 - (top_px + group_top_px + edge) / Hpx
         # An interior column gap has to hold the right-hand decorations of the
         # column to its left as well as the left-hand ones of the column to its
         # right -- the row gap has always summed both bands, and a twinx in a
-        # grid is what makes the missing term visible.
+        # grid is what makes the missing term visible. Groups are excluded
+        # (see above): they never contribute to an interior gap.
         gap_w = (left_px + right_px) / Wpx          # interior column gap
         gap_h = (bottom_px + top_px) / Hpx          # interior row gap
         axw, gap_w = _fit_cells(right - left, ncols, gap_w)

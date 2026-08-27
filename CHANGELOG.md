@@ -11,6 +11,39 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **Save**/**Save As** toolbar buttons -- download the current interactive
+  session (pan/zoom, every pin/annotation, hidden-legend-series toggles,
+  Hide Annotations) as a new, equally self-contained HTML file; reopening
+  it resumes exactly where this session left off, not just what was
+  originally plotted. Save additionally tries to overwrite the file this
+  page was opened from in place, via the File System Access API where a
+  browser supports it (Chromium, a secure context), falling back to the
+  same download Save As does everywhere else -- a page can never be handed
+  a writable handle to the exact file it was itself opened from, so this
+  is really "pick a destination, defaulting to this file's own name," not a
+  silent, prompt-free overwrite. Works the same inside a `Report`'s
+  embedded figure: each panel is its own independent document, so saving
+  from one saves only that panel.
+- `fig.group(title, axes, ...)` -- draws a labeled box around a set of
+  axes (e.g. a cluster of related panels in a larger grid): the tight
+  bounding rectangle of their own positions -- expanded to also clear each
+  axes' own tick labels, axis labels, and title, not just its bare plot
+  rect -- plus a little padding, with the title just outside whichever edge
+  `title_position` (`"top"` (default), `"bottom"`, `"left"`, `"right"`)
+  names. Several groups may be added to one figure. `tight_layout()`
+  reserves margin for a group whose title faces the grid's own outer edge,
+  the same way it already does for a `suptitle`/colorbar/figure legend; an
+  interior group (not touching that
+  edge) is left to the existing row/col gap instead. Four
+  `docs/examples/figure_layout` scripts: `plot_09_group_axes.py` (row-based,
+  top/bottom titles), `plot_10_group_large_grid.py` (two 30-panel
+  `pcolormesh` column-bands), `plot_11_group_highlight_one_panel.py` (a
+  single-axes interior group with no reserved margin), and
+  `plot_12_group_before_after.py` (side-by-side groups with left/right
+  titles).
+
 ### Changed
 
 - The interactive toolbar's whole-figure wheel zoom now requires Ctrl

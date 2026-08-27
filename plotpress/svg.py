@@ -65,6 +65,7 @@ def figure_to_svg(fig, interactive: bool = False) -> str:
 
     _render_figtexts(fig, W, H, body)
     _render_figure_legend(fig, fig.style, W, H, body)
+    _render_groups(fig, W, H, body)
 
     header = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -129,6 +130,90 @@ def _render_fig_text(t, st, W, H, body):
         f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
         f'font-size="{size}" fill="{color}">{_esc(t["s"])}</text>'
     )
+
+
+def _group_top_clearance(ax, st):
+    """Extra space above an axes' own rect that Figure.group()'s box must not
+    cut through: a twiny()/secondary_xaxis('top') overlay's ticks, and, above
+    that, this axes' own title -- mirroring exactly where _render_axes draws
+    each (twiny_headroom, then the ax._title block right after it). Wrapping
+    just ax._rect (the plot box itself) would otherwise draw the group's top
+    edge straight through the top row's own titles.
+    """
+    extra = twiny_headroom(ax, st)
+    if ax._title:
+        size = ax._title_size or st.title_size
+        extra += 8 + size * 0.8   # matches the title's own baseline offset/ascent
+    return extra
+
+
+def _group_axes_extra(ax, st):
+    """(top, bottom, left, right) clearance beyond an axes' own rect that
+    Figure.group()'s box must not cut through -- this axes' own title/twiny
+    overlay (see _group_top_clearance) above it, and its tick labels plus
+    axis label on whichever side they're actually drawn below/beside it.
+    Wrapping just ax._rect (the bare plot box) would otherwise draw the
+    group's edge straight through the outermost row's/column's own tick
+    numbers and x/y axis labels, not just its title.
+    """
+    top = _group_top_clearance(ax, st)
+    bottom = left = right = 0.0
+    if not ax._axis_off:
+        xdec = st.tick_size + st.tick_label_size + 4
+        if ax._xlabel:
+            xdec += st.label_size + 6
+        if ax._xtick_side == "top":
+            top += xdec
+        else:
+            bottom += xdec
+        ydec = st.tick_size + _max_ytick_width(ax, st) + 4
+        if ax._ylabel:
+            ydec += st.label_size + 6
+        if ax._ytick_side == "right":
+            right += ydec
+        else:
+            left += ydec
+    return top, bottom, left, right
+
+
+def _render_groups(fig, W, H, body):
+    """``Figure.group()``'s labeled boxes -- one dashed (by default) rect per
+    group, tightly wrapping the union of its axes' own allocated rects (each
+    expanded for its own title/tick labels/axis labels -- see
+    _group_axes_extra) plus ``pad`` px of clearance, with the title just
+    outside whichever edge ``title_position`` names.
+    """
+    st = fig.style
+    for g in fig._groups:
+        rects = [_pixel_rect(ax, W, H) for ax in g["axes"]]
+        extras = [_group_axes_extra(ax, st) for ax in g["axes"]]
+        pad = g["pad"]
+        x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad
+        y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad
+        x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad
+        y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad
+        dash = _DASH.get(g["linestyle"])
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+        body.append(
+            f'<rect x="{_fmt(x0)}" y="{_fmt(y0)}" width="{_fmt(x1 - x0)}" '
+            f'height="{_fmt(y1 - y0)}" fill="none" stroke="{g["color"]}" '
+            f'stroke-width="{g["linewidth"]}"{dash_attr}/>'
+        )
+        size = g["fontsize"] or fig.style.title_size
+        pos = g["title_position"]
+        if pos == "top":
+            tx, ty, anchor = (x0 + x1) / 2, y0 - 6, "middle"
+        elif pos == "bottom":
+            tx, ty, anchor = (x0 + x1) / 2, y1 + size + 2, "middle"
+        elif pos == "left":
+            tx, ty, anchor = x0 - 6, (y0 + y1) / 2 + 0.35 * size, "end"
+        else:
+            tx, ty, anchor = x1 + 6, (y0 + y1) / 2 + 0.35 * size, "start"
+        body.append(
+            f'<text x="{_fmt(tx)}" y="{_fmt(ty)}" text-anchor="{anchor}" '
+            f'font-size="{size}" font-weight="bold" fill="{g["color"]}">'
+            f'{_esc(g["title"])}</text>'
+        )
 
 
 def _colorbar_label(ax, fig):

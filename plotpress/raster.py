@@ -34,7 +34,8 @@ from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
 from .svg import (
-    _effective_rect, _max_ytick_width, _pixel_rect, _resolve_tick_labels,
+    _effective_rect, _group_axes_extra, _max_ytick_width, _pixel_rect,
+    _resolve_tick_labels,
 )
 from .ticker import log_ticks, nice_ticks
 from .transform import LinearTransform
@@ -130,6 +131,7 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
         _raster_axes(ax, fig, W * S, H * S, S, draw, canvas, frame, animate_unit)
     _raster_figtexts(fig, W * S, H * S, S, draw)
     _raster_figure_legend(fig, fig.style, W * S, H * S, S, draw)
+    _raster_groups(fig, W * S, H * S, S, draw)
 
     if S > 1:
         canvas = canvas.resize((W, H), PILImage.LANCZOS)
@@ -970,6 +972,40 @@ def _raster_figtexts(fig, W, H, S, draw):
         anchor = _PIL_H.get(t["ha"], "l") + _PIL_V.get(t["va"], "s")
         draw.text((x, y), t["s"], fill=_rgb(t["color"] or st.text_color),
                   font=_font(size, st.font_family), anchor=anchor)
+
+
+def _raster_groups(fig, W, H, S, draw):
+    """The PNG counterpart of svg._render_groups."""
+    st = fig.style
+    for g in fig._groups:
+        rects = [_pixel_rect(ax, W, H) for ax in g["axes"]]
+        extras = [_group_axes_extra(ax, st) for ax in g["axes"]]
+        pad = g["pad"] * S
+        x0 = min(r[0] - e[2] * S for r, e in zip(rects, extras)) - pad
+        y0 = min(r[1] - e[0] * S for r, e in zip(rects, extras)) - pad
+        x1 = max(r[0] + r[2] + e[3] * S for r, e in zip(rects, extras)) + pad
+        y1 = max(r[1] + r[3] + e[1] * S for r, e in zip(rects, extras)) + pad
+        pts = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
+        dash = _DASH.get(g["linestyle"])
+        dash_scaled = tuple(d * S for d in dash) if dash else None
+        _polyline(draw, pts, _rgb(g["color"]),
+                 max(1, int(round(g["linewidth"] * S))), dash_scaled)
+        size = (g["fontsize"] or fig.style.title_size) * S
+        font = _font(size, fig.style.font_family, bold=True)
+        color = _rgb(g["color"])
+        pos = g["title_position"]
+        if pos == "top":
+            draw.text(((x0 + x1) / 2, y0 - 6 * S), g["title"], fill=color,
+                      font=font, anchor="md")
+        elif pos == "bottom":
+            draw.text(((x0 + x1) / 2, y1 + 6 * S), g["title"], fill=color,
+                      font=font, anchor="ma")
+        elif pos == "left":
+            draw.text((x0 - 6 * S, (y0 + y1) / 2), g["title"], fill=color,
+                      font=font, anchor="rm")
+        else:
+            draw.text((x1 + 6 * S, (y0 + y1) / 2), g["title"], fill=color,
+                      font=font, anchor="lm")
 
 
 def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):

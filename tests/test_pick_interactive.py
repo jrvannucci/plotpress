@@ -1290,3 +1290,155 @@ def test_report_resize_does_not_collapse_a_not_yet_loaded_lazy_entry(page, tmp_p
     # set, so the browser still shows the initial `height` attribute's guess.
     assert result["secondHeightAfter"] == "", (
         "resize touched an iframe that had not loaded yet: %r" % result)
+
+
+# -- Save / Save As --------------------------------------------------------
+
+def _click_toolbar(page, label):
+    page.evaluate(
+        """(label) => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === label) b.click(); })""", label)
+
+
+def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_path):
+    """The core round trip: pan/zoom, a Point Pick, an Annotate Point note, a
+    free annotation, a hidden legend series, and Hide Annotations all have to
+    come back exactly as they were when the downloaded copy is reopened --
+    not just the data plot_data()/load_data() already covers, the live
+    session's own state."""
+    import plotpress
+    from pick_cases import px
+
+    x = [0.0, 1.0, 2.0, 3.0]
+    fig, ax = plotpress.subplots()
+    ax.plot(x, [0.0, 1.0, 4.0, 9.0], label="sq")
+    ax.plot(x, [0.0, 1.0, 2.0, 3.0], label="lin")
+    ax.legend()
+    path = tmp_path / "save_roundtrip.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, x[2], 4.0)   # a real point on the "sq" line
+    markers = _click_mode(page, "Point Pick", ux, uy)
+    assert len(markers) == 1
+
+    markers = _click_mode(page, "Annotate Point", *px(fig, 0, x[1], 1.0),
+                          prompt_text="watch me")
+    assert len(markers) == 2
+
+    # Annotate Free in the margin, above the axes -- not locked to any datum.
+    page.once("dialog", lambda d: d.accept("free note"))
+    _click_toolbar(page, "Annotate Free")
+    box = page.eval_on_selector(
+        "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y}; }")
+    page.mouse.click(box["x"] + 5, box["y"] + 3)
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 3
+
+    # Hide the "sq" legend series.
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-legend text').forEach(t => {
+             if (t.textContent === 'sq') t.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+           })""")
+
+    # Ctrl+wheel-zoom the whole figure.
+    _click_toolbar(page, "Zoom")
+    svg_box = page.eval_on_selector(
+        "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
+    page.mouse.move(svg_box["x"] + svg_box["w"] * 0.3, svg_box["y"] + svg_box["h"] * 0.3)
+    page.keyboard.down("Control")
+    page.mouse.wheel(0, -300)
+    page.keyboard.up("Control")
+    view_box_before = page.eval_on_selector("#plotpress-svg", "el => el.getAttribute('viewBox')")
+
+    # Hide Annotations.
+    _click_toolbar(page, "Hide Annotations")
+
+    with page.expect_download() as dl_info:
+        _click_toolbar(page, "Save As")
+    saved = tmp_path / "save_roundtrip_saved.html"
+    dl_info.value.save_as(str(saved))
+
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(saved.as_uri())
+    assert not errors, "JS error loading the saved page: %s" % errors
+
+    view_box_after = page.eval_on_selector("#plotpress-svg", "el => el.getAttribute('viewBox')")
+    assert view_box_after == view_box_before
+
+    restored = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(restored) == 3
+    texts = sorted(m.get("text", "") for m in restored)
+    assert texts == ["", "free note", "watch me"]
+
+    assert page.eval_on_selector(
+        "#plotpress-svg", "el => el.classList.contains('plotpress-hide-annotations')")
+
+    sq_display = page.evaluate(
+        """() => { const s = [...document.querySelectorAll('.plotpress-series')]
+                     .find(el => el.getAttribute('data-label') === 'sq');
+                   return s ? s.style.display : null; }""")
+    assert sq_display == "none"
+
+    toggle_label = page.evaluate(
+        """() => { const b = [...document.querySelectorAll('.plotpress-toolbar button')]
+                     .find(b => b.textContent.includes('Annotations'));
+                   return b ? b.textContent : null; }""")
+    assert toggle_label == "Show Annotations"
+
+
+def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
+    """A second Save As, starting from an already-saved copy, must replace
+    the previous payload rather than append a second one -- getElementById
+    would otherwise return whichever the parser adds first, silently
+    ignoring every save after the first."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "save_twice.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    with page.expect_download() as dl_info:
+        _click_toolbar(page, "Save As")
+    once = tmp_path / "save_twice_1.html"
+    dl_info.value.save_as(str(once))
+
+    page.goto(once.as_uri())
+    _click_toolbar(page, "Point Pick")
+    page.mouse.click(
+        *page.eval_on_selector(
+            "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+            "return [r.x + r.width / 2, r.y + r.height / 2]; }"))
+    with page.expect_download() as dl_info2:
+        _click_toolbar(page, "Save As")
+    twice = tmp_path / "save_twice_2.html"
+    dl_info2.value.save_as(str(twice))
+
+    text = twice.read_text(encoding="utf-8")
+    assert text.count('id="plotpress-saved-state"') == 1
+
+    page.goto(twice.as_uri())
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 1
+
+
+def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_path):
+    """True in-place overwrite needs the File System Access API; anywhere
+    it's unavailable (Firefox/Safari, or simulated here), Save must still
+    produce something -- a plain download -- rather than silently doing
+    nothing."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "save_fallback.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
+
+    with page.expect_download() as dl_info:
+        _click_toolbar(page, "Save")
+    assert dl_info.value.suggested_filename.endswith(".html")
