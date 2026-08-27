@@ -61,6 +61,11 @@ anywhere in the source.
 
 ### Added
 
+- `docs/scale/plot_10_many_groups_with_colorbars.py` -- times `fig.to_svg()`
+  on the same 100-axes grid with no groups, 50 groups, and 50 groups where
+  every axes also carries its own colorbar, to put a number on whether
+  `fig.group()` costs anything at scale (answer: no, for normal use; a
+  measurable but still small amount only at this kind of extreme density).
 - The interactive toolbar's button row can now be collapsed (a **▸**/**◂**
   handle, always at the same corner) to declutter the view -- a screenshot,
   say -- without losing the only way to bring it back. Not remembered
