@@ -16,8 +16,10 @@ faces it, so nothing widens *that* gap automatically -- each box still
 needs room for its own tick labels beyond its bare axes, and left at
 ``tight_layout()``'s default column spacing, Bank B's box (extending left
 past its own y-tick labels) collided with Bank A's box (extending right past
-its own pad) right at that seam. ``subplots_adjust`` widens every column gap
-explicitly instead, interior boundary included.
+its own pad) right at that seam. ``group_spacing(wspace=...)`` widens every
+column gap explicitly instead, interior boundary included -- without giving
+up ``tight_layout()``'s own automatic margins the way ``subplots_adjust``
+would.
 """
 import numpy as np
 import plotpress
@@ -39,5 +41,5 @@ fig.group("Bank A (cols 0-2)", list(axes[:, 0:3].ravel()),
          color="#d62728", linestyle="--", title_position="top")
 fig.group("Bank B (cols 3-5)", list(axes[:, 3:6].ravel()),
          color="#1f77b4", linestyle="--", title_position="top")
-fig.subplots_adjust(left=0.03, right=0.985, top=0.90, bottom=0.03,
-                    wspace=0.16, hspace=0.35)
+fig.group_spacing(wspace=18.0)
+fig.tight_layout()

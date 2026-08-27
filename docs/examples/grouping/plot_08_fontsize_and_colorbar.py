@@ -39,7 +39,8 @@ fig.colorbar(meshes[-1], ax=list(axes[1, :]))
 # tight_layout() only auto-reserves margin at the figure's own outer edges --
 # the row boundary between the two groups is interior to the grid, and
 # neither group's "top" title faces it, so nothing widens that gap on its
-# own. subplots_adjust sets every margin explicitly instead, hspace included,
-# the same fix used for the interior boundaries in plot_05/06/07.
-fig.subplots_adjust(left=0.05, right=0.86, top=0.90, bottom=0.06,
-                    wspace=0.25, hspace=0.55)
+# own. group_spacing() reserves that room explicitly instead, without
+# discarding tight_layout()'s own colorbar/title margins the way
+# subplots_adjust would.
+fig.group_spacing(hspace=42.0)
+fig.tight_layout()

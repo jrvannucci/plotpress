@@ -2073,21 +2073,152 @@ def test_group_margin_reservation_does_not_widen_interior_row_gaps():
         "%r vs %r" % (gap_with_group, gap_without_group))
 
 
+def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
+    """group_spacing()'s whole point: add room between subplots for group
+    boxes without touching anything tight_layout() already sizes on its
+    own -- the outer margin (titles, tick labels, ...) must land in exactly
+    the same place with or without it; only the interior row/col gap grows,
+    by exactly the requested pixel amount."""
+    fig1, axes1 = plotpress.subplots(2, 2, figsize=(9, 7))
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+        ax.set_title("panel")
+    fig1.group("Group A", list(axes1[0, :]), title_position="top")
+    fig1.group("Group B", list(axes1[1, :]), title_position="top")
+    fig1.tight_layout()
+    outer_top_before = max(ax._rect[1] + ax._rect[3] for ax in axes1.ravel())
+    outer_bottom_before = min(ax._rect[1] for ax in axes1.ravel())
+    row_gap_before = (min(axes1[0, 0]._rect[1], axes1[0, 1]._rect[1])
+                     - max(axes1[1, 0]._rect[1] + axes1[1, 0]._rect[3],
+                            axes1[1, 1]._rect[1] + axes1[1, 1]._rect[3]))
+
+    fig2, axes2 = plotpress.subplots(2, 2, figsize=(9, 7))
+    for ax in axes2.ravel():
+        ax.plot([0, 1], [0, 1])
+        ax.set_title("panel")
+    fig2.group("Group A", list(axes2[0, :]), title_position="top")
+    fig2.group("Group B", list(axes2[1, :]), title_position="top")
+    fig2.group_spacing(hspace=40.0)
+    fig2.tight_layout()
+    outer_top_after = max(ax._rect[1] + ax._rect[3] for ax in axes2.ravel())
+    outer_bottom_after = min(ax._rect[1] for ax in axes2.ravel())
+    row_gap_after = (min(axes2[0, 0]._rect[1], axes2[0, 1]._rect[1])
+                    - max(axes2[1, 0]._rect[1] + axes2[1, 0]._rect[3],
+                           axes2[1, 1]._rect[1] + axes2[1, 1]._rect[3]))
+
+    assert outer_top_after == pytest.approx(outer_top_before, abs=1e-6)
+    assert outer_bottom_after == pytest.approx(outer_bottom_before, abs=1e-6)
+    Hpx = fig2.figsize[1] * fig2.style.dpi
+    assert (row_gap_after - row_gap_before) * Hpx == pytest.approx(40.0, abs=0.5)
+
+
+def test_group_spacing_resolves_a_real_interior_boundary_collision():
+    """The motivating case: two groups facing each other across an interior
+    row boundary, neither title touching it, collide with plain
+    tight_layout() -- group_spacing(hspace=...) must be able to fix that
+    without falling back to subplots_adjust (which would also discard the
+    automatic title/tick-label margins)."""
+    def build(hspace):
+        fig, axes = plotpress.subplots(2, 2, figsize=(9, 7))
+        for ax in axes.ravel():
+            ax.plot([0, 1], [0, 1])
+            ax.set_title("panel")
+        fig.group("Group A", list(axes[0, :]), title_position="top")
+        fig.group("Group B", list(axes[1, :]), title_position="top")
+        if hspace:
+            fig.group_spacing(hspace=hspace)
+        fig.tight_layout()
+        return fig
+
+    def box_gap(fig):
+        root = _parse(fig.to_svg())
+        boxes = sorted(
+            (float(r.get("y")), float(r.get("y")) + float(r.get("height")))
+            for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"
+        )
+        return boxes[1][0] - boxes[0][1]
+
+    assert box_gap(build(None)) < 0, (
+        "the fixture must actually collide without group_spacing, or this "
+        "test proves nothing")
+    assert box_gap(build(40.0)) > 0
+
+
+def test_group_spacing_defaults_leave_layout_unchanged():
+    """No group_spacing() call must be a complete no-op -- existing figures
+    that never touch it see byte-for-byte the same layout as before it
+    existed."""
+    fig1, axes1 = plotpress.subplots(2, 2)
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig1.group("A", list(axes1[0, :]))
+    fig1.tight_layout()
+
+    fig2, axes2 = plotpress.subplots(2, 2)
+    for ax in axes2.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig2.group("A", list(axes2[0, :]))
+    fig2.group_spacing()   # no args: must change nothing
+    fig2.tight_layout()
+
+    assert fig1.to_svg() == fig2.to_svg()
+
+
+def test_sup_labels_do_not_widen_interior_grid_gaps():
+    """Regression: suptitle()/supxlabel()/supylabel() added straight into
+    top_px/bottom_px/left_px -- the same accumulators that also seed the
+    *interior* row/col gap (gap_h/gap_w) -- so a figure-level label, drawn
+    once outside the whole grid, ended up widening every gap between every
+    row or column in the grid too, not just the true outer margin."""
+    fig1, axes1 = plotpress.subplots(3, 3, figsize=(9, 9))
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig1.tight_layout()
+    col_gap_before = axes1[0, 1]._rect[0] - (axes1[0, 0]._rect[0] + axes1[0, 0]._rect[2])
+    row_gap_before = axes1[1, 0]._rect[1] - (axes1[0, 0]._rect[1] + axes1[0, 0]._rect[3])
+
+    fig2, axes2 = plotpress.subplots(3, 3, figsize=(9, 9))
+    for ax in axes2.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig2.suptitle("Overall title")
+    fig2.supxlabel("shared x label")
+    fig2.supylabel("shared y label")
+    fig2.tight_layout()
+    col_gap_after = axes2[0, 1]._rect[0] - (axes2[0, 0]._rect[0] + axes2[0, 0]._rect[2])
+    row_gap_after = axes2[1, 0]._rect[1] - (axes2[0, 0]._rect[1] + axes2[0, 0]._rect[3])
+
+    assert col_gap_after == pytest.approx(col_gap_before, abs=0.5), (
+        "supylabel()'s own left-margin reservation leaked into the interior "
+        "column gap: %r vs %r" % (col_gap_after, col_gap_before))
+    assert row_gap_after == pytest.approx(row_gap_before, abs=0.5), (
+        "suptitle()/supxlabel()'s own margin reservation leaked into the "
+        "interior row gap: %r vs %r" % (row_gap_after, row_gap_before))
+
+
 def test_group_titles_do_not_collide_with_suptitle_or_a_reserving_legend():
     """A group's title reservation has to stack correctly with the *other*
     figure-level bands, not just its own axes -- a suptitle above a
     top-facing group title, and a space-reserving figure legend below a
     bottom-facing one, each independently carve space out of
     tight_layout()'s top_px/bottom_px accumulators, and none of the three
-    should ever end up drawn on top of another."""
-    fig, axes = plotpress.subplots(2, 3, figsize=(10, 6))
+    should ever end up drawn on top of another.
+
+    4 rows, not 2: rows 1-2 are plain, ungrouped axes separating "Top row"
+    and "Bottom row" -- neither group's title faces the interior boundary
+    it would otherwise share with the other (a documented, separately
+    tested limitation: an interior boundary gets no automatic reservation
+    unless a title actually faces it), so two rows immediately adjacent
+    would collide with each other regardless of the figure-level bands this
+    test is actually about.
+    """
+    fig, axes = plotpress.subplots(4, 3, figsize=(10, 8))
     x = np.array([0.0, 1.0])
     for ax in axes.ravel():
         ax.plot(x, x, label="line")
     fig.suptitle("Suite-wide QA sweep")
     fig.legend(loc="lower center")   # a *reserving* placement, unlike an overlay
     fig.group("Top row", list(axes[0]), title_position="top", color="#2ca02c")
-    fig.group("Bottom row", list(axes[1]), title_position="bottom", color="#9467bd")
+    fig.group("Bottom row", list(axes[3]), title_position="bottom", color="#9467bd")
     fig.tight_layout()
     root = _parse(fig.to_svg())
 

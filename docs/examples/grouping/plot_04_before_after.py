@@ -13,8 +13,10 @@ The boundary between the two halves (column 1 / column 2) is interior,
 though, and neither title faces it -- "Before"'s box still needs room for
 its own tick labels beyond its bare axes on that side, and "After"'s box
 needs the same on its side, so left at ``tight_layout()``'s default column
-spacing the two collided right at that seam. ``subplots_adjust`` widens
-every column gap explicitly instead, interior boundary included.
+spacing the two collided right at that seam. ``group_spacing(wspace=...)``
+widens every column gap explicitly instead, interior boundary included --
+without giving up ``tight_layout()``'s own automatic margins the way
+``subplots_adjust`` would.
 """
 import numpy as np
 import plotpress
@@ -38,5 +40,5 @@ fig.group("Before", list(flat[[0, 1, 4, 5]]), color="#7f7f7f", linestyle="--",
          title_position="left")
 fig.group("After", list(flat[[2, 3, 6, 7]]), color="#2ca02c", linestyle="--",
          title_position="right")
-fig.subplots_adjust(left=0.10, right=0.90, top=0.90, bottom=0.06,
-                    wspace=0.18, hspace=0.35)
+fig.group_spacing(wspace=16.0)
+fig.tight_layout()

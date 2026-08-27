@@ -17,6 +17,15 @@ others):
   wouldn't be. It only rescales the SVG's own viewBox, so it never touches
   any axes' data range, ticks, or pick data. A plain wheel (no Ctrl) is left
   alone to scroll the page as it would over any other content.
+* **Magnify** (zoom-in cursor) -- the same whole-figure wheel zoom as
+  Ctrl+wheel under Zoom, but a *plain* wheel, no Ctrl needed -- for wherever
+  holding Ctrl is awkward, or a browser/OS extension already claims it.
+  Deliberately its own mode rather than folded into Zoom: selecting it is an
+  explicit choice to have this figure capture the page's scroll, so it never
+  surprises a reader who just wanted Zoom's rubber-band drag. Drag pans the
+  same whole-figure view in any direction, so a zoomed-in figure stays fully
+  reachable without switching to Span -- always the figure's view, never an
+  axes' own data range, isolating it completely from per-axes zoom/pan.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all.
@@ -247,6 +256,7 @@ _JS_SOURCE = r"""
   var TOOLS = [
     { mode: 'span', label: 'Span' },
     { mode: 'zoom', label: 'Zoom' },
+    { mode: 'magnify', label: 'Magnify' },
     { mode: 'pick', label: 'Point Pick' },
     { mode: 'note-point', label: 'Annotate Point' },
     { mode: 'note-free', label: 'Annotate Free' },
@@ -314,6 +324,7 @@ _JS_SOURCE = r"""
     svg.style.cursor =
       mode === 'span' ? 'grab' :
       mode === 'zoom' ? 'crosshair' :
+      mode === 'magnify' ? 'zoom-in' :
       (mode === 'note-point' || mode === 'note-free') ? 'text' : 'default';
   }
   setMode(null);  // start inert with an arrow cursor
@@ -368,16 +379,32 @@ _JS_SOURCE = r"""
 
   // ---- pan / zoom drivers ------------------------------------------------
   svg.addEventListener('wheel', function (e) {
-    // Ctrl (or a trackpad pinch, which the browser reports as a wheel event
-    // with ctrlKey already set) only -- a plain scroll must fall through to
-    // the page's own scrolling untouched, the same as it would over any
-    // other content, rather than this figure hijacking it just because Zoom
-    // happens to be the active tool.
-    if (mode !== 'zoom' || !e.ctrlKey) return;
+    // Under Zoom, only Ctrl+wheel (or a trackpad pinch, which the browser
+    // reports as a wheel event with ctrlKey already set) zooms -- a plain
+    // scroll must fall through to the page's own scrolling untouched, the
+    // same as it would over any other content, rather than this figure
+    // hijacking it just because Zoom happens to be the active tool. Magnify
+    // is the explicit opt-in past that: selecting it says a plain wheel
+    // here should zoom, Ctrl or not -- for wherever holding Ctrl is awkward
+    // or already claimed by the browser/OS.
+    var zooming = mode === 'magnify' || (mode === 'zoom' && e.ctrlKey);
+    if (!zooming) return;
     e.preventDefault();
     var p = toUser(e);
     zoomViewAt(p.x, p.y, e.deltaY < 0 ? 0.8 : 1.25);
   }, { passive: false });
+
+  // Whole-figure pan: rescales `view` (the SVG viewBox) only, exactly what
+  // the wheel does under Magnify (or Ctrl+wheel under Zoom) -- never an
+  // individual axes' own data range/ticks. Shared by Span's "over the
+  // margins" drag and Magnify's drag, so a zoomed-in view stays reachable
+  // in every direction without leaving the tool that zoomed it.
+  function panWholeFigureTo(e) {
+    var r = svg.getBoundingClientRect();
+    view[0] = panV[0] - (e.clientX - down.x) / r.width * view[2];
+    view[1] = panV[1] - (e.clientY - down.y) / r.height * view[3];
+    apply();
+  }
 
   svg.addEventListener('mousedown', function (e) {
     if (e.button !== 0) return;   // ignore right/middle button (right = delete pin)
@@ -393,6 +420,13 @@ _JS_SOURCE = r"""
       }
       svg.style.cursor = 'grabbing';
     } else if (mode === 'zoom') { startRubber(e); }
+    else if (mode === 'magnify') {
+      // Always the whole-figure view, regardless of what's under the
+      // cursor -- Magnify never touches axes data, only what part of the
+      // rendered figure is currently visible (see the wheel handler above).
+      panV = view.slice();
+      svg.style.cursor = 'grabbing';
+    }
   });
   window.addEventListener('mousemove', function (e) {
     if (!down) return;
@@ -404,11 +438,8 @@ _JS_SOURCE = r"""
       setXLim(m, s.fx0 - dfx, s.fx1 - dfx);
       setYLim(m, s.fy0 + dfy, s.fy1 + dfy);
       refreshAxes(panAxes.key);
-    } else if (mode === 'span') {
-      var r = svg.getBoundingClientRect();
-      view[0] = panV[0] - (e.clientX - down.x) / r.width * view[2];
-      view[1] = panV[1] - (e.clientY - down.y) / r.height * view[3];
-      apply();
+    } else if (mode === 'span' || mode === 'magnify') {
+      panWholeFigureTo(e);
     } else if (mode === 'zoom' && rubber) {
       updateRubber(e);
     }
@@ -416,6 +447,7 @@ _JS_SOURCE = r"""
   window.addEventListener('mouseup', function (e) {
     if (!down) return;
     if (mode === 'span') svg.style.cursor = 'grab';
+    else if (mode === 'magnify') svg.style.cursor = 'zoom-in';
     else if (mode === 'zoom' && rubber) finishRubber(e);
     down = null; panAxes = null;
   });

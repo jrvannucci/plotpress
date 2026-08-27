@@ -42,5 +42,5 @@ for depth in range(n_depths):
         fig.group(f"Depth {depth + 1}m - Probe {probe + 1}", [ax_x, ax_y],
                  title_position="top", pad=4.0, linewidth=1.0, color="#9467bd")
 
-fig.subplots_adjust(wspace=0.35, hspace=0.55, left=0.04, right=0.98,
-                    top=0.93, bottom=0.03)
+fig.group_spacing(wspace=8.0, hspace=36.0)
+fig.tight_layout()

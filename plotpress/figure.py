@@ -144,6 +144,8 @@ class Figure:
         self._supylabel = None
         self._fig_texts = []         # set by Figure.text(); each a dict of kwargs
         self._groups = []            # set by Figure.group(); each a dict of kwargs
+        self._group_wspace = None    # set by Figure.group_spacing()
+        self._group_hspace = None
 
         # tight_layout is re-applied at render time if anything it measured has
         # changed since -- see _settle_layout.
@@ -238,6 +240,38 @@ class Figure:
         self._layout_dirty = True
         return self
 
+    def group_spacing(self, wspace=None, hspace=None):
+        """Reserve extra pixels between subplots for :meth:`group` boxes,
+        without touching anything else :meth:`tight_layout` already sizes.
+
+        Two groups facing each other across an *interior* grid boundary --
+        neither one's title touching that boundary, so neither gets the
+        outer-edge margin :meth:`tight_layout` reserves automatically -- can
+        collide there: each box still needs room for its own tick labels
+        and padding beyond its bare axes, and the ordinary column/row gap
+        (sized only from the axes' own decorations) is not guaranteed to be
+        enough. ``wspace``/``hspace`` (pixels, added on top of that gap, one
+        or both) fix exactly that, independent of the tick-label-driven
+        spacing itself -- unlike reaching for :meth:`subplots_adjust`,
+        which would also throw away every margin :meth:`tight_layout`
+        already computed (titles, tick labels, colorbars, a legend,
+        ``suptitle``/``supxlabel``/``supylabel``) and require respecifying
+        all of them by hand just to widen one gap.
+
+        Applies uniformly to every interior column/row gap -- like
+        ``subplots_adjust``'s own ``wspace``/``hspace``, not per-boundary --
+        so a figure that needs it in only one spot ends up with a little
+        more room elsewhere too, not just where a group actually sits.
+        Only takes effect through :meth:`tight_layout`; has no effect after
+        a :meth:`subplots_adjust` call, which sets every margin manually.
+        """
+        if wspace is not None:
+            self._group_wspace = float(wspace)
+        if hspace is not None:
+            self._group_hspace = float(hspace)
+        self._layout_dirty = True
+        return self
+
     def set_size_inches(self, w, h=None):
         """Resize the figure. Accepts ``(w, h)`` or two separate arguments."""
         if h is None:
@@ -275,6 +309,8 @@ class Figure:
         self._supylabel = None
         self._fig_texts = []
         self._groups = []
+        self._group_wspace = None
+        self._group_hspace = None
         self._tight_pad = None
         self._layout_dirty = False
         self._align_x_axes = _ALIGN_UNSET
@@ -477,13 +513,20 @@ class Figure:
 
         top_px = title_px + twin_top_px
 
-        # Figure-level titles/labels add their own bands.
+        # Figure-level titles/labels reserve their own outer-margin band --
+        # kept apart from top_px/bottom_px/left_px themselves (which also
+        # seed gap_w/gap_h below, the *interior* row/col gap) since, unlike a
+        # per-axes title or tick label -- which can legitimately sit on any
+        # interior row/col boundary and so must widen every gap along with
+        # it -- a suptitle/supxlabel/supylabel draws once, outside the whole
+        # grid, and must never widen an interior gap it is nowhere near.
+        fig_top_px = fig_bottom_px = fig_left_px = 0.0
         if self._suptitle:
-            top_px += (self._suptitle.get("size") or st.title_size * 1.5) + 6
+            fig_top_px += (self._suptitle.get("size") or st.title_size * 1.5) + 6
         if self._supxlabel:
-            bottom_px += (self._supxlabel.get("size") or st.label_size * 1.2) + 6
+            fig_bottom_px += (self._supxlabel.get("size") or st.label_size * 1.2) + 6
         if self._supylabel:
-            left_px += (self._supylabel.get("size") or st.label_size * 1.2) + 6
+            fig_left_px += (self._supylabel.get("size") or st.label_size * 1.2) + 6
 
         # A group's title, when it faces the grid's own outer edge, needs the
         # same kind of band reserved -- otherwise it (or the box itself, for
@@ -533,10 +576,10 @@ class Figure:
                 group_right_px += extent
 
         edge = pad * min(Wpx, Hpx) + 4
-        left = (left_px + group_left_px + edge) / Wpx
+        left = (left_px + group_left_px + fig_left_px + edge) / Wpx
         right = 1 - (right_px + group_right_px + edge) / Wpx
-        bottom = (bottom_px + group_bottom_px + edge) / Hpx
-        top = 1 - (top_px + group_top_px + edge) / Hpx
+        bottom = (bottom_px + group_bottom_px + fig_bottom_px + edge) / Hpx
+        top = 1 - (top_px + group_top_px + fig_top_px + edge) / Hpx
         # An interior column gap has to hold the right-hand decorations of the
         # column to its left as well as the left-hand ones of the column to its
         # right -- the row gap has always summed both bands, and a twinx in a
@@ -544,6 +587,15 @@ class Figure:
         # (see above): they never contribute to an interior gap.
         gap_w = (left_px + right_px) / Wpx          # interior column gap
         gap_h = (bottom_px + top_px) / Hpx          # interior row gap
+        # group_spacing() is the one deliberate exception: an explicit ask
+        # for more room between subplots specifically for group boxes,
+        # independent of what their tick labels alone would need -- added
+        # here, not folded into left_px/etc. above, so it never touches the
+        # outer margin those also seed.
+        if self._group_wspace:
+            gap_w += self._group_wspace / Wpx
+        if self._group_hspace:
+            gap_h += self._group_hspace / Hpx
         axw, gap_w = _fit_cells(right - left, ncols, gap_w)
         axh, gap_h = _fit_cells(top - bottom, nrows, gap_h)
 

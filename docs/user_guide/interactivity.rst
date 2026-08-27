@@ -27,6 +27,15 @@ The toolbar
        gesture on a figure with many small axes, where the cursor is only
        ever over one tiny panel at a time. It only rescales the SVG's own
        viewBox, so it never touches any axes' data range or ticks.
+   * - **Magnify**
+     - The same whole-figure wheel zoom as Ctrl+wheel under Zoom, but a
+       *plain* wheel, no Ctrl needed -- for wherever holding Ctrl is
+       awkward, or a browser/OS extension already claims it. Its own mode
+       rather than folded into Zoom, so selecting it is an explicit choice
+       to have this figure capture the page's scroll. Drag pans the same
+       whole-figure view in any direction, so a zoomed-in figure stays
+       reachable without switching tools -- always the figure's view, never
+       an axes' own data range.
    * - **Point Pick**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and

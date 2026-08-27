@@ -658,6 +658,98 @@ def test_plain_wheel_without_ctrl_does_not_zoom_and_is_not_captured(page, tmp_pa
         "still be free to scroll under the figure")
 
 
+def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
+    """Magnify is the explicit opt-in past Zoom's Ctrl+wheel requirement --
+    selecting it means a plain wheel (no Ctrl) should zoom the whole figure
+    and capture the scroll, for wherever holding Ctrl is awkward or already
+    claimed by the browser/OS. Regression: must not require ctrlKey the way
+    Zoom's own wheel handling does."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "magnify_plain_wheel.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Magnify') b.click();
+          });
+          const before = svg.getAttribute('viewBox');
+          const r = svg.getBoundingClientRect();
+          const ev = new WheelEvent('wheel', {
+            bubbles: true, cancelable: true,
+            clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: -300
+          });
+          const notCancelled = svg.dispatchEvent(ev);
+          return { before, after: svg.getAttribute('viewBox'), notCancelled };
+        }""")
+    assert out["before"] != out["after"], (
+        "Magnify mode must zoom on a plain wheel, without needing Ctrl")
+    assert not out["notCancelled"], (
+        "a wheel that zooms the figure must be preventDefault()'d, or the "
+        "page would also scroll underneath it")
+
+
+def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
+    """Once Magnify has zoomed in, a zoomed-in figure needs a way back to
+    parts that scrolled out of view -- drag pans the same whole-figure view
+    in any direction, without switching to Span. It must move the view in
+    both x and y, and -- staying isolated from per-axes zoom/pan the same
+    way the wheel does -- must never touch any individual axes' own zoom
+    transform, even when the drag starts on top of a real axes."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(2, 2)
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "magnify_drag_pan.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Magnify') b.click();
+          });
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          // Zoom in first (plain wheel, no Ctrl -- Magnify's own gesture).
+          svg.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+          }));
+          const zoomedIn = svg.getAttribute('viewBox').split(' ').map(Number);
+
+          svg.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true, clientX: cx, clientY: cy, button: 0}));
+          window.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true, clientX: cx - 40, clientY: cy - 25}));
+          window.dispatchEvent(new MouseEvent('mouseup', {
+            bubbles: true, clientX: cx - 40, clientY: cy - 25}));
+          const panned = svg.getAttribute('viewBox').split(' ').map(Number);
+
+          const zoomTransforms = [0, 1, 2, 3].map(i => {
+            const el = document.getElementById('zoom' + i);
+            return el && el.getAttribute('transform');
+          });
+          return { zoomedIn, panned, zoomTransforms };
+        }""")
+    zx0, zy0, zw, zh = out["zoomedIn"]
+    px0, py0, pw, ph = out["panned"]
+    assert (px0, py0) != (zx0, zy0), "drag must pan the view after Magnify zoomed in"
+    assert px0 != zx0 and py0 != zy0, (
+        "drag must move the view in both x and y, not just one axis: %r" % out)
+    assert (pw, ph) == (zw, zh), "a pan drag must not also change the zoom level"
+    assert all(t is None for t in out["zoomTransforms"]), (
+        "Magnify's drag-pan must not touch any individual axes' own zoom "
+        "transform -- only the whole-figure view: %r" % out["zoomTransforms"])
+
+
 def _box_zoom(page, x0, y0, x1, y1):
     """Simulate a real "Zoom"-mode rubber-band drag between two SVG
     user-space pixel points -- the mechanism that now drives per-axes,

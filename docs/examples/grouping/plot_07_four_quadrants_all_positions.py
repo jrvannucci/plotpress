@@ -12,12 +12,14 @@ them automatically -- including a left/right title's own rendered
 
 That reservation only ever applies to the figure's own outer edges,
 though: the boundary between the top two quadrants and the bottom two is
-an *interior* row gap, which none of the four groups' titles face, so
-nothing widens it for them automatically -- left at its default, the
-top pair's box (extending a little below its own axes) and the bottom
-pair's box (extending a little above its own) would collide right at
-that seam. ``subplots_adjust`` widens ``hspace``/``wspace`` explicitly to
-give every box room on every side, interior boundary included.
+an *interior* row gap, and the one between the left two and right two is
+an interior column gap -- neither is faced by any of the four groups'
+titles, so nothing widens either one for them automatically. Left at their
+defaults, the top pair's box and the bottom pair's box would collide at
+the row seam, and likewise left/right at the column seam.
+``group_spacing(wspace=..., hspace=...)`` gives every box room on every
+side, interior boundaries included, without discarding the outer-edge
+margins ``tight_layout()`` already reserved for all four titles above.
 """
 import numpy as np
 import plotpress
@@ -42,5 +44,5 @@ fig.group("Bottom-left", list(axes[2:4, 0:2].ravel()), title_position="left",
          color="#2ca02c")
 fig.group("Bottom-right", list(axes[2:4, 2:4].ravel()), title_position="bottom",
          color="#9467bd")
-fig.subplots_adjust(left=0.14, right=0.88, top=0.93, bottom=0.09,
-                    hspace=0.45, wspace=0.35)
+fig.group_spacing(wspace=24.0, hspace=24.0)
+fig.tight_layout()

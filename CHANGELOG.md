@@ -13,6 +13,27 @@ anywhere in the source.
 
 ### Added
 
+- `fig.group_spacing(wspace=None, hspace=None)` -- extra pixels reserved
+  between subplots for `fig.group()` boxes at *interior* grid boundaries
+  (two groups facing each other where neither title touches that boundary,
+  so `tight_layout()` reserves nothing there automatically), without
+  discarding any of `tight_layout()`'s own automatic margins the way
+  reaching for `subplots_adjust()` previously required. Applies uniformly
+  to every interior gap, like `subplots_adjust()`'s own `wspace`/`hspace` --
+  not per-boundary -- so a figure that needs it in one spot gets a little
+  more room elsewhere too. All six grouping examples that previously
+  fought this with hand-tuned `subplots_adjust()` margins (`plot_02`,
+  `plot_04` through `plot_08`) now use it instead, restoring
+  `tight_layout()`'s automatic title/tick-label/colorbar sizing that
+  `subplots_adjust()` had been overriding wholesale just to fix one gap.
+- A **Magnify** toolbar mode -- the same whole-figure wheel zoom as
+  Ctrl+wheel under **Zoom**, but on a *plain* wheel, no Ctrl needed. Its own
+  mode rather than folded into Zoom, so selecting it is an explicit choice
+  to have this figure capture the page's scroll -- for wherever holding
+  Ctrl is awkward, or a browser/OS extension already claims it. Drag pans
+  the same whole-figure view in any direction, so a zoomed-in figure stays
+  fully reachable without switching tools -- always the figure's own view,
+  never an axes' data range, isolating it completely from per-axes zoom/pan.
 - `benchmarks/`'s cross-library comparison now includes plotly, on
   interactive HTML output specifically (`fig.to_html()` vs
   `fig.to_html(interactive=True)`) rather than static SVG -- plotly has no
@@ -34,6 +55,12 @@ anywhere in the source.
 
 ### Fixed
 
+- `suptitle()`/`supxlabel()`/`supylabel()` added straight into the same
+  accumulators `tight_layout()` also uses to size the *interior* row/col
+  gap between subplots -- a figure-level label, drawn once outside the
+  whole grid, ended up widening every gap between every row or column too,
+  not just the true outer margin it actually needs. Each now reserves only
+  its own outer-margin band, the same fix already applied to `fig.group()`.
 - Two `docs/examples/data_roundtrip/` scripts wrote their standalone HTML
   fixture to the exact same temp filename -- harmless run serially (each
   writes-then-reads-back before the other runs) but a real race once

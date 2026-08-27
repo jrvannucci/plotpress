@@ -12,9 +12,11 @@ so only those five groups get an automatic ``tight_layout()`` margin for
 their titles (see the previous two examples); the other ten groups are
 interior and would have their titles collide with the row above unless the
 grid itself has enough vertical breathing room between rows to begin with.
-``subplots_adjust`` (not ``tight_layout``, which fits margins from tick/axis
-decorations alone and knows nothing about a group's own title) sets that
-spacing explicitly here.
+Column-adjacent groups (one site next to another) are packed just as
+tightly, so this needs both directions: ``group_spacing(wspace=...,
+hspace=...)`` reserves that room explicitly, on top of whatever
+``tight_layout()`` already fit from tick/axis decorations alone -- it knows
+nothing about a group's own title, which is exactly what this adds.
 """
 import numpy as np
 import plotpress
@@ -43,5 +45,5 @@ for site in range(n_sites):
         fig.group(f"Site {site + 1} - Scan {scan + 1}", [top_ax, bot_ax],
                  title_position="top", pad=4.0, linewidth=1.0)
 
-fig.subplots_adjust(hspace=0.7, wspace=0.15, left=0.04, right=0.99,
-                    top=0.93, bottom=0.03)
+fig.group_spacing(wspace=18.0, hspace=65.0)
+fig.tight_layout()
