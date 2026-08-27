@@ -13,6 +13,15 @@ anywhere in the source.
 
 ### Added
 
+- **Magnify** now double-click-resets the whole-figure view (there is no
+  per-axes zoom here for Span/Zoom's own double-click reset to act on) and
+  disables text selection on the figure while active, so a pan drag no
+  longer highlights the tick labels/titles it sweeps across.
+- A point-pick marker's own dot now scales with the pixel size of the axes
+  it lands on (clamped to a comfortably clickable minimum and the same
+  maximum a normal-sized single axes already used), instead of a flat
+  3.5px radius everywhere -- on a large grid of small panels (100 axes on
+  one figure, say) that fixed size dwarfed the panel it sat on.
 - `fig.group_spacing(wspace=None, hspace=None)` -- extra pixels reserved
   between subplots for `fig.group()` boxes at *interior* grid boundaries
   (two groups facing each other where neither title touches that boundary,

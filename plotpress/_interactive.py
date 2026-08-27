@@ -26,9 +26,14 @@ others):
   same whole-figure view in any direction, so a zoomed-in figure stays fully
   reachable without switching to Span -- always the figure's view, never an
   axes' own data range, isolating it completely from per-axes zoom/pan.
+  Double-click resets that view (there is no per-axes zoom here to reset
+  the way Span/Zoom's double-click does); text on the figure is left
+  unselectable while Magnify is active, so a pan drag doesn't also
+  highlight the tick labels/titles it sweeps across.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
-  Click a pin to remove it; Escape clears all.
+  Click a pin to remove it; Escape clears all. A marker's own dot scales
+  with the axes it lands on, so it never dwarfs a tiny panel in a large grid.
 * **Annotate Point** -- like Point Pick, but prompts for text and locks a
   user-written note to that datum instead of the auto-generated readout;
   still steppable by arrow key and still tracks pan/zoom.
@@ -233,7 +238,7 @@ _JS_SOURCE = r"""
     'font-size:11px;color:#555;cursor:pointer;user-select:none}' +
     '.plotpress-slider .idx{background:#e8eeff;border:1px solid #b9c6ef;' +
     'border-radius:4px;padding:0 5px;font-weight:600;color:#2b5bd7}' +
-    '.plotpress-pin.selected circle{fill:#2b8cff;r:5}' +
+    '.plotpress-pin.selected circle{fill:#2b8cff}' +   /* r itself: selectPin(), scaled per-pin */
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
     '.plotpress-hide-annotations .plotpress-pin{display:none}' +
     '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
@@ -326,6 +331,13 @@ _JS_SOURCE = r"""
       mode === 'zoom' ? 'crosshair' :
       mode === 'magnify' ? 'zoom-in' :
       (mode === 'note-point' || mode === 'note-free') ? 'text' : 'default';
+    // Magnify's own drag (pan) sweeps across the figure's tick labels/titles
+    // same as a text selection drag would -- without this, panning highlights
+    // them instead of just moving the view. Other modes don't need it: Span
+    // drags to pan too, but "grab" cursor + no accidental text-drag pattern
+    // hasn't been reported there, and Zoom's own drag is a rubber-band box,
+    // not a pan.
+    svg.style.userSelect = mode === 'magnify' ? 'none' : '';
   }
   setMode(null);  // start inert with an arrow cursor
 
@@ -453,7 +465,15 @@ _JS_SOURCE = r"""
   });
 
   // Double-click a plot (while panning/zooming) resets just that plot's view.
+  // Under Magnify, there is no per-axes view to reset -- only the whole
+  // figure's, exactly what its wheel zoom and drag pan both operate on (see
+  // above), so double-click resets that instead of doing nothing.
   svg.addEventListener('dblclick', function (e) {
+    if (mode === 'magnify') {
+      e.preventDefault();
+      view = home.slice(); apply();
+      return;
+    }
     if (mode !== 'span' && mode !== 'zoom') return;
     e.preventDefault();
     var a = axesAt(toUser(e));
@@ -1081,17 +1101,44 @@ _JS_SOURCE = r"""
     text.textContent = label;
   }
 
+  // The selected dot draws a bit larger than its resting size -- scaled from
+  // that pin's *own* radius (see pinRadius), not a flat bump, so a selected
+  // marker on a tiny panel still reads as "this one, bigger" rather than
+  // ballooning back up to the fixed size pinRadius was added to avoid.
   function selectPin(g) {
-    if (selectedPin && selectedPin !== g) selectedPin.classList.remove('selected');
+    if (selectedPin && selectedPin !== g) {
+      selectedPin.classList.remove('selected');
+      var prevDot = selectedPin.querySelector('circle');
+      if (prevDot) prevDot.setAttribute('r', selectedPin.dataset.pinR || 3.5);
+    }
     selectedPin = g;
-    if (g) g.classList.add('selected');
+    if (g) {
+      g.classList.add('selected');
+      var dot = g.querySelector('circle');
+      if (dot) dot.setAttribute('r', (parseFloat(g.dataset.pinR) || 3.5) * 1.4);
+    }
   }
 
-  function addPin(px, py, label) {
+  // A marker sized for a huge grid's tiny panels would be a fixed 3.5px dot
+  // sitting like a boulder on an axes 40px across -- scale it to the axes
+  // it actually belongs to instead, clamped so it never shrinks below
+  // comfortably clickable or grows past the size that already looked right
+  // on a normal, single-axes figure. `axesKey` is left out (undefined) for
+  // a free annotation, which belongs to no axes at all -- falls back to
+  // that same normal-figure default.
+  function pinRadius(axesKey) {
+    var m = axesKey !== undefined && axesKey !== null ? CUR[axesKey] : null;
+    if (!m) return 3.5;
+    return Math.max(2.0, Math.min(3.5, Math.min(m.w, m.h) * 0.045));
+  }
+
+  function addPin(px, py, label, axesKey) {
     var g = document.createElementNS(SVGNS, 'g');
     g.setAttribute('class', 'plotpress-pin'); g.style.cursor = 'pointer';
+    var r = pinRadius(axesKey);
+    g.dataset.pinR = r;
     var dot = document.createElementNS(SVGNS, 'circle');
-    dot.setAttribute('r', 3.5); dot.setAttribute('fill', '#111');
+    dot.setAttribute('r', r); dot.setAttribute('fill', '#111');
     dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', 1);
     var rect = document.createElementNS(SVGNS, 'rect');
     rect.setAttribute('rx', 3); rect.setAttribute('fill', '#111');
@@ -1236,7 +1283,7 @@ _JS_SOURCE = r"""
   function addAnchoredPin(anchor, index, text) {
     var a = resolve(anchor, index);
     if (!a) return;
-    var g = addPin(a.px, a.py, text !== undefined ? text : a.label);
+    var g = addPin(a.px, a.py, text !== undefined ? text : a.label, anchor.axes);
     g.dataset.kind = anchor.kind;
     g.dataset.index = a.index;
     if (text !== undefined) { g.dataset.customLabel = text; g.classList.add('plotpress-note'); }
@@ -1476,7 +1523,7 @@ _JS_SOURCE = r"""
         } else {
           px = +rec.data.px; py = +rec.data.py;
         }
-        g = addPin(px, py, rec.text);
+        g = addPin(px, py, rec.text, rec.data.axes);
         for (var k2 in rec.data) g.dataset[k2] = rec.data[k2];
       }
       if (!g) return;
@@ -1690,7 +1737,7 @@ _JS_SOURCE = r"""
     var text = window.prompt('Annotation text:');
     if (!text) return;
     var a = axesAt(p);
-    var g = addPin(p.x, p.y, text);
+    var g = addPin(p.x, p.y, text, a ? a.i : undefined);
     g.classList.add('plotpress-note');
     g.dataset.annotation = '1';
     if (a) {
@@ -1714,7 +1761,7 @@ _JS_SOURCE = r"""
     if (!a) return;
     var v = nearestVertex(a.i, p) || p;              // large-series fallback
     var dd = toData(a.m, v.x, v.y);
-    var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y));
+    var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y), a.i);
     g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
   });
 

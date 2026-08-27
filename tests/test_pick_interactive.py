@@ -110,6 +110,53 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     assert n == 0, "a click in the margin created %d marker(s)" % n
 
 
+def test_marker_radius_scales_with_its_own_axes_size(page, tmp_path):
+    """Regression: a marker's dot used a flat 3.5px radius regardless of the
+    axes it landed on -- fine on one normal-sized axes, but a boulder on a
+    tiny panel in a large grid (100 axes on one figure, say). It must scale
+    down with the axes' own pixel size, not just look identical everywhere,
+    while still never shrinking below a comfortably clickable minimum."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    fig_small, ax = plotpress.subplots(figsize=(6, 4.8))
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path_small = tmp_path / "marker_size_single_axes.html"
+    path_small.write_text(fig_small.to_html(interactive=True), encoding="utf-8")
+
+    fig_grid, axes = plotpress.subplots(10, 10, figsize=(6, 4.8))
+    for a in np.asarray(axes).ravel():
+        a.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path_grid = tmp_path / "marker_size_10x10_grid.html"
+    path_grid.write_text(fig_grid.to_html(interactive=True), encoding="utf-8")
+
+    def picked_radius(path, fig, ax_index=0):
+        page.goto(path.as_uri())
+        ux, uy = px(fig, ax_index, 1.0, 1.0)
+        page.evaluate(
+            """() => document.querySelectorAll('.plotpress-toolbar button')
+                 .forEach(b => { if (b.textContent === 'Point Pick') b.click(); })""")
+        page.mouse.click(*page.evaluate(
+            """([ux, uy]) => {
+              const svg = document.getElementById('plotpress-svg');
+              const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+              const c = pt.matrixTransform(svg.getScreenCTM());
+              return [c.x, c.y];
+            }""", [ux, uy]))
+        return page.evaluate(
+            "() => +document.querySelector('.plotpress-pin circle').getAttribute('r')")
+
+    r_single = picked_radius(path_small, fig_small)
+    r_grid = picked_radius(path_grid, fig_grid)
+    assert r_grid < r_single, (
+        "a marker on a tiny panel in a 10x10 grid (%.2f) must be smaller than "
+        "one on a normal single axes (%.2f)" % (r_grid, r_single))
+    assert r_grid >= 2.0 * 1.4, (
+        "even shrunk, a freshly-picked (selected) marker must stay "
+        "comfortably visible/clickable: got %.2f" % r_grid)
+
+
 def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
     """binary_pick_data's float16 tier (chosen only at low enough
     pick_precision for a bounded-range mesh -- see figure._fits_float16) has
@@ -748,6 +795,72 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
     assert all(t is None for t in out["zoomTransforms"]), (
         "Magnify's drag-pan must not touch any individual axes' own zoom "
         "transform -- only the whole-figure view: %r" % out["zoomTransforms"])
+
+
+def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
+    """Span/Zoom's double-click resets one axes' own data zoom -- meaningless
+    under Magnify, which never touches per-axes data. Its double-click must
+    reset the whole-figure view instead, back to exactly the original
+    viewBox, the same thing the wheel and drag-pan both operate on."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "magnify_dblclick_reset.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Magnify') b.click();
+          });
+          const home = svg.getAttribute('viewBox');
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          svg.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+          }));
+          const zoomedIn = svg.getAttribute('viewBox');
+          svg.dispatchEvent(new MouseEvent('dblclick', {
+            bubbles: true, cancelable: true, clientX: cx, clientY: cy
+          }));
+          return { home, zoomedIn, after: svg.getAttribute('viewBox') };
+        }""")
+    assert out["zoomedIn"] != out["home"], (
+        "the fixture must actually zoom in first, or this test proves nothing")
+    assert out["after"] == out["home"], (
+        "double-click under Magnify must reset the whole-figure view: %r" % out)
+
+
+def test_magnify_mode_disables_text_selection_on_the_svg(page, tmp_path):
+    """A drag-to-pan under Magnify sweeps across the figure's own tick
+    labels/titles just like a text-selection drag would; without disabling
+    it, panning highlights that text instead of just moving the view. Other
+    modes leave it alone -- selection is a Magnify-specific problem, not a
+    general one."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "magnify_no_text_select.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    def user_select_under(label):
+        return page.evaluate(
+            """(label) => {
+              document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+                if (b.textContent === label) b.click();
+              });
+              return getComputedStyle(document.getElementById('plotpress-svg')).userSelect;
+            }""", label)
+
+    assert user_select_under("Span") != "none"
+    assert user_select_under("Magnify") == "none"
+    # Switching back off Magnify must restore normal selection behavior.
+    assert user_select_under("Magnify") != "none"   # clicking the active tool turns it off
 
 
 def _box_zoom(page, x0, y0, x1, y1):

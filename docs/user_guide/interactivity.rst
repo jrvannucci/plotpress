@@ -35,11 +35,16 @@ The toolbar
        to have this figure capture the page's scroll. Drag pans the same
        whole-figure view in any direction, so a zoomed-in figure stays
        reachable without switching tools -- always the figure's view, never
-       an axes' own data range.
+       an axes' own data range. Double-click resets that view (there is no
+       per-axes zoom to reset here, unlike Span/Zoom below); text on the
+       figure -- tick labels, titles -- is left unselectable for as long as
+       Magnify is active, so a pan drag doesn't also highlight it.
    * - **Point Pick**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
-       images). Right-click deletes a marker; Escape clears all.
+       images). Right-click deletes a marker; Escape clears all. A marker's
+       own dot scales down with the axes it landed on, so it never dwarfs a
+       tiny panel in a large grid the way a fixed size would.
    * - **Annotate Point**
      - Like Point Pick, but prompts for text and locks a user-written note to
        that datum instead of the auto-generated readout; still steppable by
