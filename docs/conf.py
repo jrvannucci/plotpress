@@ -559,4 +559,12 @@ sphinx_gallery_conf = {
     # DataFrame or a matplotlib Axes sometimes is, so there is nothing this
     # would usefully capture.
     "capture_repr": (),
+    # Each example script runs in total isolation from every other -- no
+    # pyplot-style current figure, no rcParams, no module-level mutable state
+    # anywhere in plotpress (see the top-level "No global state" rule) -- so
+    # there is nothing for one script's worker process to leak into another's,
+    # which is the usual reason projects can't turn this on. Driven by
+    # sphinx-build's own -j flag (True here means "use whatever -j said";
+    # plain `sphinx-build` with no -j still runs serially).
+    "parallel": True,
 }

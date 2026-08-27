@@ -120,7 +120,7 @@ def measure():
 
 
 def compare(repeat=REPEAT):
-    """Time the shared scenarios on every library present."""
+    """Time (and size) the shared scenarios on every library present."""
     libs = [("plotpress", True), ("matplotlib", scenarios.has_matplotlib()),
             ("xy", scenarios.has_xy())]
     present = [name for name, ok in libs if ok]
@@ -129,10 +129,12 @@ def compare(repeat=REPEAT):
         row = {"scenario": scenario}
         for name, key in (("plotpress", "plotpress"), ("matplotlib", "mpl"), ("xy", "xy")):
             if name in present and key in builders:
-                row[name] = scenarios.timeit(builders[key], repeat=repeat) * 1e3
+                ms, kib = scenarios.timeit_and_size(builders[key], repeat=repeat)
+                row[name], row[f"{name}_kib"] = ms * 1e3, kib
         rows.append(row)
         print("  " + scenario.ljust(22)
-              + "  ".join(f"{k} {row[k]:8.1f}ms" for k in present if k in row))
+              + "  ".join(f"{k} {row[k]:7.1f}ms/{_fmt_kib(row[k + '_kib'])}"
+                         for k in present if k in row))
     return present, rows
 
 
@@ -156,16 +158,17 @@ def write_comparison(present, rows):
         "",
         ".. list-table::",
         "   :header-rows: 1",
-        f"   :widths: 30 {' '.join(['16'] * len(present))}",
+        f"   :widths: 24 {' '.join(['19'] * len(present))}",
         "",
         "   * - Scenario",
     ]
-    lines += [f"     - {name}" for name in present]
+    lines += [f"     - {name} (time / size)" for name in present]
     for r in rows:
         lines.append(f"   * - ``{r['scenario']}``")
         for name in present:
             v = r.get(name)
-            lines.append(f"     - {v:.1f} ms" if v is not None else "     - --")
+            lines.append(f"     - {v:.1f} ms / {_fmt_kib(r[name + '_kib'])}"
+                        if v is not None else "     - --")
     absent = [n for n in ("matplotlib", "xy") if n not in present]
     lines += [""]
     if absent:

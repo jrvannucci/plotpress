@@ -78,13 +78,15 @@ pytest -m browser -q
 ```
 
 Build the docs the way CI does — warnings are errors, and the three galleries
-execute every script under `docs/examples`, `docs/scale`, `docs/applications`:
+execute every script under `docs/examples`, `docs/scale`, `docs/applications`
+(needs the `docs` extra: `pip install .[docs]`). `-j` runs the gallery scripts
+in parallel (opt-in; omit it for a plain serial build):
 
 ```bash
-python -m sphinx -b html -W --keep-going docs docs/_build/html
+python -m sphinx -b html -W --keep-going -j auto docs docs/_build/html
 ```
 
-Benchmarks (needs the `bench` extra for matplotlib/seaborn):
+Benchmarks (needs the `bench` extra for matplotlib/seaborn/plotly):
 
 ```bash
 python -m benchmarks.benchmark

@@ -13,6 +13,42 @@ anywhere in the source.
 
 ### Added
 
+- `benchmarks/`'s cross-library comparison now includes plotly, on
+  interactive HTML output specifically (`fig.to_html()` vs
+  `fig.to_html(interactive=True)`) rather than static SVG -- plotly has no
+  native static-image path of its own; `fig.to_image()` always shells out to
+  a real headless browser via `kaleido`, which would measure a browser's
+  cold-start cost far more than rendering. Every timing comparison
+  (`benchmarks/benchmark.py`, `benchmarks/example_timings.py`) now also
+  reports each library's output **size**, alongside time -- a free
+  byproduct of a call already being made (every builder returns what it
+  just serialized), not an extra render.
+- `docs/conf.py`: sphinx-gallery's example scripts now execute in parallel
+  under `sphinx-build -j <N>` (opt-in via `-j`; a plain `sphinx-build` with
+  no `-j` still runs serially) -- plotpress's own "no global state" design
+  means no example script has anything to leak into another's worker
+  process, which is usually what keeps projects from turning this on. A
+  full clean build of all ~230 examples: 13m43s serial vs 8m52s at `-j 6`
+  (this machine), output verified byte-identical aside from each page's own
+  self-reported execution-time line.
+
+### Fixed
+
+- Two `docs/examples/data_roundtrip/` scripts wrote their standalone HTML
+  fixture to the exact same temp filename -- harmless run serially (each
+  writes-then-reads-back before the other runs) but a real race once
+  example scripts can execute in parallel (see above), where one could load
+  the other's file. Each now uses its own name.
+
+### Changed
+
+- `docs/requirements.txt` is gone -- its packages (`sphinx`, `sphinx-gallery`,
+  `sphinx-rtd-theme`, `matplotlib`, `polars`, `adaptive`) plus a new `joblib`
+  (parallel gallery execution, see above) now live in `pyproject.toml`'s
+  `docs` extra: `pip install .[docs]`. `bench` also gained `plotly`.
+
+### Added
+
 - **Save**/**Save As** toolbar buttons -- download the current interactive
   session (pan/zoom, every pin/annotation, hidden-legend-series toggles,
   Hide Annotations) as a new, equally self-contained HTML file; reopening

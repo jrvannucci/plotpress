@@ -1,13 +1,20 @@
-"""Shared benchmark scenarios comparing plotpress, matplotlib and xy.
+"""Shared benchmark scenarios comparing plotpress, matplotlib, xy and plotly.
 
-Each scenario provides a ``plotpress`` builder, a matplotlib (``mpl``) builder
-and, where the API allows an equivalent, an ``xy`` builder.
-Both do the same work: construct the figure *and serialize it to SVG*, so we
-measure the whole "make the plot" cost, not just object creation.
+``SCENARIOS`` compares static-SVG output: a ``plotpress`` builder, a
+matplotlib (``mpl``) builder, and, where the API allows an equivalent, an
+``xy`` builder. Each builder does the same work -- construct the figure *and
+serialize it to SVG* -- so the whole "make the plot" cost is measured, not
+just object creation.
 
-Both sides use the object-oriented API (no pyplot) for a fair comparison.
-Timings use ``time.perf_counter`` and report the best of N repeats to reduce
-noise from GC and the OS scheduler.
+``HTML_SCENARIOS`` compares self-contained interactive HTML instead:
+plotly has no native static-image path of its own (``fig.to_image()`` always
+shells out to a real browser via ``kaleido``), so it is compared on the
+output it *does* produce natively -- ``fig.to_html()`` -- against
+``fig.to_html(interactive=True)`` on the plotpress side.
+
+All builders use each library's own object-oriented API (no pyplot-style
+globals) for a fair comparison. Timings use ``time.perf_counter`` and report
+the best of N repeats to reduce noise from GC and the OS scheduler.
 """
 
 from __future__ import annotations
@@ -39,6 +46,14 @@ def has_xy() -> bool:
         return False
 
 
+def has_plotly() -> bool:
+    try:
+        import plotly  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def timeit(fn, repeat: int = 5) -> float:
     """Return the best wall-clock time (seconds) over ``repeat`` runs."""
     fn()  # warm up (imports, caches)
@@ -48,6 +63,28 @@ def timeit(fn, repeat: int = 5) -> float:
         fn()
         best = min(best, time.perf_counter() - t0)
     return best
+
+
+def _size_kib(result) -> float:
+    """KiB of a builder's return value -- str or bytes, whichever it serialized to."""
+    data = result.encode("utf-8") if isinstance(result, str) else result
+    return len(data) / 1024.0
+
+
+def timeit_and_size(fn, repeat: int = 5) -> tuple[float, float]:
+    """Like :func:`timeit`, plus the output size (KiB) of the builder's own
+    return value -- every builder here returns the serialized SVG/HTML it
+    just built, so this is a free byproduct of a call already being made, not
+    an extra render. Deterministic input data (see the module-level arrays
+    above) means the size does not vary run to run, so one call suffices."""
+    result = fn()  # warm up (imports, caches); also this run's size sample
+    size = _size_kib(result)
+    best = float("inf")
+    for _ in range(repeat):
+        t0 = time.perf_counter()
+        fn()
+        best = min(best, time.perf_counter() - t0)
+    return best, size
 
 
 # --------------------------------------------------------------------------
@@ -179,4 +216,79 @@ SCENARIOS = {
                            "xy": _xy_mesh},
     "many_axes_8x8_grid": {"plotpress": _plotpress_many_axes, "mpl": _mpl_many_axes,
                            "xy": _xy_many_axes},
+}
+
+
+# --------------------------------------------------------------------------
+# plotly: compared on *interactive HTML*, not static SVG.
+# --------------------------------------------------------------------------
+# plotly has no native static-image serializer of its own -- ``fig.to_image()``
+# always round-trips through a real, headless-browser layout/paint pipeline
+# (the ``kaleido`` package), on *every call*, which measures a browser's
+# cold-start cost (~3.5-5s here) far more than it measures rendering. Its
+# native, in-process output is self-contained interactive HTML
+# (``fig.to_html()``, plotly.js embedded), which is exactly what
+# ``fig.to_html(interactive=True)`` is on the plotpress side -- so that is
+# the fair like-for-like comparison, not the SVG one above.
+def _plotpress_line_html():
+    fig, ax = plotpress.subplots()
+    ax.plot(_X_100K, _Y_100K)
+    return fig.to_html(interactive=True)
+
+
+def _plotpress_scatter_html():
+    fig, ax = plotpress.subplots()
+    ax.scatter(_SCAT_X, _SCAT_Y, s=4)
+    return fig.to_html(interactive=True)
+
+
+def _plotpress_mesh_html():
+    fig, ax = plotpress.subplots()
+    m = ax.pcolormesh(_MESH)
+    fig.colorbar(m, ax=ax)
+    return fig.to_html(interactive=True)
+
+
+def _plotpress_many_axes_html():
+    fig, axes = plotpress.subplots(8, 8, figsize=(16, 16))
+    for ax in axes.ravel():
+        ax.plot(_GRID_X, _GRID_Y)
+    return fig.to_html(interactive=True)
+
+
+def _plotly_line_html():
+    import plotly.graph_objects as go
+    fig = go.Figure(data=go.Scattergl(x=_X_100K, y=_Y_100K, mode="lines"))
+    return fig.to_html()
+
+
+def _plotly_scatter_html():
+    import plotly.graph_objects as go
+    fig = go.Figure(data=go.Scattergl(x=_SCAT_X, y=_SCAT_Y, mode="markers",
+                                      marker=dict(size=4)))
+    return fig.to_html()
+
+
+def _plotly_mesh_html():
+    import plotly.graph_objects as go
+    fig = go.Figure(data=go.Heatmap(z=_MESH))
+    return fig.to_html()
+
+
+def _plotly_many_axes_html():
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(rows=8, cols=8)
+    for i in range(64):
+        fig.add_trace(go.Scattergl(x=_GRID_X, y=_GRID_Y, mode="lines"),
+                      row=i // 8 + 1, col=i % 8 + 1)
+    return fig.to_html()
+
+
+HTML_SCENARIOS = {
+    "line_100k_points": {"plotpress": _plotpress_line_html, "plotly": _plotly_line_html},
+    "scatter_5k_points": {"plotpress": _plotpress_scatter_html, "plotly": _plotly_scatter_html},
+    "pcolormesh_300x300": {"plotpress": _plotpress_mesh_html, "plotly": _plotly_mesh_html},
+    "many_axes_8x8_grid": {"plotpress": _plotpress_many_axes_html, "plotly": _plotly_many_axes_html},
 }

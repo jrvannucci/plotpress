@@ -33,7 +33,7 @@ def _build_source_html():
         ax.set_title(f"panel {i}", fontsize=7)
         ax.tick_params(labelsize=5)
     fig.tight_layout()
-    path = os.path.join(tempfile.gettempdir(), "plotpress_gallery_mesh_grid.html")
+    path = os.path.join(tempfile.gettempdir(), "plotpress_gallery_mesh_grid_fft.html")
     fig.save(path, interactive=True)
     return path
 
