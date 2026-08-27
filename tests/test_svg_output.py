@@ -1980,6 +1980,31 @@ def test_group_facing_the_outer_edge_reserves_layout_margin():
     assert all((n[1] + n[3]) < (b[1] + b[3]) for b, n in zip(before, after))
 
 
+def test_group_left_right_title_reserves_width_not_a_height_allowance():
+    """Regression: a left/right title runs horizontally alongside its box, so
+    the margin tight_layout() reserves for it has to fit the title's own
+    rendered *width* -- reusing the top/bottom formula (a height allowance)
+    reserved far too little for anything but the shortest titles, clipping
+    the text at the canvas edge or overlapping whatever's beside it."""
+    fig1, axes1 = _grid_2x2()
+    fig1.tight_layout()
+    without_group = axes1[0, 0]._rect[0]
+
+    fig2, axes2 = _grid_2x2()
+    long_title = "A considerably long left-side group title"
+    fig2.group(long_title, [axes2[0, 0], axes2[1, 0]], title_position="left")
+    fig2.tight_layout()
+    with_group = axes2[0, 0]._rect[0]
+
+    from plotpress.style import Style
+
+    expected_extent = 8.0 + Style().text_width(long_title, Style().title_size, bold=True) + 12
+    left_before_px = without_group * fig1.figsize[0] * fig1.style.dpi
+    left_after_px = with_group * fig2.figsize[0] * fig2.style.dpi
+    assert (left_after_px - left_before_px) >= expected_extent - 1.0, (
+        "reserved left margin does not fit the title's own rendered width")
+
+
 def test_group_not_facing_the_outer_edge_reserves_no_margin():
     """An interior group (its title-facing edge is a row/col gap, not the
     figure's own outer edge) is left to that existing gap -- growing the
@@ -2046,6 +2071,40 @@ def test_group_margin_reservation_does_not_widen_interior_row_gaps():
     assert gap_with_group == pytest.approx(gap_without_group, abs=0.5), (
         "a group's own margin reservation leaked into the interior row gap: "
         "%r vs %r" % (gap_with_group, gap_without_group))
+
+
+def test_group_titles_do_not_collide_with_suptitle_or_a_reserving_legend():
+    """A group's title reservation has to stack correctly with the *other*
+    figure-level bands, not just its own axes -- a suptitle above a
+    top-facing group title, and a space-reserving figure legend below a
+    bottom-facing one, each independently carve space out of
+    tight_layout()'s top_px/bottom_px accumulators, and none of the three
+    should ever end up drawn on top of another."""
+    fig, axes = plotpress.subplots(2, 3, figsize=(10, 6))
+    x = np.array([0.0, 1.0])
+    for ax in axes.ravel():
+        ax.plot(x, x, label="line")
+    fig.suptitle("Suite-wide QA sweep")
+    fig.legend(loc="lower center")   # a *reserving* placement, unlike an overlay
+    fig.group("Top row", list(axes[0]), title_position="top", color="#2ca02c")
+    fig.group("Bottom row", list(axes[1]), title_position="bottom", color="#9467bd")
+    fig.tight_layout()
+    root = _parse(fig.to_svg())
+
+    texts = {t.text: float(t.get("y")) for t in root.findall(f".//{NS}text")
+             if t.text in ("Suite-wide QA sweep", "Top row", "Bottom row")}
+    boxes = sorted(
+        (float(r.get("y")), float(r.get("y")) + float(r.get("height")))
+        for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"
+    )
+    legend_rect = root.find(f'.//{NS}g[@class="plotpress-legend"]//{NS}rect')
+    legend_top = float(legend_rect.get("y"))
+
+    # Top to bottom: suptitle, "Top row"'s title, its box, "Bottom row"'s
+    # box, its title, then the legend -- each strictly below the last.
+    assert texts["Suite-wide QA sweep"] < texts["Top row"] < boxes[0][0]
+    assert boxes[0][1] < boxes[1][0]
+    assert boxes[1][1] < texts["Bottom row"] < legend_top
 
 
 def test_group_renders_in_both_backends():

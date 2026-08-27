@@ -511,6 +511,7 @@ sphinx_gallery_conf = {
         "examples/animation",
         "examples/axes_features",
         "examples/figure_layout",
+        "examples/grouping",
         "examples/advanced_axes",
         "examples/polar",
         "examples/threed",

@@ -33,16 +33,19 @@ anywhere in the source.
   rect -- plus a little padding, with the title just outside whichever edge
   `title_position` (`"top"` (default), `"bottom"`, `"left"`, `"right"`)
   names. Several groups may be added to one figure. `tight_layout()`
-  reserves margin for a group whose title faces the grid's own outer edge,
-  the same way it already does for a `suptitle`/colorbar/figure legend; an
-  interior group (not touching that
-  edge) is left to the existing row/col gap instead. Four
-  `docs/examples/figure_layout` scripts: `plot_09_group_axes.py` (row-based,
-  top/bottom titles), `plot_10_group_large_grid.py` (two 30-panel
-  `pcolormesh` column-bands), `plot_11_group_highlight_one_panel.py` (a
-  single-axes interior group with no reserved margin), and
-  `plot_12_group_before_after.py` (side-by-side groups with left/right
-  titles).
+  reserves margin for a group whose title faces the grid's own outer
+  edge, the same way it already does for a `suptitle`/colorbar/figure
+  legend -- sized to the title's own rendered height for a top/bottom
+  title, or its rendered *width* for a left/right one, since that one
+  runs alongside the box rather than centered over it; an interior group
+  (not touching that edge) is left to the existing row/col gap instead.
+  Has its own gallery section (`docs/examples/grouping`, `.. _grouping_gallery:`),
+  seven examples: row-based and column-based groups (both a `"top"`-titled
+  small-grid version and a many-small-groups version at 15 and 12 groups
+  respectively), a 30-panel `pcolormesh` grid split into two column-bands,
+  a single-axes interior group with no reserved margin, side-by-side
+  groups with left/right titles, and a four-quadrant grid using all four
+  `title_position` values in one figure.
 
 ### Changed
 

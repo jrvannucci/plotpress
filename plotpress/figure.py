@@ -503,13 +503,20 @@ class Figure:
             if not g_specs:
                 continue
             size = g["fontsize"] or st.title_size
-            # 1.3x size -- not 1x -- for the same reason title_px above adds
-            # a flat +8 rather than measuring real glyph ascent: bundled font
-            # metrics here only cover advance widths (see fonts/), not
-            # vertical extents, so this errs generous rather than risk the
-            # title's own glyphs clipping the top of the canvas.
-            extent = g["pad"] + size * 1.3 + 10
             pos = g["title_position"]
+            if pos in ("top", "bottom"):
+                # 1.3x size -- not 1x -- for the same reason title_px above
+                # adds a flat +8 rather than measuring real glyph ascent:
+                # bundled font metrics only cover advance widths (see
+                # fonts/), not vertical extents, so this errs generous
+                # rather than risk the title's own glyphs clipping the
+                # canvas edge.
+                extent = g["pad"] + size * 1.3 + 10
+            else:
+                # A left/right title runs horizontally alongside the box, not
+                # centered over it -- its own rendered *width* is what has to
+                # fit in the reserved margin here, not a height allowance.
+                extent = g["pad"] + st.text_width(g["title"], size, bold=True) + 12
             # "Touches that edge" -- the group's bounding box reaches row 0 /
             # the last row / column 0 / the last column -- not "every one of
             # its axes sits in that single row/col": a group spanning several
