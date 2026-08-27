@@ -969,6 +969,45 @@ def test_pcolormesh_frames_pick_arrow_key_steps_to_neighboring_cell(page, tmp_pa
         "arrow-key stepping did not move to the neighboring cell: %r" % after)
 
 
+def test_mesh_pick_arrow_key_up_honors_an_inverted_axis(page, tmp_path):
+    """Regression: neighbor()'s mesh branch used to treat "up" as always
+    meaning "increase the row index," regardless of which way the axis was
+    actually drawn -- so on an axis flipped with invert_yaxis() (e.g. depth
+    plots, which draw larger values toward the bottom), pressing the Up
+    arrow moved the pin further *down* the screen instead of up. Same bug,
+    mirrored, for invert_xaxis() and the Left/Right keys."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    Z = np.arange(20.0).reshape(4, 5)   # row = y index, col = x index
+
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(Z, cmap="viridis")
+    ax.invert_yaxis()
+    ax.invert_xaxis()
+    path = tmp_path / "mesh_inverted_step.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
+    _click_mode(page, "Point Pick", ux, uy)
+    page.evaluate("() => document.querySelector('.plotpress-pin').dispatchEvent("
+                  "new MouseEvent('click', {bubbles: true}))")
+
+    page.keyboard.press("ArrowUp")
+    after_up = page.evaluate("() => window.plotpressGetMarkers()")
+    assert after_up[0]["z"] == float(Z[0, 2]), (
+        "on an inverted y-axis, Up must step to the smaller row index (drawn "
+        "higher on screen), not the larger one: %r" % after_up)
+
+    page.keyboard.press("ArrowRight")
+    after_right = page.evaluate("() => window.plotpressGetMarkers()")
+    assert after_right[0]["z"] == float(Z[0, 1]), (
+        "on an inverted x-axis, Right must step to the smaller column index "
+        "(drawn further right on screen), not the larger one: %r" % after_right)
+
+
 def test_pcolormesh_frames_curvilinear_pick_uses_nearest_cell_center(page, tmp_path):
     """A warped (curvilinear) pcolormesh_frames() grid must pick via nearest
     cell center just like a plain curvilinear pcolormesh does -- not crash
@@ -1317,6 +1356,11 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     path = tmp_path / "save_roundtrip.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
+    # The File System Access API's picker needs a real OS dialog Playwright
+    # can't drive headlessly; deleting it forces the same plain-download
+    # fallback real users hit in Firefox/Safari, so the round trip below can
+    # actually run to completion instead of hanging on an unanswered picker.
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
 
     ux, uy = px(fig, 0, x[2], 4.0)   # a real point on the "sq" line
     markers = _click_mode(page, "Point Pick", ux, uy)
@@ -1401,6 +1445,9 @@ def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
     path = tmp_path / "save_twice.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
+    # See test_save_as_downloads_a_page_that_restores_pins_view_and_toggles:
+    # the picker needs a real OS dialog Playwright can't drive headlessly.
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
 
     with page.expect_download() as dl_info:
         _click_toolbar(page, "Save As")
@@ -1408,6 +1455,7 @@ def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
     dl_info.value.save_as(str(once))
 
     page.goto(once.as_uri())
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
     _click_toolbar(page, "Point Pick")
     page.mouse.click(
         *page.eval_on_selector(

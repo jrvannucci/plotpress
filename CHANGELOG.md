@@ -45,7 +45,34 @@ anywhere in the source.
   respectively), a 30-panel `pcolormesh` grid split into two column-bands,
   a single-axes interior group with no reserved margin, side-by-side
   groups with left/right titles, and a four-quadrant grid using all four
-  `title_position` values in one figure.
+  `title_position` values in one figure. An eighth example now also passes
+  an explicit `fontsize` and combines a group with a `colorbar()` on the
+  same figure.
+- Closed the remaining gaps between the docs example gallery and the
+  public API: new examples for `Report` (`docs/examples/figure_layout`),
+  `Axes.fill_betweenx`, `Axes.hlines`/`vlines`, `Axes.semilogx`/`semilogy`,
+  `Axes.tick_bottom`/`tick_left`, `Axes.minorticks_off`, `Axes.sharex`,
+  `Axes.twiny`, `Axes.set_xmargin`/`set_ymargin`, `Axes.get_pick_context`,
+  `Axes3D.set_xlim3d`/`set_ylim3d`/`set_zlim3d`, and a new
+  `docs/examples/polar/plot_04_polar_customization.py` covering
+  `set_rlim`/`set_rticks`/`set_thetagrids`/`set_theta_direction`/
+  `set_theta_zero_location`/`set_theta_offset` -- none of which had any
+  prior example.
+
+### Fixed
+
+- **Save As** now shows the same File System Access API file picker **Save**
+  already did, instead of always silently downloading to the browser's
+  default location under an auto-generated name -- the whole point of "Save
+  As" is choosing a destination and name, and it previously never let you.
+  Falls back to the same plain download anywhere the picker API is
+  unavailable (Firefox, Safari, a non-secure origin), same as **Save**.
+- Arrow-key stepping between mesh cells (`pcolormesh`/`pcolormesh_frames`
+  point-pick) now honors `invert_xaxis()`/`invert_yaxis()` -- Up/Down and
+  Left/Right used to always mean "increase/decrease the underlying row or
+  column index," so on an axis drawn flipped (e.g. a depth plot with the
+  y-axis inverted, where larger values are drawn toward the bottom) Up
+  moved the pin down the screen instead of up.
 
 ### Changed
 

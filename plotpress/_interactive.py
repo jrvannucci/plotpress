@@ -1146,10 +1146,15 @@ _JS_SOURCE = r"""
                                         : FRAME_INDEX[anchor.id].entry;
       var nx = mesh.shape[1], ny = mesh.shape[0];
       var row = Math.floor(index / nx), col = index % nx;
-      if (dir === 'right') col = Math.min(nx - 1, col + 1);
-      else if (dir === 'left') col = Math.max(0, col - 1);
-      else if (dir === 'up') row = Math.min(ny - 1, row + 1);   // higher y
-      else row = Math.max(0, row - 1);
+      // Row/col grow with data value, not screen position -- on an inverted
+      // axis, larger data value is drawn toward the *start* of the screen
+      // (left/top), so the arrow key's screen-space meaning flips too.
+      var am = META[anchor.axes] || {};
+      var right = am.xinv ? -1 : 1, up = am.yinv ? -1 : 1;
+      if (dir === 'right') col = Math.min(nx - 1, Math.max(0, col + right));
+      else if (dir === 'left') col = Math.min(nx - 1, Math.max(0, col - right));
+      else if (dir === 'up') row = Math.min(ny - 1, Math.max(0, row + up));
+      else row = Math.min(ny - 1, Math.max(0, row - up));
       return row * nx + col;
     }
     if (anchor.kind === 'points' && anchor.ptype === 'scatter') {
@@ -1522,20 +1527,19 @@ _JS_SOURCE = r"""
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  function saveAsNewPage() {
-    downloadHTML(buildSaveHTML(), suggestedFilename());
-  }
-
-  // True in-place overwrite needs the File System Access API (Chromium, a
-  // secure context only) to get a writable handle back to a file the user
-  // picks -- a page can never be handed a handle to the exact file it was
-  // itself opened from (file:// has no such API), so "overwrite" is really
-  // "pick a destination, defaulting to this file's own name" rather than a
-  // silent, prompt-free write. Anywhere that API is unavailable (Firefox,
-  // Safari, a non-secure origin), this falls back to the same download
-  // saveAsNewPage() does -- always a new file there, never a true overwrite.
-  function overwriteCurrentPage() {
-    var htmlText = buildSaveHTML();
+  // Both Save and Save As need a way to let the user choose where the file
+  // goes and what it's called -- the File System Access API's picker
+  // (Chromium, a secure context only) is the only thing in a browser that
+  // can show that dialog at all; a plain download never does; the browser's
+  // own "always ask where to save" setting is outside the page's control
+  // either way. A page can also never be handed a writable handle to the
+  // exact file it was itself opened from (file:// has no such API), so even
+  // Save's "overwrite in place" is really "pick a destination, defaulting to
+  // this file's own name" rather than a silent, prompt-free write. Anywhere
+  // the picker API is unavailable (Firefox, Safari, a non-secure origin),
+  // both fall back to the same plain download -- always a new file there,
+  // with no dialog, since nothing in the page can produce one.
+  function saveViaPicker(htmlText) {
     if (!window.showSaveFilePicker) { downloadHTML(htmlText, suggestedFilename()); return; }
     window.showSaveFilePicker({
       suggestedName: suggestedFilename(),
@@ -1548,6 +1552,14 @@ _JS_SOURCE = r"""
       if (err && err.name === 'AbortError') return;   // user cancelled the picker
       downloadHTML(htmlText, suggestedFilename());
     });
+  }
+
+  function saveAsNewPage() {
+    saveViaPicker(buildSaveHTML());
+  }
+
+  function overwriteCurrentPage() {
+    saveViaPicker(buildSaveHTML());
   }
 
   // Nearest vertex of an animated (frame) series at its current frame.

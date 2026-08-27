@@ -26,5 +26,6 @@ for ax, color, phase in zip(axes.ravel(), colors, range(4)):
         spine.set_linewidth(2.0)
     ax.set_title(color)
     ax.set_pick_context(edge_color=color)
+    assert ax.get_pick_context() == {"edge_color": color}
 fig.suptitle("one spine color per axes")
 fig.tight_layout()
