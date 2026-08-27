@@ -2116,6 +2116,59 @@ def test_group_renders_in_both_backends():
     assert raster.figure_to_image(fig, scale=1) is not None
 
 
+def test_group_box_wraps_a_colorbar_belonging_entirely_to_its_axes():
+    """Regression: a colorbar steals its space from right next to the axes
+    it's attached to, but the group's box was computed from g["axes"] alone
+    -- a per-axes colorbar sat entirely outside the box meant to enclose it.
+    A colorbar shared with an axes *outside* the group must NOT pull the box
+    out to wrap it, since that would misrepresent what the group actually is.
+    """
+    import numpy as np
+
+    fig, axes = plotpress.subplots(1, 3, figsize=(9, 3))
+    meshes = [ax.pcolormesh(np.arange(4).reshape(2, 2).astype(float)) for ax in axes]
+    fig.colorbar(meshes[0], ax=axes[0])
+    shared = fig.colorbar(meshes[1], ax=[axes[1], axes[2]])   # shared with an outside axes
+    fig.group("Group", [axes[0], axes[1]])
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    box = [b for b in root.findall(f".//{NS}rect") if b.get("fill") == "none"][0]
+    bx0, by0 = float(box.get("x")), float(box.get("y"))
+    bx1 = bx0 + float(box.get("width"))
+    by1 = by0 + float(box.get("height"))
+
+    images = root.findall(f".//{NS}image")
+    own_cbar_img = images[0]   # axes[0]'s own colorbar -- the first mesh/colorbar drawn
+    ix0, iy0 = float(own_cbar_img.get("x")), float(own_cbar_img.get("y"))
+    ix1 = ix0 + float(own_cbar_img.get("width"))
+    iy1 = iy0 + float(own_cbar_img.get("height"))
+    assert bx0 <= ix0 and by0 <= iy0 and ix1 <= bx1 and iy1 <= by1, (
+        "axes[0]'s own colorbar must be fully contained in the group's box")
+
+    shared_cbar_img = images[-1]   # the colorbar shared with axes[2], outside the group
+    sx1 = float(shared_cbar_img.get("x")) + float(shared_cbar_img.get("width"))
+    assert sx1 > bx1, (
+        "a colorbar shared with an axes outside the group must not pull the "
+        "box out to wrap it")
+
+
+def test_colorbar_title_renders_in_both_backends():
+    """Regression: a colorbar axes returned early out of _render_axes/
+    _raster_axes before ever reaching the title-drawing code, so
+    fig.colorbar(mesh, ax=ax).set_title("units") -- documented as this
+    library's own convention for labeling a colorbar's scale -- never
+    actually appeared in either backend's output."""
+    import numpy as np
+    from plotpress import raster
+
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.arange(4).reshape(2, 2).astype(float))
+    fig.colorbar(mesh, ax=ax).set_title("units")
+    assert "units" in fig.to_svg()
+    assert raster.figure_to_image(fig, scale=1) is not None
+
+
 def test_group_rejects_empty_or_foreign_axes_and_bad_title_position():
     fig, axes = _grid_2x2()
     with pytest.raises(ValueError, match="at least one axes"):

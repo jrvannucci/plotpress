@@ -57,6 +57,11 @@ The toolbar
        instead of downloading a new one. That needs the File System Access
        API (Chromium, a secure context); anywhere it's unavailable this
        falls back to the same download Save As does.
+   * - **▸** / **◂**
+     - Collapses the whole button row (a screenshot, an unobstructed view)
+       without hiding this one handle, which stays put so the row can always
+       be brought back -- no reload needed. Not remembered across a
+       reload/Save; it always starts expanded.
 
 A box-drag zoom and Span's pan both operate on a single axes' data limits,
 recomputing that axes' ticks live -- including on log scales. Ctrl+wheel (or

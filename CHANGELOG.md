@@ -59,8 +59,27 @@ anywhere in the source.
   `set_theta_zero_location`/`set_theta_offset` -- none of which had any
   prior example.
 
+### Added
+
+- The interactive toolbar's button row can now be collapsed (a **▸**/**◂**
+  handle, always at the same corner) to declutter the view -- a screenshot,
+  say -- without losing the only way to bring it back. Not remembered
+  across a reload/Save; it always starts expanded.
+
 ### Fixed
 
+- `fig.group()`'s box now wraps a colorbar attached to one of its own axes
+  (`fig.colorbar(mesh, ax=ax)`) instead of only the bare pcolormesh rect --
+  a colorbar steals its space from right next to its axes, and the box used
+  to stop short of it, leaving the colorbar poking out past the line meant
+  to enclose it. A colorbar shared with an axes *outside* the group is left
+  alone, since pulling the box out to wrap it would misrepresent the group.
+  New example: `docs/examples/grouping/plot_09_colorbars_inside_the_box.py`,
+  four panels each with its own independently labeled colorbar.
+- A colorbar's `.set_title("units")` -- this library's own convention for
+  labeling what its scale means -- never actually rendered in either
+  backend; both returned out of axes rendering before reaching the
+  title-drawing code. Now renders in SVG and PNG alike.
 - **Save As** now shows the same File System Access API file picker **Save**
   already did, instead of always silently downloading to the browser's
   default location under an auto-generated name -- the whole point of "Save

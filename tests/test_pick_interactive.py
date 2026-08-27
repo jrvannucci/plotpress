@@ -1490,3 +1490,32 @@ def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_pa
     with page.expect_download() as dl_info:
         _click_toolbar(page, "Save")
     assert dl_info.value.suggested_filename.endswith(".html")
+
+
+def test_toolbar_hides_and_recovers(page, tmp_path):
+    """The toolbar's button row can be collapsed to declutter the view (a
+    screenshot, say) -- but the toggle that collapses it must itself never
+    be part of what gets hidden, or there would be no way back without
+    reloading the page."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "toolbar_toggle.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    bar = page.locator(".plotpress-toolbar")
+    toggle = page.locator(".plotpress-toolbar-toggle")
+    assert bar.is_visible()
+    assert toggle.is_visible()
+    n_buttons = bar.locator("button").count()
+    assert n_buttons > 1   # Span/Zoom/.../Save As, not just the toggle itself
+
+    toggle.click()
+    assert not bar.is_visible()
+    assert toggle.is_visible(), "the toggle must survive hiding the row it controls"
+
+    toggle.click()
+    assert bar.is_visible()
+    assert bar.locator("button").count() == n_buttons

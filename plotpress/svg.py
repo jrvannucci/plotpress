@@ -176,17 +176,48 @@ def _group_axes_extra(ax, st):
     return top, bottom, left, right
 
 
+def _group_colorbar_extra(cax, st):
+    """(top, bottom, left, right) clearance beyond a colorbar axes' own rect
+    that Figure.group()'s box must not cut through: its own title, if any,
+    plus its tick numbers -- _render_colorbar always draws those to the
+    right, regardless of any tick-side setting a plain axes would have.
+    """
+    top = _group_top_clearance(cax, st)
+    _, _, tlabels = colorbar_ticks(cax._cbar_source.norm)
+    width = max((st.text_width(l, st.tick_label_size) for l in tlabels), default=0.0)
+    return top, 0.0, 0.0, st.tick_size + width + 4
+
+
+def _group_colorbars(g_axes, fig):
+    """Colorbar axes belonging entirely to this group's own axes.
+
+    A colorbar attached to a grouped axes (``fig.colorbar(mesh, ax=ax)``, one
+    per panel or shared across several) steals its space from right next to
+    that axes, not from some independent spot -- the group's box has to wrap
+    it too, or it juts out past the edge that's supposed to enclose it. A
+    colorbar shared with an axes *outside* the group is left alone: pulling
+    the box out to wrap it would misrepresent what the group actually is.
+    """
+    axset = set(id(a) for a in g_axes)
+    return [cax for cax in fig.axes
+            if cax._is_colorbar and cax._cbar_parents
+            and all(id(p) in axset for p in cax._cbar_parents)]
+
+
 def _render_groups(fig, W, H, body):
     """``Figure.group()``'s labeled boxes -- one dashed (by default) rect per
     group, tightly wrapping the union of its axes' own allocated rects (each
     expanded for its own title/tick labels/axis labels -- see
     _group_axes_extra) plus ``pad`` px of clearance, with the title just
-    outside whichever edge ``title_position`` names.
+    outside whichever edge ``title_position`` names. Any colorbar belonging
+    entirely to the group's own axes (see _group_colorbars) is wrapped too.
     """
     st = fig.style
     for g in fig._groups:
-        rects = [_pixel_rect(ax, W, H) for ax in g["axes"]]
-        extras = [_group_axes_extra(ax, st) for ax in g["axes"]]
+        members = g["axes"] + _group_colorbars(g["axes"], fig)
+        rects = [_pixel_rect(ax, W, H) for ax in members]
+        extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
+                 else _group_axes_extra(ax, st) for ax in members]
         pad = g["pad"]
         x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad
         y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad
@@ -722,6 +753,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
 
     if ax._is_colorbar:
         _render_colorbar(ax, tr, *alloc, clip_id, body)
+        _render_labels(ax, st, *alloc, body)   # title only, by convention: set_title() labels a colorbar's scale
         return
 
     is_twin = ax._twin_of is not None

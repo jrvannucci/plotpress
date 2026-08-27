@@ -197,12 +197,14 @@ _JS_SOURCE = r"""
   // ---- toolbar -----------------------------------------------------------
   var style = document.createElement('style');
   style.textContent =
-    '.plotpress-toolbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;' +
-    'font:12px system-ui,sans-serif;z-index:1000}' +
-    '.plotpress-toolbar button{padding:6px 11px;border:1px solid #b8b8b8;' +
-    'background:#fff;color:#222;border-radius:6px;cursor:pointer;' +
-    'box-shadow:0 1px 3px rgba(0,0,0,.18)}' +
-    '.plotpress-toolbar button:hover{background:#f1f1f1}' +
+    '.plotpress-toolbar-wrap{position:fixed;top:10px;right:10px;display:flex;' +
+    'gap:4px;font:12px system-ui,sans-serif;z-index:1000}' +
+    '.plotpress-toolbar{display:flex;gap:4px}' +
+    '.plotpress-toolbar button,.plotpress-toolbar-toggle{padding:6px 11px;' +
+    'border:1px solid #b8b8b8;background:#fff;color:#222;border-radius:6px;' +
+    'cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.18);font:12px system-ui,sans-serif}' +
+    '.plotpress-toolbar-toggle{font-size:18px;line-height:1;padding:4px 10px}' +
+    '.plotpress-toolbar button:hover,.plotpress-toolbar-toggle:hover{background:#f1f1f1}' +
     '.plotpress-toolbar button.active{background:#2b8cff;color:#fff;' +
     'border-color:#2b8cff}' +
     '.plotpress-sliders{position:fixed;bottom:12px;left:50%;' +
@@ -238,6 +240,8 @@ _JS_SOURCE = r"""
     'background:#fff;border-radius:5px;cursor:pointer}';
   document.head.appendChild(style);
 
+  var toolbarWrap = document.createElement('div');
+  toolbarWrap.className = 'plotpress-toolbar-wrap';
   var bar = document.createElement('div');
   bar.className = 'plotpress-toolbar';
   var TOOLS = [
@@ -273,7 +277,24 @@ _JS_SOURCE = r"""
     bar.appendChild(b);
     return b;
   });
-  document.body.appendChild(bar);
+  toolbarWrap.appendChild(bar);
+
+  // A separate, never-hidden handle: hiding the button row itself would
+  // otherwise take away the only way to bring it back. No state persists
+  // across a reload/Save -- collapsing the toolbar is a per-view convenience
+  // (decluttering a screenshot, say), not something worth resuming into.
+  var toolbarToggle = document.createElement('button');
+  toolbarToggle.className = 'plotpress-toolbar-toggle';
+  toolbarToggle.title = 'Hide toolbar';
+  toolbarToggle.textContent = '▸';   // ▸: collapses the row away, toward the edge
+  toolbarToggle.addEventListener('click', function () {
+    var collapsed = bar.style.display === 'none';
+    bar.style.display = collapsed ? 'flex' : 'none';
+    toolbarToggle.textContent = collapsed ? '▸' : '◂';   // ◂: brings it back
+    toolbarToggle.title = collapsed ? 'Hide toolbar' : 'Show toolbar';
+  });
+  toolbarWrap.appendChild(toolbarToggle);
+  document.body.appendChild(toolbarWrap);
 
   function setMode(m) {
     // Cancel anything in progress and clear transient state.

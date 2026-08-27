@@ -34,7 +34,8 @@ from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
 from .svg import (
-    _effective_rect, _group_axes_extra, _max_ytick_width, _pixel_rect,
+    _effective_rect, _group_axes_extra, _group_colorbar_extra, _group_colorbars,
+    _max_ytick_width, _pixel_rect,
     _resolve_tick_labels,
 )
 from .ticker import log_ticks, nice_ticks
@@ -249,6 +250,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
 
     if ax._is_colorbar:
         _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas)
+        _raster_labels(ax, st, L, T, Wp, Hp, S, draw)   # title only, mirrors the SVG backend
         return
 
     is_twin = ax._twin_of is not None
@@ -978,8 +980,10 @@ def _raster_groups(fig, W, H, S, draw):
     """The PNG counterpart of svg._render_groups."""
     st = fig.style
     for g in fig._groups:
-        rects = [_pixel_rect(ax, W, H) for ax in g["axes"]]
-        extras = [_group_axes_extra(ax, st) for ax in g["axes"]]
+        members = g["axes"] + _group_colorbars(g["axes"], fig)
+        rects = [_pixel_rect(ax, W, H) for ax in members]
+        extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
+                 else _group_axes_extra(ax, st) for ax in members]
         pad = g["pad"] * S
         x0 = min(r[0] - e[2] * S for r, e in zip(rects, extras)) - pad
         y0 = min(r[1] - e[0] * S for r, e in zip(rects, extras)) - pad
