@@ -14,22 +14,25 @@ others):
   *whole figure* instead, centered on the cursor, regardless of which axes
   (if any) is under it -- the useful gesture on a figure with many small
   axes, where "zoom whatever tiny panel the cursor happens to be over"
-  wouldn't be. It only rescales the SVG's own viewBox, so it never touches
-  any axes' data range, ticks, or pick data. A plain wheel (no Ctrl) is left
-  alone to scroll the page as it would over any other content.
+  wouldn't be. It grows the SVG's own rendered size rather than cropping its
+  viewBox, so it never touches any axes' data range, ticks, or pick data --
+  and the overflow past the viewport is real, native-scrollable page content,
+  not merely a cropped coordinate system with nothing for a scrollbar to
+  reach. A plain wheel (no Ctrl) is left alone to scroll the page as it
+  would over any other content.
 * **Magnify** (zoom-in cursor) -- the same whole-figure wheel zoom as
   Ctrl+wheel under Zoom, but a *plain* wheel, no Ctrl needed -- for wherever
   holding Ctrl is awkward, or a browser/OS extension already claims it.
   Deliberately its own mode rather than folded into Zoom: selecting it is an
   explicit choice to have this figure capture the page's scroll, so it never
   surprises a reader who just wanted Zoom's rubber-band drag. Drag pans the
-  same whole-figure view in any direction, so a zoomed-in figure stays fully
-  reachable without switching to Span -- always the figure's view, never an
-  axes' own data range, isolating it completely from per-axes zoom/pan.
-  Double-click resets that view (there is no per-axes zoom here to reset
-  the way Span/Zoom's double-click does); text on the figure is left
-  unselectable while Magnify is active, so a pan drag doesn't also
-  highlight the tick labels/titles it sweeps across.
+  same whole-figure view (native scroll under the hood) in any direction, so
+  a zoomed-in figure stays fully reachable without switching to Span --
+  always the figure's view, never an axes' own data range, isolating it
+  completely from per-axes zoom/pan. Double-click resets that view (there is
+  no per-axes zoom here to reset the way Span/Zoom's double-click does);
+  text on the figure is left unselectable while Magnify is active, so a pan
+  drag doesn't also highlight the tick labels/titles it sweeps across.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all. A marker's own dot scales
@@ -80,7 +83,23 @@ _JS_SOURCE = r"""
   var SVGNS = 'http://www.w3.org/2000/svg';
   var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
   var home = vb.slice();
+  // `view` itself never changes any more -- kept only so pxPerUser() below
+  // (unchanged) keeps reading a correct px-per-user-unit ratio, since it
+  // divides the SVG's *rendered* CSS width by this. Whole-figure zoom now
+  // grows/shrinks that rendered width directly (see zoomTo/applyZoomSize)
+  // instead of cropping the viewBox, so real content overflows the page for
+  // the browser's own scrollbars to reach -- cropping left nothing for a
+  // scrollbar to scroll, since the SVG's on-page size never changed; only
+  // custom drag-to-pan could reach the rest of a zoomed-in figure.
   var view = vb.slice();
+  var zoomScale = 1;
+  // The SVG's own on-page CSS size at zoomScale 1 -- the baseline zoomTo()
+  // scales from. Read once, now: by the time this script runs (placed right
+  // after the SVG in the document), the browser has already laid it out, so
+  // this reflects its true natural size (fixed pixels in a standalone file;
+  // whatever its container currently resolves width:100% to, embedded).
+  var naturalW = svg.getBoundingClientRect().width;
+  var naturalH = svg.getBoundingClientRect().height;
   var wrap = null;              // container holding the svg (for docked sliders)
   var dockedSliders = [];       // [{box, axesKey}] repositioned on pan/zoom
   var CURRENT_FRAME = {};       // slider unit -> current frame index
@@ -91,23 +110,60 @@ _JS_SOURCE = r"""
     positionDocked();
   }
 
-  // Whole-figure zoom, centered on (px, py) (SVG user-space, i.e. already
-  // in the *current* view -- toUser() accounts for any prior pan/zoom).
-  // Rescales the viewBox only -- it never touches any axes' own data
-  // range, so it's the gesture that works uniformly across a figure with
-  // many small axes, unlike a per-axes data zoom that only affects
-  // whichever panel happens to be under the cursor. Clamped well short of
-  // collapsing to zero size (the point going in forever) or growing so
-  // large toUser()'s inverse-CTM math loses precision (the point going
-  // out forever) -- either would make the gesture feel broken past that.
-  function zoomViewAt(px, py, factor) {
-    var newW = view[2] * factor, newH = view[3] * factor;
-    var minW = home[2] * 0.02, maxW = home[2] * 20;
-    if (newW < minW || newW > maxW) return;
-    view[0] = px - (px - view[0]) * factor;
-    view[1] = py - (py - view[1]) * factor;
-    view[2] = newW; view[3] = newH;
-    apply();
+  // Re-measure the natural size on a window resize, but only while at 1x --
+  // svg.style.width/height are unset there, so getBoundingClientRect() still
+  // reflects the page's own current sizing rather than a stale zoomed value.
+  // (A resize *while* zoomed is left as a known gap: rare enough, and there
+  // is no natural size to re-derive from at that point anyway.)
+  window.addEventListener('resize', function () {
+    if (zoomScale === 1) {
+      naturalW = svg.getBoundingClientRect().width;
+      naturalH = svg.getBoundingClientRect().height;
+    }
+  });
+
+  function applyZoomSize() {
+    var zoomed = zoomScale > 1;
+    document.body.classList.toggle('plotpress-zoomed', zoomed);
+    if (zoomed) {
+      svg.style.width = (naturalW * zoomScale) + 'px';
+      svg.style.height = (naturalH * zoomScale) + 'px';
+    } else {
+      svg.style.width = ''; svg.style.height = '';
+    }
+    positionDocked();
+  }
+
+  // Whole-figure zoom, centered on the cursor. Grows/shrinks the SVG's own
+  // rendered CSS size (never its viewBox or any axes' data range), so it's
+  // the gesture that works uniformly across a figure with many small axes,
+  // unlike a per-axes data zoom that only affects whichever panel happens to
+  // be under the cursor -- and so the browser's native scrollbars, not a
+  // custom drag, are what reach the rest of a zoomed-in figure. Clamped to
+  // never shrink below the figure's own natural size (zooming "out" past
+  // that has nothing left to reveal) or grow past a point where scrolling
+  // further would gain nothing but more of it.
+  // The compensating scroll below can only re-anchor the cursor's point once
+  // there is somewhere to scroll *to* -- while the zoomed-in figure still
+  // fits inside the viewport with room to spare, there is no overflow yet
+  // for scrollBy() to spend, and the point under the cursor drifts slightly
+  // for these first few ticks (layout alone decides where the bigger SVG
+  // lands). Self-corrects the moment real overflow exists, which is also
+  // the moment "did the point stay under the cursor" starts to matter --
+  // nothing is scrolled out of view yet at this stage regardless.
+  function zoomTo(clientX, clientY, factor) {
+    var newScale = Math.max(1, Math.min(20, zoomScale * factor));
+    if (newScale === zoomScale) return;
+    var before = svg.getBoundingClientRect();
+    var fx = (clientX - before.left) / before.width;
+    var fy = (clientY - before.top) / before.height;
+    zoomScale = newScale;
+    applyZoomSize();
+    var after = svg.getBoundingClientRect();
+    window.scrollBy(
+      (after.left + fx * after.width) - clientX,
+      (after.top + fy * after.height) - clientY
+    );
   }
 
   // Map an svg user-space point to pixels within the svg wrapper (honors the
@@ -244,6 +300,13 @@ _JS_SOURCE = r"""
     '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
     'color:#2b5bd7}' +
     '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
+    // Standalone's body centers the figure with flex, which clips (rather
+    // than making scrollable) any child that grows past it -- a zoomed-in
+    // SVG would be reachable on only one side, never both. Switching to
+    // block + overflow:auto for as long as the figure is actually zoomed
+    // (see applyZoomSize) restores real, both-directions scrolling; the
+    // default centered layout returns the moment zoomScale is back to 1.
+    'body.plotpress-zoomed{display:block;overflow:auto}' +
     '.plotpress-extract{position:fixed;top:56px;right:10px;width:360px;' +
     'max-height:72vh;overflow:auto;background:#fff;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);padding:10px;' +
@@ -315,7 +378,7 @@ _JS_SOURCE = r"""
     // Cancel anything in progress and clear transient state.
     down = null; removeRubber();
     if (m === 'reset') {
-      view = home.slice(); apply();
+      zoomScale = 1; applyZoomSize();
       resetAxes();                               // restore every axes' data limits
       mode = null;
       selectedPin = null;                        // clear all markers too
@@ -402,20 +465,17 @@ _JS_SOURCE = r"""
     var zooming = mode === 'magnify' || (mode === 'zoom' && e.ctrlKey);
     if (!zooming) return;
     e.preventDefault();
-    var p = toUser(e);
-    zoomViewAt(p.x, p.y, e.deltaY < 0 ? 0.8 : 1.25);
+    zoomTo(e.clientX, e.clientY, e.deltaY < 0 ? 1.25 : 0.8);
   }, { passive: false });
 
-  // Whole-figure pan: rescales `view` (the SVG viewBox) only, exactly what
-  // the wheel does under Magnify (or Ctrl+wheel under Zoom) -- never an
-  // individual axes' own data range/ticks. Shared by Span's "over the
-  // margins" drag and Magnify's drag, so a zoomed-in view stays reachable
-  // in every direction without leaving the tool that zoomed it.
+  // Whole-figure pan: scrolls the page, exactly what the wheel now does
+  // under Magnify (or Ctrl+wheel under Zoom) by growing the SVG's own
+  // rendered size -- never an individual axes' own data range/ticks.
+  // Shared by Span's "over the margins" drag and Magnify's drag, so a
+  // zoomed-in view stays reachable in every direction without leaving the
+  // tool that zoomed it.
   function panWholeFigureTo(e) {
-    var r = svg.getBoundingClientRect();
-    view[0] = panV[0] - (e.clientX - down.x) / r.width * view[2];
-    view[1] = panV[1] - (e.clientY - down.y) / r.height * view[3];
-    apply();
+    window.scrollTo(panV.x - (e.clientX - down.x), panV.y - (e.clientY - down.y));
   }
 
   svg.addEventListener('mousedown', function (e) {
@@ -428,7 +488,7 @@ _JS_SOURCE = r"""
         // per-axes data pan over a plot (directed edges: honors inverted axes)
         panAxes = { key: a.i, downUser: pdn, start: edges(CUR[a.i]) };
       } else {
-        panV = view.slice();            // over margins: whole-figure pan
+        panV = { x: window.scrollX, y: window.scrollY };   // over margins: whole-figure pan
       }
       svg.style.cursor = 'grabbing';
     } else if (mode === 'zoom') { startRubber(e); }
@@ -436,7 +496,7 @@ _JS_SOURCE = r"""
       // Always the whole-figure view, regardless of what's under the
       // cursor -- Magnify never touches axes data, only what part of the
       // rendered figure is currently visible (see the wheel handler above).
-      panV = view.slice();
+      panV = { x: window.scrollX, y: window.scrollY };
       svg.style.cursor = 'grabbing';
     }
   });
@@ -471,7 +531,7 @@ _JS_SOURCE = r"""
   svg.addEventListener('dblclick', function (e) {
     if (mode === 'magnify') {
       e.preventDefault();
-      view = home.slice(); apply();
+      zoomScale = 1; applyZoomSize();
       return;
     }
     if (mode !== 'span' && mode !== 'zoom') return;
@@ -1546,14 +1606,18 @@ _JS_SOURCE = r"""
       if (hiddenLabels.indexOf(label) < 0) hiddenLabels.push(label);
     });
     return {
-      view: view.slice(), axes: axesView, pins: serializePins(),
+      zoomScale: zoomScale, scrollX: window.scrollX, scrollY: window.scrollY,
+      axes: axesView, pins: serializePins(),
       annotationsHidden: annotationsHidden, hiddenLegendLabels: hiddenLabels,
     };
   }
 
   function applySavedState(state) {
     if (!state) return;
-    if (state.view) { view = state.view.slice(); apply(); }
+    // Zoom before scroll: scrolling to a saved position only lands right if
+    // the page is already the size that position was saved from.
+    if (state.zoomScale) { zoomScale = state.zoomScale; applyZoomSize(); }
+    if (state.scrollX !== undefined) window.scrollTo(state.scrollX, state.scrollY);
     if (state.axes) {
       Object.keys(state.axes).forEach(function (k) {
         if (!CUR[k]) return;

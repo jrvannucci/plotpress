@@ -53,6 +53,98 @@ _RDBU_ANCHORS = np.array([
     [146, 197, 222], [67, 147, 195], [33, 102, 172],
 ], dtype=float)
 
+# Spectral: red-orange-yellow-green-blue diverging (ColorBrewer).
+_SPECTRAL_ANCHORS = np.array([
+    [213, 62, 79], [252, 141, 89], [254, 224, 139], [255, 255, 191],
+    [230, 245, 152], [153, 213, 148], [50, 136, 189],
+], dtype=float)
+
+# PiYG: pink-white-green diverging (ColorBrewer).
+_PIYG_ANCHORS = np.array([
+    [197, 27, 125], [233, 163, 201], [253, 224, 239], [247, 247, 247],
+    [230, 245, 208], [161, 215, 106], [77, 146, 33],
+], dtype=float)
+
+# BrBG: brown-white-teal diverging (ColorBrewer).
+_BRBG_ANCHORS = np.array([
+    [140, 81, 10], [216, 179, 101], [246, 232, 195], [245, 245, 245],
+    [199, 234, 229], [90, 180, 172], [1, 102, 94],
+], dtype=float)
+
+# seismic: sharp blue-white-red diverging (matplotlib), for data that pivots
+# hard at zero rather than shading gradually through it like coolwarm/RdBu.
+_SEISMIC_ANCHORS = np.array([
+    [0, 0, 127], [0, 0, 255], [255, 255, 255], [255, 0, 0], [127, 0, 0],
+], dtype=float)
+
+# Single-hue sequential family (ColorBrewer): light-to-dark, for data with no
+# natural midpoint -- a density, a count, a magnitude.
+_BLUES_ANCHORS = np.array([
+    [247, 251, 255], [222, 235, 247], [198, 219, 239], [158, 202, 225],
+    [107, 174, 214], [49, 130, 189], [8, 81, 156],
+], dtype=float)
+
+_GREENS_ANCHORS = np.array([
+    [247, 252, 245], [229, 245, 224], [199, 233, 192], [161, 217, 155],
+    [116, 196, 118], [49, 163, 84], [0, 109, 44],
+], dtype=float)
+
+_ORANGES_ANCHORS = np.array([
+    [255, 245, 235], [254, 230, 206], [253, 208, 162], [253, 174, 107],
+    [253, 141, 60], [230, 85, 13], [166, 54, 3],
+], dtype=float)
+
+_REDS_ANCHORS = np.array([
+    [255, 245, 240], [254, 224, 210], [252, 187, 161], [252, 146, 114],
+    [251, 106, 74], [222, 45, 38], [165, 15, 21],
+], dtype=float)
+
+_PURPLES_ANCHORS = np.array([
+    [252, 251, 253], [239, 237, 245], [218, 218, 235], [188, 189, 220],
+    [158, 154, 200], [117, 107, 177], [84, 39, 143],
+], dtype=float)
+
+# YlOrRd: yellow-orange-red sequential (ColorBrewer) -- a common heatmap map.
+_YLORRD_ANCHORS = np.array([
+    [255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60],
+    [252, 78, 42], [227, 26, 28], [177, 0, 38],
+], dtype=float)
+
+# twilight: cyclic (matplotlib) -- the first and last anchor match, so it
+# wraps cleanly for data with no true minimum/maximum, like a phase or angle.
+_TWILIGHT_ANCHORS = np.array([
+    [23, 22, 25], [76, 66, 127], [152, 137, 192], [223, 206, 208],
+    [219, 159, 150], [164, 88, 79], [97, 46, 48], [23, 22, 25],
+], dtype=float)
+
+# jet: the classic MATLAB/matplotlib rainbow map. Not perceptually uniform
+# (it implies edges in the data where its own hue turns sharply, brightest at
+# cyan/yellow -- see docs/scale/limitations' colormap-uniformity example) but
+# kept for the code that still asks for it by name.
+_JET_ANCHORS = np.array([
+    [0, 0, 128], [0, 0, 255], [0, 255, 255], [0, 255, 0],
+    [255, 255, 0], [255, 0, 0], [128, 0, 0],
+], dtype=float)
+
+# turbo: Google's perceptually-improved rainbow -- similar use case to jet
+# (a wide, intuitively-ordered hue sweep) without jet's flat middle band or
+# its hard clipping at black/dark red.
+_TURBO_ANCHORS = np.array([
+    [48, 18, 59], [63, 71, 204], [40, 142, 222], [26, 187, 156],
+    [64, 209, 72], [170, 222, 36], [247, 182, 32], [230, 86, 20],
+    [122, 4, 3],
+], dtype=float)
+
+# hot: black-red-yellow-white -- a thermal/blackbody-radiation ramp.
+_HOT_ANCHORS = np.array([
+    [0, 0, 0], [255, 0, 0], [255, 255, 0], [255, 255, 255],
+], dtype=float)
+
+# cool: a two-stop cyan-to-magenta linear ramp.
+_COOL_ANCHORS = np.array([
+    [0, 255, 255], [255, 0, 255],
+], dtype=float)
+
 
 def _build_lut(anchors: np.ndarray, n: int = 256) -> np.ndarray:
     """Linearly interpolate anchor stops into an ``(n, 3)`` uint8 LUT."""
@@ -68,15 +160,35 @@ def _build_lut(anchors: np.ndarray, n: int = 256) -> np.ndarray:
 _GRAY_LUT = np.repeat(np.linspace(0, 255, 256, dtype=np.uint8)[:, None], 3, axis=1)
 
 _COLORMAPS = {
+    # Perceptually uniform sequential
     "viridis": _build_lut(_VIRIDIS_ANCHORS),
     "plasma": _build_lut(_PLASMA_ANCHORS),
     "inferno": _build_lut(_INFERNO_ANCHORS),
     "magma": _build_lut(_MAGMA_ANCHORS),
     "cividis": _build_lut(_CIVIDIS_ANCHORS),
-    "coolwarm": _build_lut(_COOLWARM_ANCHORS),
-    "RdBu": _build_lut(_RDBU_ANCHORS),
+    # Single-hue / heat sequential
     "gray": _GRAY_LUT,
     "grey": _GRAY_LUT,
+    "Blues": _build_lut(_BLUES_ANCHORS),
+    "Greens": _build_lut(_GREENS_ANCHORS),
+    "Oranges": _build_lut(_ORANGES_ANCHORS),
+    "Reds": _build_lut(_REDS_ANCHORS),
+    "Purples": _build_lut(_PURPLES_ANCHORS),
+    "YlOrRd": _build_lut(_YLORRD_ANCHORS),
+    "hot": _build_lut(_HOT_ANCHORS),
+    # Diverging
+    "coolwarm": _build_lut(_COOLWARM_ANCHORS),
+    "RdBu": _build_lut(_RDBU_ANCHORS),
+    "Spectral": _build_lut(_SPECTRAL_ANCHORS),
+    "PiYG": _build_lut(_PIYG_ANCHORS),
+    "BrBG": _build_lut(_BRBG_ANCHORS),
+    "seismic": _build_lut(_SEISMIC_ANCHORS),
+    # Cyclic
+    "twilight": _build_lut(_TWILIGHT_ANCHORS),
+    # Miscellaneous / rainbow
+    "jet": _build_lut(_JET_ANCHORS),
+    "turbo": _build_lut(_TURBO_ANCHORS),
+    "cool": _build_lut(_COOL_ANCHORS),
 }
 
 

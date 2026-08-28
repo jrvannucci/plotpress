@@ -25,18 +25,22 @@ The toolbar
        size. Ctrl+wheel zooms the *whole figure* instead, centered on the
        cursor, regardless of which axes (if any) is under it -- the useful
        gesture on a figure with many small axes, where the cursor is only
-       ever over one tiny panel at a time. It only rescales the SVG's own
-       viewBox, so it never touches any axes' data range or ticks.
+       ever over one tiny panel at a time. It grows the SVG's own rendered
+       size (never any axes' data range or ticks), so once it no longer fits
+       the window the browser's own scrollbars reach the rest of it, the
+       same as scrolling any other oversized page content.
    * - **Magnify**
      - The same whole-figure wheel zoom as Ctrl+wheel under Zoom, but a
        *plain* wheel, no Ctrl needed -- for wherever holding Ctrl is
        awkward, or a browser/OS extension already claims it. Its own mode
        rather than folded into Zoom, so selecting it is an explicit choice
        to have this figure capture the page's scroll. Drag pans the same
-       whole-figure view in any direction, so a zoomed-in figure stays
-       reachable without switching tools -- always the figure's view, never
-       an axes' own data range. Double-click resets that view (there is no
-       per-axes zoom to reset here, unlike Span/Zoom below); text on the
+       whole-figure view (native page scroll under the hood, same as
+       Zoom's) in any direction, so a zoomed-in figure stays reachable
+       without switching tools, on top of the browser's own scrollbars
+       already working -- always the figure's view, never an axes' own
+       data range. Double-click resets that view (there is no per-axes
+       zoom to reset here, unlike Span/Zoom below); text on the
        figure -- tick labels, titles -- is left unselectable for as long as
        Magnify is active, so a pan drag doesn't also highlight it.
    * - **Point Pick**

@@ -105,7 +105,12 @@ See :ref:`limitation-font-metrics` for the full table and the reasoning, and
 Colormaps and normalization
 ---------------------------
 
-Built-in colormaps: ``"viridis"``, ``"plasma"``, ``"gray"``.
+24 built-in colormaps -- perceptually uniform (``"viridis"``, ``"plasma"``,
+...), sequential (``"Blues"``, ``"YlOrRd"``, ...), diverging
+(``"coolwarm"``, ``"Spectral"``, ...), cyclic (``"twilight"``), and a few
+classics (``"jet"``, ``"turbo"``). See
+:doc:`../auto_examples/gridded_data/plot_11_colormap_reference` for every
+one of them as a gradient swatch. Append ``"_r"`` to any name to reverse it.
 
 ``plotpress.available_colormaps()``
     List the available colormap names.

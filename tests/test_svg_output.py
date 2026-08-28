@@ -709,6 +709,31 @@ def test_tight_layout_accounts_for_ylabel():
     assert a2._rect[0] > a1._rect[0]   # a y label widens the left margin
 
 
+def test_tight_layout_honors_tick_params_labelsize_and_length():
+    """tight_layout()'s margin math must size an axes' own tick-label band
+    from *its* tick_params(labelsize=...)/(length=...) override, not the
+    figure-wide default -- otherwise a grid that shrinks its tick labels to
+    fit small panels (a common move on dense small-multiples) still
+    reserves margin sized for the bigger, unused default, over-widening
+    every gap next to it for no reason."""
+    f1, a1 = plotpress.subplots(2, 1, figsize=(4, 6))
+    for ax in a1:
+        ax.plot([0, 1], [0, 1])
+    f1.tight_layout()
+    default_gap = (a1[0]._rect[1] - (a1[1]._rect[1] + a1[1]._rect[3]))
+
+    f2, a2 = plotpress.subplots(2, 1, figsize=(4, 6))
+    for ax in a2:
+        ax.plot([0, 1], [0, 1])
+        ax.tick_params(labelsize=3, length=1)
+    f2.tight_layout()
+    shrunk_gap = (a2[0]._rect[1] - (a2[1]._rect[1] + a2[1]._rect[3]))
+
+    assert shrunk_gap < default_gap, (
+        "smaller tick_params(labelsize=..., length=...) must shrink the "
+        "reserved margin, not leave it sized for the figure-wide default")
+
+
 def test_figure_level_suptitle_and_labels():
     fig, axes = plotpress.subplots(2, 2)
     for ax in axes.ravel():
@@ -2076,9 +2101,11 @@ def test_group_margin_reservation_does_not_widen_interior_row_gaps():
 def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
     """group_spacing()'s whole point: add room between subplots for group
     boxes without touching anything tight_layout() already sizes on its
-    own -- the outer margin (titles, tick labels, ...) must land in exactly
-    the same place with or without it; only the interior row/col gap grows,
-    by exactly the requested pixel amount."""
+    own. The figure grows to hold that room rather than shrinking the axes
+    to fit it, so the outer margin and each axes' own size must land at
+    exactly the same *pixel* position/size with or without it -- the plain
+    axes-rect *fractions* do shift a little, since they are now measured
+    against a taller canvas."""
     fig1, axes1 = plotpress.subplots(2, 2, figsize=(9, 7))
     for ax in axes1.ravel():
         ax.plot([0, 1], [0, 1])
@@ -2086,11 +2113,15 @@ def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
     fig1.group("Group A", list(axes1[0, :]), title_position="top")
     fig1.group("Group B", list(axes1[1, :]), title_position="top")
     fig1.tight_layout()
-    outer_top_before = max(ax._rect[1] + ax._rect[3] for ax in axes1.ravel())
-    outer_bottom_before = min(ax._rect[1] for ax in axes1.ravel())
+    Hpx1 = fig1.figsize[1] * fig1.style.dpi
+    top_frac_before = max(ax._rect[1] + ax._rect[3] for ax in axes1.ravel())
+    bottom_frac_before = min(ax._rect[1] for ax in axes1.ravel())
+    top_margin_before = (1 - top_frac_before) * Hpx1
+    bottom_margin_before = bottom_frac_before * Hpx1
+    axh_before = axes1[0, 0]._rect[3] * Hpx1
     row_gap_before = (min(axes1[0, 0]._rect[1], axes1[0, 1]._rect[1])
                      - max(axes1[1, 0]._rect[1] + axes1[1, 0]._rect[3],
-                            axes1[1, 1]._rect[1] + axes1[1, 1]._rect[3]))
+                            axes1[1, 1]._rect[1] + axes1[1, 1]._rect[3])) * Hpx1
 
     fig2, axes2 = plotpress.subplots(2, 2, figsize=(9, 7))
     for ax in axes2.ravel():
@@ -2100,16 +2131,84 @@ def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
     fig2.group("Group B", list(axes2[1, :]), title_position="top")
     fig2.group_spacing(hspace=40.0)
     fig2.tight_layout()
-    outer_top_after = max(ax._rect[1] + ax._rect[3] for ax in axes2.ravel())
-    outer_bottom_after = min(ax._rect[1] for ax in axes2.ravel())
+    Hpx2 = fig2.figsize[1] * fig2.style.dpi
+    top_frac_after = max(ax._rect[1] + ax._rect[3] for ax in axes2.ravel())
+    bottom_frac_after = min(ax._rect[1] for ax in axes2.ravel())
+    top_margin_after = (1 - top_frac_after) * Hpx2
+    bottom_margin_after = bottom_frac_after * Hpx2
+    axh_after = axes2[0, 0]._rect[3] * Hpx2
     row_gap_after = (min(axes2[0, 0]._rect[1], axes2[0, 1]._rect[1])
                     - max(axes2[1, 0]._rect[1] + axes2[1, 0]._rect[3],
-                           axes2[1, 1]._rect[1] + axes2[1, 1]._rect[3]))
+                           axes2[1, 1]._rect[1] + axes2[1, 1]._rect[3])) * Hpx2
 
-    assert outer_top_after == pytest.approx(outer_top_before, abs=1e-6)
-    assert outer_bottom_after == pytest.approx(outer_bottom_before, abs=1e-6)
-    Hpx = fig2.figsize[1] * fig2.style.dpi
-    assert (row_gap_after - row_gap_before) * Hpx == pytest.approx(40.0, abs=0.5)
+    assert Hpx2 - Hpx1 == pytest.approx(40.0, abs=1e-6), (
+        "group_spacing() must grow the figure by exactly the reserved "
+        "pixels rather than shrinking the axes to make room for it")
+    assert top_margin_after == pytest.approx(top_margin_before, abs=0.5)
+    assert bottom_margin_after == pytest.approx(bottom_margin_before, abs=0.5)
+    assert axh_after == pytest.approx(axh_before, abs=0.5), (
+        "each axes' own pixel size must be unaffected by group_spacing() "
+        "-- the figure grows instead of shrinking it")
+    assert (row_gap_after - row_gap_before) == pytest.approx(40.0, abs=0.5)
+
+
+def test_group_spacing_does_not_widen_a_gap_interior_to_a_single_group():
+    """group_spacing() must only widen the boundary between two different
+    groups, not a boundary the same group's own box straddles -- a group
+    spanning rows 0-1 stays exactly as tight between those two rows as
+    plain tight_layout() would put them; only the seam facing its neighbor
+    (rows 1-2) needs the reserved room. Reported after group_spacing()
+    widened every row gap uniformly, needlessly separating panels meant to
+    read as one paired unit (see plot_05_many_small_row_pairs)."""
+    def build(hspace):
+        fig, axes = plotpress.subplots(4, 1, figsize=(4, 12))
+        for ax in axes:
+            ax.plot([0, 1], [0, 1])
+        fig.group("Pair A", [axes[0], axes[1]], title_position="top")
+        fig.group("Pair B", [axes[2], axes[3]], title_position="top")
+        if hspace:
+            fig.group_spacing(hspace=hspace)
+        fig.tight_layout()
+        return fig, axes
+
+    fig0, axes0 = build(None)
+    Hpx0 = fig0.figsize[1] * fig0.style.dpi
+    within_pair_gap_before = (axes0[0]._rect[1]
+                              - (axes0[1]._rect[1] + axes0[1]._rect[3])) * Hpx0
+
+    fig1, axes1 = build(70.0)
+    Hpx1 = fig1.figsize[1] * fig1.style.dpi
+    within_pair_gap_after = (axes1[0]._rect[1]
+                             - (axes1[1]._rect[1] + axes1[1]._rect[3])) * Hpx1
+    between_pair_gap_after = (axes1[1]._rect[1]
+                              - (axes1[2]._rect[1] + axes1[2]._rect[3])) * Hpx1
+
+    assert within_pair_gap_after == pytest.approx(within_pair_gap_before, abs=0.5), (
+        "group_spacing(hspace=...) widened the gap *inside* a single "
+        "group's own pair of rows, not just the boundary between groups")
+    assert between_pair_gap_after - within_pair_gap_before == pytest.approx(70.0, abs=0.5)
+
+
+def test_group_spacing_grows_figsize_by_the_reserved_amount():
+    """The figure's own size grows by exactly the pixels group_spacing()
+    reserves -- once per boundary that actually needs it, not once per
+    interior gap in the grid."""
+    fig, axes = plotpress.subplots(3, 1, figsize=(4, 9))
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    # One group spanning rows 0-1: only the row1/row2 boundary borders it,
+    # so exactly one boundary (not two) needs the reservation.
+    fig.group("Pair", [axes[0], axes[1]], title_position="top")
+    fig.group_spacing(hspace=55.0)
+    fig.tight_layout()
+
+    assert fig.figsize[1] == pytest.approx(9.0 + 55.0 / fig.style.dpi, abs=1e-6)
+    assert fig.figsize[0] == pytest.approx(4.0, abs=1e-9)
+
+    # A second tight_layout() call (e.g. from _settle_layout re-fitting
+    # after a later title change) must not compound the growth.
+    fig.tight_layout()
+    assert fig.figsize[1] == pytest.approx(9.0 + 55.0 / fig.style.dpi, abs=1e-6)
 
 
 def test_group_spacing_resolves_a_real_interior_boundary_collision():

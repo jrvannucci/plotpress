@@ -481,7 +481,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
             .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
-          const before = svg.getAttribute('viewBox');
+          const before = svg.getBoundingClientRect().width;
           const pt = svg.createSVGPoint();
           pt.x = p[0]; pt.y = p[1];
           const c = pt.matrixTransform(svg.getScreenCTM());
@@ -490,7 +490,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
             bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100,
             ctrlKey: true
           }));
-          return svg.getAttribute('viewBox') !== before;
+          return svg.getBoundingClientRect().width !== before;
         }""", target_px)
     assert zoomed, "Zoom (ctrl+wheel, whole-figure) must still work over a set_pickable(False) axes"
 
@@ -616,14 +616,15 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
 
 
 def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_path):
-    """Ctrl+wheel zooms the whole figure's SVG viewBox, not a single axes'
-    data range -- the useful gesture on a figure with many small axes,
-    where zooming whatever tiny panel the cursor happens to be over isn't.
-    It must work regardless of which axes (if any) sits under the cursor,
-    must keep the data/user-space point under the cursor fixed (the same
-    point maps to the same screen pixel before and after), and must leave
-    every individual axes' own zoom transform untouched -- that is still
-    driven only by a rubber-band box drag, not the wheel."""
+    """Ctrl+wheel zooms the whole figure by growing the SVG's own rendered
+    size, not a single axes' data range -- the useful gesture on a figure
+    with many small axes, where zooming whatever tiny panel the cursor
+    happens to be over isn't. It must work regardless of which axes (if
+    any) sits under the cursor, must keep the data/user-space point under
+    the cursor fixed (the same point maps to the same screen pixel before
+    and after, via the compensating scroll), and must leave every
+    individual axes' own zoom transform untouched -- that is still driven
+    only by a rubber-band box drag, not the wheel."""
     import numpy as np
     import plotpress
 
@@ -640,19 +641,31 @@ def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_pa
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
             if (b.textContent === 'Zoom') b.click();
           });
-          const before = svg.getAttribute('viewBox');
-          const r = svg.getBoundingClientRect();
-          const cx = r.x + r.width * 0.3, cy = r.y + r.height * 0.7;
+          const r0 = svg.getBoundingClientRect();
+          const cx = r0.x + r0.width * 0.3, cy = r0.y + r0.height * 0.7;
+          // Zoom in several ticks first so the figure genuinely overflows the
+          // viewport -- the "point under the cursor stays put" guarantee is
+          // kept via a compensating scroll (see zoomTo()), which has nothing
+          // to correct with, and so cannot hold, for as long as the whole
+          // figure still fits on screen with room to spare.
+          for (let i = 0; i < 6; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300,
+              ctrlKey: true
+            }));
+          }
+          const before = svg.getBoundingClientRect().width;
           const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
           const u0 = pt.matrixTransform(svg.getScreenCTM().inverse());
           svg.dispatchEvent(new WheelEvent('wheel', {
             bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300,
             ctrlKey: true
           }));
-          const after = svg.getAttribute('viewBox');
-          // Fresh getScreenCTM(): the viewBox just changed, so its inverse
-          // must be re-derived to read what user-space point is now under
-          // the same screen pixel.
+          const after = svg.getBoundingClientRect().width;
+          // Fresh getScreenCTM(): the SVG's rendered size (and, via the
+          // compensating scroll, its on-screen position) just changed, so
+          // its inverse must be re-derived to read what user-space point is
+          // now under the same screen pixel.
           const u1 = pt.matrixTransform(svg.getScreenCTM().inverse());
           const zoomTransforms = [0, 1, 2, 3].map(i => {
             const el = document.getElementById('zoom' + i);
@@ -725,14 +738,14 @@ def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
             if (b.textContent === 'Magnify') b.click();
           });
-          const before = svg.getAttribute('viewBox');
+          const before = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
           const ev = new WheelEvent('wheel', {
             bubbles: true, cancelable: true,
             clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: -300
           });
           const notCancelled = svg.dispatchEvent(ev);
-          return { before, after: svg.getAttribute('viewBox'), notCancelled };
+          return { before, after: svg.getBoundingClientRect().width, notCancelled };
         }""")
     assert out["before"] != out["after"], (
         "Magnify mode must zoom on a plain wheel, without needing Ctrl")
@@ -744,10 +757,12 @@ def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
 def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
     """Once Magnify has zoomed in, a zoomed-in figure needs a way back to
     parts that scrolled out of view -- drag pans the same whole-figure view
-    in any direction, without switching to Span. It must move the view in
-    both x and y, and -- staying isolated from per-axes zoom/pan the same
+    (real page scroll, so the browser's own scrollbars work too) in any
+    direction, without switching to Span. It must move the scroll position
+    in both x and y, and -- staying isolated from per-axes zoom/pan the same
     way the wheel does -- must never touch any individual axes' own zoom
-    transform, even when the drag starts on top of a real axes."""
+    transform or the SVG's own zoomed-in size, even when the drag starts on
+    top of a real axes."""
     import numpy as np
     import plotpress
 
@@ -766,32 +781,40 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
           });
           const r = svg.getBoundingClientRect();
           const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-          // Zoom in first (plain wheel, no Ctrl -- Magnify's own gesture).
-          svg.dispatchEvent(new WheelEvent('wheel', {
-            bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
-          }));
-          const zoomedIn = svg.getAttribute('viewBox').split(' ').map(Number);
+          // Zoom in enough ticks (plain wheel, no Ctrl -- Magnify's own
+          // gesture) that the figure genuinely overflows the viewport --
+          // otherwise there is nowhere for a pan to actually scroll to.
+          for (let i = 0; i < 8; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+            }));
+          }
+          const widthAfterZoom = svg.getBoundingClientRect().width;
+          const scrollBefore = { x: window.scrollX, y: window.scrollY };
 
           svg.dispatchEvent(new MouseEvent('mousedown', {
             bubbles: true, clientX: cx, clientY: cy, button: 0}));
           window.dispatchEvent(new MouseEvent('mousemove', {
-            bubbles: true, clientX: cx - 40, clientY: cy - 25}));
+            bubbles: true, clientX: cx - 80, clientY: cy - 60}));
           window.dispatchEvent(new MouseEvent('mouseup', {
-            bubbles: true, clientX: cx - 40, clientY: cy - 25}));
-          const panned = svg.getAttribute('viewBox').split(' ').map(Number);
+            bubbles: true, clientX: cx - 80, clientY: cy - 60}));
+          const scrollAfter = { x: window.scrollX, y: window.scrollY };
+          const widthAfterDrag = svg.getBoundingClientRect().width;
 
           const zoomTransforms = [0, 1, 2, 3].map(i => {
             const el = document.getElementById('zoom' + i);
             return el && el.getAttribute('transform');
           });
-          return { zoomedIn, panned, zoomTransforms };
+          return { scrollBefore, scrollAfter, widthAfterZoom, widthAfterDrag, zoomTransforms };
         }""")
-    zx0, zy0, zw, zh = out["zoomedIn"]
-    px0, py0, pw, ph = out["panned"]
-    assert (px0, py0) != (zx0, zy0), "drag must pan the view after Magnify zoomed in"
-    assert px0 != zx0 and py0 != zy0, (
-        "drag must move the view in both x and y, not just one axis: %r" % out)
-    assert (pw, ph) == (zw, zh), "a pan drag must not also change the zoom level"
+    assert out["scrollBefore"] != out["scrollAfter"], (
+        "drag must pan (scroll) the page after Magnify zoomed in: %r" % out)
+    assert out["scrollBefore"]["x"] != out["scrollAfter"]["x"], (
+        "drag must move the scroll position in x, not just y: %r" % out)
+    assert out["scrollBefore"]["y"] != out["scrollAfter"]["y"], (
+        "drag must move the scroll position in y, not just x: %r" % out)
+    assert out["widthAfterDrag"] == out["widthAfterZoom"], (
+        "a pan drag must not also change the zoom level")
     assert all(t is None for t in out["zoomTransforms"]), (
         "Magnify's drag-pan must not touch any individual axes' own zoom "
         "transform -- only the whole-figure view: %r" % out["zoomTransforms"])
@@ -800,8 +823,9 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
 def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
     """Span/Zoom's double-click resets one axes' own data zoom -- meaningless
     under Magnify, which never touches per-axes data. Its double-click must
-    reset the whole-figure view instead, back to exactly the original
-    viewBox, the same thing the wheel and drag-pan both operate on."""
+    reset the whole-figure view instead, back to exactly the figure's own
+    natural (unzoomed) rendered size, the same thing the wheel and drag-pan
+    both operate on."""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -816,17 +840,17 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
             if (b.textContent === 'Magnify') b.click();
           });
-          const home = svg.getAttribute('viewBox');
+          const home = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
           const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
           svg.dispatchEvent(new WheelEvent('wheel', {
             bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
           }));
-          const zoomedIn = svg.getAttribute('viewBox');
+          const zoomedIn = svg.getBoundingClientRect().width;
           svg.dispatchEvent(new MouseEvent('dblclick', {
             bubbles: true, cancelable: true, clientX: cx, clientY: cy
           }));
-          return { home, zoomedIn, after: svg.getAttribute('viewBox') };
+          return { home, zoomedIn, after: svg.getBoundingClientRect().width };
         }""")
     assert out["zoomedIn"] != out["home"], (
         "the fixture must actually zoom in first, or this test proves nothing")
@@ -861,6 +885,77 @@ def test_magnify_mode_disables_text_selection_on_the_svg(page, tmp_path):
     assert user_select_under("Magnify") == "none"
     # Switching back off Magnify must restore normal selection behavior.
     assert user_select_under("Magnify") != "none"   # clicking the active tool turns it off
+
+
+def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
+    """Regression: whole-figure zoom used to crop the SVG's own viewBox --
+    its rendered size on the page never changed, so there was nothing for
+    the browser's own scrollbars to reach, and dragging was the only way to
+    see the rest of a zoomed-in figure. It must instead grow the SVG's
+    actual on-page size, so the page genuinely overflows and the browser's
+    native scroll (real scrollbars, trackpad, keyboard) works -- checked
+    here as real document overflow and a real, non-zero scroll offset after
+    zooming toward a corner, not just an internal state flag. Resetting must
+    shrink it back down to nothing left to scroll."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(4, 4, figsize=(9, 9))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "magnify_native_scroll.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Magnify') b.click();
+          });
+          const before = {
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight,
+            zoomedClass: document.body.classList.contains('plotpress-zoomed'),
+          };
+          // Zoom in several ticks near a corner, not the center, so the
+          // resulting scroll offset is unambiguously non-zero in both axes.
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width * 0.1, cy = r.y + r.height * 0.1;
+          for (let i = 0; i < 8; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: -300
+            }));
+          }
+          const zoomed = {
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight,
+            overflow: getComputedStyle(document.body).overflow,
+            zoomedClass: document.body.classList.contains('plotpress-zoomed'),
+            scrollX: window.scrollX, scrollY: window.scrollY,
+          };
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Reset') b.click();
+          });
+          const reset = {
+            width: svg.getBoundingClientRect().width,
+            zoomedClass: document.body.classList.contains('plotpress-zoomed'),
+          };
+          return { before, zoomed, reset };
+        }""")
+    assert out["zoomed"]["scrollWidth"] > out["before"]["scrollWidth"], (
+        "zooming in must make the page's own content genuinely wider than "
+        "before, not just internally cropped: %r" % out)
+    assert out["zoomed"]["scrollHeight"] > out["before"]["scrollHeight"]
+    assert out["zoomed"]["overflow"] == "auto", (
+        "the page must actually be scrollable while zoomed: %r" % out)
+    assert out["zoomed"]["scrollX"] > 0 and out["zoomed"]["scrollY"] > 0, (
+        "zooming toward a corner must leave the page genuinely scrolled, "
+        "not still sitting at the origin: %r" % out)
+    assert not out["before"]["zoomedClass"] and out["zoomed"]["zoomedClass"], (
+        "the zoomed marker class must appear only once actually zoomed in: %r" % out)
+    assert not out["reset"]["zoomedClass"], (
+        "Reset must clear the zoomed state along with the size: %r" % out)
 
 
 def _box_zoom(page, x0, y0, x1, y1):
@@ -1599,7 +1694,9 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     page.keyboard.down("Control")
     page.mouse.wheel(0, -300)
     page.keyboard.up("Control")
-    view_box_before = page.eval_on_selector("#plotpress-svg", "el => el.getAttribute('viewBox')")
+    zoomed_width_before = page.eval_on_selector(
+        "#plotpress-svg", "el => el.getBoundingClientRect().width")
+    scroll_before = page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
 
     # Hide Annotations.
     _click_toolbar(page, "Hide Annotations")
@@ -1614,8 +1711,11 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     page.goto(saved.as_uri())
     assert not errors, "JS error loading the saved page: %s" % errors
 
-    view_box_after = page.eval_on_selector("#plotpress-svg", "el => el.getAttribute('viewBox')")
-    assert view_box_after == view_box_before
+    zoomed_width_after = page.eval_on_selector(
+        "#plotpress-svg", "el => el.getBoundingClientRect().width")
+    scroll_after = page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
+    assert zoomed_width_after == pytest.approx(zoomed_width_before, abs=1.0)
+    assert scroll_after == scroll_before
 
     restored = page.evaluate("() => window.plotpressGetMarkers()")
     assert len(restored) == 3

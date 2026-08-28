@@ -13,11 +13,22 @@ from plotpress.colors import (
 
 # -- colormaps & norms ------------------------------------------------------
 def test_new_colormaps_and_reversed():
-    for name in ("inferno", "magma", "cividis", "coolwarm", "RdBu"):
+    for name in ("inferno", "magma", "cividis", "coolwarm", "RdBu",
+                 "Spectral", "PiYG", "BrBG", "seismic", "Blues", "Greens",
+                 "Oranges", "Reds", "Purples", "YlOrRd", "twilight", "jet",
+                 "turbo", "hot", "cool"):
         assert get_cmap(name).shape == (256, 3)
     v = get_cmap("viridis")
     assert np.array_equal(get_cmap("viridis_r"), v[::-1])
     assert "viridis_r" in plotpress.available_colormaps()
+
+
+def test_twilight_is_cyclic():
+    """A cyclic colormap's own first and last LUT entries must match --
+    otherwise data that wraps (a phase, an angle) shows a visible seam at
+    the point where the ramp restarts."""
+    lut = get_cmap("twilight")
+    assert np.array_equal(lut[0], lut[-1])
 
 
 def test_lognorm_maps_decades_and_masks_nonpositive():

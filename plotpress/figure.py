@@ -123,6 +123,12 @@ def _axes_class(projection):
 class Figure:
     def __init__(self, figsize=(6.4, 4.8), style: Style = None, facecolor=None):
         self.figsize = tuple(figsize)
+        # The size the *user* asked for, as opposed to ``self.figsize`` --
+        # which tight_layout() may grow beyond this to fit group_spacing()'s
+        # reservations without shrinking the axes. Kept separate so repeated
+        # tight_layout() calls recompute growth from a fixed starting point
+        # instead of compounding it onto an already-grown figsize.
+        self._base_figsize = tuple(figsize)
         self.style = (style or Style()).copy()
         if facecolor is not None:
             self.style.facecolor = facecolor
@@ -258,10 +264,23 @@ class Figure:
         ``suptitle``/``supxlabel``/``supylabel``) and require respecifying
         all of them by hand just to widen one gap.
 
-        Applies uniformly to every interior column/row gap -- like
-        ``subplots_adjust``'s own ``wspace``/``hspace``, not per-boundary --
-        so a figure that needs it in only one spot ends up with a little
-        more room elsewhere too, not just where a group actually sits.
+        Applies only to the row/column boundaries that actually sit on the
+        edge of a group's bounding box -- not every interior gap alike. Two
+        rows paired inside the *same* group (a group spanning them both)
+        stay exactly as tight as :meth:`tight_layout` would put them; only
+        the boundary between that group and its neighbor -- where their two
+        boxes would otherwise collide -- grows. A group spanning several
+        rows/columns still only widens the boundaries at its own edges, not
+        every boundary it happens to pass through.
+
+        The figure grows to hold the extra room rather than shrinking the
+        axes to fit it: :meth:`tight_layout` adds exactly the reserved
+        pixels (each boundary that needs it, once) onto ``figsize`` itself,
+        so a plot's own size is the same with or without this call, and
+        calling it again with a different value re-derives the growth from
+        the size last given to the constructor or :meth:`set_size_inches`
+        rather than compounding onto an already-grown figure.
+
         Only takes effect through :meth:`tight_layout`; has no effect after
         a :meth:`subplots_adjust` call, which sets every margin manually.
         """
@@ -277,6 +296,7 @@ class Figure:
         if h is None:
             w, h = w
         self.figsize = (float(w), float(h))
+        self._base_figsize = self.figsize
         if self._tight_pad is not None:
             self._layout_dirty = True   # re-fit: tight_layout bakes absolute pixels
 
@@ -445,8 +465,12 @@ class Figure:
         from .ticker import log_ticks, nice_ticks
 
         st = self.style
-        Wpx = self.figsize[0] * st.dpi
-        Hpx = self.figsize[1] * st.dpi
+        # Base, un-grown pixel size -- group_spacing()'s reservations add to
+        # this fresh each call (see Wpx/Hpx below), rather than compounding
+        # onto whatever a previous tight_layout() call already grew figsize
+        # to.
+        Wpx0 = self._base_figsize[0] * st.dpi
+        Hpx0 = self._base_figsize[1] * st.dpi
         specs = [ax for ax in self.axes
                  if ax._subplotspec is not None and not ax._is_colorbar]
         if not specs:
@@ -463,6 +487,15 @@ class Figure:
                 title_px = max(title_px, (ax._title_size or st.title_size) + 8)
             if ax._axis_off:
                 continue
+            # tick_params(labelsize=...)/(length=...) overrides this axes' own
+            # tick style -- svg.py already resolves them the same way (see
+            # its own xst/yst) before drawing. Margin reservation has to
+            # match what actually gets drawn, or a grid whose panels shrink
+            # their tick labels to fit (a common move on small multiples)
+            # keeps reserving margin sized for the figure-wide default,
+            # over-widening every gap next to it.
+            xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+            yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
             (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
             yt = (ax._yticks if ax._yticks is not None else
                   (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
@@ -470,9 +503,9 @@ class Figure:
             # usually far wider than the numbers they replace (category names),
             # and sizing the margin from the tick *values* clips them.
             ylabels = _resolve_tick_labels(ax._yticklabels, yt)
-            ytw = max((st.text_width(l, st.tick_label_size) for l in ylabels),
+            ytw = max((yst.text_width(l, yst.tick_label_size) for l in ylabels),
                       default=0.0)
-            right_px = max(right_px, st.tick_label_size * 0.6)  # last x label overhang
+            right_px = max(right_px, xst.tick_label_size * 0.6)  # last x label overhang
 
             # A twin draws its axis on the side *opposite* its parent, so its
             # decorations belong to the other margin. Measuring them into the
@@ -481,12 +514,12 @@ class Figure:
             # single axes, and into the next panel for a grid.
             if ax._twin_of is not None:
                 if ax._twin_shared == "x":                   # twinx: y on the right
-                    rdec = st.tick_size + ytw + 4
+                    rdec = yst.tick_size + ytw + 4
                     if ax._ylabel:
                         rdec += st.label_size + 6
                     right_px = max(right_px, rdec)
                 else:                                        # twiny: x on the top
-                    tdec = st.tick_size + st.tick_label_size + 4
+                    tdec = xst.tick_size + xst.tick_label_size + 4
                     if ax._xlabel:
                         tdec += st.label_size + 6
                     twin_top_px = max(twin_top_px, tdec)
@@ -496,14 +529,14 @@ class Figure:
             # bottom/left edge, so their decoration band moves with them --
             # into the same top/right bands a twin's opposite-side ticks use,
             # rather than the bottom/left band the default side would need.
-            ldec = st.tick_size + ytw + 4
+            ldec = yst.tick_size + ytw + 4
             if ax._ylabel:
                 ldec += st.label_size + 6
             if ax._ytick_side == "right":
                 right_px = max(right_px, ldec)
             else:
                 left_px = max(left_px, ldec)
-            bdec = st.tick_size + st.tick_label_size + 4
+            bdec = xst.tick_size + xst.tick_label_size + 4
             if ax._xlabel:
                 bdec += st.label_size + 6
             if ax._xtick_side == "top":
@@ -541,6 +574,18 @@ class Figure:
         # a group's title only ever faces an *outer* edge (checked below), so
         # it must never widen every interior gap along with it.
         group_top_px = group_bottom_px = group_left_px = group_right_px = 0.0
+        # Which interior row/col boundaries actually border a group's own
+        # bounding box -- group_spacing() only widens *these*, not every
+        # boundary alike, so two rows paired inside the same group stay as
+        # tight as tight_layout() would put them; only the seam between that
+        # group and its neighbor grows. Every edge of the box counts here
+        # (not just the title-facing one above): the box itself carries
+        # ``pad`` clearance on all four sides regardless of where its title
+        # sits, and two boxes facing each other across a boundary neither
+        # title touches would otherwise collide with no reservation for
+        # either of them.
+        col_needs_wspace = [False] * (ncols - 1)
+        row_needs_hspace = [False] * (nrows - 1)
         for g in self._groups:
             g_specs = [ax for ax in g["axes"] if ax._subplotspec is not None]
             if not g_specs:
@@ -560,22 +605,50 @@ class Figure:
                 # centered over it -- its own rendered *width* is what has to
                 # fit in the reserved margin here, not a height allowance.
                 extent = g["pad"] + st.text_width(g["title"], size, bold=True) + 12
+            r0 = min(ax._subplotspec.row0 for ax in g_specs)
+            r1 = max(ax._subplotspec.row1 for ax in g_specs)
+            c0 = min(ax._subplotspec.col0 for ax in g_specs)
+            c1 = max(ax._subplotspec.col1 for ax in g_specs)
             # "Touches that edge" -- the group's bounding box reaches row 0 /
             # the last row / column 0 / the last column -- not "every one of
             # its axes sits in that single row/col": a group spanning several
             # rows in a column-band (say) still needs a top-margin band for
             # its top-facing title even though most of its own axes are in
             # rows 1+, same as one spanning a single row would.
-            if pos == "top" and min(ax._subplotspec.row0 for ax in g_specs) == 0:
+            if pos == "top" and r0 == 0:
                 group_top_px += extent
-            elif pos == "bottom" and max(ax._subplotspec.row1 for ax in g_specs) == nrows - 1:
+            elif pos == "bottom" and r1 == nrows - 1:
                 group_bottom_px += extent
-            elif pos == "left" and min(ax._subplotspec.col0 for ax in g_specs) == 0:
+            elif pos == "left" and c0 == 0:
                 group_left_px += extent
-            elif pos == "right" and max(ax._subplotspec.col1 for ax in g_specs) == ncols - 1:
+            elif pos == "right" and c1 == ncols - 1:
                 group_right_px += extent
+            if r0 > 0:
+                row_needs_hspace[r0 - 1] = True
+            if r1 < nrows - 1:
+                row_needs_hspace[r1] = True
+            if c0 > 0:
+                col_needs_wspace[c0 - 1] = True
+            if c1 < ncols - 1:
+                col_needs_wspace[c1] = True
 
-        edge = pad * min(Wpx, Hpx) + 4
+        # group_spacing() grows the figure to hold its reservation instead of
+        # shrinking the axes to fit it -- each boundary that actually needs
+        # it (computed above) adds the requested pixels once, on top of the
+        # *base* size (the one last given to the constructor or
+        # set_size_inches()), so a repeated tight_layout() call re-derives
+        # this fresh rather than compounding growth onto an already-grown
+        # figsize.
+        extra_w_px = self._group_wspace * sum(col_needs_wspace) if self._group_wspace else 0.0
+        extra_h_px = self._group_hspace * sum(row_needs_hspace) if self._group_hspace else 0.0
+        Wpx = Wpx0 + extra_w_px
+        Hpx = Hpx0 + extra_h_px
+        self.figsize = (Wpx / st.dpi, Hpx / st.dpi)
+
+        # The outer edge pad is sized from the figure's *base* dimensions --
+        # group_spacing()'s growth is purely extra interior room, and must
+        # not also inflate this independent margin.
+        edge = pad * min(Wpx0, Hpx0) + 4
         left = (left_px + group_left_px + fig_left_px + edge) / Wpx
         right = 1 - (right_px + group_right_px + edge) / Wpx
         bottom = (bottom_px + group_bottom_px + fig_bottom_px + edge) / Hpx
@@ -585,21 +658,24 @@ class Figure:
         # right -- the row gap has always summed both bands, and a twinx in a
         # grid is what makes the missing term visible. Groups are excluded
         # (see above): they never contribute to an interior gap.
-        gap_w = (left_px + right_px) / Wpx          # interior column gap
-        gap_h = (bottom_px + top_px) / Hpx          # interior row gap
+        base_gap_w = (left_px + right_px) / Wpx          # interior column gap
+        base_gap_h = (bottom_px + top_px) / Hpx          # interior row gap
         # group_spacing() is the one deliberate exception: an explicit ask
         # for more room between subplots specifically for group boxes,
         # independent of what their tick labels alone would need -- added
-        # here, not folded into left_px/etc. above, so it never touches the
-        # outer margin those also seed.
-        if self._group_wspace:
-            gap_w += self._group_wspace / Wpx
-        if self._group_hspace:
-            gap_h += self._group_hspace / Hpx
-        axw, gap_w = _fit_cells(right - left, ncols, gap_w)
-        axh, gap_h = _fit_cells(top - bottom, nrows, gap_h)
+        # only to the boundaries that actually border a group (computed
+        # above), not folded into left_px/etc. above, so it never touches
+        # the outer margin those also seed.
+        gap_w_list = [base_gap_w + (self._group_wspace / Wpx
+                                   if needs and self._group_wspace else 0.0)
+                     for needs in col_needs_wspace]
+        gap_h_list = [base_gap_h + (self._group_hspace / Hpx
+                                   if needs and self._group_hspace else 0.0)
+                     for needs in row_needs_hspace]
+        axw, gap_w_list = _fit_cells(right - left, ncols, gap_w_list)
+        axh, gap_h_list = _fit_cells(top - bottom, nrows, gap_h_list)
 
-        _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h)
+        _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w_list, gap_h_list)
         self._finish_grid_relayout(specs)
         return self
 
@@ -666,8 +742,8 @@ class Figure:
         axh = avail_h / (nrows + sp["hspace"] * (nrows - 1))
         gap_w, gap_h = axw * sp["wspace"], axh * sp["hspace"]
 
-        _place_spec_rects(specs, nrows, ncols, sp["left"], sp["bottom"],
-                          axw, axh, gap_w, gap_h)
+        _place_spec_rects(specs, nrows, ncols, sp["left"], sp["bottom"], axw, axh,
+                          [gap_w] * (ncols - 1), [gap_h] * (nrows - 1))
         self._finish_grid_relayout(specs)
         return self
 
@@ -1134,18 +1210,34 @@ def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
 
 
 def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):
-    """Write each axes' ``_rect`` from its ``SubplotSpec`` span and a uniform
-    cell size/gap, shared by :meth:`Figure.tight_layout` and
-    :meth:`Figure.subplots_adjust` (they differ only in how ``axw``/``axh``/
-    ``gap_w``/``gap_h`` were derived -- measured pixels vs. matplotlib's
-    fraction-of-cell ``wspace``/``hspace``).
+    """Write each axes' ``_rect`` from its ``SubplotSpec`` span, a uniform
+    cell size, and per-boundary gaps, shared by :meth:`Figure.tight_layout`
+    and :meth:`Figure.subplots_adjust` (they differ only in how ``axw``/
+    ``axh``/``gap_w``/``gap_h`` were derived -- measured pixels vs.
+    matplotlib's fraction-of-cell ``wspace``/``hspace``).
+
+    ``gap_w``/``gap_h`` are lists of ``ncols - 1``/``nrows - 1`` values, one
+    per interior boundary -- not necessarily uniform, since
+    :meth:`Figure.group_spacing` only widens the boundaries that actually
+    border a group's own bounding box, not every row/col gap alike.
     """
+    col_left = []
+    x = left
+    for c in range(ncols):
+        col_left.append(x)
+        x += axw + (gap_w[c] if c < ncols - 1 else 0.0)
+    row_bottom = [0.0] * nrows
+    y = bottom
+    for r in range(nrows - 1, -1, -1):
+        row_bottom[r] = y
+        if r > 0:
+            y += axh + gap_h[r - 1]
     for ax in specs:
         spec = ax._subplotspec
-        x0 = left + spec.col0 * (axw + gap_w)
-        x1 = left + spec.col1 * (axw + gap_w) + axw
-        y0 = bottom + (nrows - 1 - spec.row1) * (axh + gap_h)
-        y1 = bottom + (nrows - 1 - spec.row0) * (axh + gap_h) + axh
+        x0 = col_left[spec.col0]
+        x1 = col_left[spec.col1] + axw
+        y0 = row_bottom[spec.row1]
+        y1 = row_bottom[spec.row0] + axh
         ax._rect = (x0, y0, x1 - x0, y1 - y0)
 
 
@@ -1444,26 +1536,34 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     return fig, axes
 
 
-def _fit_cells(avail, n, gap, floor=0.02):
-    """Cell size and inter-cell gap that fit ``n`` cells into ``avail``.
+def _fit_cells(avail, n, gaps, floor=0.02):
+    """Cell size and per-boundary gaps that fit ``n`` cells into ``avail``.
 
-    The gap is what the decorations need; the cell is what is left over. When a
-    dense grid cannot afford both, the *gap* gives way first -- panels squeezed
-    together are still readable, and the alternative was worse than ugly: the
-    cell size alone was clamped to a floor while the gap kept its full width, so
-    the rows ran past the top of the canvas and the first nine rows of a 30x30
-    grid were simply not on the figure.
+    ``gaps`` is a list of ``n - 1`` inter-cell gaps -- not necessarily
+    uniform, since :meth:`Figure.group_spacing` only widens the boundaries
+    that actually border a group. The gap is what the decorations need; the
+    cell is what is left over. When a dense grid cannot afford both, the
+    *gap* gives way first -- panels squeezed together are still readable,
+    and the alternative was worse than ugly: the cell size alone was clamped
+    to a floor while the gap kept its full width, so the rows ran past the
+    top of the canvas and the first nine rows of a 30x30 grid were simply
+    not on the figure.
 
     If even the floor does not fit, the cells shrink below it rather than
-    overflow. Tiny but present beats absent.
+    overflow. Tiny but present beats absent. A non-uniform ``gaps`` shrinks
+    proportionally, keeping the ratio between a group boundary and a plain
+    tick-label gap rather than collapsing both to the same value.
     """
     if n <= 1:
-        return max(avail, 1e-4), 0.0
-    cell = (avail - (n - 1) * gap) / n
+        return max(avail, 1e-4), list(gaps)
+    total_gap = sum(gaps)
+    cell = (avail - total_gap) / n
     if cell >= floor:
-        return cell, gap
-    gap = max(0.0, (avail - n * floor) / (n - 1))
-    return max((avail - (n - 1) * gap) / n, 1e-4), gap
+        return cell, list(gaps)
+    max_total_gap = max(0.0, avail - n * floor)
+    scale = (max_total_gap / total_gap) if total_gap > 0 else 0.0
+    new_gaps = [g * scale for g in gaps]
+    return max((avail - max_total_gap) / n, 1e-4), new_gaps
 
 
 def _subplot_rect(nrows, ncols, index, sp=None):

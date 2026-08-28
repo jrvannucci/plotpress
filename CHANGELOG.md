@@ -13,6 +13,31 @@ anywhere in the source.
 
 ### Added
 
+- 15 more built-in colormaps, rounding the library out to matplotlib's usual
+  categories: single-hue/heat sequential (`Blues`, `Greens`, `Oranges`,
+  `Reds`, `Purples`, `YlOrRd`, `hot`), diverging (`Spectral`, `PiYG`, `BrBG`,
+  `seismic`), cyclic (`twilight`), and classic rainbows (`jet`, `turbo`,
+  `cool`) -- alongside the existing perceptually uniform (`viridis`,
+  `plasma`, `inferno`, `magma`, `cividis`) and `coolwarm`/`RdBu`/`gray`
+  ones, all reversible with `_r` like before. New gallery page
+  `auto_examples/gridded_data/plot_11_colormap_reference` shows every one
+  of them as a gradient swatch, grouped by category like matplotlib's own
+  colormap reference.
+
+### Changed
+
+- Whole-figure zoom (Zoom's Ctrl+wheel, and Magnify) now grows the SVG's
+  own rendered size on the page instead of cropping its viewBox. Cropping
+  never changed the SVG's on-page footprint, so once zoomed in there was
+  nothing for the browser's own scrollbars to reach -- a custom drag was
+  the only way to see the rest of a zoomed-in figure. Growing the element
+  makes the overflow real, native-scrollable page content: the browser's
+  own scrollbars, trackpad, and keyboard all work now, on top of drag-to-pan
+  still working exactly as before. Reset and double-click (Magnify) both
+  shrink back to the figure's natural size with nothing left to scroll.
+
+### Added
+
 - **Magnify** now double-click-resets the whole-figure view (there is no
   per-axes zoom here for Span/Zoom's own double-click reset to act on) and
   disables text selection on the figure while active, so a pan drag no
@@ -27,14 +52,40 @@ anywhere in the source.
   (two groups facing each other where neither title touches that boundary,
   so `tight_layout()` reserves nothing there automatically), without
   discarding any of `tight_layout()`'s own automatic margins the way
-  reaching for `subplots_adjust()` previously required. Applies uniformly
-  to every interior gap, like `subplots_adjust()`'s own `wspace`/`hspace` --
-  not per-boundary -- so a figure that needs it in one spot gets a little
-  more room elsewhere too. All six grouping examples that previously
-  fought this with hand-tuned `subplots_adjust()` margins (`plot_02`,
-  `plot_04` through `plot_08`) now use it instead, restoring
-  `tight_layout()`'s automatic title/tick-label/colorbar sizing that
-  `subplots_adjust()` had been overriding wholesale just to fix one gap.
+  reaching for `subplots_adjust()` previously required. Applies only to the
+  row/col boundaries that actually border a group's own bounding box --
+  two rows paired inside the *same* group stay exactly as tight as
+  `tight_layout()` would put them; only the seam facing a neighboring
+  group grows. `tight_layout()` also grows the figure to hold that room
+  rather than shrinking every axes to fit it, so a plot's own size is
+  unaffected by how much room its groups need between them. All six
+  grouping examples that previously fought this with hand-tuned
+  `subplots_adjust()` margins (`plot_02`, `plot_04` through `plot_08`) now
+  use it instead, restoring `tight_layout()`'s automatic
+  title/tick-label/colorbar sizing that `subplots_adjust()` had been
+  overriding wholesale just to fix one gap.
+
+### Fixed
+
+- `fig.group_spacing()` widened *every* interior row/column gap in the
+  grid uniformly, not just the boundaries that actually sit between two
+  different groups -- rows paired inside the same group (see
+  `plot_05_many_small_row_pairs`) got pushed apart by the same amount as a
+  genuine group-to-group seam, even though nothing needed the room there.
+  It also shrank every axes to make space for the reservation, since the
+  figure's own size never grew to hold it. Both fixed: the extra room now
+  lands only at boundaries a group's box actually touches, and
+  `tight_layout()` grows `figsize` by exactly what's reserved instead of
+  shrinking the plot area.
+- `tight_layout()` sized every axes' tick-label margin from the
+  figure-wide default (`Style.tick_label_size`/`tick_size`) even when that
+  axes had its own smaller `tick_params(labelsize=..., length=...)`
+  override -- a grid that shrinks its tick labels to fit small panels
+  (`plot_05_many_small_row_pairs`, `plot_06_many_small_column_pairs`,
+  `plot_08_fontsize_and_colorbar`, all of which do this) still reserved
+  margin sized for the bigger, unused default, over-widening every gap
+  next to it. Margin sizing now resolves the same per-axis tick style
+  `svg.py` already draws with.
 - A **Magnify** toolbar mode -- the same whole-figure wheel zoom as
   Ctrl+wheel under **Zoom**, but on a *plain* wheel, no Ctrl needed. Its own
   mode rather than folded into Zoom, so selecting it is an explicit choice
