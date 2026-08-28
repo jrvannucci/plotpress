@@ -11,6 +11,18 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- A point-pick marker's dot/label grew right along with the whole figure
+  under Magnify/Zoom's whole-figure wheel zoom, since its position and size
+  were baked as absolute coordinates straight into its SVG children with no
+  compensation for the SVG's own growing rendered CSS size. Fine at rest,
+  but a marker that read as a small dot became a blob tens of pixels across
+  a few zoom ticks later -- covering the very cell it was meant to point
+  at, worst on a large many-panel grid where each panel (and so each mesh
+  cell) starts out small to begin with. A marker's on-screen size now stays
+  constant at any Magnify/Zoom level.
+
 ### Added
 
 - `fig.adopt_axes(ax)` -- merges an axes built standalone (most often a

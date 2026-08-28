@@ -38,7 +38,11 @@ others):
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all. A marker's own dot scales
-  with the axes it lands on, so it never dwarfs a tiny panel in a large grid.
+  with the axes it lands on, so it never dwarfs a tiny panel in a large grid,
+  and stays that same on-screen size at any whole-figure Magnify/Zoom level
+  -- growing right along with the rest of the figure would otherwise turn a
+  readable dot into a blob covering the very cell it's pointing at a few
+  zoom ticks later, defeating the point of zooming in to see it more clearly.
 * **Annotate Point** -- like Point Pick, but prompts for text and locks a
   user-written note to that datum instead of the auto-generated readout;
   still steppable by arrow key and still tracks pan/zoom.
@@ -137,6 +141,12 @@ _JS_SOURCE = r"""
     } else {
       svg.style.width = ''; svg.style.height = '';
     }
+    // Every pin's own 1/zoomScale compensation (see layoutPin) has to be
+    // refreshed here too, not just when a pin is first dropped or moved --
+    // otherwise a pin placed *before* this zoom change keeps whatever
+    // scale factor it was born with, drifting out of sync with pins
+    // dropped after it.
+    document.querySelectorAll('.plotpress-pin').forEach(updatePinTransform);
     positionDocked();
   }
 
@@ -1159,17 +1169,37 @@ _JS_SOURCE = r"""
     return (Math.round(v * 1000) / 1000).toString();
   }
 
+  // Local, origin-relative coordinates -- (0,0) is the pin's own anchor --
+  // plus a group-level transform (translate to the anchor, scale by
+  // 1/zoomScale) instead of baking px/py straight into each child. Whole-
+  // figure zoom (see applyZoomSize) grows the *entire* SVG's rendered CSS
+  // size uniformly, which would otherwise carry a pin's fixed viewBox-unit
+  // radius up right along with the data -- readable as "8px" at rest and a
+  // 50px+ blob covering the very mesh cell it's pointing at eight ticks of
+  // Magnify later, the opposite of what zooming in is for. The 1/zoomScale
+  // factor cancels that growth out, so a pin renders at the same on-screen
+  // size at any zoom level; updatePinTransform() (called from
+  // applyZoomSize() for every existing pin, not just the one being laid
+  // out here) is what keeps that true as zoomScale changes after the pin
+  // already exists.
   function layoutPin(g, px, py, label) {
     var fs = 11, padx = 5, pady = 3;
     var bw = label.length * fs * 0.55 + padx * 2, bh = fs + pady * 2;
-    var bx = px + 8, by = py - bh - 4;
+    var bx = 8, by = -bh - 4;
     var dot = g.querySelector('circle'), rect = g.querySelector('rect'),
         text = g.querySelector('text');
-    dot.setAttribute('cx', px); dot.setAttribute('cy', py);
+    dot.setAttribute('cx', 0); dot.setAttribute('cy', 0);
     rect.setAttribute('x', bx); rect.setAttribute('y', by);
     rect.setAttribute('width', bw); rect.setAttribute('height', bh);
     text.setAttribute('x', bx + padx); text.setAttribute('y', by + fs + pady - 2);
     text.textContent = label;
+    g.dataset.anchorX = px; g.dataset.anchorY = py;
+    updatePinTransform(g);
+  }
+
+  function updatePinTransform(g) {
+    g.setAttribute('transform', 'translate(' + g.dataset.anchorX + ',' +
+      g.dataset.anchorY + ') scale(' + (1 / zoomScale) + ')');
   }
 
   // The selected dot draws a bit larger than its resting size -- scaled from

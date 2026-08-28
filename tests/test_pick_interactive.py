@@ -157,6 +157,69 @@ def test_marker_radius_scales_with_its_own_axes_size(page, tmp_path):
         "comfortably visible/clickable: got %.2f" % r_grid)
 
 
+def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path):
+    """Regression: a pin's dot/label used absolute cx/cy/x/y baked straight
+    into its SVG children, with no compensation for whole-figure zoom --
+    Magnify/Zoom grow the *entire* SVG's rendered CSS size uniformly (see
+    _interactive.py's applyZoomSize), which carried a pin's fixed radius up
+    right along with it: readable as a small dot at rest, but a blob tens of
+    pixels across a few zoom ticks later, covering the very mesh cell it was
+    meant to point at -- worst on a large many-panel grid, where each panel
+    (and so each mesh cell) starts out tiny to begin with. A pin's own
+    on-screen size must stay constant at any zoom level."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    fig, axes = plotpress.subplots(8, 8, figsize=(16, 12))
+    x = np.linspace(0, 10, 11)
+    y = np.linspace(0, 5, 6)
+    X, Y = np.meshgrid(x, y)
+    for i, ax in enumerate(axes.ravel()):
+        Z = np.sin(X - 0.3 * i) * np.exp(-0.05 * Y)
+        ax.pcolormesh(x, y, Z, cmap="viridis", vmin=-1, vmax=1)
+        ax.tick_params(labelsize=4)
+    fig.tight_layout()
+    path = tmp_path / "marker_constant_size_under_magnify.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 18, 3.0, 5.0)
+    _click_mode(page, "Point Pick", ux, uy)
+    diameter_before = page.evaluate(
+        "() => document.querySelector('.plotpress-pin circle')"
+        ".getBoundingClientRect().width")
+
+    svg_width_before = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Magnify') b.click(); })""")
+    page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          for (let i = 0; i < 8; i++) {
+            document.elementFromPoint(c.x, c.y).dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100}));
+          }
+        }""", [ux, uy])
+    svg_width_after = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    diameter_after = page.evaluate(
+        "() => document.querySelector('.plotpress-pin circle')"
+        ".getBoundingClientRect().width")
+
+    assert svg_width_after > svg_width_before * 3, (
+        "the fixture must actually zoom substantially, or this test proves "
+        "nothing: %.0f -> %.0f" % (svg_width_before, svg_width_after))
+    assert diameter_after == pytest.approx(diameter_before, rel=0.02), (
+        "a pin's on-screen size must stay constant across Magnify zoom: "
+        "%.2fpx before, %.2fpx after zooming %.1fx" %
+        (diameter_before, diameter_after, svg_width_after / svg_width_before))
+
+
 def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
     """binary_pick_data's float16 tier (chosen only at low enough
     pick_precision for a bounded-range mesh -- see figure._fits_float16) has

@@ -50,7 +50,10 @@ The toolbar
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
        images). Right-click deletes a marker; Escape clears all. A marker's
        own dot scales down with the axes it landed on, so it never dwarfs a
-       tiny panel in a large grid the way a fixed size would.
+       tiny panel in a large grid the way a fixed size would -- and stays
+       that same on-screen size at any whole-figure Magnify/Zoom level,
+       rather than growing along with the figure until it covers the very
+       cell it is pointing at.
    * - **Annotate Point**
      - Like Point Pick, but prompts for text and locks a user-written note to
        that datum instead of the auto-generated readout; still steppable by
