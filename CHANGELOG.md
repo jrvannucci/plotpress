@@ -13,6 +13,18 @@ anywhere in the source.
 
 ### Added
 
+- Extracted/picked points now carry a `group` field -- the title of any
+  `fig.group()` box the source axes belongs to (empty if none, `", "`-joined
+  if more than one), the same way they already carry `axes_title`. Reaches
+  the CSV/JSON Extract panel and `window.plotpressGetMarkers()` alike, since
+  both build off the same per-axes metadata payload.
+- `docs/examples/grouping/plot_10_nested_groups.py` -- a worked example of
+  `fig.group()` boxes that visually nest (an outer group's box containing
+  two narrower ones, titles included). `fig.group()` itself has no notion
+  of hierarchy; the example spells out the two choices (distinct title
+  edges, and margins wide enough for the outer box's `pad` to clear the
+  inner titles) that make the containment read cleanly rather than as
+  overlapping dashes or clipped text.
 - 15 more built-in colormaps, rounding the library out to matplotlib's usual
   categories: single-hue/heat sequential (`Blues`, `Greens`, `Oranges`,
   `Reds`, `Purples`, `YlOrRd`, `hot`), diverging (`Spectral`, `PiYG`, `BrBG`,
@@ -26,6 +38,13 @@ anywhere in the source.
 
 ### Changed
 
+- The interactive toolbar's buttons are now grouped by what they do instead
+  of the order features were added in: navigate the view (Span/Zoom/Magnify,
+  then Reset), mark data (Point Pick/Annotate Point/Annotate Free), control
+  what's visible (Hide Annotations), then get something out of the figure
+  (Extract, then Save/Save As). Purely a display-order change -- every
+  button is still selected by its own label, nothing about what any of them
+  do changed.
 - Whole-figure zoom (Zoom's Ctrl+wheel, and Magnify) now grows the SVG's
   own rendered size on the page instead of cropping its viewBox. Cropping
   never changed the SVG's on-page footprint, so once zoomed in there was

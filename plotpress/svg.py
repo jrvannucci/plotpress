@@ -325,6 +325,12 @@ def axes_metadata(fig):
             # and any color-encoded value actually mean, not just bare numbers.
             "xlabel": ax._xlabel, "ylabel": ax._ylabel,
             "zlabel": _colorbar_label(ax, fig),
+            # Which fig.group() box(es) this axes belongs to, if any -- joined
+            # with ", " on the rare figure where an axes was added to more
+            # than one group, empty when it belongs to none. Lets a picked
+            # record from a clustered panel say which cluster it came from,
+            # the same way axes_title says which panel.
+            "group": ", ".join(g["title"] for g in fig._groups if ax in g["axes"]),
             # False excludes this axes from Point Pick/Annotate Point --
             # see Axes.set_pickable.
             "pickable": bool(ax._pickable),

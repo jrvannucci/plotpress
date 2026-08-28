@@ -43,6 +43,8 @@ The toolbar
        zoom to reset here, unlike Span/Zoom below); text on the
        figure -- tick labels, titles -- is left unselectable for as long as
        Magnify is active, so a pan drag doesn't also highlight it.
+   * - **Reset**
+     - Restore the view; double-click resets just the plot under the cursor.
    * - **Point Pick**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
@@ -56,25 +58,23 @@ The toolbar
    * - **Annotate Free**
      - Drop a user-written note anywhere on the figure, not locked to any
        datum -- including the margins or the gap between subplots.
-   * - **Reset**
-     - Restore the view; double-click resets just the plot under the cursor.
-   * - **Extract**
-     - Copy/download all markers + annotations, or return them to Python.
    * - **Hide Annotations**
      - A standalone toggle, not a mode -- available regardless of which tool
        is selected. Hides every pin and annotation without deleting any of
        them; toggling it back to "Show Annotations" restores them exactly as
        they were, text included.
-   * - **Save As**
-     - Download the current page -- pan/zoom, every pin/annotation, hidden
-       legend series, Hide Annotations -- as a new, equally self-contained
-       HTML file. Reopening it resumes this exact session, not just what was
-       originally plotted.
+   * - **Extract**
+     - Copy/download all markers + annotations, or return them to Python.
    * - **Save**
-     - The same, but tries to overwrite the file this page was opened from
-       instead of downloading a new one. That needs the File System Access
-       API (Chromium, a secure context); anywhere it's unavailable this
-       falls back to the same download Save As does.
+     - Tries to overwrite the file this page was opened from -- pan/zoom,
+       every pin/annotation, hidden legend series, Hide Annotations, all
+       included -- instead of downloading a new one. That needs the File
+       System Access API (Chromium, a secure context); anywhere it's
+       unavailable this falls back to the same download Save As does.
+   * - **Save As**
+     - The same, but always downloads a new, equally self-contained HTML
+       file rather than trying to overwrite the original. Reopening it
+       resumes this exact session, not just what was originally plotted.
    * - **▸** / **◂**
      - Collapses the whole button row (a screenshot, an unobstructed view)
        without hiding this one handle, which stays put so the row can always
@@ -103,9 +103,11 @@ just a bare index. ``xlabel``/``ylabel`` carry that axes' own axis labels, and
 own convention for labeling what a colorbar's scale means is
 ``fig.colorbar(mesh, ax=ax).set_title("units")``) -- a colorbar shared across
 several axes via ``fig.colorbar(mesh, ax=[a, b])`` reports the same
-``zlabel`` for each of them. Together these mean a value pulled out of
-context (a CSV row, a JSON dict) still says what it means, not just a bare
-number.
+``zlabel`` for each of them. ``group`` carries the title of any
+:meth:`~plotpress.figure.Figure.group` box that axes sits in -- empty when it
+belongs to none, joined with ``", "`` on the rare axes added to more than
+one. Together these mean a value pulled out of context (a CSV row, a JSON
+dict) still says what it means, not just a bare number.
 
 :meth:`~plotpress.axes.Axes.set_pick_context` attaches further, axes-level
 key/value context that rides along on every record picked from that axes --

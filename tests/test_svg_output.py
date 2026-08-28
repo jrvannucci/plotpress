@@ -833,6 +833,32 @@ def test_axes_metadata_carries_xlabel_ylabel():
     assert meta[0]["zlabel"] == ""   # no colorbar attached
 
 
+def test_axes_metadata_carries_group_title():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 3)
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    fig.group("Cluster A", [axes[0], axes[1]])
+    meta = axes_metadata(fig)
+    assert meta[0]["group"] == "Cluster A"
+    assert meta[1]["group"] == "Cluster A"
+    assert meta[2]["group"] == ""   # not a member of any group
+
+
+def test_axes_metadata_joins_multiple_group_memberships():
+    from plotpress.svg import axes_metadata
+
+    fig, axes = plotpress.subplots(1, 2)
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    fig.group("Row", list(axes))
+    fig.group("Just the first", [axes[0]])
+    meta = axes_metadata(fig)
+    assert meta[0]["group"] == "Row, Just the first"
+    assert meta[1]["group"] == "Row"
+
+
 def test_axes_metadata_carries_zlabel_from_colorbar():
     from plotpress.svg import axes_metadata
 

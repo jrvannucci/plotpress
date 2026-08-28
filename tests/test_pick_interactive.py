@@ -422,6 +422,45 @@ def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
     assert row[header.index("note")] == 'comma, and "quote"'
 
 
+def test_extracted_record_carries_group_title(page, tmp_path):
+    """A picked point's record reports which fig.group() box its axes sits
+    in (empty when it belongs to none), the same way it already reports
+    axes_title -- so a marker from a clustered panel says which cluster it
+    came from without the caller having to cross-reference axes indices by
+    hand."""
+    import plotpress
+    from pick_cases import px
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0.0, 1.0], [0.0, 1.0])
+    axes[1].plot([0.0, 1.0], [1.0, 0.0])
+    fig.group("Cluster A", [axes[0]])
+    path = tmp_path / "group_field.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux0, uy0 = px(fig, 0, 1.0, 1.0)
+    grouped = _click_mode(page, "Point Pick", ux0, uy0)
+    assert grouped[0]["group"] == "Cluster A"
+
+    # Point Pick is already the active tool -- re-clicking its own button
+    # would toggle it off (see setMode()), so the second click dispatches
+    # straight to the SVG instead of going through _click_mode again.
+    ux1, uy1 = px(fig, 1, 1.0, 0.0)
+    markers = page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          const el = document.elementFromPoint(c.x, c.y) || svg;
+          el.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+          return window.plotpressGetMarkers();
+        }""", [ux1, uy1])
+    assert len(markers) == 2
+    assert markers[-1]["group"] == ""
+
+
 def test_pick_values_key_does_not_clobber_structured_fields(page, tmp_path):
     """Regression: a series' values={...} dict was merged onto the exported
     record with no collision guard, so a key sharing a name with a

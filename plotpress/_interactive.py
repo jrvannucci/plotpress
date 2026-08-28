@@ -33,6 +33,8 @@ others):
   no per-axes zoom here to reset the way Span/Zoom's double-click does);
   text on the figure is left unselectable while Magnify is active, so a pan
   drag doesn't also highlight the tick labels/titles it sweeps across.
+* **Reset** -- restore *all* plots' views and deselect (back to inert default).
+  In Span/Zoom mode, double-clicking a single plot resets only that plot.
 * **Point Pick** -- click a plot to pin an annotation of the value there; snaps
   to the nearest data point, else a free coordinate readout (arrow cursor).
   Click a pin to remove it; Escape clears all. A marker's own dot scales
@@ -44,9 +46,11 @@ others):
   locked to any datum -- including the margins or the gap between subplots.
   Inside an axes it still tracks that axes' data coordinate; outside one it
   just stays at its fixed figure position.
-* **Reset** -- restore *all* plots' views and deselect (back to inert default).
-  In Span/Zoom mode, double-clicking a single plot resets only that plot.
-* **Extract** -- open a panel to copy out picked/annotated points as CSV.
+
+The buttons themselves group by what they do, not the order features were
+added in: navigate the view (Span/Zoom/Magnify, then Reset), mark data
+(the three pick/annotate modes above), control what's visible, then get
+something out of the figure.
 
 **Hide Annotations** is not a mode -- it's a standalone toggle, available
 regardless of the current mode, that hides every pin/annotation (both
@@ -54,6 +58,8 @@ auto-generated Point Pick markers and user-written Annotate notes) without
 deleting them. Toggling it back to "Show Annotations" brings them all back
 exactly as they were, including any text or selection state -- it only ever
 flips a CSS display rule, never touches the underlying marker data.
+
+**Extract** opens a panel to copy out picked/annotated points as CSV.
 
 **Save As** downloads the current page -- pan/zoom, every pin/annotation,
 hidden-legend-series toggles, and Hide Annotations -- as a new, equally
@@ -321,16 +327,21 @@ _JS_SOURCE = r"""
   toolbarWrap.className = 'plotpress-toolbar-wrap';
   var bar = document.createElement('div');
   bar.className = 'plotpress-toolbar';
+  // Grouped by what the button does, not the order features were added in:
+  // navigate the view (span/zoom/magnify, then reset it), mark data
+  // (the three pick/annotate modes), control what's visible (the
+  // annotations toggle), then get something out of the figure (extract the
+  // marked data, then save the page itself).
   var TOOLS = [
     { mode: 'span', label: 'Span' },
     { mode: 'zoom', label: 'Zoom' },
     { mode: 'magnify', label: 'Magnify' },
+    { mode: 'reset', label: 'Reset' },
     { mode: 'pick', label: 'Point Pick' },
     { mode: 'note-point', label: 'Annotate Point' },
     { mode: 'note-free', label: 'Annotate Free' },
-    { mode: 'reset', label: 'Reset' },
-    { action: 'extract', label: 'Extract' },
     { action: 'toggle-annotations', label: 'Hide Annotations' },
+    { action: 'extract', label: 'Extract' },
     { action: 'save', label: 'Save' },
     { action: 'save-as', label: 'Save As' },
   ];
@@ -1434,8 +1445,11 @@ _JS_SOURCE = r"""
     // record carries one. xlabel/ylabel/zlabel (zlabel from any colorbar
     // attached to this axes, shared or not) ride along too, so a value
     // pulled out of context still says what it means, not just a bare
-    // number. Any per-axes context (Axes.set_pick_context) rides along as
-    // well, without clobbering a structured field of the same name (x, y,
+    // number. group is the title of whichever fig.group() box this axes
+    // sits in (joined with ", " if it's in more than one, empty if none),
+    // so a marker from a clustered panel says which cluster it came from.
+    // Any per-axes context (Axes.set_pick_context) rides along as well,
+    // without clobbering a structured field of the same name (x, y,
     // kind, ...) that the picked data itself already set.
     if (rec.axes !== undefined) {
       var am = META[rec.axes];
@@ -1443,6 +1457,7 @@ _JS_SOURCE = r"""
       rec.xlabel = am ? am.xlabel : '';
       rec.ylabel = am ? am.ylabel : '';
       rec.zlabel = am ? am.zlabel : '';
+      rec.group = am ? am.group : '';
       if (am && am.context) {
         for (var ck in am.context) if (!(ck in rec)) rec[ck] = am.context[ck];
       }
