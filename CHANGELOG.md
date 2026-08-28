@@ -13,6 +13,23 @@ anywhere in the source.
 
 ### Added
 
+- `fig.adopt_axes(ax)` -- merges an axes built standalone (most often a
+  copy that just crossed a process boundary: a `joblib`/`multiprocessing`
+  worker's return value) into this figure, in place of whichever of its
+  own axes shares that grid position. A `Figure` isn't something a worker
+  process can share with the one that owns it -- pickling an axes to hand
+  it to a worker always produces a copy, never a live reference, however
+  identical it looks, so mutating that copy inside the worker never
+  touched the original before now. Lets a worker function plot directly
+  onto the axes it's given (fit + plot in one call, no separate
+  return-arrays-then-replot step) whether it's running in this process or
+  a subprocess -- the function itself never needs to know which. A
+  colorbar axes is appended instead of replacing a slot, since
+  `fig.colorbar()` always creates one that never existed in the parent to
+  begin with. See `docs/examples/parallel_building/plot_01_joblib_lazy_parquet_fit.py`
+  for a full worked example (a lazy parquet scan per panel, fit inside a
+  joblib worker, merged back with `adopt_axes()`; the same worker function
+  also plots directly when called outside joblib, for live debugging).
 - Extracted/picked points now carry a `group` field -- the title of any
   `fig.group()` box the source axes belongs to (empty if none, `", "`-joined
   if more than one), the same way they already carry `axes_title`. Reaches

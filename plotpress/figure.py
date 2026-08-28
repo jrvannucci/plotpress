@@ -410,6 +410,62 @@ class Figure:
         """
         return GridSpec(self, nrows, ncols, **kwargs)
 
+    def adopt_axes(self, ax) -> Axes:
+        """Merge an axes built standalone -- most commonly a copy that just
+        crossed a process boundary -- into this figure, in place of
+        whichever of this figure's own axes shares its grid position.
+
+        A process boundary always hands back a *copy*: pickling an axes to
+        send it into a ``joblib``/``multiprocessing`` worker and back never
+        preserves object identity, however it looks -- ``ax.figure`` on
+        what comes back is a copy of this figure too, not ``self``, and
+        that copy's own ``ax.axes`` list still has the *worker's* version
+        of everything, not this figure's. Passed straight to
+        ``fig.axes.append(ax)``, it would render at the wrong position
+        (or not enter the layout at all) and leave ``ax.figure`` pointing
+        at that disconnected copy. ``adopt_axes`` fixes both: finds the
+        axes already in ``self.axes`` whose :class:`SubplotSpec` matches
+        ``ax``'s (same grid shape and cell span) and replaces it there --
+        same list position, so :meth:`tight_layout`/:meth:`subplots_adjust`
+        keep placing it exactly where that slot always was -- and
+        reparents ``ax.figure`` to ``self``.
+
+        A colorbar axes (``ax._subplotspec is None``, since it was never
+        placed on the grid itself) has no slot to match -- it is appended
+        instead, since :meth:`colorbar` always creates one that never
+        existed in this figure to begin with. Adopt it and the axes it
+        belongs to from the *same* returned result (e.g. both elements of
+        a worker's ``return ax, cax``): pickling preserves the object
+        graph *within* one call, so ``cax``'s own reference to ``ax``
+        survives the round trip already pointing at the exact object this
+        adopts, without anything further to fix up here.
+
+        Only ever carries one axes' worth of state across that boundary --
+        anything that compares axes by identity across *more than one* of
+        them (:meth:`group`, a colorbar shared over several axes,
+        :meth:`align_xlabels`) has to run after every worker's result has
+        been adopted, against the real, adopted objects -- never before
+        dispatch, and never inside the worker itself.
+        """
+        ax.figure = self
+        if ax._subplotspec is None:
+            self.axes.append(ax)
+            return ax
+        spec = ax._subplotspec
+        for i, existing in enumerate(self.axes):
+            s = existing._subplotspec
+            if (s is not None and s.nrows == spec.nrows and s.ncols == spec.ncols
+                    and s.row0 == spec.row0 and s.row1 == spec.row1
+                    and s.col0 == spec.col0 and s.col1 == spec.col1):
+                self.axes[i] = ax
+                return ax
+        raise ValueError(
+            "adopt_axes(): no existing axes in this figure occupies "
+            f"{spec.nrows}x{spec.ncols} rows {spec.row0}-{spec.row1}, "
+            f"cols {spec.col0}-{spec.col1} -- adopt_axes() replaces an "
+            "axes already on the grid, it does not create a new slot"
+        )
+
     def subplots(self, nrows=1, ncols=1, squeeze=True, sharex=False, sharey=False,
                  projection=None):
         """Create a grid of axes; return a single Axes or a NumPy array of them.

@@ -87,3 +87,66 @@ Figure-level text
     Shared x / y labels centered along the bottom / left of the figure. These
     span all subplots and coexist with each axes' own ``set_title`` /
     ``set_xlabel``.
+
+Building a figure across processes
+-----------------------------------
+
+``fig.adopt_axes(ax)``
+    Merge an axes built standalone -- most often a copy that just crossed a
+    process boundary (a ``joblib``/``multiprocessing`` worker's return value)
+    -- into this figure, in place of whichever of this figure's own axes
+    shares its grid position.
+
+    A ``Figure`` isn't something a worker process can share with the one
+    that owns it: pickling an axes to hand it to a worker (or back) always
+    produces a copy, never a live reference, however identical it looks --
+    mutating that copy inside the worker never touches the original.
+    ``adopt_axes`` is the fix, not a workaround for avoiding it: give a
+    worker function a real axes to plot on, let it plot on a pickled copy
+    of that axes in its own process, and merge the finished copy back with
+    ``adopt_axes`` once it returns.
+
+    .. code-block:: python
+
+       from joblib import Parallel, delayed
+
+       def analyze_panel(ax, x, y, title):
+           # fit + plot -- identical whether ax came from this process
+           # or a pickled copy of one; adopt_axes() is never called here
+           coeffs = np.polyfit(x, y, deg=2)
+           ax.scatter(x, y)
+           ax.plot(x, np.polyval(coeffs, x), color="red")
+           ax.set_title(title)
+           return ax
+
+       fig, axes = plotpress.subplots(2, 2)
+       panels = {"a": {"ax": axes[0, 0], "x": xa, "y": ya, "title": "a"}, ...}
+
+       built = Parallel(n_jobs=4)(delayed(analyze_panel)(**kw) for kw in panels.values())
+       for built_ax in built:
+           fig.adopt_axes(built_ax)
+       fig.tight_layout()
+
+       # debugging one panel later, live: the SAME function, called
+       # directly -- no joblib, no adopt_axes() needed at all
+       analyze_panel(axes[0, 0], xa, ya, "a")
+
+    A colorbar axes has no grid position to match, since :meth:`~plotpress.figure.Figure.colorbar`
+    always creates one that never existed in this figure to begin with --
+    it is appended instead of replacing a slot. Adopt it and the axes it
+    belongs to from the *same* worker result (e.g. both elements of a
+    returned ``(ax, cax)`` tuple): pickling preserves the object graph
+    *within* one call, so the colorbar's own reference to its parent axes
+    survives the round trip already correct.
+
+    Anything that compares axes by identity across more than one of them
+    -- :meth:`~plotpress.figure.Figure.group`, a colorbar shared over
+    several axes, ``align_xlabels``/``align_ylabels`` -- has to run
+    *after* every worker's result has been adopted, against the real,
+    merged objects. Never before dispatch, and never inside the worker
+    itself: identity never survives a process boundary, so there is no
+    way to express "these two axes belong to the same group" from inside
+    two different workers that each only ever see their own copy.
+
+    See :doc:`../auto_examples/parallel_building/plot_01_joblib_lazy_parquet_fit`
+    for a full worked example.

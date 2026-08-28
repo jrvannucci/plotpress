@@ -513,6 +513,7 @@ sphinx_gallery_conf = {
         "examples/figure_layout",
         "examples/grouping",
         "examples/advanced_axes",
+        "examples/parallel_building",
         "examples/polar",
         "examples/threed",
         "examples/signal",
