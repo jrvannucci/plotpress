@@ -4,6 +4,12 @@ Plotting methods
 Every plot type is a method on :class:`~plotpress.axes.Axes`. Signatures mirror
 matplotlib. See the :ref:`gallery <gallery>` for a rendered example of each.
 
+Every one of them also accepts ``zorder=0`` (omitted from the signatures
+below to keep them focused on what's specific to each method) -- draw order
+within an axes, independent of call order. Ties keep call order, so this is
+opt-in: nothing changes unless you pass it. See
+:doc:`../auto_examples/axes_features/plot_14_zorder` for a worked example.
+
 Lines and areas
 ---------------
 
@@ -96,7 +102,10 @@ Statistical
 
 ``imshow(A, cmap="viridis", norm=None, vmin=None, vmax=None, extent=None, origin="upper", alpha=1.0)``
     Display a 2-D (colormapped) or RGB(A) array. ``origin`` is ``"upper"`` or
-    ``"lower"``; ``extent`` is ``(xmin, xmax, ymin, ymax)``.
+    ``"lower"``; ``extent`` is ``(xmin, xmax, ymin, ymax)``. ``alpha`` blends
+    into whatever is drawn underneath -- an artist drawn first, or pinned
+    underneath via a lower ``zorder``, shows through rather than being fully
+    covered.
 
 ``contour(*args, levels=8, colors=None, cmap="viridis", vmin=None, vmax=None, label=None)``
     Contour lines via marching squares: ``contour(Z)`` or ``contour(x, y, Z)``.

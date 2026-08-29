@@ -821,7 +821,11 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # Artists: fixed clip to the axes rect, then a transformable zoom group that
     # per-axes data zoom remaps via one affine (old limits -> new limits).
     body.append(f'<g clip-path="url(#{clip_id})"><g id="zoom{index}" class="plotpress-zoom">')
-    for k, artist in enumerate(ax.artists):
+    # Draw order follows zorder (ties keep call order), but k stays each
+    # artist's own call-order index -- pick/series ids and legend order must
+    # stay stable regardless of what zorder does to the visual stacking.
+    draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
+    for k, artist in draw_order:
         prims = artist_to_prims(artist, tr, index, k, size_scale=st.dpi / 72.0)
         if prims is not None:
             body.extend(_emit_prim(p) for p in prims)

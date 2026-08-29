@@ -13,6 +13,23 @@ anywhere in the source.
 
 ### Added
 
+- Every plotting method gains `zorder=0` -- draw order within an axes,
+  independent of call order (ties keep call order, matching the only
+  behavior before this existed). Previously there was no way to reorder
+  the visual stack at all short of reordering the calls themselves.
+
+### Fixed
+
+- `imshow(alpha=...)` was accepted, stored, and documented, but never
+  actually applied -- `apply_colormap()` always emitted a full-255 alpha
+  channel, and no opacity ever reached the embedded `<image>`, so
+  `alpha=0.2` rendered identically to `alpha=1.0` in both backends. Now
+  scales the existing alpha channel rather than overwriting it, so a NaN
+  cell's own transparency and an RGBA input's own alpha channel both stay
+  correct alongside the new uniform `alpha`.
+
+### Added
+
 - `plot(..., marker=None, markersize=None, markerfacecolor=None)` -- a dot
   at each vertex alongside the line, the same constant-pixel-size marker
   `scatter()` already draws (only round shapes are drawn; any other

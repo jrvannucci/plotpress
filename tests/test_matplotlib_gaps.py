@@ -1277,3 +1277,84 @@ def test_contour_default_vmin_vmax_matches_old_evenly_spaced_behavior():
     fig, ax = plotpress.subplots()
     c = ax.contour(g, g, Z, levels=5, cmap="viridis")
     assert len(set(c.colors)) == len(c.levels)   # 5 distinct levels, 5 distinct colors
+
+
+# -- Tier 0/1 gaps closed: imshow(alpha=) was a silent no-op; zorder was
+# missing entirely, cross-cutting every artist type --------------------
+
+def test_imshow_alpha_actually_renders():
+    """Regression: Image.__init__ stored alpha but nothing ever read it back
+    -- apply_colormap() always emitted a full-255 alpha channel, and no
+    opacity ever reached the <image> tag, so imshow(alpha=...) rendered
+    identically to alpha=1.0 in both backends despite being documented as
+    a working parameter."""
+    import numpy as np
+
+    X = np.random.RandomState(0).rand(8, 8)
+    fig1, ax1 = plotpress.subplots()
+    ax1.imshow(X, alpha=1.0)
+    fig2, ax2 = plotpress.subplots()
+    ax2.imshow(X, alpha=0.2)
+    assert fig1.to_svg() != fig2.to_svg()
+
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+    arr1 = np.asarray(figure_to_image(fig1))
+    arr2 = np.asarray(figure_to_image(fig2))
+    assert not np.array_equal(arr1, arr2)   # low alpha must blend toward the background
+
+
+def test_imshow_alpha_still_respects_nan_transparency():
+    """The alpha fix multiplies into the existing alpha channel rather than
+    overwriting it -- a NaN cell (already transparent) must stay transparent
+    regardless of the uniform alpha=, not partially "reappear"."""
+    import numpy as np
+    from plotpress.artists import Image
+
+    A = np.array([[0.0, np.nan], [1.0, 0.5]])
+    im = Image(A, alpha=0.5)
+    rgba = im.rgba()
+    assert rgba[0, 1, 3] == 0          # NaN cell: still fully transparent
+    assert 0 < rgba[0, 0, 3] < 255     # finite cell: scaled down, not opaque
+
+
+def test_zorder_default_is_call_order():
+    """Backward compatibility: with no explicit zorder, later calls still
+    draw on top, exactly as before zorder existed."""
+    import re
+    fig, ax = plotpress.subplots()
+    ax.fill_between([0, 1], [0, 1], [1, 1], color="#0000ff")
+    ax.fill_between([0, 1], [0, 0.5], [1.5, 1.5], color="#ff0000")
+    order = [m for m in re.findall(r'fill="(#[0-9a-f]{6})"', fig.to_svg())
+             if m in ("#0000ff", "#ff0000")]
+    assert order == ["#0000ff", "#ff0000"]   # red (called second) drawn on top
+
+
+def test_zorder_overrides_call_order_in_svg():
+    """A lower zorder draws underneath even if it was called later."""
+    import re
+    fig, ax = plotpress.subplots()
+    ax.fill_between([0, 1], [0, 1], [1, 1], color="#0000ff", zorder=1)
+    ax.fill_between([0, 1], [0, 0.5], [1.5, 1.5], color="#ff0000", zorder=0)
+    order = [m for m in re.findall(r'fill="(#[0-9a-f]{6})"', fig.to_svg())
+             if m in ("#0000ff", "#ff0000")]
+    assert order == ["#ff0000", "#0000ff"]   # red drawn first (underneath) despite being called second
+
+
+def test_zorder_overrides_call_order_in_raster():
+    """Same regression as the SVG version, checked against actual rendered
+    pixels in the raster backend -- svg.py and raster.py sort independently,
+    so each needs its own proof."""
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.bar([0], [1], width=2.0, color="#0000ff", zorder=0)
+    ax.bar([0], [1], width=1.0, color="#ff0000", zorder=-1)   # narrower, called
+                                                               # later, but lower zorder
+    ax.set_xlim(-2, 2)
+    ax.set_ylim(0, 1.2)
+    arr = np.asarray(figure_to_image(fig, scale=1))
+    h, w, _ = arr.shape
+    cx, cy = w // 2, int(h * 0.6)   # inside both rects' overlap
+    assert tuple(arr[cy, cx][:3]) == (0, 0, 255)   # blue on top despite red's later call

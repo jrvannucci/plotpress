@@ -18,6 +18,7 @@ class Artist:
     """Base class: exposes a data bounding box for autoscaling."""
 
     label = None
+    zorder = 0  # draw order within an axes; higher draws on top, ties keep call order
 
     def data_bounds(self):
         """Return ``(xmin, xmax, ymin, ymax)`` or ``None`` if empty."""
@@ -775,6 +776,13 @@ class Image(Artist):
                 rgba = np.concatenate([arr, alpha], axis=2)
             else:
                 rgba = arr
+        if self.alpha != 1.0:
+            # Regression: alpha was accepted and stored but never read again --
+            # scale the existing alpha channel (already 0 over NaN cells, or
+            # whatever an RGBA input's own alpha carried) rather than
+            # overwrite it, so both stay correct at once.
+            rgba = rgba.copy()
+            rgba[..., 3] = (rgba[..., 3].astype(np.float64) * self.alpha).round().astype(np.uint8)
         # Renderer places row 0 at the top; 'lower' origin needs a flip.
         return rgba if self.origin == "upper" else np.flipud(rgba)
 

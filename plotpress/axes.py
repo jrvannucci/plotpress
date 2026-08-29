@@ -257,7 +257,7 @@ class Axes:
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle="-",
              label=None, alpha=1.0, values=None, marker=None, markersize=None,
-             markerfacecolor=None):
+             markerfacecolor=None, zorder=0):
         """Plot ``y`` or ``x, y`` as a line. Returns the :class:`Line2D`.
 
         ``values`` is an optional ``{name: array}`` of extra per-point
@@ -291,12 +291,13 @@ class Axes:
             markerfacecolor=(self._resolve_color(markerfacecolor)
                             if markerfacecolor is not None else None),
         )
+        line.zorder = zorder
         self.artists.append(line)
         return line
 
     def scatter(self, x, y, s=None, c=None, color=None, marker="o",
                 label=None, alpha=1.0, cmap="viridis", norm=None,
-                vmin=None, vmax=None, values=None):
+                vmin=None, vmax=None, values=None, zorder=0):
         """Scatter ``y`` vs ``x``. ``c`` maps values through ``cmap``.
 
         ``values`` is an optional ``{name: array}`` of extra per-point
@@ -316,13 +317,14 @@ class Axes:
             marker=marker, label=label, alpha=alpha,
             c=c, cmap=cmap, norm=norm, values=values,
         )
+        coll.zorder = zorder
         self.artists.append(coll)
         return coll
 
     def plot_frames(self, x, Y, slider_values=None, slider_label="frame",
                     shared=True, slider_group=None,
                     color=None, linewidth=None, linestyle="-", label=None,
-                    alpha=1.0):
+                    alpha=1.0, zorder=0):
         """Plot 3-D data as a line with a slider over the extra dimension.
 
         ``Y`` has shape ``(n_frames, n_points)``; ``x`` is shared
@@ -356,6 +358,7 @@ class Axes:
             index = slider_group if slider_group is not None else unit
             is_global, axes_key = False, axes_index
         art.slider_unit = unit
+        art.zorder = zorder
         self.artists.append(art)
         self.figure._register_slider(
             unit, index, Y.shape[0], slider_values, slider_label,
@@ -364,7 +367,7 @@ class Axes:
         return art
 
     def pcolormesh(self, *args, cmap="viridis", norm=None, vmin=None, vmax=None,
-                   shading="flat"):
+                   shading="flat", zorder=0):
         """Pseudocolor plot of a 2-D array.
 
         Signatures: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``. ``X``/``Y`` may
@@ -381,13 +384,14 @@ class Axes:
 
         mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
                         shading=shading)
+        mesh.zorder = zorder
         self.artists.append(mesh)
         return mesh
 
     def pcolormesh_frames(self, *args, slider_values=None, slider_label="frame",
                           shared=True, slider_group=None, cmap="viridis",
                           norm=None, vmin=None, vmax=None, shading="flat",
-                          label=None, alpha=1.0):
+                          label=None, alpha=1.0, zorder=0):
         """Plot 4-D data as a pcolormesh with a slider over the extra dimension.
 
         Signatures: ``pcolormesh_frames(C)`` or ``pcolormesh_frames(X, Y, C)``,
@@ -418,6 +422,7 @@ class Axes:
             index = slider_group if slider_group is not None else unit
             is_global, axes_key = False, axes_index
         art.slider_unit = unit
+        art.zorder = zorder
         self.artists.append(art)
         self.figure._register_slider(
             unit, index, art.n_frames, slider_values, slider_label,
@@ -427,7 +432,7 @@ class Axes:
 
     def bar(self, x, height, width=0.8, bottom=0.0, color=None, edgecolor=None,
             linewidth=0.8, label=None, alpha=1.0, yerr=None, xerr=None,
-            capsize=3.0, ecolor=None):
+            capsize=3.0, ecolor=None, zorder=0):
         """Vertical bar chart.
 
         ``yerr``/``xerr`` draw error bars centered at each bar's own top
@@ -440,6 +445,7 @@ class Axes:
         b = Bars(x, height, width, bottom, "vertical",
                  color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
+        b.zorder = zorder
         self.artists.append(b)
         if yerr is not None or xerr is not None:
             top = b.base + b.length
@@ -451,13 +457,14 @@ class Axes:
 
     def barh(self, y, width, height=0.8, left=0.0, color=None, edgecolor=None,
              linewidth=0.8, label=None, alpha=1.0, xerr=None, yerr=None,
-             capsize=3.0, ecolor=None):
+             capsize=3.0, ecolor=None, zorder=0):
         """Horizontal bar chart. ``xerr``/``yerr``/``capsize``/``ecolor``
         match :meth:`bar`, centered at each bar's own right edge
         (``left + width``)."""
         b = Bars(y, width, height, left, "horizontal",
                  color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
+        b.zorder = zorder
         self.artists.append(b)
         if xerr is not None or yerr is not None:
             right = b.base + b.length
@@ -468,7 +475,7 @@ class Axes:
         return b
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
-             label=None, alpha=1.0, density=False):
+             label=None, alpha=1.0, density=False, zorder=0):
         """Histogram. Returns ``(counts, edges, bars)``."""
         counts, edges = np.histogram(np.asarray(x, float), bins=bins,
                                      range=range, density=density)
@@ -477,6 +484,7 @@ class Axes:
         b = Bars(centers, counts, widths, 0.0, "vertical",
                  color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=0.6, label=label, alpha=alpha)
+        b.zorder = zorder
         self.artists.append(b)
         return counts, edges, b
 
@@ -496,7 +504,7 @@ class Axes:
                          linewidth=linewidth, label=label, alpha=alpha)
 
     def fill_between(self, x, y1, y2=0.0, color=None, alpha=0.4, label=None,
-                     edgecolor=None, linewidth=0.0):
+                     edgecolor=None, linewidth=0.0, zorder=0):
         """Fill the area between ``y1`` and ``y2``.
 
         ``edgecolor``/``linewidth`` outline the filled region -- the same
@@ -507,11 +515,12 @@ class Axes:
         fb = FillBetween(x, y1, y2, color=self._resolve_color(color),
                          alpha=alpha, label=label, edgecolor=edgecolor,
                          linewidth=linewidth)
+        fb.zorder = zorder
         self.artists.append(fb)
         return fb
 
     def fill_betweenx(self, y, x1, x2=0.0, color=None, alpha=0.4, label=None,
-                      edgecolor=None, linewidth=0.0):
+                      edgecolor=None, linewidth=0.0, zorder=0):
         """Fill the horizontal area between ``x1`` and ``x2`` across ``y``.
 
         ``edgecolor``/``linewidth`` match :meth:`fill_between`."""
@@ -522,19 +531,21 @@ class Axes:
         py = np.concatenate([y, y[::-1]])
         p = Polygon(px, py, color=self._resolve_color(color), alpha=alpha,
                     edgecolor=edgecolor, linewidth=linewidth, label=label)
+        p.zorder = zorder
         self.artists.append(p)
         return p
 
     def fill(self, x, y, color=None, alpha=1.0, edgecolor=None, linewidth=0.0,
-             label=None):
+             label=None, zorder=0):
         """Fill an arbitrary polygon given by vertices ``x``/``y``."""
         p = Polygon(x, y, color=self._resolve_color(color), alpha=alpha,
                     edgecolor=edgecolor, linewidth=linewidth, label=label)
+        p.zorder = zorder
         self.artists.append(p)
         return p
 
     def hlines(self, y, xmin, xmax, color=None, linewidth=None, linestyle="-",
-               label=None, alpha=1.0):
+               label=None, alpha=1.0, zorder=0):
         """Draw horizontal line segments at each ``y`` from ``xmin`` to ``xmax``."""
         y = np.atleast_1d(np.asarray(y, float))
         xmin = np.broadcast_to(np.asarray(xmin, float), y.shape)
@@ -544,11 +555,12 @@ class Axes:
             segs, color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha)
+        lc.zorder = zorder
         self.artists.append(lc)
         return lc
 
     def vlines(self, x, ymin, ymax, color=None, linewidth=None, linestyle="-",
-               label=None, alpha=1.0):
+               label=None, alpha=1.0, zorder=0):
         """Draw vertical line segments at each ``x`` from ``ymin`` to ``ymax``."""
         x = np.atleast_1d(np.asarray(x, float))
         ymin = np.broadcast_to(np.asarray(ymin, float), x.shape)
@@ -558,11 +570,12 @@ class Axes:
             segs, color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha)
+        lc.zorder = zorder
         self.artists.append(lc)
         return lc
 
     def stem(self, x, y=None, baseline=0.0, linecolor=None, markercolor=None,
-             label=None):
+             label=None, zorder=0):
         """Stem plot."""
         if y is None:
             y = np.asarray(x, float)
@@ -571,12 +584,13 @@ class Axes:
         s = Stem(x, y, baseline, linecolor=lc,
                  markercolor=self._resolve_color(markercolor) if markercolor else lc,
                  label=label)
+        s.zorder = zorder
         self.artists.append(s)
         return s
 
     def errorbar(self, x, y, yerr=None, xerr=None, color=None, marker="o",
                  markersize=None, capsize=3.0, linestyle="-", linewidth=None,
-                 label=None, alpha=1.0):
+                 label=None, alpha=1.0, zorder=0):
         """Line/markers with error bars. Only round markers are drawn."""
         _warn_marker_shape(marker, "errorbar")
         eb = ErrorBar(
@@ -586,14 +600,16 @@ class Axes:
             capsize=capsize, linestyle=linestyle,
             linewidth=self.style.line_width if linewidth is None else linewidth,
             label=label, alpha=alpha)
+        eb.zorder = zorder
         self.artists.append(eb)
         return eb
 
     def imshow(self, X, cmap="viridis", norm=None, vmin=None, vmax=None,
-               extent=None, origin="upper", alpha=1.0, label=None):
+               extent=None, origin="upper", alpha=1.0, label=None, zorder=0):
         """Display an image / 2-D array."""
         im = Image(X, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
                    origin=origin, alpha=alpha, label=label)
+        im.zorder = zorder
         self.artists.append(im)
         return im
 
@@ -612,7 +628,7 @@ class Axes:
         return im
 
     def pie(self, x, labels=None, colors=None, startangle=90.0, radius=1.0,
-            autopct=None):
+            autopct=None, zorder=0):
         """Pie chart. Hides the axis and fixes an equal-aspect square view."""
         n = len(x)
         if colors is None:
@@ -620,6 +636,7 @@ class Axes:
             colors = [cyc[i % len(cyc)] for i in range(n)]
         p = Pie(x, colors, labels=labels, startangle=startangle,
                 radius=radius, autopct=autopct)
+        p.zorder = zorder
         self.artists.append(p)
         self.set_axis_off()
         self.set_xlim(-1.3, 1.3)
@@ -627,7 +644,7 @@ class Axes:
         return p
 
     def boxplot(self, x, positions=None, widths=0.5, color=None,
-                orientation="vertical", label=None):
+                orientation="vertical", label=None, zorder=0):
         """Box-and-whisker plot of one or more datasets."""
         if isinstance(x, np.ndarray) and x.ndim == 1:
             x = [x]
@@ -648,12 +665,13 @@ class Axes:
                           "fliers": fliers})
         b = BoxPlot(positions, stats, widths, color=self._resolve_color(color),
                     orientation=orientation, label=label)
+        b.zorder = zorder
         self.artists.append(b)
         return b
 
     def violinplot(self, data, positions=None, widths=0.5, color=None,
                    orientation="vertical", label=None, points=100, cut=0.0,
-                   inner=None):
+                   inner=None, zorder=0):
         """Violin plot (kernel-density silhouettes).
 
         ``cut`` extends each density past its data extremes by that many
@@ -680,6 +698,7 @@ class Axes:
         v = Violin(positions, grids, halfwidths,
                    color=self._resolve_color(color), orientation=orientation,
                    label=label)
+        v.zorder = zorder
         self.artists.append(v)
         if inner:
             self._violin_inner(data, positions, grids, halfwidths, inner,
@@ -757,7 +776,7 @@ class Axes:
                          label=label)
 
     def rugplot(self, x, height=0.03, side="bottom", color=None, linewidth=1.0,
-                label=None, alpha=1.0):
+                label=None, alpha=1.0, zorder=0):
         """Tick marks at each observation along one edge of the axes.
 
         ``height`` is a fraction of the axes rectangle, resolved at draw time,
@@ -768,11 +787,12 @@ class Axes:
         d = d[np.isfinite(d)]
         r = Rug(d, height=height, side=side, color=self._resolve_color(color),
                 linewidth=linewidth, label=label, alpha=alpha)
+        r.zorder = zorder
         self.artists.append(r)
         return r
 
     def eventplot(self, positions, lineoffsets=None, linelengths=0.8, color=None,
-                  orientation="horizontal", label=None):
+                  orientation="horizontal", label=None, zorder=0):
         """Raster of event lines (one row per sequence)."""
         if np.ndim(positions[0]) == 0:
             positions = [positions]
@@ -781,10 +801,11 @@ class Axes:
             lineoffsets = np.arange(1, len(rows) + 1)
         e = EventPlot(rows, lineoffsets, linelengths, color=self._resolve_color(color),
                       orientation=orientation, label=label)
+        e.zorder = zorder
         self.artists.append(e)
         return e
 
-    def quiver(self, X, Y, U, V, scale=None, color=None, label=None):
+    def quiver(self, X, Y, U, V, scale=None, color=None, label=None, zorder=0):
         """Field of arrows. ``scale`` maps (U, V) to data units (auto if None)."""
         X = np.asarray(X, float); Y = np.asarray(Y, float)
         U = np.asarray(U, float); V = np.asarray(V, float)
@@ -795,11 +816,12 @@ class Axes:
             n = max(U.size, 1)
             scale = 0.9 * (span / np.sqrt(n)) / mmax
         q = Quiver(X, Y, U, V, scale, color=self._resolve_color(color), label=label)
+        q.zorder = zorder
         self.artists.append(q)
         return q
 
     def contour(self, *args, levels=8, colors=None, cmap="viridis", vmin=None,
-                vmax=None, label=None):
+                vmax=None, label=None, zorder=0):
         """Contour lines. ``contour(Z)`` or ``contour(x, y, Z)``.
 
         Colors (when ``colors`` isn't given explicitly) come from mapping
@@ -832,11 +854,12 @@ class Axes:
         elif isinstance(colors, str):
             colors = [colors]
         c = Contour(x, y, Z, levels, colors, label=label)
+        c.zorder = zorder
         self.artists.append(c)
         return c
 
     def contourf(self, *args, levels=8, cmap="viridis", vmin=None, vmax=None,
-                 alpha=1.0, label=None):
+                 alpha=1.0, label=None, zorder=0):
         """Filled contours. ``contourf(Z)`` or ``contourf(x, y, Z)``.
 
         Rendered as a single embedded image whose colormap is *banded* (one flat
@@ -874,11 +897,12 @@ class Axes:
                     extent=(float(x.min()), float(x.max()),
                             float(y.min()), float(y.max())),
                     origin="lower", alpha=alpha, label=label)
+        img.zorder = zorder
         self.artists.append(img)
         return img
 
     def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None,
-               norm=None, vmin=None, vmax=None):
+               norm=None, vmin=None, vmax=None, zorder=0):
         """Hexagonal 2-D binning of points ``x``/``y`` (colormapped counts).
 
         Returns a mappable collection of hexagons (works with ``fig.colorbar``).
@@ -901,6 +925,7 @@ class Axes:
         pc = PolyCollection(verts, facecolors, label=label)
         pc.lut, pc.norm = lut, norm      # make it a colorbar mappable
         pc.counts = counts               # picking reports the raw count per hexagon
+        pc.zorder = zorder
         self.artists.append(pc)
         return pc
 
@@ -1086,7 +1111,7 @@ class Axes:
         return self.plot(*args, **kwargs)
 
     def text(self, x, y, s, color=None, fontsize=None, ha="left", va="baseline",
-             rotation=0.0, outline=None):
+             rotation=0.0, outline=None, zorder=0):
         """Draw text ``s`` at data coordinates ``(x, y)``.
 
         ``outline`` is a halo color drawn behind the glyphs so the label stays
@@ -1099,11 +1124,12 @@ class Axes:
         t = Text(x, y, s, color=color or self.style.text_color,
                  size=self.style.font_size if fontsize is None else fontsize,
                  ha=ha, va=va, rotation=rotation, outline=outline)
+        t.zorder = zorder
         self.artists.append(t)
         return t
 
     def annotate(self, text, xy, xytext=None, color=None, fontsize=None,
-                 ha="left", va="baseline", arrowprops=None, outline=None):
+                 ha="left", va="baseline", arrowprops=None, outline=None, zorder=0):
         """Annotate the point ``xy`` with ``text`` placed at ``xytext``.
 
         Pass ``arrowprops={"color": ...}`` (or ``{}``) to draw an arrow from the
@@ -1115,6 +1141,7 @@ class Axes:
         a = Annotation(text, xy, xytext, color=color or self.style.text_color,
                        size=self.style.font_size if fontsize is None else fontsize,
                        ha=ha, va=va, arrowprops=arrowprops, outline=outline)
+        a.zorder = zorder
         self.artists.append(a)
         return a
 
@@ -1240,7 +1267,7 @@ class Axes:
     clear = cla
 
     def axvline(self, x, color=None, linewidth=None, linestyle="--",
-                label=None, alpha=1.0):
+                label=None, alpha=1.0, zorder=0):
         """Draw a vertical line at data coordinate ``x`` (like matplotlib)."""
         vl = VLine(
             x,
@@ -1248,11 +1275,12 @@ class Axes:
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
         )
+        vl.zorder = zorder
         self.artists.append(vl)
         return vl
 
     def axline(self, xy1, xy2=None, slope=None, color=None, linewidth=None,
-               linestyle="-", label=None, alpha=1.0):
+               linestyle="-", label=None, alpha=1.0, zorder=0):
         """Draw an infinite line through ``xy1`` (via ``slope`` or a second point).
 
         Spans the whole axes and does not affect autoscaling, like matplotlib.
@@ -1266,10 +1294,11 @@ class Axes:
         a = AxLine(x1, y1, slope, color=self._resolve_color(color),
                    linewidth=self.style.line_width if linewidth is None else linewidth,
                    linestyle=linestyle, label=label, alpha=alpha)
+        a.zorder = zorder
         self.artists.append(a)
         return a
 
-    def broken_barh(self, xranges, yrange, color=None, alpha=1.0, label=None):
+    def broken_barh(self, xranges, yrange, color=None, alpha=1.0, label=None, zorder=0):
         """Draw a row of rectangles from ``(xstart, xwidth)`` spans at ``yrange``.
 
         ``yrange`` is ``(ystart, yheight)``. Handy for Gantt / timeline charts.
@@ -1279,6 +1308,7 @@ class Axes:
                           dtype=float) for x, w in xranges]
         col = self._resolve_color(color)
         pc = PolyCollection(verts, [col] * len(verts), alpha=alpha, label=label)
+        pc.zorder = zorder
         self.artists.append(pc)
         return pc
 
@@ -1294,7 +1324,7 @@ class Axes:
                          linestyle=linestyle, label=label, alpha=alpha)
 
     def axhline(self, y, color=None, linewidth=None, linestyle="--",
-                label=None, alpha=1.0):
+                label=None, alpha=1.0, zorder=0):
         """Draw a horizontal line at data coordinate ``y`` (like matplotlib)."""
         hl = HLine(
             y,
@@ -1302,18 +1332,21 @@ class Axes:
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
         )
+        hl.zorder = zorder
         self.artists.append(hl)
         return hl
 
-    def axvspan(self, xmin, xmax, color="#1f77b4", alpha=0.3, label=None):
+    def axvspan(self, xmin, xmax, color="#1f77b4", alpha=0.3, label=None, zorder=0):
         """Shade a vertical band between x=``xmin`` and x=``xmax``."""
         sp = Span(xmin, xmax, "vertical", color=color, alpha=alpha, label=label)
+        sp.zorder = zorder
         self.artists.append(sp)
         return sp
 
-    def axhspan(self, ymin, ymax, color="#1f77b4", alpha=0.3, label=None):
+    def axhspan(self, ymin, ymax, color="#1f77b4", alpha=0.3, label=None, zorder=0):
         """Shade a horizontal band between y=``ymin`` and y=``ymax``."""
         sp = Span(ymin, ymax, "horizontal", color=color, alpha=alpha, label=label)
+        sp.zorder = zorder
         self.artists.append(sp)
         return sp
 
