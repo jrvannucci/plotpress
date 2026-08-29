@@ -930,6 +930,25 @@ def _emit_markers(p) -> str:
 
     parts = []
     same_size = diam.size and float(np.ptp(diam)) < 1e-9
+    edged = getattr(p, "edgecolor", None) and getattr(p, "edgewidth", 0) > 0
+    if edged:
+        # An outline drawn as *wider* dots underneath the face dots, not an
+        # actual stroke -- the face/edge dots are each their own zero-length
+        # round-capped stroke (see the docstring above), so stacking a wider
+        # one in the edge color behind each keeps both a constant pixel size
+        # under zoom, the same property a real <circle stroke> would lose.
+        if same_size:
+            edge_d = "".join(dot(cx, cy) for (cx, cy), ok in zip(pts, finite) if ok)
+            parts.append(
+                f'<path d="{edge_d}" fill="none" stroke="{p.edgecolor}" '
+                f'stroke-width="{_fmt(float(diam[0]) + 2 * p.edgewidth if diam.size else 0)}" '
+                f'stroke-linecap="round"/>')
+        else:
+            for (cx, cy), dm, ok in zip(pts, diam, finite):
+                if ok:
+                    parts.append(
+                        f'<path d="{dot(cx, cy)}" fill="none" stroke="{p.edgecolor}" '
+                        f'stroke-width="{_fmt(dm + 2 * p.edgewidth)}" stroke-linecap="round"/>')
     if p.single_color and same_size:
         d = "".join(dot(cx, cy) for (cx, cy), ok in zip(pts, finite) if ok)
         parts.append(
@@ -950,9 +969,10 @@ def _emit_prim(p) -> str:
     """Serialize one backend-agnostic primitive to an SVG element."""
     if isinstance(p, PImage):
         uri = png_data_uri(p.rgba)
+        style = "" if p.smooth else ' style="image-rendering:pixelated"'
         return (f'<image x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
-                f'height="{_fmt(p.h)}" preserveAspectRatio="none" '
-                f'style="image-rendering:pixelated" href="{uri}"/>')
+                f'height="{_fmt(p.h)}" preserveAspectRatio="none"'
+                f'{style} href="{uri}"/>')
     if isinstance(p, PMarkers):
         return _emit_markers(p)
     lbl = _esc(p.label) if p.label else ""
@@ -1172,24 +1192,26 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
                 f'<path fill="none" stroke="{eb.color}" '
                 f'stroke-width="{eb.linewidth}" d="{d}"/>'
             )
-    bars, cap = [], eb.capsize
+    whiskers, caps, cap = [], [], eb.capsize
     if eb.yerr is not None:
         # An error bar reaching below zero on a log axis has no pixel to land
         # on; clamp the whisker to the frame rather than emitting NaN, which
         # drops the whole bar and quietly understates the uncertainty.
         ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
         for x, a, b in zip(xb, ylo, yhi):
-            bars.append(f'<line x1="{_fmt(x)}" y1="{_fmt(a)}" x2="{_fmt(x)}" y2="{_fmt(b)}"/>')
-            bars.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(a)}" x2="{_fmt(x + cap)}" y2="{_fmt(a)}"/>')
-            bars.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(b)}" x2="{_fmt(x + cap)}" y2="{_fmt(b)}"/>')
+            whiskers.append(f'<line x1="{_fmt(x)}" y1="{_fmt(a)}" x2="{_fmt(x)}" y2="{_fmt(b)}"/>')
+            caps.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(a)}" x2="{_fmt(x + cap)}" y2="{_fmt(a)}"/>')
+            caps.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(b)}" x2="{_fmt(x + cap)}" y2="{_fmt(b)}"/>')
     if eb.xerr is not None:
         xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
         for y, a, b in zip(yb, xlo, xhi):
-            bars.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y)}" x2="{_fmt(b)}" y2="{_fmt(y)}"/>')
-            bars.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y - cap)}" x2="{_fmt(a)}" y2="{_fmt(y + cap)}"/>')
-            bars.append(f'<line x1="{_fmt(b)}" y1="{_fmt(y - cap)}" x2="{_fmt(b)}" y2="{_fmt(y + cap)}"/>')
-    if bars:
-        body.append(f'<g stroke="{eb.color}" stroke-width="1">{"".join(bars)}</g>')
+            whiskers.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y)}" x2="{_fmt(b)}" y2="{_fmt(y)}"/>')
+            caps.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y - cap)}" x2="{_fmt(a)}" y2="{_fmt(y + cap)}"/>')
+            caps.append(f'<line x1="{_fmt(b)}" y1="{_fmt(y - cap)}" x2="{_fmt(b)}" y2="{_fmt(y + cap)}"/>')
+    if whiskers:
+        body.append(f'<g stroke="{eb.ecolor}" stroke-width="{_fmt(eb.elinewidth)}">{"".join(whiskers)}</g>')
+    if caps:
+        body.append(f'<g stroke="{eb.ecolor}" stroke-width="{_fmt(eb.capthick)}">{"".join(caps)}</g>')
     r = eb.markersize / 2.0 * st.dpi / 72.0
     # Skip points that do not map to a pixel -- a value at or below zero on a
     # log axis, most often. Emitting cx/cy="nan" produces invalid SVG that some
@@ -1687,17 +1709,24 @@ def legend_entries(sources):
 
 
 def _legend_layout(ax, st):
-    """Compute legend geometry for an axes' own legend."""
+    """Compute legend geometry for an axes' own legend.
+
+    ``ax._legend_handles`` (set by ``legend(handles=...)``) overrides which
+    artists appear, in the order given, regardless of their own label --
+    otherwise every labelled artist on this axes appears, call order.
+    """
+    source = (ax._legend_handles if ax._legend_handles is not None
+             else ax.artists)
     return legend_box(
-        [a for a in ax.artists if getattr(a, "label", None)],
-        st, ax._legend_ncol, ax._legend_title)
+        [a for a in source if getattr(a, "label", None)],
+        st, ax._legend_ncol, ax._legend_title, fontsize=ax._legend_fontsize)
 
 
-def legend_box(entries, st, ncol, title):
+def legend_box(entries, st, ncol, title, fontsize=None):
     """Compute legend geometry: entries, columns, cell size, box size."""
     if not entries:
         return None
-    fs = st.tick_label_size
+    fs = fontsize if fontsize is not None else st.tick_label_size
     line_h = fs + 6
     sample_w = 22
     pad = 6
@@ -1736,7 +1765,7 @@ def figure_legend_layout(fig):
         return None
     sources = spec["axes"] or [a for a in fig.axes if not a._is_colorbar]
     return legend_box(legend_entries(sources), fig.style,
-                      spec["ncol"], spec["title"])
+                      spec["ncol"], spec["title"], fontsize=spec.get("fontsize"))
 
 
 def figure_legend_origin(spec, lay, W, H, pad_px):

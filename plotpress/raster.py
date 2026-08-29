@@ -327,11 +327,13 @@ def _draw_prim(p, S, draw, canvas):
         return
     if isinstance(p, PMarkers):
         finite = np.isfinite(p.points).all(axis=1)
+        edge = _rgb(p.edgecolor) if (p.edgecolor and p.edgewidth > 0) else None
+        ew = max(1, int(round(p.edgewidth))) if edge else 1
         for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
             if ok:
                 rad = dm / 2.0
                 draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
-                             fill=_rgba(col, p.alpha))
+                             fill=_rgba(col, p.alpha), outline=edge, width=ew)
         return
     if isinstance(p, PLine):
         _polyline(draw, np.array([p.p0, p.p1]), _rgb(p.stroke),
@@ -551,6 +553,9 @@ def _stem(stem, tr, st, S, draw):
 def _errorbar(eb, tr, st, S, draw):
     xb, yb = tr.x(eb.x), tr.y(eb.y)
     col = _rgb(eb.color)
+    ecol = _rgb(eb.ecolor)
+    ew = max(1, int(round(eb.elinewidth * S)))
+    cw = max(1, int(round(eb.capthick * S)))
     if eb.linestyle and eb.linestyle != "none":
         _polyline(draw, np.column_stack([xb, yb]), col,
                   max(1, int(round(eb.linewidth * S))))
@@ -558,9 +563,9 @@ def _errorbar(eb, tr, st, S, draw):
     if eb.yerr is not None:
         ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
         for x, a, b in zip(xb, ylo, yhi):
-            draw.line([x, a, x, b], fill=col, width=S)
-            draw.line([x - cap, a, x + cap, a], fill=col, width=S)
-            draw.line([x - cap, b, x + cap, b], fill=col, width=S)
+            draw.line([x, a, x, b], fill=ecol, width=ew)
+            draw.line([x - cap, a, x + cap, a], fill=ecol, width=cw)
+            draw.line([x - cap, b, x + cap, b], fill=ecol, width=cw)
     if eb.xerr is not None:
         # Regression: this branch didn't exist at all -- errorbar(xerr=...)
         # (and, composed on top of it, barh()'s own xerr) drew nothing in
@@ -568,9 +573,9 @@ def _errorbar(eb, tr, st, S, draw):
         # already has both branches).
         xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
         for y, a, b in zip(yb, xlo, xhi):
-            draw.line([a, y, b, y], fill=col, width=S)
-            draw.line([a, y - cap, a, y + cap], fill=col, width=S)
-            draw.line([b, y - cap, b, y + cap], fill=col, width=S)
+            draw.line([a, y, b, y], fill=ecol, width=ew)
+            draw.line([a, y - cap, a, y + cap], fill=ecol, width=cw)
+            draw.line([b, y - cap, b, y + cap], fill=ecol, width=cw)
     r = eb.markersize / 2.0 * st.dpi / 72.0 * S
     for x, y in zip(xb, yb):
         if np.isfinite(x) and np.isfinite(y):      # see svg._render_errorbar
@@ -873,10 +878,17 @@ _LEGEND_ANCHORS = {
 
 
 def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
-    entries = [a for a in ax.artists if getattr(a, "label", None)]
+    # Regression: this recomputed entries/fontsize independently of
+    # svg.py's _legend_layout() instead of reusing it, so legend(handles=,
+    # fontsize=) rendered correctly in SVG but was silently ignored here --
+    # every entry always came straight from ax.artists at the style's own
+    # fixed size, in both backends, the same class of bug as the marker
+    # color list, errorbar xerr, and polygon outline width fixes before it.
+    source = ax._legend_handles if ax._legend_handles is not None else ax.artists
+    entries = [a for a in source if getattr(a, "label", None)]
     if not entries:
         return
-    fs = st.tick_label_size * S
+    fs = (ax._legend_fontsize if ax._legend_fontsize is not None else st.tick_label_size) * S
     font = _font(fs, st.font_family)
     title_font = _font(fs, st.font_family, bold=True)   # SVG draws the title bold
     line_h = fs + 6 * S

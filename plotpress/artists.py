@@ -180,7 +180,8 @@ class Span(Artist):
 
 class ScatterCollection(Artist):
     def __init__(self, x, y, s, color, marker="o", label=None, alpha=1.0,
-                 c=None, cmap="viridis", norm=None, values=None):
+                 c=None, cmap="viridis", norm=None, values=None,
+                 edgecolors=None, linewidths=None):
         self.x = np.asarray(x, dtype=float)
         self.y = np.asarray(y, dtype=float)
         self.s = s  # diameter in points (scalar or array)
@@ -188,6 +189,11 @@ class ScatterCollection(Artist):
         self.marker = marker
         self.label = label
         self.alpha = alpha
+        self.edgecolor = edgecolors
+        # A given edgecolor with no explicit width still needs one to
+        # actually show -- matplotlib's own default marker edge width.
+        self.linewidths = (linewidths if linewidths is not None
+                           else (1.0 if edgecolors is not None else 0.0))
 
         # Optional data-mapped face colors.
         self.c = None if c is None else np.asarray(c, dtype=float)
@@ -352,11 +358,13 @@ class QuadMesh(Artist):
     """
 
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
-                 shading="flat"):
+                 shading="flat", alpha=1.0, label=None):
         self.C = np.asarray(C, dtype=float)
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
         self.shading = shading
+        self.alpha = alpha
+        self.label = label
         if self.X is not None and self.Y is not None \
                 and self.X.ndim == 2 and self.Y.ndim == 2:
             collapsed = _as_rectilinear_1d(self.X, self.Y)
@@ -419,10 +427,15 @@ class QuadMesh(Artist):
     def rgba(self):
         """Return the mesh as an RGBA uint8 image (row 0 = top = max y)."""
         if self.shading == "gouraud":
-            return self._rgba_gouraud()
-        if self.curvilinear:
-            return self._rgba_curvilinear()
-        return self._rgba_rectilinear()
+            rgba = self._rgba_gouraud()
+        elif self.curvilinear:
+            rgba = self._rgba_curvilinear()
+        else:
+            rgba = self._rgba_rectilinear()
+        if self.alpha != 1.0:
+            rgba = rgba.copy()
+            rgba[..., 3] = (rgba[..., 3].astype(np.float64) * self.alpha).round().astype(np.uint8)
+        return rgba
 
     def _rgba_rectilinear(self, max_side=1024):
         """Rectilinear mesh as an image, honoring non-uniform cell widths.
@@ -718,7 +731,8 @@ class Stem(Artist):
 class ErrorBar(Artist):
     def __init__(self, x, y, yerr=None, xerr=None, color="#1f77b4", marker="o",
                  markersize=6.0, capsize=3.0, linestyle="-", linewidth=1.5,
-                 label=None, alpha=1.0):
+                 label=None, alpha=1.0, ecolor=None, elinewidth=None,
+                 capthick=None):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
         self.yerr = None if yerr is None else np.broadcast_to(
@@ -733,6 +747,13 @@ class ErrorBar(Artist):
         self.linewidth = linewidth
         self.label = label
         self.alpha = alpha
+        # Each falls back to the previous if not given -- ecolor to the
+        # line/marker color, elinewidth to the connecting line's own width
+        # (previously hardcoded to 1px regardless of linewidth), capthick
+        # to elinewidth -- matching matplotlib's own fallback chain.
+        self.ecolor = ecolor if ecolor is not None else self.color
+        self.elinewidth = elinewidth if elinewidth is not None else self.linewidth
+        self.capthick = capthick if capthick is not None else self.elinewidth
 
     def data_bounds(self):
         xlo, xhi = self.x.copy(), self.x.copy()
@@ -748,7 +769,8 @@ class Image(Artist):
     """imshow: a 2-D (colormapped) or RGB(A) array drawn as one embedded image."""
 
     def __init__(self, A, cmap="viridis", norm=None, vmin=None, vmax=None,
-                 extent=None, origin="upper", alpha=1.0, label=None):
+                 extent=None, origin="upper", alpha=1.0, label=None,
+                 interpolation="nearest"):
         self.A = np.asarray(A, float)
         self.lut = get_cmap(cmap)
         self.norm = resolve_norm(norm, vmin, vmax)
@@ -757,6 +779,7 @@ class Image(Artist):
         self.origin = origin
         self.alpha = alpha
         self.label = label
+        self.interpolation = interpolation
         ny, nx = self.A.shape[:2]
         self._extent = tuple(extent) if extent is not None else (0.0, nx, 0.0, ny)
 

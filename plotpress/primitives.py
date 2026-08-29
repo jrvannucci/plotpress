@@ -149,6 +149,7 @@ class ImagePrim:
     y: float
     w: float
     h: float
+    smooth: bool = False           # False = image-rendering:pixelated (the default)
 
 
 @dataclass
@@ -161,6 +162,8 @@ class Markers:
     alpha: float = 1.0
     series_id: Optional[str] = None
     label: str = ""
+    edgecolor: Optional[str] = None   # one outline color for the whole batch
+    edgewidth: float = 0.0            # pixel outline width; 0 draws no outline
 
 
 # -- artist -> primitives ---------------------------------------------------
@@ -179,7 +182,9 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         fc = a.face_colors()
         colors = fc if fc is not None else [a.color] * a.x.size
         return [Markers(pts, diam, list(colors), single_color=(fc is None),
-                        alpha=a.alpha, series_id=f"s{ai}_{k}", label=lbl)]
+                        alpha=a.alpha, series_id=f"s{ai}_{k}", label=lbl,
+                        edgecolor=a.edgecolor,
+                        edgewidth=(a.linewidths or 0.0) * size_scale)]
 
     if isinstance(a, Line2D):
         x, y = a.x, a.y
@@ -298,6 +303,7 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         if y1 < y0:
             y0, y1 = y1, y0
             rgba = rgba[::-1, :]
-        return [ImagePrim(np.ascontiguousarray(rgba), x0, y0, x1 - x0, y1 - y0)]
+        smooth = getattr(a, "interpolation", "nearest") != "nearest"
+        return [ImagePrim(np.ascontiguousarray(rgba), x0, y0, x1 - x0, y1 - y0, smooth)]
 
     return None

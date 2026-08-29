@@ -297,12 +297,19 @@ class Axes:
 
     def scatter(self, x, y, s=None, c=None, color=None, marker="o",
                 label=None, alpha=1.0, cmap="viridis", norm=None,
-                vmin=None, vmax=None, values=None, zorder=0):
+                vmin=None, vmax=None, values=None, zorder=0,
+                edgecolors=None, linewidths=None):
         """Scatter ``y`` vs ``x``. ``c`` maps values through ``cmap``.
 
         ``values`` is an optional ``{name: array}`` of extra per-point
         dimensions (e.g. ``z`` or a 4th value) surfaced by point picking; the
         color dimension ``c`` is included automatically.
+
+        ``edgecolors``/``linewidths`` outline every marker in the collection
+        (one color/width for the whole call, not per-point) -- the same
+        contrast marker matplotlib draws to keep overlapping same-color
+        points distinguishable. Giving ``edgecolors`` with no ``linewidths``
+        still draws a visible outline, at matplotlib's own default width.
 
         Only round markers are drawn (see :func:`_warn_marker_shape`); any other
         ``marker`` is accepted for matplotlib compatibility but warns.
@@ -316,6 +323,9 @@ class Axes:
             color=self._resolve_color(color) if c is None else None,
             marker=marker, label=label, alpha=alpha,
             c=c, cmap=cmap, norm=norm, values=values,
+            edgecolors=(self._resolve_color(edgecolors)
+                       if edgecolors is not None else None),
+            linewidths=linewidths,
         )
         coll.zorder = zorder
         self.artists.append(coll)
@@ -367,12 +377,15 @@ class Axes:
         return art
 
     def pcolormesh(self, *args, cmap="viridis", norm=None, vmin=None, vmax=None,
-                   shading="flat", zorder=0):
+                   shading="flat", zorder=0, alpha=1.0, label=None):
         """Pseudocolor plot of a 2-D array.
 
         Signatures: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``. ``X``/``Y`` may
         be 2-D for a curvilinear grid. ``shading="gouraud"`` smoothly
         interpolates the color between grid nodes instead of flat cells.
+        ``alpha``/``label`` match :meth:`imshow` -- its own animated sibling
+        :meth:`pcolormesh_frames` already had both; this one just hadn't
+        caught up.
         """
         if len(args) == 1:
             X = Y = None
@@ -383,7 +396,7 @@ class Axes:
             raise TypeError("pcolormesh() takes C or X, Y, C")
 
         mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
-                        shading=shading)
+                        shading=shading, alpha=alpha, label=label)
         mesh.zorder = zorder
         self.artists.append(mesh)
         return mesh
@@ -475,18 +488,98 @@ class Axes:
         return b
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
-             label=None, alpha=1.0, density=False, zorder=0):
-        """Histogram. Returns ``(counts, edges, bars)``."""
-        counts, edges = np.histogram(np.asarray(x, float), bins=bins,
-                                     range=range, density=density)
+             label=None, alpha=1.0, density=False, zorder=0, histtype="bar",
+             cumulative=False, weights=None, stacked=False):
+        """Histogram. Returns ``(counts, edges, bars)``.
+
+        ``x`` may be a single array or a sequence of arrays -- multiple
+        datasets share one set of bin edges (from their combined range when
+        ``bins`` is a count rather than explicit edges), overlaid by
+        default or, with ``stacked=True``, stacked bottom-to-top in the
+        order given. ``color``/``label`` may then be a matching list, one
+        per dataset (a bare value applies to all, same as a single dataset).
+
+        ``histtype`` is ``"bar"`` (default: filled bars with dividers
+        between them), ``"step"`` (unfilled outline, no dividers) or
+        ``"stepfilled"`` (filled outline, no dividers) -- matplotlib's own
+        three. ``bars`` is a :class:`Bars` for ``"bar"`` (one per dataset,
+        a list if there's more than one) or a :class:`Polygon` staircase
+        outline for ``"step"``/``"stepfilled"``.
+
+        ``cumulative`` running-sums each dataset's own counts left to
+        right. ``weights`` (matching ``x``'s own shape, or one array per
+        dataset) weights each sample instead of counting it as 1.
+        """
+        # A list/tuple of *arrays* is multiple datasets (boxplot's own
+        # convention); a list/tuple of plain numbers -- by far the more
+        # common call, e.g. hist([1, 1, 2, 3])) -- is one, same as before
+        # this existed.
+        multi = (isinstance(x, (list, tuple)) and len(x) > 0
+                and isinstance(x[0], (list, tuple, np.ndarray)))
+        datasets = [np.asarray(d, float) for d in x] if multi else [np.asarray(x, float)]
+        if weights is not None and multi and isinstance(weights, (list, tuple)):
+            wlist = [None if w is None else np.asarray(w, float) for w in weights]
+        elif weights is not None:
+            w = np.asarray(weights, float)
+            wlist = [w] * len(datasets)
+        else:
+            wlist = [None] * len(datasets)
+
+        # histogram_bin_edges() ignores range when bins is already a sequence
+        # of edges, so this covers both "bins is a count" and "bins is
+        # explicit edges" without branching on which one it is.
+        combined = np.concatenate(datasets) if datasets else np.array([0.0, 1.0])
+        edges = np.histogram_bin_edges(combined, bins=bins, range=range)
+
+        all_counts = []
+        for d, w in zip(datasets, wlist):
+            counts, edges = np.histogram(d, bins=edges, weights=w, density=density)
+            if cumulative:
+                counts = np.cumsum(counts)
+            all_counts.append(counts)
+
+        colors_in = color if isinstance(color, (list, tuple)) else [color] * len(datasets)
+        labels_in = label if isinstance(label, (list, tuple)) else [label] * len(datasets)
+        resolved_colors = [self._resolve_color(c) for c in colors_in]
+
         centers = (edges[:-1] + edges[1:]) / 2.0
         widths = np.diff(edges)
-        b = Bars(centers, counts, widths, 0.0, "vertical",
-                 color=self._resolve_color(color), edgecolor=edgecolor,
-                 linewidth=0.6, label=label, alpha=alpha)
-        b.zorder = zorder
-        self.artists.append(b)
-        return counts, edges, b
+
+        if histtype == "bar":
+            bars = []
+            running = np.zeros_like(edges[:-1])
+            for counts, c, lbl in zip(all_counts, resolved_colors, labels_in):
+                base = running.copy() if stacked else 0.0
+                b = Bars(centers, counts, widths, base, "vertical",
+                         color=c, edgecolor=edgecolor, linewidth=0.6,
+                         label=lbl, alpha=alpha)
+                b.zorder = zorder
+                self.artists.append(b)
+                bars.append(b)
+                if stacked:
+                    running = running + counts
+            bars_out = bars if multi else bars[0]
+        else:   # "step" / "stepfilled" -- one staircase outline per dataset
+            fill = histtype == "stepfilled"
+            bars = []
+            running = np.zeros_like(edges[:-1])
+            for counts, c, lbl in zip(all_counts, resolved_colors, labels_in):
+                top = (running + counts) if stacked else counts
+                base = running if stacked else np.zeros_like(counts)
+                xs = np.repeat(edges, 2)
+                ys = np.concatenate([[base[0]], np.repeat(top, 2), [base[-1]]])
+                p = Polygon(xs, ys, color=(c if fill else None), alpha=alpha,
+                           edgecolor=(edgecolor if fill else c), linewidth=1.5,
+                           label=lbl)
+                p.zorder = zorder
+                self.artists.append(p)
+                bars.append(p)
+                if stacked:
+                    running = top
+            bars_out = bars if multi else bars[0]
+
+        counts_out = all_counts if multi else all_counts[0]
+        return counts_out, edges, bars_out
 
     def step(self, x, y, where="pre", color=None, linewidth=None, label=None,
              alpha=1.0):
@@ -590,8 +683,16 @@ class Axes:
 
     def errorbar(self, x, y, yerr=None, xerr=None, color=None, marker="o",
                  markersize=None, capsize=3.0, linestyle="-", linewidth=None,
-                 label=None, alpha=1.0, zorder=0):
-        """Line/markers with error bars. Only round markers are drawn."""
+                 label=None, alpha=1.0, zorder=0, ecolor=None, elinewidth=None,
+                 capthick=None):
+        """Line/markers with error bars. Only round markers are drawn.
+
+        ``ecolor``/``elinewidth`` style the whiskers/caps independently of
+        the connecting line and marker -- each falls back to ``color``
+        (resolved the same way) / ``linewidth`` if not given, so nothing
+        changes unless you pass them. ``capthick`` (the caps' own width)
+        falls back to ``elinewidth`` in turn.
+        """
         _warn_marker_shape(marker, "errorbar")
         eb = ErrorBar(
             x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
@@ -599,16 +700,28 @@ class Axes:
             markersize=self.style.marker_size if markersize is None else markersize,
             capsize=capsize, linestyle=linestyle,
             linewidth=self.style.line_width if linewidth is None else linewidth,
-            label=label, alpha=alpha)
+            label=label, alpha=alpha,
+            ecolor=self._resolve_color(ecolor) if ecolor is not None else None,
+            elinewidth=elinewidth, capthick=capthick)
         eb.zorder = zorder
         self.artists.append(eb)
         return eb
 
     def imshow(self, X, cmap="viridis", norm=None, vmin=None, vmax=None,
-               extent=None, origin="upper", alpha=1.0, label=None, zorder=0):
-        """Display an image / 2-D array."""
+               extent=None, origin="upper", alpha=1.0, label=None, zorder=0,
+               interpolation="nearest"):
+        """Display an image / 2-D array.
+
+        ``interpolation="nearest"`` (default) draws each data cell as a
+        crisp pixel block, however far the SVG scales it -- anything else
+        (``"bilinear"``, ``"antialiased"``, ...) lets the browser smooth it
+        instead. Only affects SVG output: raster (PNG/PDF) output already
+        samples at its own fixed resolution, so there's no separate scaling
+        step for this to change.
+        """
         im = Image(X, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
-                   origin=origin, alpha=alpha, label=label)
+                   origin=origin, alpha=alpha, label=label,
+                   interpolation=interpolation)
         im.zorder = zorder
         self.artists.append(im)
         return im
@@ -644,8 +757,14 @@ class Axes:
         return p
 
     def boxplot(self, x, positions=None, widths=0.5, color=None,
-                orientation="vertical", label=None, zorder=0):
-        """Box-and-whisker plot of one or more datasets."""
+                orientation="vertical", label=None, zorder=0, whis=1.5,
+                showfliers=True):
+        """Box-and-whisker plot of one or more datasets.
+
+        ``whis`` sets the whisker reach in IQRs past ``q1``/``q3`` (matching
+        matplotlib's own default of ``1.5``); points past that are drawn as
+        fliers unless ``showfliers=False`` drops them instead.
+        """
         if isinstance(x, np.ndarray) and x.ndim == 1:
             x = [x]
         data = [np.asarray(d, float) for d in x]
@@ -656,11 +775,11 @@ class Axes:
         for d in data:
             q1, med, q3 = np.percentile(d, [25, 50, 75])
             iqr = q3 - q1
-            lo_in = d[d >= q1 - 1.5 * iqr]
-            hi_in = d[d <= q3 + 1.5 * iqr]
+            lo_in = d[d >= q1 - whis * iqr]
+            hi_in = d[d <= q3 + whis * iqr]
             lo = lo_in.min() if lo_in.size else q1
             hi = hi_in.max() if hi_in.size else q3
-            fliers = d[(d < lo) | (d > hi)]
+            fliers = d[(d < lo) | (d > hi)] if showfliers else np.array([])
             stats.append({"q1": q1, "med": med, "q3": q3, "lo": lo, "hi": hi,
                           "fliers": fliers})
         b = BoxPlot(positions, stats, widths, color=self._resolve_color(color),
@@ -1664,23 +1783,41 @@ class Axes:
         """Show or hide the gridlines at the major tick positions."""
         self._grid = bool(visible)
 
-    def legend(self, loc="upper right", ncol=1, title=None):
-        """Enable a legend (drawn from artists that have a ``label``).
+    def legend(self, loc="upper right", ncol=1, title=None, handles=None,
+               labels=None, fontsize=None):
+        """Enable a legend (by default, drawn from artists that have a
+        ``label``).
 
         ``loc`` is a matplotlib-style corner/edge name (e.g. ``"upper left"``,
         ``"lower center"``, ``"center"``; ``"best"`` maps to upper right).
         ``ncol`` lays the entries out in that many columns; ``title`` adds a
-        heading row.
+        heading row. ``fontsize`` overrides the entry/title text size
+        (default: the style's own tick label size).
+
+        ``handles`` overrides which artists appear -- any plotpress artist
+        (from this axes, another, or never added to one at all), in the
+        order given, regardless of their own ``label``. Pair with
+        ``labels`` to also override the text shown for each, positionally;
+        without it, each handle's own ``label`` is used.
         """
         self._show_legend = True
         self._legend_loc = loc
         self._legend_ncol = max(1, int(ncol))
         self._legend_title = title
+        self._legend_fontsize = fontsize
+        if handles is not None:
+            handles = list(handles)
+            if labels is not None:
+                for h, lbl in zip(handles, labels):
+                    h.label = lbl
+        self._legend_handles = handles
 
     _show_legend = False
     _legend_loc = "upper right"
     _legend_ncol = 1
     _legend_title = None
+    _legend_fontsize = None
+    _legend_handles = None
 
     # -- autoscaling --------------------------------------------------------
     def get_xlim(self):

@@ -44,10 +44,11 @@ Colorbars
 Figure-level legend
 -------------------
 
-``fig.legend(ax=None, loc="lower center", ncol=1, title=None, pad=0.01)``
+``fig.legend(ax=None, loc="lower center", ncol=1, title=None, pad=0.01, fontsize=None)``
     One legend for the whole figure, drawn from every labelled artist. Labels
     are **de-duplicated**, so a grid whose panels all plot the same series gets
-    one entry per series rather than one per panel.
+    one entry per series rather than one per panel. ``fontsize`` overrides
+    the entry/title text size, matching ``Axes.legend``.
 
     .. code-block:: python
 

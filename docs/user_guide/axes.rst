@@ -48,10 +48,14 @@ Grid, legend, visibility
 ``grid(visible=True)``
     Toggle grid lines at the tick locations.
 
-``legend(loc="upper right", ncol=1, title=None)``
+``legend(loc="upper right", ncol=1, title=None, handles=None, labels=None, fontsize=None)``
     Draw a legend from artists that were given a ``label=``, placed inside this
     axes. A ``twinx``/``twiny`` twin's artists are included too, so one call
-    covers both y axes. For a single legend spanning a whole grid, see
+    covers both y axes. ``fontsize`` overrides the entry/title text size.
+    ``handles`` overrides which artists appear -- any plotpress artist, in
+    the order given, from this axes, another, or never added to one at all
+    -- pair with ``labels`` to also override the text shown for each,
+    positionally. For a single legend spanning a whole grid, see
     ``fig.legend`` in :doc:`figures`.
 
 ``set_axis_off()``

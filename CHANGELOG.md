@@ -13,6 +13,47 @@ anywhere in the source.
 
 ### Added
 
+- `hist()` gains `histtype="bar"|"step"|"stepfilled"`, `cumulative`,
+  `weights`, `stacked` -- `data` may now be a single array or a sequence of
+  arrays, sharing one set of bins, overlaid by default or `stacked=True`
+  bottom-to-top.
+- `boxplot()` gains `whis` (whisker reach in IQRs past q1/q3, matplotlib's
+  own default `1.5`) and `showfliers` (drop the outlier circles instead of
+  drawing them).
+- `errorbar()` gains `ecolor`/`elinewidth`/`capthick` -- the whiskers/caps
+  can now be styled independently of the connecting line and marker (each
+  falls back to `color`/`linewidth` if not given; `capthick` falls back to
+  `elinewidth` in turn). The whisker/cap width was previously hardcoded to
+  1px regardless of `linewidth` in both backends.
+- `imshow()` gains `interpolation="nearest"|...` -- `"nearest"` (default)
+  keeps the existing crisp-pixel SVG rendering at any scale; anything else
+  lets the browser smooth it. SVG-only: raster output already samples at
+  its own fixed resolution.
+- `pcolormesh()` gains `alpha`/`label`, matching `imshow()` -- its own
+  animated sibling `pcolormesh_frames()` already had both; this one hadn't
+  caught up.
+- `scatter()` gains `edgecolors`/`linewidths` -- outlines every marker in
+  the call (one color/width for the whole collection), keeping overlapping
+  same-color points distinguishable. Giving `edgecolors` alone still draws
+  a visible outline, at a default width.
+- `legend()` (both `Axes.legend()` and `Figure.legend()`) gains `fontsize`;
+  `Axes.legend()` also gains `handles`/`labels` for manual/proxy entries --
+  any plotpress artist, in the order given, from this axes, another, or
+  never added to one at all, with `labels` overriding the text shown,
+  positionally.
+
+### Fixed
+
+- `raster._raster_legend()` (the axes-level legend's PNG/PDF renderer)
+  recomputed its own entries and font size independently of svg.py's
+  layout instead of reusing it, so `legend(handles=, fontsize=)` rendered
+  correctly in SVG but was silently ignored in raster output -- the same
+  class of backend-parity bug as the marker color list, `errorbar(xerr=)`,
+  and polygon outline width fixes before it, found the same way: by
+  actually rendering to PNG rather than trusting a clean SVG.
+
+### Added
+
 - Every plotting method gains `zorder=0` -- draw order within an axes,
   independent of call order (ties keep call order, matching the only
   behavior before this existed). Previously there was no way to reorder

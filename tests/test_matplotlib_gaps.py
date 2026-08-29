@@ -1358,3 +1358,194 @@ def test_zorder_overrides_call_order_in_raster():
     h, w, _ = arr.shape
     cx, cy = w // 2, int(h * 0.6)   # inside both rects' overlap
     assert tuple(arr[cy, cx][:3]) == (0, 0, 255)   # blue on top despite red's later call
+
+
+# -- Tier 2/3 gaps closed: pcolormesh alpha/label, scatter edge, legend
+# handles/labels/fontsize, hist histtype/cumulative/weights/stacked,
+# boxplot whis/showfliers, errorbar ecolor/elinewidth/capthick, imshow
+# interpolation -----------------------------------------------------------
+
+def test_pcolormesh_accepts_alpha_and_label():
+    """pcolormesh's own animated sibling (pcolormesh_frames) already had
+    both; the static one hadn't caught up."""
+    X = np.random.RandomState(0).rand(6, 6)
+    fig1, ax1 = plotpress.subplots()
+    ax1.pcolormesh(X, alpha=1.0)
+    fig2, ax2 = plotpress.subplots()
+    ax2.pcolormesh(X, alpha=0.2)
+    assert fig1.to_svg() != fig2.to_svg()
+
+    fig3, ax3 = plotpress.subplots()
+    ax3.pcolormesh(X, label="field")
+    ax3.legend()
+    assert "field" in fig3.to_svg()
+
+
+def test_scatter_edgecolors_and_linewidths_render_in_both_backends():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    coll = ax.scatter([0, 1, 2], [0, 1, 0], s=20, color="#ffdd00",
+                      edgecolors="black", linewidths=3.0)
+    assert coll.edgecolor == "black" and coll.linewidths == 3.0
+    svg = fig.to_svg()
+    assert 'stroke="black"' in svg
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.scatter([0, 1, 2], [0, 1, 0], s=20, color="#ffdd00")
+    plain = np.asarray(figure_to_image(fig2))
+    edged = np.asarray(figure_to_image(fig))
+    assert not np.array_equal(plain, edged)   # the edge must add real ink
+
+
+def test_scatter_edgecolors_default_linewidth_is_visible():
+    """Giving edgecolors with no explicit linewidths must still draw a
+    visible outline, not a zero-width (invisible) one."""
+    fig, ax = plotpress.subplots()
+    coll = ax.scatter([0], [0], edgecolors="red")
+    assert coll.linewidths > 0
+
+
+def test_legend_handles_and_labels_override_the_default_entries():
+    """handles= picks specific artists (even ones never added to this
+    axes) in the given order; labels= overrides their own label."""
+    from plotpress.artists import Line2D
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1], label="real")
+    proxy = Line2D(np.array([0.0]), np.array([0.0]), color="red",
+                   linewidth=2, label="proxy")
+    ax.legend(handles=[proxy], labels=["custom"])
+    svg = fig.to_svg()
+    legend_svg = svg.split("plotpress-legend")[1]
+    assert "custom" in legend_svg and "real" not in legend_svg
+
+
+def test_legend_fontsize_changes_rendered_size_in_both_backends():
+    """Regression: raster._raster_legend() recomputed entries/fontsize
+    independently of svg.py's shared layout instead of reusing it, so
+    legend(handles=, fontsize=) rendered correctly in SVG but was silently
+    ignored in PNG/PDF -- every entry always came from ax.artists at the
+    style's own fixed size in raster, regardless of what was requested."""
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1], label="s")
+    ax1.legend(fontsize=8)
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1], label="s")
+    ax2.legend(fontsize=30)
+    assert fig1.to_svg() != fig2.to_svg()
+    img1 = np.asarray(figure_to_image(fig1))
+    img2 = np.asarray(figure_to_image(fig2))
+    assert not np.array_equal(img1, img2)
+
+
+def test_hist_histtype_step_and_stepfilled():
+    from plotpress.artists import Polygon, Bars
+
+    x = np.array([0.0, 1, 1, 2, 2, 2, 3])
+    fig, ax = plotpress.subplots()
+    _, _, b = ax.hist(x, bins=4, histtype="bar")
+    assert isinstance(b, Bars)
+
+    fig2, ax2 = plotpress.subplots()
+    _, _, p = ax2.hist(x, bins=4, histtype="step", color="red")
+    assert isinstance(p, Polygon) and p.color is None and p.edgecolor == "red"
+
+    fig3, ax3 = plotpress.subplots()
+    _, _, pf = ax3.hist(x, bins=4, histtype="stepfilled", color="blue")
+    assert isinstance(pf, Polygon) and pf.color == "blue"
+
+
+def test_hist_cumulative_is_monotonic():
+    x = np.random.RandomState(0).normal(size=200)
+    fig, ax = plotpress.subplots()
+    counts, edges, b = ax.hist(x, bins=10, cumulative=True)
+    assert np.all(np.diff(counts) >= 0)
+    assert counts[-1] == 200
+
+
+def test_hist_weights_scale_counts():
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    fig, ax = plotpress.subplots()
+    counts, edges, b = ax.hist(x, bins=4, range=(0, 4))
+    fig2, ax2 = plotpress.subplots()
+    counts_w, _, _ = ax2.hist(x, bins=4, range=(0, 4), weights=np.full(4, 2.0))
+    assert np.allclose(counts_w, counts * 2)
+
+
+def test_hist_stacked_multiple_datasets():
+    d1 = np.array([0.0, 1.0])
+    d2 = np.array([0.0, 1.0])
+    fig, ax = plotpress.subplots()
+    counts, edges, bars = ax.hist([d1, d2], bins=2, range=(0, 2), stacked=True)
+    assert len(bars) == 2
+    # second dataset's base sits on top of the first's own counts
+    assert np.allclose(bars[1].base, bars[0].length)
+
+
+def test_hist_backward_compatible_single_dataset_default():
+    """A bare hist(x) call must still return (counts, edges, bars) with
+    bars a single Bars, not a list -- exactly as before these gaps closed."""
+    from plotpress.artists import Bars
+
+    x = np.random.RandomState(0).normal(size=100)
+    fig, ax = plotpress.subplots()
+    counts, edges, bars = ax.hist(x, bins=10)
+    assert isinstance(bars, Bars)
+    assert isinstance(counts, np.ndarray)
+
+
+def test_boxplot_whis_widens_the_whiskers():
+    data = np.array([0.0, 1, 1, 1, 2, 100.0])
+    fig, ax = plotpress.subplots()
+    tight = ax.boxplot([data], whis=1.5)
+    fig2, ax2 = plotpress.subplots()
+    wide = ax2.boxplot([data], whis=200.0)
+    assert tight.stats[0]["hi"] < wide.stats[0]["hi"]
+    assert len(tight.stats[0]["fliers"]) > len(wide.stats[0]["fliers"])
+
+
+def test_boxplot_showfliers_false_drops_them():
+    data = np.array([0.0, 1, 1, 1, 2, 100.0])
+    fig, ax = plotpress.subplots()
+    b = ax.boxplot([data], showfliers=False)
+    assert len(b.stats[0]["fliers"]) == 0
+    assert "<circle" not in fig.to_svg()
+
+
+def test_errorbar_ecolor_elinewidth_capthick_are_independent():
+    fig, ax = plotpress.subplots()
+    eb = ax.errorbar([0, 1], [1, 1], yerr=[0.2, 0.2], color="blue",
+                     ecolor="red", elinewidth=3.0, capthick=1.0)
+    assert eb.color == "blue" and eb.ecolor == "red"
+    assert eb.elinewidth == 3.0 and eb.capthick == 1.0
+    svg = fig.to_svg()
+    assert 'stroke="red"' in svg
+
+
+def test_errorbar_ecolor_defaults_match_color_and_linewidth():
+    """Backward compatibility: with nothing given, ecolor/elinewidth/
+    capthick fall back to color/linewidth exactly, changing nothing for
+    every pre-existing errorbar() call."""
+    fig, ax = plotpress.subplots()
+    eb = ax.errorbar([0, 1], [1, 1], yerr=[0.2, 0.2], color="blue", linewidth=2.0)
+    assert eb.ecolor == eb.color == "blue"
+    assert eb.elinewidth == eb.capthick == eb.linewidth == 2.0
+
+
+def test_imshow_interpolation_nearest_vs_smooth():
+    X = np.random.RandomState(0).rand(4, 4)
+    fig1, ax1 = plotpress.subplots()
+    ax1.imshow(X)
+    fig2, ax2 = plotpress.subplots()
+    ax2.imshow(X, interpolation="bilinear")
+    assert "pixelated" in fig1.to_svg()
+    assert "pixelated" not in fig2.to_svg()
+
+    fig3, ax3 = plotpress.subplots()
+    ax3.pcolormesh(X)
+    assert "pixelated" in fig3.to_svg()   # unaffected -- imshow-only so far

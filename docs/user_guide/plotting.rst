@@ -44,18 +44,23 @@ Lines and areas
 Markers
 -------
 
-``scatter(x, y, s=None, c=None, color=None, marker="o", label=None, alpha=1.0, cmap="viridis", norm=None, vmin=None, vmax=None)``
+``scatter(x, y, s=None, c=None, color=None, marker="o", label=None, alpha=1.0, cmap="viridis", norm=None, vmin=None, vmax=None, edgecolors=None, linewidths=None)``
     Scattered points. Pass ``c`` (an array) with ``cmap`` to color points by a
     third variable; ``s`` is the marker diameter in points. Markers stay a
     constant on-screen size under interactive zoom -- which is why only **round**
     markers are drawn: they are emitted as round-capped zero-length strokes, and
     a polygonal marker would have to scale with the zoom instead. ``marker`` is
     accepted for matplotlib compatibility and warns for any other shape;
-    distinguish series by color, size or a label instead.
+    distinguish series by color, size or a label instead. ``edgecolors``/
+    ``linewidths`` outline every marker in the call (one color/width for the
+    whole collection, not per-point) -- keeps overlapping same-color points
+    distinguishable; giving ``edgecolors`` alone still draws a visible
+    outline, at a default width.
 
     .. code-block:: python
 
        ax.scatter(x, y, c=x**2 + y**2, cmap="plasma", s=12)
+       ax.scatter(x, y, color="gold", edgecolors="black", linewidths=0.5)
 
 Bars and histograms
 -------------------
@@ -67,8 +72,15 @@ Bars and histograms
     (``barh``: right edge); ``ecolor`` defaults to black, independent of
     the bars' own ``color``.
 
-``hist(data, bins=10, range=None, color=None, edgecolor="#ffffff", label=None, alpha=1.0, density=False)``
-    Histogram. Returns ``(counts, edges, bars)``.
+``hist(data, bins=10, range=None, color=None, edgecolor="#ffffff", label=None, alpha=1.0, density=False, histtype="bar", cumulative=False, weights=None, stacked=False)``
+    Histogram. ``data`` may be a single array or a sequence of arrays --
+    multiple datasets share one set of bins, overlaid by default or
+    ``stacked=True`` bottom-to-top. ``histtype`` is ``"bar"`` (default),
+    ``"step"`` (unfilled outline) or ``"stepfilled"``. ``cumulative``
+    running-sums left to right; ``weights`` weights each sample instead of
+    counting it as 1. Returns ``(counts, edges, bars)`` -- ``counts``/
+    ``bars`` are each a list, one per dataset, when ``data`` held more than
+    one.
 
 ``hist2d(x, y, bins=20, range=None, cmap="viridis")``
     2-D histogram rendered as an image. Returns ``(counts, image)`` -- pass the
@@ -77,15 +89,20 @@ Bars and histograms
 Statistical
 -----------
 
-``boxplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None)``
-    Box-and-whisker plot; ``data`` is a sequence of arrays. Whiskers use the
-    1.5x IQR rule and outliers are drawn as open circles.
+``boxplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, whis=1.5, showfliers=True)``
+    Box-and-whisker plot; ``data`` is a sequence of arrays. Whiskers reach
+    ``whis`` IQRs past q1/q3 (matplotlib's own default is ``1.5``); points
+    past that are drawn as open circles unless ``showfliers=False`` drops
+    them instead.
 
 ``violinplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, points=100)``
     Kernel-density "violin" silhouettes (Gaussian KDE, Silverman bandwidth).
 
-``errorbar(x, y, yerr=None, xerr=None, color=None, marker="o", markersize=None, capsize=3.0, linestyle="-", linewidth=None, label=None, alpha=1.0)``
-    Line/markers with x and/or y error bars and caps.
+``errorbar(x, y, yerr=None, xerr=None, color=None, marker="o", markersize=None, capsize=3.0, linestyle="-", linewidth=None, label=None, alpha=1.0, ecolor=None, elinewidth=None, capthick=None)``
+    Line/markers with x and/or y error bars and caps. ``ecolor``/
+    ``elinewidth`` style the whiskers/caps independently of the line and
+    marker -- each falls back to ``color``/``linewidth`` if not given.
+    ``capthick`` (the caps' own width) falls back to ``elinewidth`` in turn.
 
 ``eventplot(positions, lineoffsets=None, linelengths=0.8, color=None, orientation="horizontal", label=None)``
     Raster of event ticks, one row per sequence.
@@ -96,16 +113,20 @@ Statistical
 2-D fields
 ----------
 
-``pcolormesh(*args, cmap="viridis", norm=None, vmin=None, vmax=None)``
+``pcolormesh(*args, cmap="viridis", norm=None, vmin=None, vmax=None, alpha=1.0, label=None)``
     Rectilinear pseudocolor mesh: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``.
     Rasterized to a single embedded image, so grid size costs no DOM nodes.
+    ``alpha``/``label`` match :meth:`imshow`.
 
-``imshow(A, cmap="viridis", norm=None, vmin=None, vmax=None, extent=None, origin="upper", alpha=1.0)``
+``imshow(A, cmap="viridis", norm=None, vmin=None, vmax=None, extent=None, origin="upper", alpha=1.0, interpolation="nearest")``
     Display a 2-D (colormapped) or RGB(A) array. ``origin`` is ``"upper"`` or
     ``"lower"``; ``extent`` is ``(xmin, xmax, ymin, ymax)``. ``alpha`` blends
     into whatever is drawn underneath -- an artist drawn first, or pinned
     underneath via a lower ``zorder``, shows through rather than being fully
-    covered.
+    covered. ``interpolation="nearest"`` (default) draws crisp pixel blocks
+    however far the image is scaled; anything else lets the browser smooth
+    it -- SVG output only, since raster (PNG/PDF) output already samples at
+    its own fixed resolution.
 
 ``contour(*args, levels=8, colors=None, cmap="viridis", vmin=None, vmax=None, label=None)``
     Contour lines via marching squares: ``contour(Z)`` or ``contour(x, y, Z)``.

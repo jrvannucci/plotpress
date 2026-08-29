@@ -889,7 +889,7 @@ class Figure:
 
     # -- figure-level legend ------------------------------------------------
     def legend(self, ax=None, loc="lower center", ncol=1, title=None,
-               pad=0.01) -> "Figure":
+               pad=0.01, fontsize=None) -> "Figure":
         """One legend for the whole figure, drawn from labelled artists.
 
         The counterpart to :meth:`colorbar` over a list of axes: a grid whose
@@ -898,6 +898,8 @@ class Figure:
         each series appears once however many panels draw it.
 
         ``ax`` selects which axes contribute (default: all of them).
+        ``fontsize`` overrides the entry/title text size (default: the
+        style's own tick label size), matching :meth:`Axes.legend`.
 
         ``loc`` names a placement in **figure** coordinates. The four outside
         placements -- ``"lower center"``, ``"upper center"``, ``"right"`` and
@@ -915,6 +917,7 @@ class Figure:
             "ncol": max(1, int(ncol)),
             "title": title,
             "pad": float(pad),
+            "fontsize": fontsize,
         }
         _layout_figure_legend(self)
         return self
