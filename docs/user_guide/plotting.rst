@@ -7,20 +7,27 @@ matplotlib. See the :ref:`gallery <gallery>` for a rendered example of each.
 Lines and areas
 ---------------
 
-``plot(*args, color=None, linewidth=None, linestyle="-", label=None, alpha=1.0)``
+``plot(*args, color=None, linewidth=None, linestyle="-", label=None, alpha=1.0, marker=None, markersize=None, markerfacecolor=None)``
     Line plot of ``y`` or ``x, y``. ``linestyle`` is ``"-"``, ``"--"``, ``":"``
-    or ``"-."``. Colors auto-advance through the per-axes cycle.
+    or ``"-."``. Colors auto-advance through the per-axes cycle. ``marker``
+    draws a dot at each vertex alongside the line (only round shapes are
+    drawn, same limitation as :meth:`~plotpress.axes.Axes.scatter`);
+    ``markerfacecolor`` defaults to the line's own ``color``.
 
     .. code-block:: python
 
        ax.plot(x, np.sin(x), label="sin")
        ax.plot(x, np.cos(x), linestyle="--")
+       ax.plot(x, np.tan(x), marker="o", markerfacecolor="red")
 
 ``step(x, y, where="pre", color=None, linewidth=None, label=None, alpha=1.0)``
     Staircase line. ``where`` is ``"pre"``, ``"post"`` or ``"mid"``.
 
-``fill_between(x, y1, y2=0.0, color=None, alpha=0.4, label=None)``
+``fill_between(x, y1, y2=0.0, color=None, alpha=0.4, label=None, edgecolor=None, linewidth=0.0)``
     Shade the area between ``y1`` and ``y2`` (scalar or array).
+    ``fill_betweenx(y, x1, x2=0.0, ...)`` is the horizontal form; both
+    accept the same ``edgecolor``/``linewidth`` :meth:`~plotpress.axes.Axes.fill`
+    already has.
 
 ``stackplot(x, *ys, colors=None, alpha=0.8, labels=None)``
     Stacked filled areas.
@@ -47,9 +54,12 @@ Markers
 Bars and histograms
 -------------------
 
-``bar(x, height, width=0.8, bottom=0.0, color=None, edgecolor=None, linewidth=0.8, label=None, alpha=1.0)``
+``bar(x, height, width=0.8, bottom=0.0, color=None, edgecolor=None, linewidth=0.8, label=None, alpha=1.0, yerr=None, xerr=None, capsize=3.0, ecolor=None)``
     Vertical bars. ``barh(y, width, height=0.8, left=0.0, ...)`` is the
-    horizontal form.
+    horizontal form. ``yerr``/``xerr`` draw error bars (whiskers + caps, no
+    connecting line or marker) centered at each bar's own top
+    (``barh``: right edge); ``ecolor`` defaults to black, independent of
+    the bars' own ``color``.
 
 ``hist(data, bins=10, range=None, color=None, edgecolor="#ffffff", label=None, alpha=1.0, density=False)``
     Histogram. Returns ``(counts, edges, bars)``.
@@ -88,9 +98,13 @@ Statistical
     Display a 2-D (colormapped) or RGB(A) array. ``origin`` is ``"upper"`` or
     ``"lower"``; ``extent`` is ``(xmin, xmax, ymin, ymax)``.
 
-``contour(*args, levels=8, colors=None, cmap="viridis", label=None)``
+``contour(*args, levels=8, colors=None, cmap="viridis", vmin=None, vmax=None, label=None)``
     Contour lines via marching squares: ``contour(Z)`` or ``contour(x, y, Z)``.
-    ``levels`` is a count or an explicit sequence.
+    ``levels`` is a count or an explicit sequence. Each level's color comes
+    from its own *value*, normalized by ``vmin``/``vmax`` (default: ``Z``'s
+    own min/max) -- the same normalization :meth:`pcolormesh`/``contourf``
+    use, so non-uniform ``levels`` still get each one's true position on
+    the scale, not just its rank among them.
 
 Vector fields
 -------------

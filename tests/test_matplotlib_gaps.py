@@ -1058,3 +1058,222 @@ def test_hexbin_conserves_point_counts():
     verts, counts = _hexbin(x, y, 15, 1)
     assert counts.sum() == x.size
     assert len(verts) == len(counts)
+
+
+# -- Tier 1/2 kwarg gaps closed (audit: "are there missing kwargs?") --------
+def test_plot_marker_draws_a_dot_per_vertex():
+    """Regression: the raster backend zips Markers.colors against
+    points/diameters and silently truncates to the shortest -- passing a
+    single-element colors list (rather than one entry per point, like
+    ScatterCollection already does) drew only the *first* vertex's marker,
+    with no error to reveal the other N-1 were silently dropped."""
+    import numpy as np
+    from plotpress.raster import figure_to_image
+
+    x = np.linspace(0, 10, 12)
+    fig, ax = plotpress.subplots()
+    line = ax.plot(x, np.sin(x), marker="o", markersize=8,
+                   markerfacecolor="#ff0000", color="#888888")
+    assert line.marker == "o"
+
+    svg = fig.to_svg()
+    assert 'fill="none" stroke="#ff0000"' in svg   # the dot path's own stroke
+
+    arr = np.asarray(figure_to_image(fig, scale=1))
+    red_pixels = int(((arr[..., 0] > 200) & (arr[..., 1] < 80) & (arr[..., 2] < 80)).sum())
+    # 12 markers of real size -- one lone pixel would mean only one survived.
+    assert red_pixels > 50
+
+
+def test_plot_without_marker_draws_no_dots():
+    """Backward compatibility: a plain plot() (no marker=) must still emit
+    exactly one path (the line itself) -- not stroke-linecap="round",
+    which the line's own path already carries unconditionally regardless
+    of markers, so that alone can't distinguish the two."""
+    fig, ax = plotpress.subplots()
+    line = ax.plot([0, 1, 2], [0, 1, 4])
+    assert line.marker is None
+    svg = fig.to_svg()
+    assert svg.count("<path") == 1
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1, 2], [0, 1, 4], marker="o")
+    assert fig2.to_svg().count("<path") == 2   # the line, plus the markers' own path
+
+
+def test_plot_marker_warns_on_non_round_shape():
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning):
+        ax.plot([0, 1], [0, 1], marker="s")   # square: accepted, drawn as a dot
+
+
+def test_bar_yerr_draws_caps_and_whiskers_and_autoscales():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1, 2], [3, 5, 2], yerr=[0.5, 1.0, 0.3], capsize=5)
+    svg = fig.to_svg()
+    assert svg.count("<rect") >= 3               # the bars themselves
+    assert svg.count("<line") >= 9                # 3 whiskers + 6 cap ends
+    _, (ymin, ymax) = ax._resolved_limits()
+    assert ymax >= 6.0                            # bar 1's top (5) + yerr (1)
+
+
+def test_barh_xerr_draws_error_bars_on_the_value_axis():
+    fig, ax = plotpress.subplots()
+    ax.barh([0, 1], [4, 6], xerr=[1.0, 0.5])
+    (xmin, xmax), _ = ax._resolved_limits()
+    assert xmax >= 6.5                            # bar 2's right edge (6) + xerr (0.5)
+
+
+def test_errorbar_xerr_renders_in_raster_backend():
+    """Regression: raster._errorbar() had a branch for eb.yerr but none at
+    all for eb.xerr -- errorbar(xerr=...) (and, composed on top of it,
+    barh()'s own xerr) rendered correctly in SVG but drew nothing in
+    PNG/PDF output, with no error to reveal the whiskers/caps were
+    silently missing. Found via barh()'s new xerr= composing on top of
+    errorbar(), the first real path to exercise xerr with no yerr."""
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.errorbar([0, 1, 2], [1, 1, 1], xerr=[0.3, 0.3, 0.3], linestyle="none",
+               marker=None, markersize=0.0)
+    with_xerr = _nonbg_pixels(fig)
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.errorbar([0, 1, 2], [1, 1, 1], linestyle="none", marker=None,
+                markersize=0.0)
+    without_xerr = _nonbg_pixels(fig2)
+    assert with_xerr > without_xerr
+
+
+def test_barh_xerr_renders_in_raster_backend():
+    """Same regression as test_errorbar_xerr_renders_in_raster_backend, via
+    the composed bar()/barh() path. xlim is fixed identically on both
+    figures -- otherwise adding xerr widens autoscale, which shrinks the
+    bars themselves in pixel terms and can net *fewer* total ink pixels
+    despite the whiskers/caps actually being there, confounding a bare
+    ink-count comparison."""
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.barh([0, 1], [4, 6], xerr=[1.0, 0.5])
+    ax.set_xlim(0, 8)
+    with_xerr = _nonbg_pixels(fig)
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.barh([0, 1], [4, 6])
+    ax2.set_xlim(0, 8)
+    without_xerr = _nonbg_pixels(fig2)
+    assert with_xerr > without_xerr
+
+
+def test_bar_without_yerr_adds_no_extra_artist():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5])
+    assert len(ax.artists) == 1                   # just the Bars, no ErrorBar
+
+
+def test_bar_yerr_ecolor_is_independent_of_bar_color():
+    fig, ax = plotpress.subplots()
+    ax.bar([0], [3], yerr=[0.5], color="#00ff00", ecolor="#ff00ff")
+    svg = fig.to_svg()
+    assert 'fill="#00ff00"' in svg      # the bar itself
+    assert "#ff00ff" in svg             # the error bar, independently colored
+
+
+def test_fill_between_and_fill_betweenx_accept_edgecolor_and_linewidth():
+    import numpy as np
+
+    fig, ax = plotpress.subplots()
+    fb = ax.fill_between([0, 1, 2], [0, 1, 0], edgecolor="#123456", linewidth=2.0)
+    assert fb.edgecolor == "#123456" and fb.linewidth == 2.0
+    svg = fig.to_svg()
+    assert 'stroke="#123456"' in svg
+
+    fig2, ax2 = plotpress.subplots()
+    y = np.linspace(0, 5, 10)
+    ax2.fill_betweenx(y, 0, np.ones_like(y), edgecolor="#654321", linewidth=1.5)
+    assert 'stroke="#654321"' in fig2.to_svg()
+
+
+def test_fill_between_default_has_no_visible_edge():
+    """Backward compatibility: no edgecolor given must render exactly as
+    before -- no stroke attribute added to the fill path."""
+    fig, ax = plotpress.subplots()
+    ax.fill_between([0, 1, 2], [0, 1, 0])
+    assert 'stroke="None"' not in fig.to_svg()
+
+
+def _near_black_pixels(fig, scale=2, thresh=80):
+    """Count pixels close to black, for checking a specific dark outline's
+    thickness where the fill itself already makes the whole shape count as
+    "non-background" -- _nonbg_pixels can't see a thicker edge drawn entirely
+    inside an already-non-background fill."""
+    from plotpress.raster import figure_to_image
+    arr = np.asarray(figure_to_image(fig, scale=scale)).astype(int)
+    return int((arr[:, :, :3].max(axis=2) < thresh).sum())
+
+
+def test_fill_between_linewidth_renders_in_raster_backend():
+    """Regression: raster._composite_polygon() passed a filled shape's
+    outline *color* to PIL but never its *width* -- fill_between()/fill()'s
+    linewidth= scaled the stroke correctly in SVG but always drew PIL's own
+    default 1px outline in PNG/PDF, regardless of what was requested. A
+    thin vs. a thick edge on the same fill must produce different ink."""
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.fill_between([0, 1, 2], [0, 1, 0], edgecolor="#000000", linewidth=1.0)
+    thin = _near_black_pixels(fig)
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.fill_between([0, 1, 2], [0, 1, 0], edgecolor="#000000", linewidth=12.0)
+    thick = _near_black_pixels(fig2)
+    assert thick > thin
+
+
+def test_contour_vmin_vmax_changes_level_colors():
+    import numpy as np
+
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = np.exp(-(X ** 2 + Y ** 2))
+
+    fig1, ax1 = plotpress.subplots()
+    c1 = ax1.contour(g, g, Z, levels=[0.5], cmap="viridis")
+    fig2, ax2 = plotpress.subplots()
+    c2 = ax2.contour(g, g, Z, levels=[0.5], cmap="viridis", vmin=0, vmax=10)
+    # Same level, same data, but a much wider vmax pushes 0.5 far down the
+    # colormap compared to the default (auto vmin/vmax from Z itself).
+    assert c1.colors[0] != c2.colors[0]
+
+
+def test_contour_colors_non_uniform_levels_by_value_not_rank():
+    """Regression: colors used to come from each level's *rank* in the
+    levels array (np.linspace(0, 255, len(levels))), which only matched
+    value-based normalization when levels happened to be evenly spaced.
+    Two levels close in value must get close colors, even if a third,
+    far-away level is also in the list."""
+    import numpy as np
+
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = X + Y   # smooth linear ramp: color should track value linearly
+
+    fig, ax = plotpress.subplots()
+    c = ax.contour(g, g, Z, levels=[-3.9, -3.8, 4.0], cmap="viridis")
+    lo, mid, hi = (tuple(int(c.colors[i][j:j + 2], 16) for j in (1, 3, 5))
+                   for i in range(3))
+    dist_lo_mid = sum((a - b) ** 2 for a, b in zip(lo, mid))
+    dist_mid_hi = sum((a - b) ** 2 for a, b in zip(mid, hi))
+    assert dist_lo_mid < dist_mid_hi   # -3.9 and -3.8 are near-identical values
+
+
+def test_contour_default_vmin_vmax_matches_old_evenly_spaced_behavior():
+    """Auto levels (evenly spaced across Z's own range) must still color
+    exactly as before -- the fix only changes non-uniform/explicit-vmin
+    cases, not the common default path."""
+    import numpy as np
+
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = np.exp(-(X ** 2 + Y ** 2))
+    fig, ax = plotpress.subplots()
+    c = ax.contour(g, g, Z, levels=5, cmap="viridis")
+    assert len(set(c.colors)) == len(c.levels)   # 5 distinct levels, 5 distinct colors

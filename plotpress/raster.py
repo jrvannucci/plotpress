@@ -58,7 +58,7 @@ def _rgba(color, alpha=1.0):
     return _rgb(color) + (int(round(alpha * 255)),)
 
 
-def _composite_polygon(canvas, pts, rgba, outline=None):
+def _composite_polygon(canvas, pts, rgba, outline=None, outline_width=1):
     """Draw a filled polygon with correct alpha by compositing a bbox layer.
 
     Drawing directly with an RGBA fill *replaces* pixels (alpha is then dropped
@@ -75,7 +75,7 @@ def _composite_polygon(canvas, pts, rgba, outline=None):
     layer = PILImage.new("RGBA", (w, h), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(layer)
     ldraw.polygon([(px - x0, py - y0) for px, py in pts], fill=rgba,
-                  outline=outline)
+                  outline=outline, width=max(1, int(round(outline_width))))
     canvas.alpha_composite(layer, (x0, y0))
 
 
@@ -351,14 +351,19 @@ def _draw_prim(p, S, draw, canvas):
             pts = [tuple(v) for v in verts]
             rgba = (_rgb(fc) if isinstance(fc, str)
                     else (int(fc[0]), int(fc[1]), int(fc[2]))) + (al,)
-            _composite_polygon(canvas, pts, rgba, outline=outline)
+            _composite_polygon(canvas, pts, rgba, outline=outline,
+                              outline_width=p.edge_width * S)
     elif isinstance(p, PPath):
         if p.fill:
             pts = [tuple(v) for sub in p.subpaths for v in sub if np.isfinite(v).all()]
             if len(pts) >= 3:
+                # Regression: the outline drew at PIL's own default width (1px)
+                # regardless of stroke_width -- fill_between()/fill()'s own
+                # edgecolor rendered, but linewidth had no visible effect at
+                # all in PNG/PDF output, only in SVG.
                 outline = _rgb(p.stroke) if p.stroke else None
                 _composite_polygon(canvas, pts, _rgba(p.fill, p.fill_opacity),
-                                   outline=outline)
+                                   outline=outline, outline_width=p.stroke_width * S)
         else:
             w = max(1, int(round(p.stroke_width * S)))
             dash = _DASH.get(p.linestyle)
@@ -555,6 +560,16 @@ def _errorbar(eb, tr, st, S, draw):
             draw.line([x, a, x, b], fill=col, width=S)
             draw.line([x - cap, a, x + cap, a], fill=col, width=S)
             draw.line([x - cap, b, x + cap, b], fill=col, width=S)
+    if eb.xerr is not None:
+        # Regression: this branch didn't exist at all -- errorbar(xerr=...)
+        # (and, composed on top of it, barh()'s own xerr) drew nothing in
+        # PNG/PDF output, only in SVG (see svg._render_errorbar, which
+        # already has both branches).
+        xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
+        for y, a, b in zip(yb, xlo, xhi):
+            draw.line([a, y, b, y], fill=col, width=S)
+            draw.line([a, y - cap, a, y + cap], fill=col, width=S)
+            draw.line([b, y - cap, b, y + cap], fill=col, width=S)
     r = eb.markersize / 2.0 * st.dpi / 72.0 * S
     for x, y in zip(xb, yb):
         if np.isfinite(x) and np.isfinite(y):      # see svg._render_errorbar

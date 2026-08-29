@@ -188,9 +188,25 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         subs = _finite_subpaths(tr.xy(x, y))
         if not subs:
             return []
-        return [Path(subpaths=subs, stroke=a.color, stroke_width=a.linewidth,
+        prims = [Path(subpaths=subs, stroke=a.color, stroke_width=a.linewidth,
                      linestyle=a.linestyle, stroke_opacity=a.alpha,
                      stroke_round=True, series_id=f"s{ai}_{k}", label=lbl)]
+        if a.marker:
+            # Reuses the exact same constant-pixel-size Markers primitive
+            # scatter() already draws with -- a line's own markers are just
+            # a dot at each vertex, no new rendering needed in either
+            # backend. No series_id: these are the same points the Path
+            # above already made pickable, not a second series of their own.
+            pts = tr.xy(x, y)
+            diam = np.full(x.shape, (a.markersize or 6.0) * size_scale, dtype=float)
+            face = a.markerfacecolor or a.color
+            # One color per point, not one total -- the raster backend zips
+            # colors against points/diameters and silently truncates to
+            # whichever is shortest (see ScatterCollection's own [a.color] *
+            # a.x.size just above, the same reason it does this).
+            prims.append(Markers(pts, diam, [face] * x.size, single_color=True,
+                                 alpha=a.alpha, label=lbl))
+        return prims
 
     if isinstance(a, VLine):
         x = float(tr.x(a.x))
@@ -228,7 +244,8 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         bot = tr.xy(a.x[::-1], a.y2[::-1])
         pts = np.vstack([top, bot])
         return [Path(subpaths=[pts], closed=True, fill=a.color,
-                     fill_opacity=a.alpha, series_id=f"s{ai}_{k}", label=lbl)]
+                     fill_opacity=a.alpha, stroke=a.edgecolor,
+                     stroke_width=a.linewidth, series_id=f"s{ai}_{k}", label=lbl)]
 
     if isinstance(a, Polygon):
         pts = tr.xy(a.x, a.y)

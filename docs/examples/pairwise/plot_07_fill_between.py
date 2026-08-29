@@ -4,7 +4,8 @@ Filled area
 
 ``fill_between`` fills vertically, between a curve and a baseline at each
 ``x``; ``fill_betweenx`` is its transpose -- filling horizontally, between a
-curve and a baseline at each ``y``.
+curve and a baseline at each ``y``. ``edgecolor``/``linewidth`` outline the
+filled region -- the same two options ``fill()`` already has.
 """
 import numpy as np
 import plotpress
@@ -14,7 +15,7 @@ y = np.sin(x)
 
 fig, (ax1, ax2) = plotpress.subplots(1, 2, figsize=(9, 4))
 
-ax1.fill_between(x, y, 0.0, alpha=0.4)
+ax1.fill_between(x, y, 0.0, alpha=0.4, edgecolor="#1f77b4", linewidth=1.5)
 ax1.plot(x, y)
 ax1.set_title("fill_between")
 

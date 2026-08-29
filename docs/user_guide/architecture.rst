@@ -16,6 +16,23 @@ Unlike matplotlib, there is no ``pyplot`` layer and no global ``rcParams``. A
 :class:`~plotpress.style.Style`. ``plotpress.subplots()`` returns a fresh,
 fully independent figure.
 
+This is what makes building axes **threadable and parallelizable**: with
+nothing shared across figures, several threads each building their own
+independent ``Figure`` have no mutable global state to race over. Across
+*processes* the same property means a ``Figure``/``Axes`` pickles cleanly --
+no global registry to somehow reconcile on the other side -- which is why a
+``joblib``/``multiprocessing`` worker can build a real, complete axes
+(fit + plot in one call) in its own process and hand it back rather than
+returning only plain arrays for the parent to replot. What a process
+boundary does *not* preserve is object identity: the axes that comes back
+is a copy, never the original, so :meth:`~plotpress.figure.Figure.adopt_axes`
+merges it into the real figure in place of whichever of its own axes shares
+that grid position. See :doc:`figures` ("Building a figure across
+processes") for the full API, and
+:doc:`../auto_examples/parallel_building/plot_01_joblib_lazy_parquet_fit`
+for a worked example -- a lazy parquet scan and curve fit inside a joblib
+worker, merged back with ``adopt_axes()``.
+
 SVG-first, selectively raster
 -----------------------------
 

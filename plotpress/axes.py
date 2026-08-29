@@ -256,11 +256,19 @@ class Axes:
 
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle="-",
-             label=None, alpha=1.0, values=None):
+             label=None, alpha=1.0, values=None, marker=None, markersize=None,
+             markerfacecolor=None):
         """Plot ``y`` or ``x, y`` as a line. Returns the :class:`Line2D`.
 
         ``values`` is an optional ``{name: array}`` of extra per-point
         dimensions (e.g. ``z``) surfaced when a point is picked interactively.
+
+        ``marker`` draws a dot at each vertex in addition to the line itself
+        (``markersize`` in points, default matches the style's own marker
+        size; ``markerfacecolor`` defaults to the line's own ``color``).
+        Only round markers are drawn (see :func:`_warn_marker_shape`); any
+        other ``marker`` is accepted for matplotlib compatibility but warns,
+        the same limitation :meth:`scatter`/:meth:`errorbar` already have.
         """
         if len(args) == 1:
             y = np.asarray(args[0], dtype=float)
@@ -271,11 +279,17 @@ class Axes:
         else:
             raise TypeError("plot() requires y or x, y")
 
+        if marker:
+            _warn_marker_shape(marker, "plot")
         line = Line2D(
             x, y,
             color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha, values=values,
+            marker=marker,
+            markersize=self.style.marker_size if markersize is None else markersize,
+            markerfacecolor=(self._resolve_color(markerfacecolor)
+                            if markerfacecolor is not None else None),
         )
         self.artists.append(line)
         return line
@@ -412,21 +426,45 @@ class Axes:
         return art
 
     def bar(self, x, height, width=0.8, bottom=0.0, color=None, edgecolor=None,
-            linewidth=0.8, label=None, alpha=1.0):
-        """Vertical bar chart."""
+            linewidth=0.8, label=None, alpha=1.0, yerr=None, xerr=None,
+            capsize=3.0, ecolor=None):
+        """Vertical bar chart.
+
+        ``yerr``/``xerr`` draw error bars centered at each bar's own top
+        (``bottom + height``), composed from the same whiskers-and-caps
+        :meth:`errorbar` already draws (no connecting line, no marker) --
+        so they autoscale and render exactly like a standalone error bar
+        would. ``ecolor`` (default black, independent of the bars' own
+        ``color``) matches matplotlib's own bar-error-bar default.
+        """
         b = Bars(x, height, width, bottom, "vertical",
                  color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
         self.artists.append(b)
+        if yerr is not None or xerr is not None:
+            top = b.base + b.length
+            self.errorbar(b.pos, top, yerr=yerr, xerr=xerr,
+                         color=self._resolve_color(ecolor) if ecolor else "#000000",
+                         marker=None, markersize=0.0, linestyle="none",
+                         capsize=capsize)
         return b
 
     def barh(self, y, width, height=0.8, left=0.0, color=None, edgecolor=None,
-             linewidth=0.8, label=None, alpha=1.0):
-        """Horizontal bar chart."""
+             linewidth=0.8, label=None, alpha=1.0, xerr=None, yerr=None,
+             capsize=3.0, ecolor=None):
+        """Horizontal bar chart. ``xerr``/``yerr``/``capsize``/``ecolor``
+        match :meth:`bar`, centered at each bar's own right edge
+        (``left + width``)."""
         b = Bars(y, width, height, left, "horizontal",
                  color=self._resolve_color(color), edgecolor=edgecolor,
                  linewidth=linewidth, label=label, alpha=alpha)
         self.artists.append(b)
+        if xerr is not None or yerr is not None:
+            right = b.base + b.length
+            self.errorbar(right, b.pos, yerr=yerr, xerr=xerr,
+                         color=self._resolve_color(ecolor) if ecolor else "#000000",
+                         marker=None, markersize=0.0, linestyle="none",
+                         capsize=capsize)
         return b
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
@@ -457,22 +495,33 @@ class Axes:
         return self.plot(xs, ys, color=self._resolve_color(color),
                          linewidth=linewidth, label=label, alpha=alpha)
 
-    def fill_between(self, x, y1, y2=0.0, color=None, alpha=0.4, label=None):
-        """Fill the area between ``y1`` and ``y2``."""
+    def fill_between(self, x, y1, y2=0.0, color=None, alpha=0.4, label=None,
+                     edgecolor=None, linewidth=0.0):
+        """Fill the area between ``y1`` and ``y2``.
+
+        ``edgecolor``/``linewidth`` outline the filled region -- the same
+        two options :meth:`fill` already has, since both draw the same
+        closed-path primitive; there was no reason the outline was
+        ``fill()``-only.
+        """
         fb = FillBetween(x, y1, y2, color=self._resolve_color(color),
-                         alpha=alpha, label=label)
+                         alpha=alpha, label=label, edgecolor=edgecolor,
+                         linewidth=linewidth)
         self.artists.append(fb)
         return fb
 
-    def fill_betweenx(self, y, x1, x2=0.0, color=None, alpha=0.4, label=None):
-        """Fill the horizontal area between ``x1`` and ``x2`` across ``y``."""
+    def fill_betweenx(self, y, x1, x2=0.0, color=None, alpha=0.4, label=None,
+                      edgecolor=None, linewidth=0.0):
+        """Fill the horizontal area between ``x1`` and ``x2`` across ``y``.
+
+        ``edgecolor``/``linewidth`` match :meth:`fill_between`."""
         y = np.asarray(y, float)
         x1 = np.broadcast_to(np.asarray(x1, float), y.shape)
         x2 = np.broadcast_to(np.asarray(x2, float), y.shape)
         px = np.concatenate([x1, x2[::-1]])
         py = np.concatenate([y, y[::-1]])
         p = Polygon(px, py, color=self._resolve_color(color), alpha=alpha,
-                    label=label)
+                    edgecolor=edgecolor, linewidth=linewidth, label=label)
         self.artists.append(p)
         return p
 
@@ -749,8 +798,18 @@ class Axes:
         self.artists.append(q)
         return q
 
-    def contour(self, *args, levels=8, colors=None, cmap="viridis", label=None):
-        """Contour lines. ``contour(Z)`` or ``contour(x, y, Z)``."""
+    def contour(self, *args, levels=8, colors=None, cmap="viridis", vmin=None,
+                vmax=None, label=None):
+        """Contour lines. ``contour(Z)`` or ``contour(x, y, Z)``.
+
+        Colors (when ``colors`` isn't given explicitly) come from mapping
+        each level's own *value* through ``cmap``, normalized by
+        ``vmin``/``vmax`` (defaulting to ``Z``'s own min/max) -- the same
+        normalization :meth:`contourf` uses, so an explicit ``vmin``/``vmax``
+        colors both the same way, and non-uniform ``levels`` (e.g.
+        ``[0, 1, 2, 10]``) get each level's true position on the scale,
+        not just its rank among them.
+        """
         if len(args) == 1:
             Z = np.asarray(args[0], float)
             x = np.arange(Z.shape[1], dtype=float)
@@ -763,8 +822,12 @@ class Axes:
         if np.ndim(levels) == 0:
             levels = np.linspace(Z.min(), Z.max(), int(levels) + 2)[1:-1]
         if colors is None:
+            zmin = float(Z.min() if vmin is None else vmin)
+            zmax = float(Z.max() if vmax is None else vmax)
+            norm = Normalize(zmin, zmax)
             lut = get_cmap(cmap)
-            idx = np.linspace(0, 255, len(levels)).astype(int)
+            idx = np.clip((norm(np.asarray(levels, float)) * 255).astype(int),
+                         0, 255)
             colors = ["#%02x%02x%02x" % tuple(lut[i]) for i in idx]
         elif isinstance(colors, str):
             colors = [colors]

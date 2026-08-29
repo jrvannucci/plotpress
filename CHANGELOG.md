@@ -11,6 +11,52 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- `plot(..., marker=None, markersize=None, markerfacecolor=None)` -- a dot
+  at each vertex alongside the line, the same constant-pixel-size marker
+  `scatter()` already draws (only round shapes are drawn; any other
+  `marker` warns, same limitation `scatter()`/`errorbar()` already have).
+- `bar()`/`barh()` gain `yerr`/`xerr`/`capsize`/`ecolor` -- error bars
+  (whiskers + caps, no connecting line or marker) centered at each bar's
+  own top (`barh`: right edge), composed from the same primitives
+  `errorbar()` already draws. `ecolor` defaults to black, independent of
+  the bars' own `color`.
+- `fill_between()`/`fill_betweenx()` gain `edgecolor`/`linewidth` --
+  `fill()` already had both (same closed-path primitive), so there was no
+  reason the outline was `fill()`-only.
+
+### Fixed
+
+- `contour()`'s per-level colors came from each level's *rank* in the
+  `levels` array, not its value -- correct only when levels happened to
+  be evenly spaced with no explicit `vmin`/`vmax` (there wasn't one to
+  give). Now colors come from each level's value normalized by
+  `vmin`/`vmax` (new, default `Z`'s own min/max), the same normalization
+  `contourf()`/`pcolormesh()` already use -- non-uniform `levels` (e.g.
+  `[0, 1, 10]`) now get each one's true position on the scale, and an
+  explicit `vmin`/`vmax` colors contour lines consistently with a filled
+  version of the same field.
+- A `Line2D`'s own marker primitive (see `marker=` above) passed a
+  single-element color list where the raster backend expects one entry
+  per point -- `zip()` silently truncated to the shortest list, so only
+  the *first* vertex's marker ever rendered in PNG/PDF output, with
+  nothing to reveal the rest were dropped.
+- `errorbar(xerr=...)` -- and, composed on top of it, `bar()`/`barh()`'s
+  own new `yerr`/`xerr` -- rendered correctly in SVG but drew no whiskers
+  or caps at all in PNG/PDF output: the raster backend's error-bar
+  renderer had a branch for `yerr` but none at all for `xerr`. Found via
+  `barh()`'s own `xerr=` composing on top of `errorbar()`, the first real
+  path to exercise `xerr` with no `yerr` alongside it.
+- A filled shape's outline width had no effect in PNG/PDF output --
+  `raster.py`'s polygon compositor passed PIL an outline *color* but
+  never a *width*, so `fill_between()`/`fill()`'s `linewidth=` (and
+  `hexbin()`'s own fixed hexagon edge width) always drew PIL's own
+  default 1px outline regardless of what was requested, while SVG
+  correctly scaled the stroke. Found the same way as the `xerr` bug
+  above: rendering the same fill at `linewidth=1.0` vs `linewidth=12.0`
+  produced pixel-for-pixel identical outlines in PNG until fixed.
+
 ### Fixed
 
 - A point-pick marker's dot/label grew right along with the whole figure

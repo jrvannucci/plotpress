@@ -44,7 +44,7 @@ def finite_range(a):
 
 class Line2D(Artist):
     def __init__(self, x, y, color, linewidth, linestyle="-", label=None, alpha=1.0,
-                 values=None):
+                 values=None, marker=None, markersize=None, markerfacecolor=None):
         self.x = np.asarray(x, dtype=float)
         self.y = np.asarray(y, dtype=float)
         self.color = color
@@ -55,6 +55,13 @@ class Line2D(Artist):
         # Extra per-point dimensions (name -> array) surfaced by point picking,
         # e.g. z or any 4th+ value beyond x/y.
         self.pick_values = dict(values) if values else {}
+        # A marker at each vertex, in addition to the line itself -- only
+        # round shapes render as anything but a dot (see _warn_marker_shape),
+        # same limitation scatter()/errorbar() already have. markerfacecolor
+        # defaults to the line's own color, matching matplotlib.
+        self.marker = marker
+        self.markersize = markersize
+        self.markerfacecolor = markerfacecolor
 
     def data_bounds(self):
         if self.x.size == 0:
@@ -571,7 +578,8 @@ class Bars(Artist):
 
 
 class FillBetween(Artist):
-    def __init__(self, x, y1, y2, color, alpha=0.4, label=None):
+    def __init__(self, x, y1, y2, color, alpha=0.4, label=None, edgecolor=None,
+                 linewidth=0.0):
         self.x = np.asarray(x, float)
         # Broadcast *both* bounds against x. Only y2 was, because its default
         # is the scalar 0.0 -- so filling from a constant baseline up to a
@@ -583,6 +591,11 @@ class FillBetween(Artist):
         self.color = color
         self.alpha = alpha
         self.label = label
+        # Matches Polygon's own edgecolor/linewidth (fill() already has
+        # these) -- fill_between/fill_betweenx use the same closed-path
+        # primitive, so there was no reason the outline was fill()-only.
+        self.edgecolor = edgecolor
+        self.linewidth = linewidth
 
     def data_bounds(self):
         ys = np.concatenate([self.y1, self.y2])
