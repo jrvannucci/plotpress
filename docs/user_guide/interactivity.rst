@@ -11,6 +11,11 @@ Nothing is interactive until a tool is selected.
 The toolbar
 -----------
 
+Two rows, grouped by what the buttons do: navigate the view and persist it
+(Span/Zoom/Magnify/Reset, then Save/Save As) on top; mark data and get it
+out (Point Pick/Annotate Point/Annotate Free/Hide Annotations, then
+Extract) below.
+
 .. list-table::
    :header-rows: 1
    :widths: 22 78
@@ -190,3 +195,83 @@ global slider, by default). A figure with more than one -- some
 one slider per GIF; the others hold their frame 0 for that render. Export
 each unit separately (``slider_unit="ax1"``, matching the axes it is docked
 to) for more than one animated GIF from the same figure.
+
+Adding or replacing the interactivity
+--------------------------------------
+
+``extra_js`` (on :meth:`~plotpress.figure.Figure.to_html`/:meth:`~plotpress.figure.Figure.save`)
+inlines a caller-supplied JS string into the page, run *after* plotpress's
+own -- so ``window.plotpressAddTool``/``plotpressGetMarkers``/``plotpressToData``
+already exist by the time it runs. Nothing about supplying it fetches
+anything external on its own; it is inlined the same as plotpress's own JS,
+keeping the "no external requests" guarantee intact regardless of what it
+contains.
+
+**Adding to the existing toolbar** (``include_default_js`` left at its
+default ``True``):
+
+.. code-block:: python
+
+   extra_js = """
+     window.plotpressAddTool({
+       label: 'Log Markers',
+       onClick: function () { console.log(window.plotpressGetMarkers()); },
+     });
+   """
+   fig.save("figure.html", interactive=True, extra_js=extra_js)
+
+``window.plotpressAddTool(opts)`` registers a real button in its own row,
+stacked below plotpress's own (a dashed top border marks it as a separate
+group, created only once a first custom tool actually exists) -- not
+appended into the built-in row itself, which would otherwise run longer
+with every tool added and blur which buttons are plotpress's own vs the
+page's. The collapse toggle (**▸**/**◂**) hides both rows together. Two
+shapes mirroring the built-in tools:
+
+``{label, onClick}``
+    An always-available action, firing immediately on click -- like the
+    built-in Extract/Save buttons. Never joins the selection group below.
+
+``{label, mode, onClick, onEnter, onExit, cursor}``
+    A real *mode*, joining the same single-selection group as Span/Zoom/
+    Magnify/Point Pick/Annotate -- selecting it deselects whatever else was
+    active, and vice versa. A click on the SVG that no built-in mode
+    already claims calls ``onClick(event, userSpacePoint)``.
+    ``window.plotpressToData(userSpacePoint)`` converts that further into a
+    real data value (``{axes, x, y}``, or ``null`` off any pickable axes) --
+    the same per-axes, log-scale/inverted-axis-aware conversion Point Pick
+    itself uses, so a custom tool doesn't have to reimplement it.
+    ``onEnter``/``onExit`` fire when the mode is selected/deselected;
+    ``cursor`` sets ``svg.style.cursor`` while it's active.
+
+See :doc:`../auto_examples/custom_interactivity/plot_01_add_a_measure_tool`
+for a worked example (a custom "Measure" tool joining the selection group,
+plus a plain action button).
+
+**Replacing the interactivity entirely** (``include_default_js=False``):
+drops plotpress's own toolbar/pan/zoom/pick JS from the page altogether --
+``extra_js`` becomes the *only* interactivity this page gets, built from the
+raw ``#plotpress-meta``/``#plotpress-pick``/``#plotpress-style`` JSON
+payloads (still emitted, since ``interactive=True``) and ``#plotpress-svg``
+directly, rather than extending what plotpress already provides.
+``binary_pick_data=False`` is worth pairing with this: the default packs
+long numeric arrays as base64 float16/32 for size, which needs plotpress's
+own decoder -- exactly what dropping the built-in JS is turning off.
+
+.. code-block:: python
+
+   fig.save("figure.html", interactive=True, include_default_js=False,
+            binary_pick_data=False, extra_js=my_own_toolbar_js)
+
+See :doc:`../auto_examples/custom_interactivity/plot_02_override_with_your_own_js`
+for a worked example: a click handler built entirely from ``#plotpress-meta``,
+with none of plotpress's own JS involved at all.
+
+Exposing the payload shapes at all is a real commitment -- ``axes_metadata()``/
+``pick_data()``'s own field names become something a from-scratch script can
+depend on, so they're no longer free to change without notice the way
+purely-internal serialization would be. What is *not* exposed alongside
+them is plotpress's own internal coordinate-transform/zoom/pan
+implementation as a reusable library -- ``include_default_js=False`` hands
+back the raw data and nothing else; reimplementing pan, zoom, or hit-testing
+against it is on the caller.

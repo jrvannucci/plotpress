@@ -952,7 +952,8 @@ class Figure:
     def to_html(self, interactive: bool = True, wait_extract: bool = False,
                 pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
                 pick_max_points: int = 20000, binary_pick_data: bool = True,
-                standalone: bool = True) -> str:
+                standalone: bool = True, include_default_js: bool = True,
+                extra_js: str = None) -> str:
         """Serialize to a self-contained HTML document.
 
         ``standalone`` (default) centers the figure at its natural pixel size
@@ -990,13 +991,40 @@ class Figure:
         then get the same binary encoding. Set ``False`` for the exact
         plain-JSON payload, e.g. to inspect it by hand or diff it against an
         older plotpress version.
+
+        ``include_default_js`` (default ``True``) controls whether
+        plotpress's own toolbar/pan/zoom/pick JS (:data:`plotpress._interactive.INTERACTIVE_JS`)
+        is included at all. Set it ``False`` to get the ``#plotpress-meta``/
+        ``#plotpress-pick``/``#plotpress-style`` JSON payloads (assuming
+        ``interactive=True``) with none of plotpress's own JS behavior
+        layered on top -- for building interactivity entirely from scratch
+        against that data and ``extra_js``, rather than extending what's
+        already there. ``binary_pick_data=False`` is worth pairing with
+        this: the default binary encoding needs plotpress's own decoder,
+        which is exactly what this is turning off.
+
+        ``extra_js`` is a raw JS string inlined as its own ``<script>``
+        block, after plotpress's own (when ``include_default_js`` is
+        ``True``) so ``window.plotpressAddTool``/``plotpressGetMarkers``
+        already exist by the time it runs. With ``include_default_js=True``
+        (the default), use it to *add* to the existing toolbar --
+        ``window.plotpressAddTool({label, onClick})`` for an always-on
+        action button, or ``{label, mode, onClick, onEnter, onExit,
+        cursor}`` for one that joins the same single-selection group as
+        Span/Zoom/Point Pick, called back with ``(event, userSpacePoint)``
+        on a click the built-in modes don't already claim. With
+        ``include_default_js=False``, it's the *only* JS this page gets --
+        write your own toolbar/interactivity entirely, working from
+        ``#plotpress-svg`` and the JSON payloads directly. Nothing about
+        supplying this fetches anything external on its own -- it is
+        inlined the same as plotpress's own JS, keeping the "no external
+        requests" guarantee intact regardless of what it contains.
         """
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
         script = ""
         if interactive:
-            from ._interactive import INTERACTIVE_JS
             from .svg import axes_metadata, frame_data, pick_data, style_payload
 
             pick_dict = pick_data(self, max_points=pick_max_points,
@@ -1041,7 +1069,12 @@ class Figure:
                 )
             config = ("<script>window.PLOTPRESS_WAIT_EXTRACT=true;</script>"
                       if wait_extract else "")
-            script = config + payloads + f"<script>{INTERACTIVE_JS}</script>"
+            script = config + payloads
+            if include_default_js:
+                from ._interactive import INTERACTIVE_JS
+                script += f"<script>{INTERACTIVE_JS}</script>"
+        if extra_js:
+            script += f"<script>{extra_js}</script>"
         # position:fixed (the toolbar, and any docked slider strip) never
         # takes real layout space itself, so nothing stops it from drawing
         # over the SVG unless something else reserves that space. A full
@@ -1055,7 +1088,8 @@ class Figure:
                                              # size, so centering centers the
                                              # figure, not an oversized box
         else:
-            top_pad, bottom_pad = _toolbar_clearance(interactive, len(self._sliders or {}))
+            top_pad, bottom_pad = _toolbar_clearance(
+                interactive and include_default_js, len(self._sliders or {}))
             body_style = f"body{{margin:0;padding:{top_pad}px 0 {bottom_pad}px}}"
             wrap_display = "block"   # stretches to the container's full width
                                      # -- #plotpress-svg's own width:100% (below)
@@ -1087,19 +1121,21 @@ class Figure:
     def save(self, path: str, interactive: bool = False, scale: int = 2,
              pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
              pick_max_points: int = 20000, binary_pick_data: bool = True,
-             fps: int = 10, slider_unit: str = "main", label_frames: bool = True):
+             fps: int = 10, slider_unit: str = "main", label_frames: bool = True,
+             include_default_js: bool = True, extra_js: str = None):
         """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``, or ``.gif``.
 
         All formats work with the standard install (PNG is a supersampled
         raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
-        ``pick_max_points``/``binary_pick_data`` apply only to interactive
-        HTML (see :meth:`to_html`). ``.gif`` needs at least one
-        :meth:`Axes.plot_frames` or :meth:`Axes.pcolormesh_frames` series --
-        it animates through that series' frames at ``fps``, the same data an
-        interactive HTML slider scrubs through, as a self-contained looping
-        file; ``slider_unit`` picks which slider drives the animation for
-        figures with more than one, and ``label_frames`` stamps each frame
-        with its slider value since a GIF has no slider to show it on (see
+        ``pick_max_points``/``binary_pick_data``/``include_default_js``/
+        ``extra_js`` apply only to interactive HTML (see :meth:`to_html`).
+        ``.gif`` needs at least one :meth:`Axes.plot_frames` or
+        :meth:`Axes.pcolormesh_frames` series -- it animates through that
+        series' frames at ``fps``, the same data an interactive HTML slider
+        scrubs through, as a self-contained looping file; ``slider_unit``
+        picks which slider drives the animation for figures with more than
+        one, and ``label_frames`` stamps each frame with its slider value
+        since a GIF has no slider to show it on (see
         :func:`plotpress.raster.save_gif`).
         """
         lower = path.lower()
@@ -1108,7 +1144,9 @@ class Figure:
                                    pick_precision=pick_precision,
                                    pick_max_mesh_cells=pick_max_mesh_cells,
                                    pick_max_points=pick_max_points,
-                                   binary_pick_data=binary_pick_data)
+                                   binary_pick_data=binary_pick_data,
+                                   include_default_js=include_default_js,
+                                   extra_js=extra_js)
         elif lower.endswith(".svg"):
             content = self.to_svg()
         elif lower.endswith(".png"):
@@ -1483,14 +1521,22 @@ def _toolbar_clearance(interactive, n_sliders):
     gallery/usage embeds in ``docs/conf.py``), so a figure looks the same
     either way it ends up on a page.
 
-    44px clears the toolbar's own ~28px button height (``padding:6px 11px``
-    plus its ~14px line height, see ``.plotpress-toolbar button``) plus its
-    10px offset from the top, with a few px to spare. 60px per slider matches
-    each docked strip's own footprint (``.plotpress-slider``).
+    80px clears the built-in toolbar's own two stacked rows -- navigate/
+    persist (Span/Zoom/.../Save As) above, mark/extract (Point Pick/.../
+    Extract) below, see ``.plotpress-toolbar-nav``/``.plotpress-toolbar-mark``
+    -- at their own measured ~64px combined height (two ~28px button rows
+    plus the 4px gap between them, see ``.plotpress-toolbar-wrap``), plus
+    its 10px offset from the top, with a few px to spare. Does not budget
+    for a caller's own ``plotpressAddTool()`` row (``extra_js=`` on
+    :meth:`Figure.to_html`) -- an opaque JS string from here, with no way
+    to know ahead of time whether it adds one; a page relying on this
+    clearance (``standalone=False``) with a custom row of its own may need
+    extra top padding added by hand. 60px per slider matches each docked
+    strip's own footprint (``.plotpress-slider``).
     """
     if not interactive:
         return 0, 0
-    return 44, 60 * n_sliders
+    return 80, 60 * n_sliders
 
 
 def _encode_binary_arrays(obj, precision=6):

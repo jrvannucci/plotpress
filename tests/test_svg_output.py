@@ -222,8 +222,8 @@ def test_toolbar_clearance_reserves_space_only_when_interactive():
 
     assert _toolbar_clearance(False, 0) == (0, 0)
     assert _toolbar_clearance(False, 3) == (0, 0)   # static report: no toolbar either
-    assert _toolbar_clearance(True, 0) == (44, 0)
-    assert _toolbar_clearance(True, 2) == (44, 120)
+    assert _toolbar_clearance(True, 0) == (80, 0)
+    assert _toolbar_clearance(True, 2) == (80, 120)
 
 
 def test_to_html_standalone_false_pads_body_for_toolbar_and_sliders():
@@ -237,13 +237,13 @@ def test_to_html_standalone_false_pads_body_for_toolbar_and_sliders():
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
-    assert "padding:44px 0 0px" in fig.to_html(standalone=False)
+    assert "padding:80px 0 0px" in fig.to_html(standalone=False)
     assert "padding:0px 0 0px" in fig.to_html(standalone=False, interactive=False)
 
     x = np.linspace(0, 1, 5)
     fig2, ax2 = plotpress.subplots()
     ax2.plot_frames(x, np.array([x, x * 2]))
-    assert "padding:44px 0 60px" in fig2.to_html(standalone=False)
+    assert "padding:80px 0 60px" in fig2.to_html(standalone=False)
 
 
 def test_to_html_standalone_false_scales_svg_and_drops_centering():
@@ -294,8 +294,8 @@ def test_report_embeds_figures_at_full_width_not_a_fixed_pixel_size(tmp_path):
     assert 'width="' not in out.split("<iframe", 1)[1].split(">", 1)[0]
     assert "width:100%" in out          # .plotpress-report-entry iframe CSS
     assert "contentDocument" in out     # the resize script that fits height
-    # No sliders -- only the toolbar's own fixed 44px clearance, none below.
-    assert "padding:44px 0 0px" in _report_entry_doc(out)
+    # No sliders -- only the toolbar's own fixed 80px clearance, none below.
+    assert "padding:80px 0 0px" in _report_entry_doc(out)
 
 
 def test_report_reserves_space_per_docked_slider_via_body_padding(tmp_path):
@@ -312,7 +312,7 @@ def test_report_reserves_space_per_docked_slider_via_body_padding(tmp_path):
     p = tmp_path / "slider_report.html"
     report.save(str(p))
     doc = _report_entry_doc(p.read_text(encoding="utf-8"))
-    assert "padding:44px 0 60px" in doc
+    assert "padding:80px 0 60px" in doc
 
     # A static (non-interactive) report has no toolbar or slider strip to
     # reserve space for, regardless of the figure's own slider data.
@@ -1164,6 +1164,77 @@ def test_save_html_binary_pick_data_flag(tmp_path):
     fig.save(str(binary_path), interactive=True)
     fig.save(str(plain_path), interactive=True, binary_pick_data=False)
     assert binary_path.stat().st_size < plain_path.stat().st_size
+
+
+def test_extra_js_is_inlined_after_plotpress_own_script():
+    """extra_js must land in its own <script> block, after INTERACTIVE_JS --
+    so window.plotpressAddTool/plotpressGetMarkers already exist by the
+    time it runs (see the docstring's ordering promise)."""
+    from plotpress._interactive import INTERACTIVE_JS
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    html = fig.to_html(interactive=True, extra_js="window.MY_MARKER = 1;")
+    assert "window.MY_MARKER = 1;" in html
+    assert html.index(INTERACTIVE_JS) < html.index("window.MY_MARKER = 1;")
+
+
+def test_extra_js_works_without_interactive_payloads_too():
+    """extra_js is not gated on interactive=True -- a caller building a
+    fully custom page from a bare SVG should still be able to inline a
+    script alongside it."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    html = fig.to_html(interactive=False, extra_js="window.MY_MARKER = 1;")
+    assert "window.MY_MARKER = 1;" in html
+    assert "plotpress-meta" not in html
+
+
+def test_include_default_js_false_keeps_payloads_but_drops_plotpress_js():
+    """The 'override' case: payloads (meta/pick/style) still ride along for
+    a from-scratch script to read, but none of plotpress's own toolbar/pan/
+    zoom/pick behavior does."""
+    from plotpress._interactive import INTERACTIVE_JS
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    html = fig.to_html(interactive=True, include_default_js=False)
+    assert "plotpress-meta" in html
+    assert "plotpress-pick" in html
+    assert "plotpress-style" in html
+    assert INTERACTIVE_JS not in html
+    assert "plotpressAddTool" not in html
+
+
+def test_include_default_js_false_with_extra_js_is_the_only_script():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    html = fig.to_html(interactive=True, include_default_js=False,
+                       extra_js="window.MY_MARKER = 1;")
+    assert "window.MY_MARKER = 1;" in html
+    assert "plotpressAddTool" not in html
+
+
+def test_include_default_js_defaults_to_true():
+    """Existing behavior (no include_default_js given at all) must be
+    unaffected -- plotpress's own JS still ships by default."""
+    from plotpress._interactive import INTERACTIVE_JS
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    html = fig.to_html(interactive=True)
+    assert INTERACTIVE_JS in html
+
+
+def test_save_html_passes_through_include_default_js_and_extra_js(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "custom.html"
+    fig.save(str(path), interactive=True, include_default_js=False,
+             extra_js="window.MY_MARKER = 1;")
+    text = path.read_text(encoding="utf-8")
+    assert "window.MY_MARKER = 1;" in text
+    assert "plotpressAddTool" not in text
 
 
 def test_binary_pick_data_uses_float16_at_low_precision_for_bounded_data():

@@ -1658,11 +1658,12 @@ def test_report_stretches_a_slider_figure_to_the_iframes_width(page, tmp_path):
     # _REPORT_STYLE's 1px iframe border) runs 2px wider -- both within a
     # couple px is "scaled to fill it", not coincidentally close.
     assert result["svgWidth"] == pytest.approx(result["iframeWidth"], abs=3)
-    # height = width * (4/6), plus the toolbar's fixed 44px clearance and the
-    # one docked slider's 60px allowance -- both are real body padding inside
-    # the embedded document now (Figure.to_html, standalone=False), so
+    # height = width * (4/6), plus the toolbar's fixed 80px clearance (two
+    # stacked button rows -- see _toolbar_clearance) and the one docked
+    # slider's 60px allowance -- both are real body padding inside the
+    # embedded document now (Figure.to_html, standalone=False), so
     # scrollHeight (what the resize script measures) already includes them.
-    expected_h = result["svgWidth"] * 4 / 6 + 44 + 60
+    expected_h = result["svgWidth"] * 4 / 6 + 80 + 60
     assert result["iframeHeight"] == pytest.approx(expected_h, abs=3)
 
 
@@ -1685,7 +1686,11 @@ def test_standalone_false_toolbar_does_not_overlap_the_svg(page, tmp_path):
 
     result = page.evaluate(
         """() => {
-          const toolbar = document.querySelector('.plotpress-toolbar');
+          // .plotpress-toolbar-wrap, not .plotpress-toolbar -- the toolbar
+          // is two stacked rows now (nav then mark), and only the wrap's
+          // own box covers both; the first row alone would under-measure
+          // the real bottom edge and miss overlap the second row causes.
+          const toolbar = document.querySelector('.plotpress-toolbar-wrap');
           const svg = document.getElementById('plotpress-svg');
           const t = toolbar.getBoundingClientRect(), s = svg.getBoundingClientRect();
           return {toolbarBottom: t.bottom, svgTop: s.top};
@@ -1900,10 +1905,11 @@ def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_pa
 
 
 def test_toolbar_hides_and_recovers(page, tmp_path):
-    """The toolbar's button row can be collapsed to declutter the view (a
-    screenshot, say) -- but the toggle that collapses it must itself never
-    be part of what gets hidden, or there would be no way back without
-    reloading the page."""
+    """The toolbar's two button rows (nav/mark -- see the grouping test
+    below) can both be collapsed together to declutter the view (a
+    screenshot, say) -- but the toggle that collapses them must itself
+    never be part of what gets hidden, or there would be no way back
+    without reloading the page."""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -1912,17 +1918,252 @@ def test_toolbar_hides_and_recovers(page, tmp_path):
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
-    bar = page.locator(".plotpress-toolbar")
+    nav_bar = page.locator(".plotpress-toolbar-nav")
+    mark_bar = page.locator(".plotpress-toolbar-mark")
     toggle = page.locator(".plotpress-toolbar-toggle")
-    assert bar.is_visible()
+    assert nav_bar.is_visible()
+    assert mark_bar.is_visible()
     assert toggle.is_visible()
-    n_buttons = bar.locator("button").count()
-    assert n_buttons > 1   # Span/Zoom/.../Save As, not just the toggle itself
+    n_buttons = nav_bar.locator("button").count() + mark_bar.locator("button").count()
+    assert n_buttons > 1   # Span/Zoom/.../Extract, not just the toggle itself
 
     toggle.click()
-    assert not bar.is_visible()
-    assert toggle.is_visible(), "the toggle must survive hiding the row it controls"
+    assert not nav_bar.is_visible()
+    assert not mark_bar.is_visible()
+    assert toggle.is_visible(), "the toggle must survive hiding the rows it controls"
 
     toggle.click()
-    assert bar.is_visible()
-    assert bar.locator("button").count() == n_buttons
+    assert nav_bar.is_visible()
+    assert mark_bar.is_visible()
+    assert (nav_bar.locator("button").count()
+           + mark_bar.locator("button").count()) == n_buttons
+
+
+def test_builtin_toolbar_is_grouped_into_a_nav_row_and_a_mark_row(page, tmp_path):
+    """The built-in toolbar is two coherent groups, not one long row:
+    navigate the view and persist it (Span/Zoom/Magnify/Reset/Save/Save As)
+    above, mark data and get it out (Point Pick/Annotate Point/Annotate
+    Free/Hide Annotations/Extract) below."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "toolbar_grouping.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    nav_labels = page.locator(".plotpress-toolbar-nav button").all_inner_texts()
+    mark_labels = page.locator(".plotpress-toolbar-mark button").all_inner_texts()
+    assert nav_labels == ["Span", "Zoom", "Magnify", "Reset", "Save", "Save As"]
+    assert mark_labels == ["Point Pick", "Annotate Point", "Annotate Free",
+                           "Hide Annotations", "Extract"]
+
+    nav_top = page.locator(".plotpress-toolbar-nav").bounding_box()["y"]
+    mark_top = page.locator(".plotpress-toolbar-mark").bounding_box()["y"]
+    assert mark_top > nav_top, "the mark row must render below the nav row"
+
+
+def test_extra_js_add_tool_registers_a_button_in_the_real_toolbar(page, tmp_path):
+    """plotpressAddTool({label, onClick}) -- the plain-action-button shape,
+    like the built-in Extract/Save: fires immediately, never joins the
+    single-selection group."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    extra_js = """
+      window.plotpressAddTool({
+        label: 'Custom Action',
+        onClick: function () { window.__customActionFired = true; },
+      });
+    """
+    path = tmp_path / "add_tool_action.html"
+    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    labels = page.evaluate(
+        "() => Array.from(document.querySelectorAll('.plotpress-toolbar button'))"
+        ".map(b => b.textContent)")
+    assert "Custom Action" in labels
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+             if (b.textContent === 'Custom Action') b.click();
+           })""")
+    assert page.evaluate("() => window.__customActionFired") is True
+    active = page.evaluate(
+        "() => Array.from(document.querySelectorAll('.plotpress-toolbar button.active'))"
+        ".map(b => b.textContent)")
+    assert active == [], "an action button (no mode) must never become 'active'"
+
+
+def test_extra_js_add_tool_mode_joins_single_selection_group(page, tmp_path):
+    """plotpressAddTool({label, mode, onClick, onEnter, onExit, cursor}) --
+    a real mode: selecting it deselects whatever built-in tool was active
+    and vice versa, its own onClick fires with a real user-space point via
+    the same click pipeline Point Pick uses, and onEnter/onExit fire on
+    entry/exit."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    extra_js = """
+      window.plotpressAddTool({
+        label: 'Custom Mode', mode: 'custom-mode', cursor: 'help',
+        onClick: function (ev, p) { window.__customClickPoint = {x: p.x, y: p.y}; },
+        onEnter: function () { window.__enterCount = (window.__enterCount || 0) + 1; },
+        onExit: function () { window.__exitCount = (window.__exitCount || 0) + 1; },
+      });
+    """
+    path = tmp_path / "add_tool_mode.html"
+    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Span", *px(fig, 0, 0.5, 0.5))
+    assert page.evaluate(
+        "() => document.querySelector('.plotpress-toolbar button[data-mode=\"span\"]')"
+        ".classList.contains('active')")
+
+    ux, uy = px(fig, 0, 0.5, 0.5)
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+             if (b.textContent === 'Custom Mode') b.click();
+           })""")
+    assert page.evaluate("() => window.__enterCount") == 1
+    assert not page.evaluate(
+        "() => document.querySelector('.plotpress-toolbar button[data-mode=\"span\"]')"
+        ".classList.contains('active')"), "selecting the custom mode must deselect Span"
+    assert page.evaluate(
+        "() => document.querySelector('.plotpress-toolbar button[data-mode=\"custom-mode\"]')"
+        ".classList.contains('active')")
+    assert page.evaluate("() => getComputedStyle(document.getElementById('plotpress-svg')).cursor") == "help"
+
+    page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          const el = document.elementFromPoint(c.x, c.y) || svg;
+          el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, clientX:c.x, clientY:c.y, button:0}));
+          el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, cancelable:true, clientX:c.x, clientY:c.y, button:0}));
+          el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, clientX:c.x, clientY:c.y, button:0}));
+        }""", [ux, uy])
+    clicked = page.evaluate("() => window.__customClickPoint")
+    assert clicked is not None
+    assert clicked["x"] == pytest.approx(ux, abs=1.0)
+    assert clicked["y"] == pytest.approx(uy, abs=1.0)
+
+    _click_mode(page, "Span", *px(fig, 0, 0.2, 0.2))
+    assert page.evaluate("() => window.__exitCount") == 1
+
+
+def test_plotpress_to_data_matches_point_pick_readout(page, tmp_path):
+    """window.plotpressToData(p) must resolve to the same data value Point
+    Pick itself would report for the same pixel -- it's documented as
+    reusing that exact conversion, not an approximation of it."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "to_data_check.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 0.5, 0.5)
+    result = page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          const p = {x: ux, y: uy};
+          return window.plotpressToData(p);
+        }""", [ux, uy])
+    assert str(result["axes"]) == "0"   # axes keys come through JS as strings
+    assert result["x"] == pytest.approx(0.5, abs=0.01)
+    assert result["y"] == pytest.approx(0.5, abs=0.01)
+
+
+def test_plotpress_to_data_returns_null_off_any_axes(page, tmp_path):
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "to_data_null.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    result = page.evaluate("() => window.plotpressToData({x: -1000, y: -1000})")
+    assert result is None
+
+
+def test_include_default_js_false_drops_the_toolbar_and_add_tool(page, tmp_path):
+    """The 'override' case, end to end: no toolbar, no plotpressAddTool --
+    extra_js is the only thing driving the page, working off the raw
+    #plotpress-meta payload directly."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    x = [0.0, 1.0]
+    ax.plot(x, [0.0, 1.0])
+    extra_js = """
+      var meta = JSON.parse(document.getElementById('plotpress-meta').textContent);
+      window.__axesCountFromMeta = Object.keys(meta).length;
+      window.__addToolExists = typeof window.plotpressAddTool;
+    """
+    path = tmp_path / "override_mode.html"
+    path.write_text(
+        fig.to_html(interactive=True, include_default_js=False,
+                    binary_pick_data=False, extra_js=extra_js),
+        encoding="utf-8")
+    page.goto(path.as_uri())
+
+    assert page.evaluate("() => !!document.querySelector('.plotpress-toolbar')") is False
+    assert page.evaluate("() => window.__addToolExists") == "undefined"
+    assert page.evaluate("() => window.__axesCountFromMeta") == 1
+
+
+def test_extra_js_add_tool_lands_in_its_own_row_not_the_builtin_toolbar(page, tmp_path):
+    """Custom tools must not be appended into plotpress's own .plotpress-toolbar
+    row -- a caller adding several tools would otherwise keep lengthening
+    the built-in row and blur which buttons are plotpress's own vs the
+    page's. They get their own .plotpress-toolbar-custom row instead,
+    stacked below, and the collapse toggle hides both together."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    extra_js = "window.plotpressAddTool({label: 'Custom', onClick: function () {}});"
+    path = tmp_path / "custom_row.html"
+    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    nav_bar = page.locator(".plotpress-toolbar-nav")
+    mark_bar = page.locator(".plotpress-toolbar-mark")
+    custom_bar = page.locator(".plotpress-toolbar-custom")
+    assert custom_bar.count() == 1
+    assert "Custom" not in nav_bar.inner_text()
+    assert "Custom" not in mark_bar.inner_text()
+    assert "Custom" in custom_bar.inner_text()
+
+    page.locator(".plotpress-toolbar-toggle").click()
+    assert not nav_bar.is_visible()
+    assert not mark_bar.is_visible()
+    assert not custom_bar.is_visible(), "the toggle must hide the custom row too"
+
+    page.locator(".plotpress-toolbar-toggle").click()
+    assert nav_bar.is_visible()
+    assert mark_bar.is_visible()
+    assert custom_bar.is_visible()
+
+
+def test_no_custom_row_created_when_no_custom_tools_are_added(page, tmp_path):
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "no_custom_row.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+    assert page.locator(".plotpress-toolbar-custom").count() == 0

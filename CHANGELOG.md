@@ -25,6 +25,29 @@ anywhere in the source.
 
 ### Added
 
+- `fig.to_html()`/`fig.save()` gained `extra_js` and `include_default_js` --
+  a caller-supplied JS string inlined into the page, after plotpress's own
+  (`window.plotpressAddTool`/`plotpressGetMarkers`/`plotpressToData`
+  already exist by the time it runs). With `include_default_js=True` (the
+  default), `window.plotpressAddTool({label, onClick})`/`{label, mode,
+  onClick, onEnter, onExit, cursor}` registers a real button in its own
+  row, stacked below plotpress's own (not appended into the built-in row
+  itself, which would otherwise run longer with every tool added and
+  blur which buttons are plotpress's own vs the page's; the collapse
+  toggle hides both rows together) -- an always-on action, or one
+  joining the same single-selection group as Span/Zoom/Point Pick,
+  called back with `(event, userSpacePoint)`; `window.plotpressToData(point)`
+  reuses Point Pick's own per-axes pixel-to-data conversion for it. With
+  `include_default_js=False`, plotpress's own toolbar/pan/zoom/pick JS is
+  dropped entirely -- `extra_js` becomes the only interactivity the page
+  gets, built from the raw `#plotpress-meta`/`#plotpress-pick`/
+  `#plotpress-style` JSON payloads and `#plotpress-svg` directly (pair
+  with `binary_pick_data=False`, since the default binary encoding needs
+  plotpress's own decoder). Nothing about either fetches anything
+  external on its own -- both are inlined the same as plotpress's own JS,
+  keeping the "no external requests" guarantee intact regardless of what
+  they contain. See `docs/examples/custom_interactivity/` for both
+  worked examples.
 - `fig.adopt_axes(ax)` -- merges an axes built standalone (most often a
   copy that just crossed a process boundary: a `joblib`/`multiprocessing`
   worker's return value) into this figure, in place of whichever of its
@@ -74,6 +97,13 @@ anywhere in the source.
   (Extract, then Save/Save As). Purely a display-order change -- every
   button is still selected by its own label, nothing about what any of them
   do changed.
+- That grouping is now two physical rows, not one long one: navigate the
+  view and persist it (Span/Zoom/Magnify/Reset, then Save/Save As) on top;
+  mark data and get it out (Point Pick/Annotate Point/Annotate Free/Hide
+  Annotations, then Extract) below. A caller's own `extra_js=` tools
+  (`window.plotpressAddTool`) get a third row of their own, stacked below
+  both -- see `fig.to_html(extra_js=...)` below. The collapse toggle
+  (**▸**/**◂**) hides every row together.
 - Whole-figure zoom (Zoom's Ctrl+wheel, and Magnify) now grows the SVG's
   own rendered size on the page instead of cropping its viewBox. Cropping
   never changed the SVG's on-page footprint, so once zoomed in there was

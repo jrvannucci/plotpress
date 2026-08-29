@@ -172,7 +172,7 @@ def _interactive_embed(fig, image_path):
     # not stretched), but for its real, precise top/bottom body padding: a
     # standalone=True document only reserves toolbar/slider clearance via
     # flex-centering slack, which splits evenly top and bottom and so can't
-    # express "44px above, 0-or-more below" -- exactly what's needed here.
+    # express "80px above, 0-or-more below" -- exactly what's needed here.
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
         fh.write(fig.to_html(interactive=True, standalone=False))
 
@@ -514,6 +514,7 @@ sphinx_gallery_conf = {
         "examples/grouping",
         "examples/advanced_axes",
         "examples/parallel_building",
+        "examples/custom_interactivity",
         "examples/polar",
         "examples/threed",
         "examples/signal",

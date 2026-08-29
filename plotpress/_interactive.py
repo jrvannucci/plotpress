@@ -51,10 +51,14 @@ others):
   Inside an axes it still tracks that axes' data coordinate; outside one it
   just stays at its fixed figure position.
 
-The buttons themselves group by what they do, not the order features were
-added in: navigate the view (Span/Zoom/Magnify, then Reset), mark data
-(the three pick/annotate modes above), control what's visible, then get
-something out of the figure.
+The buttons themselves group into two rows by what they do, not the order
+features were added in -- navigate the view and persist it (Span/Zoom/
+Magnify, Reset, then Save/Save As) on top; mark data, control what's
+visible, and get it out (the three pick/annotate modes above, the
+annotations toggle, then Extract) below. A caller's own custom tools
+(``extra_js=``'s ``window.plotpressAddTool``, see :meth:`~plotpress.figure.Figure.to_html`)
+get a third row of their own, stacked below both -- never folded into
+either built-in row.
 
 **Hide Annotations** is not a mode -- it's a standalone toggle, available
 regardless of the current mode, that hides every pin/annotation (both
@@ -284,8 +288,11 @@ _JS_SOURCE = r"""
   var style = document.createElement('style');
   style.textContent =
     '.plotpress-toolbar-wrap{position:fixed;top:10px;right:10px;display:flex;' +
-    'gap:4px;font:12px system-ui,sans-serif;z-index:1000}' +
+    'flex-direction:column;align-items:flex-end;gap:4px;' +
+    'font:12px system-ui,sans-serif;z-index:1000}' +
+    '.plotpress-toolbar-row{display:flex;gap:4px}' +
     '.plotpress-toolbar{display:flex;gap:4px}' +
+    '.plotpress-toolbar-custom{border-top:1px dashed #b8b8b8;padding-top:4px}' +
     '.plotpress-toolbar button,.plotpress-toolbar-toggle{padding:6px 11px;' +
     'border:1px solid #b8b8b8;background:#fff;color:#222;border-radius:6px;' +
     'cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.18);font:12px system-ui,sans-serif}' +
@@ -335,25 +342,32 @@ _JS_SOURCE = r"""
 
   var toolbarWrap = document.createElement('div');
   toolbarWrap.className = 'plotpress-toolbar-wrap';
-  var bar = document.createElement('div');
-  bar.className = 'plotpress-toolbar';
-  // Grouped by what the button does, not the order features were added in:
-  // navigate the view (span/zoom/magnify, then reset it), mark data
-  // (the three pick/annotate modes), control what's visible (the
-  // annotations toggle), then get something out of the figure (extract the
-  // marked data, then save the page itself).
+  var topRow = document.createElement('div');
+  topRow.className = 'plotpress-toolbar-row';
+  var navBar = document.createElement('div');    // view: navigate + persist it
+  navBar.className = 'plotpress-toolbar plotpress-toolbar-nav';
+  var markBar = document.createElement('div');   // data: mark it + get it out
+  markBar.className = 'plotpress-toolbar plotpress-toolbar-mark';
+  // Two rows, each its own coherent group, not the order features were
+  // added in: navigate the view and persist it (span/zoom/magnify, reset,
+  // then save the page itself -- pan/zoom/pin state and all) on top; mark
+  // data, control what's visible, and get the marked data out (the three
+  // pick/annotate modes, the annotations toggle, then extract) below.
+  // `row` picks navBar (1) vs markBar (2) below -- kept on each entry
+  // rather than as two separate arrays so the whole toolbar is still one
+  // list to read top to bottom.
   var TOOLS = [
-    { mode: 'span', label: 'Span' },
-    { mode: 'zoom', label: 'Zoom' },
-    { mode: 'magnify', label: 'Magnify' },
-    { mode: 'reset', label: 'Reset' },
-    { mode: 'pick', label: 'Point Pick' },
-    { mode: 'note-point', label: 'Annotate Point' },
-    { mode: 'note-free', label: 'Annotate Free' },
-    { action: 'toggle-annotations', label: 'Hide Annotations' },
-    { action: 'extract', label: 'Extract' },
-    { action: 'save', label: 'Save' },
-    { action: 'save-as', label: 'Save As' },
+    { mode: 'span', label: 'Span', row: 1 },
+    { mode: 'zoom', label: 'Zoom', row: 1 },
+    { mode: 'magnify', label: 'Magnify', row: 1 },
+    { mode: 'reset', label: 'Reset', row: 1 },
+    { action: 'save', label: 'Save', row: 1 },
+    { action: 'save-as', label: 'Save As', row: 1 },
+    { mode: 'pick', label: 'Point Pick', row: 2 },
+    { mode: 'note-point', label: 'Annotate Point', row: 2 },
+    { mode: 'note-free', label: 'Annotate Free', row: 2 },
+    { action: 'toggle-annotations', label: 'Hide Annotations', row: 2 },
+    { action: 'extract', label: 'Extract', row: 2 },
   ];
   var annotationsHidden = false;
   function toggleAnnotations(b) {
@@ -373,31 +387,90 @@ _JS_SOURCE = r"""
       else if (t.action === 'save-as') saveAsNewPage();
       else setMode(t.mode);
     });
-    bar.appendChild(b);
+    (t.row === 2 ? markBar : navBar).appendChild(b);
     return b;
   });
-  toolbarWrap.appendChild(bar);
+  topRow.appendChild(navBar);
 
-  // A separate, never-hidden handle: hiding the button row itself would
-  // otherwise take away the only way to bring it back. No state persists
-  // across a reload/Save -- collapsing the toolbar is a per-view convenience
-  // (decluttering a screenshot, say), not something worth resuming into.
+  // Public extension point for a caller's own extra_js= (see Figure.to_html):
+  // add a button to its own row, stacked below plotpress's own -- a dashed
+  // top border marks it as a separate group rather than folding it into
+  // the built-in row, which would otherwise (a) run the built-in row even
+  // longer as more custom tools are added, and (b) blur the line between
+  // "plotpress's own tools" and "this page's own", something worth keeping
+  // legible on sight -- especially for a custom toolbar an AI wrote against
+  // this API rather than a human hand-placing each button. Created lazily,
+  // on the first call: a page with no custom tools gets no empty second row
+  // to explain. Two shapes, mirroring TOOLS above --
+  // {label, onClick}: an always-available action, firing immediately on
+  // click, like Extract/Save. {label, mode, onClick, onEnter, onExit,
+  // cursor}: a real *mode*, joining the same single-selection group as
+  // Span/Zoom/Magnify/Point Pick/Annotate -- picking it deselects whatever
+  // else was active, and vice versa (see setMode's `mode = (mode === m) ?
+  // null : m` toggle, and the `buttons` array/dataset.mode CSS-'active'
+  // sync below, both of which already work for any button in `buttons`
+  // generically, custom or not). Selected, a click on the SVG that no
+  // built-in mode already claims (`note-free`/`note-point`/`pick` -- see
+  // the top-level click listener's own custom-mode fallback) calls
+  // onClick(event, toUser(event)) -- the same svg-event-to-user-space-point
+  // helper Span/Zoom/pick already build on, so a custom tool gets a real
+  // data-space point for free rather than raw client pixels. onEnter/onExit
+  // fire when the mode is selected/deselected (setMode's own prevMode
+  // bookkeeping below), and `cursor` sets svg.style.cursor while it's
+  // active, the same as a built-in mode's own fixed cursor choice does.
+  var CUSTOM_MODES = {};
+  var customBar = null;   // created on first addTool() call, not up front
+  function addTool(opts) {
+    var b = document.createElement('button');
+    b.textContent = opts.label;
+    if (opts.mode) {
+      b.dataset.mode = opts.mode;
+      CUSTOM_MODES[opts.mode] = opts;
+      b.addEventListener('click', function () { setMode(opts.mode); });
+    } else {
+      b.addEventListener('click', function (ev) {
+        if (opts.onClick) opts.onClick(ev);
+      });
+    }
+    if (!customBar) {
+      customBar = document.createElement('div');
+      customBar.className = 'plotpress-toolbar plotpress-toolbar-custom';
+      toolbarWrap.appendChild(customBar);
+    }
+    customBar.appendChild(b);
+    buttons.push(b);
+    return b;
+  }
+  window.plotpressAddTool = addTool;
+
+  // A separate, never-hidden handle: hiding the button row(s) themselves
+  // would otherwise take away the only way to bring them back. No state
+  // persists across a reload/Save -- collapsing the toolbar is a per-view
+  // convenience (decluttering a screenshot, say), not something worth
+  // resuming into. Covers markBar and customBar too, when a page has one:
+  // the same "declutter a screenshot" motivation applies to every row
+  // alike, not just the one the toggle happens to sit next to.
   var toolbarToggle = document.createElement('button');
   toolbarToggle.className = 'plotpress-toolbar-toggle';
   toolbarToggle.title = 'Hide toolbar';
   toolbarToggle.textContent = '▸';   // ▸: collapses the row away, toward the edge
   toolbarToggle.addEventListener('click', function () {
-    var collapsed = bar.style.display === 'none';
-    bar.style.display = collapsed ? 'flex' : 'none';
+    var collapsed = navBar.style.display === 'none';
+    navBar.style.display = collapsed ? 'flex' : 'none';
+    markBar.style.display = collapsed ? 'flex' : 'none';
+    if (customBar) customBar.style.display = collapsed ? 'flex' : 'none';
     toolbarToggle.textContent = collapsed ? '▸' : '◂';   // ◂: brings it back
     toolbarToggle.title = collapsed ? 'Hide toolbar' : 'Show toolbar';
   });
-  toolbarWrap.appendChild(toolbarToggle);
+  topRow.appendChild(toolbarToggle);
+  toolbarWrap.appendChild(topRow);
+  toolbarWrap.appendChild(markBar);
   document.body.appendChild(toolbarWrap);
 
   function setMode(m) {
     // Cancel anything in progress and clear transient state.
     down = null; removeRubber();
+    var prevMode = mode;
     if (m === 'reset') {
       zoomScale = 1; applyZoomSize();
       resetAxes();                               // restore every axes' data limits
@@ -407,14 +480,26 @@ _JS_SOURCE = r"""
     } else {
       mode = (mode === m) ? null : m;  // clicking the active tool turns it off
     }
+    // A custom tool's own onEnter/onExit (see addTool/plotpressAddTool) --
+    // fired after the mode itself has already changed, so either callback
+    // can safely read the new `mode`/call setMode() again without racing
+    // its own transition.
+    if (prevMode && CUSTOM_MODES[prevMode] && CUSTOM_MODES[prevMode].onExit) {
+      CUSTOM_MODES[prevMode].onExit();
+    }
+    if (mode && CUSTOM_MODES[mode] && CUSTOM_MODES[mode].onEnter) {
+      CUSTOM_MODES[mode].onEnter();
+    }
     buttons.forEach(function (b) {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
+    var custom = mode && CUSTOM_MODES[mode];
     svg.style.cursor =
       mode === 'span' ? 'grab' :
       mode === 'zoom' ? 'crosshair' :
       mode === 'magnify' ? 'zoom-in' :
-      (mode === 'note-point' || mode === 'note-free') ? 'text' : 'default';
+      (mode === 'note-point' || mode === 'note-free') ? 'text' :
+      (custom && custom.cursor) ? custom.cursor : 'default';
     // Magnify's own drag (pan) sweeps across the figure's tick labels/titles
     // same as a text selection drag would -- without this, panning highlights
     // them instead of just moving the view. Other modes don't need it: Span
@@ -1501,6 +1586,19 @@ _JS_SOURCE = r"""
   }
   window.plotpressGetMarkers = getMarkers;   // programmatic access
 
+  // For a custom tool (see addTool/plotpressAddTool): the same axes-lookup
+  // + pixel-to-data conversion Point Pick itself uses, minus dropping a
+  // pin -- so a custom onClick can work in real data units, not just the
+  // raw SVG-space point it's already handed, without reimplementing the
+  // per-axes log-scale/inverted-axis-aware transform. Returns null off any
+  // (pickable) axes, same as a Point Pick click there does nothing.
+  window.plotpressToData = function (p) {
+    var a = pickableAxesAt(p);
+    if (!a) return null;
+    var d = toData(a.m, p.x, p.y);
+    return { axes: a.i, x: d.x, y: d.y };
+  };
+
   // RFC 4180 field quoting -- a bare comma/quote/newline (annotation text,
   // an axes_title, a pie label, a set_pick_context() string) otherwise
   // shifts every column after it in that row.
@@ -1862,16 +1960,23 @@ _JS_SOURCE = r"""
     if (e.target.closest('.plotpress-legend') || e.target.closest('.plotpress-pin')) return;
     if (mode === 'note-free') { addFreeNote(e); return; }
     if (mode === 'note-point') { addPointNote(e); return; }
-    if (mode !== 'pick') return;
-    var ref = resolvePickTarget(e);
-    if (ref === 'blocked') return;
-    if (ref) { addAnchoredPin(ref, ref.index); return; }
-    var p = toUser(e), a = pickableAxesAt(p);
-    if (!a) return;
-    var v = nearestVertex(a.i, p) || p;              // large-series fallback
-    var dd = toData(a.m, v.x, v.y);
-    var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y), a.i);
-    g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
+    if (mode === 'pick') {
+      var ref = resolvePickTarget(e);
+      if (ref === 'blocked') return;
+      if (ref) { addAnchoredPin(ref, ref.index); return; }
+      var p = toUser(e), a = pickableAxesAt(p);
+      if (!a) return;
+      var v = nearestVertex(a.i, p) || p;              // large-series fallback
+      var dd = toData(a.m, v.x, v.y);
+      var g = addPin(v.x, v.y, 'x=' + fmt(dd.x) + ', y=' + fmt(dd.y), a.i);
+      g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
+      return;
+    }
+    // A custom tool's own mode (see addTool/plotpressAddTool) -- every
+    // built-in click-driven mode above has already had first refusal, so
+    // this only ever fires for a mode this build doesn't know about itself.
+    var custom = mode && CUSTOM_MODES[mode];
+    if (custom && custom.onClick) custom.onClick(e, toUser(e));
   });
 
   // ---- slider(s) over extra data dimensions -----------------------------
