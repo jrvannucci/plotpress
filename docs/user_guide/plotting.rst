@@ -82,21 +82,23 @@ Bars and histograms
     ``bars`` are each a list, one per dataset, when ``data`` held more than
     one.
 
-``hist2d(x, y, bins=20, range=None, cmap="viridis")``
+``hist2d(x, y, bins=20, range=None, cmap="viridis", alpha=1.0)``
     2-D histogram rendered as an image. Returns ``(counts, image)`` -- pass the
     image to :meth:`~plotpress.figure.Figure.colorbar`.
 
 Statistical
 -----------
 
-``boxplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, whis=1.5, showfliers=True)``
+``boxplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, alpha=1.0, whis=1.5, showfliers=True)``
     Box-and-whisker plot; ``data`` is a sequence of arrays. Whiskers reach
     ``whis`` IQRs past q1/q3 (matplotlib's own default is ``1.5``); points
     past that are drawn as open circles unless ``showfliers=False`` drops
     them instead.
 
-``violinplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, points=100)``
+``violinplot(data, positions=None, widths=0.5, color=None, orientation="vertical", label=None, points=100, alpha=0.55)``
     Kernel-density "violin" silhouettes (Gaussian KDE, Silverman bandwidth).
+    ``alpha=0.55`` is the fill both backends already drew before it was
+    configurable.
 
 ``errorbar(x, y, yerr=None, xerr=None, color=None, marker="o", markersize=None, capsize=3.0, linestyle="-", linewidth=None, label=None, alpha=1.0, ecolor=None, elinewidth=None, capthick=None)``
     Line/markers with x and/or y error bars and caps. ``ecolor``/
@@ -104,10 +106,10 @@ Statistical
     marker -- each falls back to ``color``/``linewidth`` if not given.
     ``capthick`` (the caps' own width) falls back to ``elinewidth`` in turn.
 
-``eventplot(positions, lineoffsets=None, linelengths=0.8, color=None, orientation="horizontal", label=None)``
+``eventplot(positions, lineoffsets=None, linelengths=0.8, color=None, orientation="horizontal", label=None, alpha=1.0)``
     Raster of event ticks, one row per sequence.
 
-``pie(values, labels=None, colors=None, startangle=90.0, radius=1.0)``
+``pie(values, labels=None, colors=None, startangle=90.0, radius=1.0, alpha=1.0)``
     Pie chart. Automatically hides the axis and fixes an equal-aspect square.
 
 2-D fields
@@ -135,18 +137,19 @@ Statistical
     it -- SVG output only, since raster (PNG/PDF) output already samples at
     its own fixed resolution.
 
-``contour(*args, levels=8, colors=None, cmap="viridis", vmin=None, vmax=None, label=None)``
+``contour(*args, levels=8, colors=None, cmap="viridis", vmin=None, vmax=None, label=None, alpha=1.0)``
     Contour lines via marching squares: ``contour(Z)`` or ``contour(x, y, Z)``.
     ``levels`` is a count or an explicit sequence. Each level's color comes
     from its own *value*, normalized by ``vmin``/``vmax`` (default: ``Z``'s
     own min/max) -- the same normalization :meth:`pcolormesh`/``contourf``
     use, so non-uniform ``levels`` still get each one's true position on
-    the scale, not just its rank among them.
+    the scale, not just its rank among them. ``alpha`` now matches its own
+    sibling ``contourf``, which already had it.
 
 Vector fields
 -------------
 
-``quiver(X, Y, U, V, scale=None, color=None, label=None)``
+``quiver(X, Y, U, V, scale=None, color=None, label=None, alpha=1.0)``
     A field of arrows. ``scale`` maps ``(U, V)`` to data units (auto if ``None``).
 
 Signal processing
@@ -155,7 +158,9 @@ Signal processing
 Welch-averaged spectral estimators (pure NumPy -- no SciPy). Each computes with
 matplotlib's ``mlab`` conventions (Hann window, mean detrend, one-sided scaling)
 and draws through an existing artist. ``NFFT``, ``Fs``, ``noverlap`` and
-``window`` control the estimate.
+``window`` control the estimate; each also takes ``alpha`` (forwarded to
+whichever artist it draws with -- a line for the spectra, an image for
+``specgram``, stems/markers for ``xcorr``/``acorr``).
 
 ``psd(x, NFFT=256, Fs=2, noverlap=0, ...)`` / ``csd(x, y, ...)`` / ``cohere(x, y, ...)``
     Power / cross spectral density (in dB) and magnitude-squared coherence.
@@ -220,9 +225,9 @@ painter's-algorithm surface -- see :ref:`the 3-D caveats <limitation-3d>`.
 Text and annotations
 --------------------
 
-``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0, outline=None)``
+``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0, outline=None, alpha=1.0, bbox=None)``
     Text anchored at data coordinates. ``ha`` in ``left/center/right``; ``va``
-    in ``baseline/center/top/bottom``.
+    in ``baseline/center/top/bottom``. ``alpha`` fades the glyphs themselves.
 
     ``outline`` is a halo drawn behind the glyphs so the label survives landing
     on a series, a mesh cell or a filled band -- which is decided long after the
@@ -231,11 +236,21 @@ Text and annotations
     it off, and a colour chooses your own. Titles, axis labels and tick labels
     never get one: they sit outside the data area.
 
-``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None, outline=None)``
+    ``bbox`` is a different tool: a filled/bordered box *behind* the label
+    (matplotlib's own ``bbox=`` dict, a subset of its keys --
+    ``facecolor``/``fc``, ``edgecolor``/``ec``, ``alpha``, ``pad``,
+    ``boxstyle`` of ``"square"``/``"round"``, ``linewidth``). Pass ``{}`` for
+    the defaults. Where ``outline`` keeps a label legible, ``bbox`` reads as a
+    callout chip; the two can combine, or either can be used alone.
+
+``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None, outline=None, alpha=1.0, bbox=None)``
     Text at ``xytext`` optionally pointing an arrow to ``xy`` (pass
-    ``arrowprops={"color": ...}`` or ``{}`` to draw the arrow). The leader
+    ``arrowprops={"color": ...}`` or ``{}`` to draw the arrow; ``arrowprops``
+    also accepts ``alpha``, independent of the text's own). The leader
     leaves the text's bounding box at the point nearest ``xy``, preferring the
-    middle of an edge, so it never crosses the label it belongs to.
+    middle of an edge, so it never crosses the label it belongs to -- with
+    ``bbox`` set, that edge is the box's own padded edge, so the leader
+    visibly touches the box instead of stopping short of it.
 
 Animated data (sliders)
 -----------------------

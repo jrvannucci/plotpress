@@ -11,6 +11,55 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **`alpha=` on every method matplotlib supports it for.** A full sweep
+  found 17 gaps: `pie`, `boxplot`, `violinplot`, `eventplot`, `quiver`,
+  `contour` (its own sibling `contourf` already had it), `hexbin`,
+  `matshow`/`spy`/`hist2d` (all imshow-based, imshow already had it),
+  `ecdfplot` and the whole `psd`/`csd`/`cohere`/`magnitude_spectrum`/
+  `angle_spectrum`/`phase_spectrum`/`specgram`/`xcorr`/`acorr` family (all
+  built on `plot`/`vlines`/`imshow`, which already had it), plus `text()`/
+  `annotate()` (fading the glyphs, independent of the existing `outline`
+  halo) and `annotate(arrowprops={"alpha": ...})` (the arrow, independent of
+  the text). `violinplot`'s default is `0.55`, the fill both backends
+  already drew before it was configurable; every other new default is
+  `1.0`, so nothing already drawn changes appearance.
+- **`Spine.set_alpha()`**/**`get_alpha()`**, and **`ax.grid(alpha=)`** --
+  a per-axes override of the figure `Style`'s `grid_alpha` default, using
+  the same "`None` inherits" convention as `Spine`'s own color/linewidth.
+  The override reaches the embedded per-axes interactive metadata too, so
+  it survives a client-side pan/zoom rebuild rather than reverting to the
+  figure default the way the `tick_params()` regression this same pattern
+  already fixed once did.
+- **`framealpha=` on `Axes.legend()`/`Figure.legend()`** (default `0.85`,
+  matching what the box already drew). Fixed a real backend-parity bug in
+  the process: the raster (PNG/PDF) legend box was always fully opaque
+  regardless of the SVG box's own `fill-opacity="0.85"` -- the two backends
+  drew a visibly different legend for the same figure.
+- **`bbox=` on `text()`/`annotate()`/`Figure.text()`.** A filled/bordered
+  box behind the label -- matplotlib's own `bbox=` dict, a subset of its
+  keys (`facecolor`/`fc`, `edgecolor`/`ec`, `alpha`, `pad`, `boxstyle` of
+  `"square"`/`"round"`, `linewidth`). Different from the existing `outline`
+  halo: `outline` keeps a label legible over whatever it lands on, `bbox`
+  reads as a callout chip. With `annotate()`, the arrow leader now attaches
+  to the box's own padded edge rather than the bare text's tighter bounds,
+  so it visibly touches the box instead of stopping short of it.
+- Two new gallery examples: `docs/examples/axes_features/plot_16_alpha_
+  everywhere.py` (quiver over contourf, two boxplots at one position,
+  hexbin over a scatter sample) and `plot_17_text_bbox.py`.
+
+### Fixed
+
+- **Every stroke-only line in the raster (PNG/PDF) backend ignored
+  `alpha` entirely**, discovered while testing the sweep above: `plot()`,
+  `step()` (and so `ecdfplot()`), `hlines`/`vlines`/`axhline`/`axvline`/
+  `axline` (and so `xcorr()`) all carried their alpha into the shared
+  `Path`/`Line`/`Segments` primitives (SVG already read it), but
+  `raster.py`'s drawing code for each read only the plain color, silently
+  dropping the opacity. `plot(alpha=0.3)` and the like have never actually
+  been translucent in a PNG or PDF export before this fix, only in SVG/HTML.
+
 ### Fixed
 
 - **`pcolormesh(rasterized=)` follow-up fixes**, found by an audit of 0.11.0:

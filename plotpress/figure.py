@@ -19,6 +19,7 @@ import warnings
 
 import numpy as np
 
+from .artists import normalize_bbox
 from .axes import Axes
 from .axes3d import Axes3D
 from .polar import PolarAxes
@@ -203,14 +204,19 @@ class Figure:
         self._supylabel = {"text": text, "size": size}
         self._layout_dirty = True
 
-    def text(self, x, y, s, ha="left", va="baseline", fontsize=None, color=None):
+    def text(self, x, y, s, ha="left", va="baseline", fontsize=None, color=None,
+             alpha=1.0, bbox=None):
         """Draw text at figure-fraction coordinates ``(x, y)`` -- ``(0, 0)`` is
         the bottom-left corner, ``(1, 1)`` the top-right, independent of any
         axes' data coordinates.
+
+        ``alpha``/``bbox`` match :meth:`Axes.text` -- ``bbox`` draws a filled/
+        bordered box behind the text (see there for its keys).
         """
         self._fig_texts.append({
             "x": float(x), "y": float(y), "s": s, "ha": ha, "va": va,
-            "size": fontsize, "color": color,
+            "size": fontsize, "color": color, "alpha": alpha,
+            "bbox": normalize_bbox(bbox),
         })
 
     def group(self, title, axes, linestyle="--", color="black", linewidth=1.5,
@@ -889,7 +895,7 @@ class Figure:
 
     # -- figure-level legend ------------------------------------------------
     def legend(self, ax=None, loc="lower center", ncol=1, title=None,
-               pad=0.01, fontsize=None) -> "Figure":
+               pad=0.01, fontsize=None, framealpha=0.85) -> "Figure":
         """One legend for the whole figure, drawn from labelled artists.
 
         The counterpart to :meth:`colorbar` over a list of axes: a grid whose
@@ -898,8 +904,7 @@ class Figure:
         each series appears once however many panels draw it.
 
         ``ax`` selects which axes contribute (default: all of them).
-        ``fontsize`` overrides the entry/title text size (default: the
-        style's own tick label size), matching :meth:`Axes.legend`.
+        ``fontsize``/``framealpha`` match :meth:`Axes.legend`.
 
         ``loc`` names a placement in **figure** coordinates. The four outside
         placements -- ``"lower center"``, ``"upper center"``, ``"right"`` and
@@ -918,6 +923,7 @@ class Figure:
             "title": title,
             "pad": float(pad),
             "fontsize": fontsize,
+            "framealpha": framealpha,
         }
         _layout_figure_legend(self)
         return self

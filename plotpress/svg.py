@@ -126,9 +126,15 @@ def _render_fig_text(t, st, W, H, body):
     color = t["color"] or st.text_color
     x, y = t["x"] * W, (1.0 - t["y"]) * H + _VA_DY.get(t["va"], 0.0) * size
     anchor = _HA_ANCHOR.get(t["ha"], "start")
+    alpha = t.get("alpha", 1.0)
+    bbox = t.get("bbox")
+    if bbox is not None:
+        box = _bbox_pad(text_box(x, y, t["s"], size, t["ha"], t["va"], st), bbox)
+        body.append(_bbox_svg(box, bbox))
+    op = f' fill-opacity="{alpha}"' if alpha < 1 else ""
     body.append(
         f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
-        f'font-size="{size}" fill="{color}">{_esc(t["s"])}</text>'
+        f'font-size="{size}" fill="{color}"{op}>{_esc(t["s"])}</text>'
     )
 
 
@@ -296,6 +302,14 @@ def axes_metadata(fig):
             "xmin": round(float(xmin), 6), "xmax": round(float(xmax), 6),
             "ymin": round(float(ymin), 6), "ymax": round(float(ymax), 6),
             "grid": bool(ax._grid), "axis_off": bool(ax._axis_off),
+            # None (omitted from the client's perspective via the JS ?? below)
+            # unless grid(alpha=...) actually overrode the figure-wide
+            # default, mirroring tick_style's "only present when overridden"
+            # convention -- see the tick_params() regression this pattern
+            # already fixed: a per-axes style that only applied to the
+            # initial render, then silently reverted on the client's own
+            # pan/zoom rebuild, which reads only the figure-wide style.
+            "grid_alpha": ax._grid_alpha,
             "xscale": ax._xscale, "yscale": ax._yscale,
             # Axis direction, so the client maps data<->pixels the same way
             # _render_axes does (it swaps the limits it feeds the transform).
@@ -782,7 +796,9 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # them from new limits (see _interactive.py).
     body.append(f'<g id="ticks{index}">')
     if ax._grid and not ax._axis_off and not overlay:
-        _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body)
+        grid_alpha = ax._grid_alpha if ax._grid_alpha is not None else st.grid_alpha
+        _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
+                    grid_alpha)
     if not ax._axis_off:
         if is_twin:
             _render_twin_ticks(ax, st, tr, xticks, yticks,
@@ -856,7 +872,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif isinstance(artist, Contour):
             _render_contour(artist, tr, body)
         elif isinstance(artist, Text):
-            _render_text(artist, tr, body)
+            _render_text(artist, tr, st, body)
         elif isinstance(artist, Annotation):
             _render_annotation(artist, tr, st, body)
     body.append("</g></g>")   # close zoom group + clip group
@@ -1293,6 +1309,7 @@ def _render_pie(pie: Pie, tr, body):
     cy = tr.px_top + tr.px_h / 2.0
     R = 0.42 * min(tr.px_w, tr.px_h) * pie.radius
     ang = math.radians(pie.startangle)
+    op = f' fill-opacity="{pie.alpha}"' if pie.alpha < 1 else ""
     parts = []
     labels = []
     for i, frac in enumerate(pie.fracs):
@@ -1304,7 +1321,7 @@ def _render_pie(pie: Pie, tr, body):
         parts.append(
             f'<path d="M{_fmt(cx)},{_fmt(cy)} L{_fmt(x0)},{_fmt(y0)} '
             f'A{_fmt(R)},{_fmt(R)} 0 {large} 1 {_fmt(x1)},{_fmt(y1)} Z" '
-            f'fill="{pie.colors[i]}" stroke="#ffffff" stroke-width="1.5"/>'
+            f'fill="{pie.colors[i]}" stroke="#ffffff" stroke-width="1.5"{op}/>'
         )
         am = (a0 + a1) / 2.0
         if pie.labels is not None:
@@ -1372,7 +1389,7 @@ def leader_anchor(box, target, pad=3.0):
                key=lambda c: math.hypot(c[0][0] - tx, c[0][1] - ty) * c[1])[0]
 
 
-def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None):
+def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None, alpha=1.0):
     anchor = _HA.get(ha, "start")
     baseline = _VA.get(va, "alphabetic")
     rot = (f' transform="rotate({_fmt(-rotation)} {_fmt(x)} {_fmt(y)})"'
@@ -1382,39 +1399,76 @@ def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None):
     halo = ("" if not outline else
             f' stroke="{outline}" stroke-width="{_fmt(size * 0.30)}" '
             'stroke-linejoin="round" paint-order="stroke"')
+    op = f' fill-opacity="{alpha}"' if alpha < 1 else ""
     return (f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
             f'dominant-baseline="{baseline}" font-size="{size}" '
-            f'fill="{color}"{halo}{rot}>{_esc(text)}</text>')
+            f'fill="{color}"{halo}{op}{rot}>{_esc(text)}</text>')
 
 
-def _render_text(t: Text, tr, body):
-    body.append(_text_svg(float(tr.x(t.x)), float(tr.y(t.y)), t.text, t.color,
-                          t.size, t.ha, t.va, t.rotation, t.outline))
+def _bbox_pad(box, bbox):
+    """Expand a tight ``text_box()`` rect by ``bbox['pad']``."""
+    x0, y0, x1, y1 = box
+    pad = bbox["pad"]
+    return x0 - pad, y0 - pad, x1 + pad, y1 + pad
+
+
+def _bbox_svg(padded_box, bbox):
+    """The ``<rect>`` a ``bbox=`` dict draws behind a label.
+
+    ``padded_box`` is already expanded by ``pad`` (see :func:`_bbox_pad`) --
+    callers that also need a leader-line anchor point (``annotate()``) use the
+    same padded rect for both, so the arrow visibly touches the box instead of
+    stopping short of it.
+    """
+    x0, y0, x1, y1 = padded_box
+    rx = min(8.0, (x1 - x0) / 2.0, (y1 - y0) / 2.0) if bbox["boxstyle"] == "round" else 0.0
+    edge = (f' stroke="{bbox["edgecolor"]}" stroke-width="{bbox["linewidth"]}"'
+            if bbox["edgecolor"] not in (None, "none") else "")
+    op = f' fill-opacity="{bbox["alpha"]}"' if bbox["alpha"] < 1 else ""
+    return (f'<rect x="{_fmt(x0)}" y="{_fmt(y0)}" width="{_fmt(x1 - x0)}" '
+            f'height="{_fmt(y1 - y0)}" rx="{_fmt(rx)}" fill="{bbox["facecolor"]}"'
+            f'{op}{edge}/>')
+
+
+def _render_text(t: Text, tr, st, body):
+    x, y = float(tr.x(t.x)), float(tr.y(t.y))
+    if t.bbox is not None:
+        box = _bbox_pad(text_box(x, y, t.text, t.size, t.ha, t.va, st), t.bbox)
+        body.append(_bbox_svg(box, t.bbox))
+    body.append(_text_svg(x, y, t.text, t.color, t.size, t.ha, t.va, t.rotation,
+                          t.outline, t.alpha))
 
 
 def _render_annotation(an: Annotation, tr, st, body):
     tx, ty = float(tr.x(an.xytext[0])), float(tr.y(an.xytext[1]))
+    box = text_box(tx, ty, an.text, an.size, an.ha, an.va, st)
+    if an.bbox is not None:
+        box = _bbox_pad(box, an.bbox)   # the leader below anchors to this, padded, edge
     if an.arrowprops is not None:
         px, py = float(tr.x(an.xy[0])), float(tr.y(an.xy[1]))
-        color = (an.arrowprops.get("color", an.color)
-                 if isinstance(an.arrowprops, dict) else an.color)
-        # Start the leader at the edge of the text box nearest the target, not
-        # at the text anchor -- from the anchor the line sets off across its own
-        # label whenever the target is up and to the left of it.
-        box = text_box(tx, ty, an.text, an.size, an.ha, an.va, st)
+        arrow_color = (an.arrowprops.get("color", an.color)
+                       if isinstance(an.arrowprops, dict) else an.color)
+        arrow_alpha = (an.arrowprops.get("alpha", 1.0)
+                       if isinstance(an.arrowprops, dict) else 1.0)
+        # Start the leader at the edge of the text (or bbox) nearest the
+        # target, not at the text anchor -- from the anchor the line sets off
+        # across its own label whenever the target is up and to the left of it.
         sx, sy = leader_anchor(box, (px, py))
         ang = math.atan2(py - sy, px - sx)
         hl = 7.0
         h1 = (px - hl * math.cos(ang - 0.4), py - hl * math.sin(ang - 0.4))
         h2 = (px - hl * math.cos(ang + 0.4), py - hl * math.sin(ang + 0.4))
+        op = f' stroke-opacity="{arrow_alpha}"' if arrow_alpha < 1 else ""
         body.append(
             f'<path d="M{_fmt(sx)},{_fmt(sy)} L{_fmt(px)},{_fmt(py)} '
             f'M{_fmt(px)},{_fmt(py)} L{_fmt(h1[0])},{_fmt(h1[1])} '
             f'M{_fmt(px)},{_fmt(py)} L{_fmt(h2[0])},{_fmt(h2[1])}" '
-            f'fill="none" stroke="{color}" stroke-width="1.2"/>'
+            f'fill="none" stroke="{arrow_color}" stroke-width="1.2"{op}/>'
         )
+    if an.bbox is not None:
+        body.append(_bbox_svg(box, an.bbox))
     body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va,
-                          0.0, an.outline))
+                          0.0, an.outline, an.alpha))
 
 
 def _render_boxplot(bp: BoxPlot, tr, st, body):
@@ -1453,7 +1507,12 @@ def _render_boxplot(bp: BoxPlot, tr, st, body):
             parts.append(f'<line x1="{_fmt(xhi)}" y1="{_fmt(y0)}" x2="{_fmt(xhi)}" y2="{_fmt(y1)}" stroke="{bp.color}" stroke-width="1"/>')
             for fx in s["fliers"]:
                 parts.append(f'<circle cx="{_fmt(tr.x(fx))}" cy="{_fmt(yc)}" r="{_fmt(r)}" fill="none" stroke="{bp.color}"/>')
-    body.append("".join(parts))
+    # Every element here is stroke-only, so one wrapping group's stroke-opacity
+    # covers the whole box-and-whiskers at once rather than repeating it per line.
+    if bp.alpha < 1:
+        body.append(f'<g stroke-opacity="{bp.alpha}">{"".join(parts)}</g>')
+    else:
+        body.append("".join(parts))
 
 
 def _render_violin(v: Violin, tr, body):
@@ -1469,7 +1528,7 @@ def _render_violin(v: Violin, tr, body):
         pts = np.vstack([left, right])
         coords = [f"{_fmt(px)},{_fmt(py)}" for px, py in pts]
         d = "M" + coords[0] + "".join("L" + c for c in coords[1:]) + "Z"
-        parts.append(f'<path d="{d}" fill="{v.color}" fill-opacity="0.55" '
+        parts.append(f'<path d="{d}" fill="{v.color}" fill-opacity="{v.alpha}" '
                      f'stroke="{v.color}" stroke-width="1"/>')
     body.append("".join(parts))
 
@@ -1489,7 +1548,8 @@ def _render_eventplot(ev: EventPlot, tr, body):
             for e in row:
                 y = tr.y(e)
                 lines.append(f'<line x1="{_fmt(x0)}" y1="{_fmt(y)}" x2="{_fmt(x1)}" y2="{_fmt(y)}"/>')
-    body.append(f'<g stroke="{ev.color}" stroke-width="1.2">{"".join(lines)}</g>')
+    op = f' stroke-opacity="{ev.alpha}"' if ev.alpha < 1 else ""
+    body.append(f'<g stroke="{ev.color}" stroke-width="1.2"{op}>{"".join(lines)}</g>')
 
 
 def _render_quiver(q: Quiver, tr, body):
@@ -1507,11 +1567,13 @@ def _render_quiver(q: Quiver, tr, body):
         parts.append(f'<path d="M{_fmt(bx)},{_fmt(by)} L{_fmt(ex)},{_fmt(ey)} '
                      f'M{_fmt(ex)},{_fmt(ey)} L{_fmt(h1[0])},{_fmt(h1[1])} '
                      f'M{_fmt(ex)},{_fmt(ey)} L{_fmt(h2[0])},{_fmt(h2[1])}"/>')
+    op = f' stroke-opacity="{q.alpha}"' if q.alpha < 1 else ""
     body.append(f'<g fill="none" stroke="{q.color}" stroke-width="1.2" '
-                f'stroke-linecap="round">{"".join(parts)}</g>')
+                f'stroke-linecap="round"{op}>{"".join(parts)}</g>')
 
 
 def _render_contour(ct: Contour, tr, body):
+    op = f' stroke-opacity="{ct.alpha}"' if ct.alpha < 1 else ""
     for lvl, color, segs in ct.line_segments:
         if not segs:
             continue
@@ -1519,11 +1581,12 @@ def _render_contour(ct: Contour, tr, body):
             f"M{_fmt(tr.x(a))},{_fmt(tr.y(b))}L{_fmt(tr.x(c))},{_fmt(tr.y(e))}"
             for a, b, c, e in segs
         )
-        body.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.2"/>')
+        body.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.2"{op}/>')
 
 
 # -- axes furniture --------------------------------------------------------
-def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
+def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
+                 alpha=None):
     lines = []
     for xt in xticks:
         x = tr.x(xt)
@@ -1533,7 +1596,8 @@ def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
         lines.append(f'<line x1="{_fmt(px_left)}" y1="{_fmt(y)}" x2="{_fmt(px_left + px_w)}" y2="{_fmt(y)}"/>')
     body.append(
         f'<g stroke="{st.grid_color}" stroke-width="{st.grid_width}" '
-        f'stroke-opacity="{st.grid_alpha}">{"".join(lines)}</g>'
+        f'stroke-opacity="{st.grid_alpha if alpha is None else alpha}">'
+        f'{"".join(lines)}</g>'
     )
 
 
@@ -1660,9 +1724,10 @@ def _render_spines(ax, px_left, px_top, px_w, px_h, body):
             continue
         color = spine._color if spine._color is not None else st.spine_color
         width = spine._linewidth if spine._linewidth is not None else st.spine_width
+        op = f' stroke-opacity="{spine._alpha}"' if spine._alpha is not None else ""
         body.append(
             f'<line x1="{_fmt(ex0)}" y1="{_fmt(ey0)}" x2="{_fmt(ex1)}" y2="{_fmt(ey1)}" '
-            f'stroke="{color}" stroke-width="{width}"/>'
+            f'stroke="{color}" stroke-width="{width}"{op}/>'
         )
 
 
@@ -1785,10 +1850,11 @@ def _legend_layout(ax, st):
              else ax.artists)
     return legend_box(
         [a for a in source if getattr(a, "label", None)],
-        st, ax._legend_ncol, ax._legend_title, fontsize=ax._legend_fontsize)
+        st, ax._legend_ncol, ax._legend_title, fontsize=ax._legend_fontsize,
+        framealpha=ax._legend_framealpha)
 
 
-def legend_box(entries, st, ncol, title, fontsize=None):
+def legend_box(entries, st, ncol, title, fontsize=None, framealpha=0.85):
     """Compute legend geometry: entries, columns, cell size, box size."""
     if not entries:
         return None
@@ -1812,6 +1878,7 @@ def legend_box(entries, st, ncol, title, fontsize=None):
         "entries": entries, "fs": fs, "line_h": line_h, "sample_w": sample_w,
         "pad": pad, "ncol": ncol, "col_w": col_w, "title": title,
         "title_h": title_h, "box_w": box_w, "box_h": box_h,
+        "framealpha": framealpha,
     }
 
 
@@ -1831,7 +1898,8 @@ def figure_legend_layout(fig):
         return None
     sources = spec["axes"] or [a for a in fig.axes if not a._is_colorbar]
     return legend_box(legend_entries(sources), fig.style,
-                      spec["ncol"], spec["title"], fontsize=spec.get("fontsize"))
+                      spec["ncol"], spec["title"], fontsize=spec.get("fontsize"),
+                      framealpha=spec.get("framealpha", 0.85))
 
 
 def figure_legend_origin(spec, lay, W, H, pad_px):
@@ -1887,7 +1955,7 @@ def draw_legend(lay, st, bx, by, body):
     body.append(
         f'<g class="plotpress-legend"><rect x="{_fmt(bx)}" y="{_fmt(by)}" '
         f'width="{_fmt(box_w)}" height="{_fmt(box_h)}" rx="3" fill="#ffffff" '
-        f'fill-opacity="0.85" stroke="#cccccc" stroke-width="0.8"/>'
+        f'fill-opacity="{lay["framealpha"]}" stroke="#cccccc" stroke-width="0.8"/>'
     )
     if lay["title"]:
         body.append(

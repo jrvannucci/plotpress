@@ -944,11 +944,36 @@ def auto_outline(color):
     return "#ffffff" if luma < 140 else "#000000"
 
 
+#: bbox dict defaults, applied to whatever keys the caller left unset --
+#: matplotlib accepts both the long and short spelling of face/edge color, so
+#: this resolves both to one canonical shape every renderer can rely on.
+_BBOX_DEFAULTS = {"facecolor": "#ffffff", "edgecolor": "none", "alpha": 1.0,
+                  "pad": 4.0, "boxstyle": "square", "linewidth": 0.8}
+
+
+def normalize_bbox(bbox):
+    """``None`` through, or a dict filled in with :data:`_BBOX_DEFAULTS`.
+
+    ``facecolor``/``fc`` and ``edgecolor``/``ec`` (matplotlib's own aliases)
+    both resolve to the long form, so every renderer only ever has to read
+    one key.
+    """
+    if bbox is None:
+        return None
+    out = dict(_BBOX_DEFAULTS)
+    out.update(bbox)
+    if "fc" in bbox:
+        out["facecolor"] = bbox["fc"]
+    if "ec" in bbox:
+        out["edgecolor"] = bbox["ec"]
+    return out
+
+
 class Text(Artist):
     """A text label anchored at data coordinates (``ax.text``)."""
 
     def __init__(self, x, y, text, color, size, ha="left", va="baseline",
-                 rotation=0.0, outline=None):
+                 rotation=0.0, outline=None, alpha=1.0, bbox=None):
         self.x = float(x)
         self.y = float(y)
         self.text = text
@@ -958,6 +983,8 @@ class Text(Artist):
         self.va = va
         self.rotation = float(rotation)
         self.outline = auto_outline(color) if outline is None else outline
+        self.alpha = alpha
+        self.bbox = normalize_bbox(bbox)
 
     def data_bounds(self):
         return None  # text does not drive autoscaling
@@ -967,7 +994,7 @@ class Annotation(Artist):
     """Text at ``xytext`` optionally pointing an arrow to ``xy`` (``ax.annotate``)."""
 
     def __init__(self, text, xy, xytext, color, size, ha="left", va="baseline",
-                 arrowprops=None, outline=None):
+                 arrowprops=None, outline=None, alpha=1.0, bbox=None):
         self.text = text
         self.xy = (float(xy[0]), float(xy[1]))
         self.xytext = (float(xytext[0]), float(xytext[1])) if xytext else self.xy
@@ -975,8 +1002,10 @@ class Annotation(Artist):
         self.size = size
         self.ha = ha
         self.va = va
-        self.arrowprops = arrowprops  # dict (e.g. {"color": ...}) or None
+        self.arrowprops = arrowprops  # dict (e.g. {"color": ..., "alpha": ...}) or None
         self.outline = auto_outline(color) if outline is None else outline
+        self.alpha = alpha
+        self.bbox = normalize_bbox(bbox)
 
     def data_bounds(self):
         return None
@@ -986,13 +1015,14 @@ class BoxPlot(Artist):
     """Box-and-whisker plot (one box per dataset)."""
 
     def __init__(self, positions, stats, width, color, orientation="vertical",
-                 label=None):
+                 label=None, alpha=1.0):
         self.positions = np.asarray(positions, float)
         self.stats = stats  # list of dicts: q1, med, q3, lo, hi, fliers
         self.width = float(width)
         self.color = color
         self.orientation = orientation
         self.label = label
+        self.alpha = alpha
 
     def data_bounds(self):
         if not self.stats:
@@ -1010,13 +1040,14 @@ class Violin(Artist):
     """Violin plot: mirrored kernel-density silhouettes."""
 
     def __init__(self, positions, grids, halfwidths, color, orientation="vertical",
-                 label=None):
+                 label=None, alpha=0.55):
         self.positions = np.asarray(positions, float)
         self.grids = grids            # list of 1-D value grids
         self.halfwidths = halfwidths  # list of 1-D half-widths (same shape)
         self.color = color
         self.orientation = orientation
         self.label = label
+        self.alpha = alpha  # 0.55 matches the fill both backends drew before this was configurable
 
     def data_bounds(self):
         if not self.grids:
@@ -1035,13 +1066,14 @@ class EventPlot(Artist):
     """Raster of event ticks (one row per sequence)."""
 
     def __init__(self, rows, offsets, linelength, color, orientation="horizontal",
-                 label=None):
+                 label=None, alpha=1.0):
         self.rows = [np.asarray(r, float) for r in rows]
         self.offsets = np.asarray(offsets, float)
         self.linelength = float(linelength)
         self.color = color
         self.orientation = orientation
         self.label = label
+        self.alpha = alpha
 
     def data_bounds(self):
         allev = np.concatenate(self.rows) if self.rows else np.array([0.0, 1.0])
@@ -1056,7 +1088,7 @@ class EventPlot(Artist):
 class Quiver(Artist):
     """A field of arrows (X, Y, U, V) with a scale into data units."""
 
-    def __init__(self, X, Y, U, V, scale, color, label=None):
+    def __init__(self, X, Y, U, V, scale, color, label=None, alpha=1.0):
         self.X = np.asarray(X, float).ravel()
         self.Y = np.asarray(Y, float).ravel()
         self.U = np.asarray(U, float).ravel()
@@ -1064,6 +1096,7 @@ class Quiver(Artist):
         self.scale = scale
         self.color = color
         self.label = label
+        self.alpha = alpha
 
     def tips(self):
         return self.X + self.U * self.scale, self.Y + self.V * self.scale
@@ -1103,13 +1136,14 @@ def _marching_squares(x, y, Z, level):
 class Contour(Artist):
     """Contour lines via marching squares (segments precomputed on build)."""
 
-    def __init__(self, x, y, Z, levels, colors, label=None):
+    def __init__(self, x, y, Z, levels, colors, label=None, alpha=1.0):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
         self.Z = np.asarray(Z, float)
         self.levels = list(levels)
         self.colors = colors
         self.label = label
+        self.alpha = alpha
         self.line_segments = [
             (lvl, colors[k % len(colors)], _marching_squares(self.x, self.y, self.Z, lvl))
             for k, lvl in enumerate(self.levels)
@@ -1123,7 +1157,7 @@ class Pie(Artist):
     """A pie chart, drawn in axes-pixel space so it stays circular."""
 
     def __init__(self, values, colors, labels=None, startangle=90.0,
-                 radius=1.0, autopct=None):
+                 radius=1.0, autopct=None, alpha=1.0):
         self.values = np.asarray(values, float)
         total = self.values.sum()
         # An all-zero (or empty) pie has no wedges to size; fall back to equal
@@ -1138,6 +1172,7 @@ class Pie(Artist):
         self.startangle = startangle
         self.radius = radius
         self.autopct = autopct
+        self.alpha = alpha
 
     def pct_text(self, frac):
         """Formatted ``autopct`` label for a wedge holding ``frac`` of the total.

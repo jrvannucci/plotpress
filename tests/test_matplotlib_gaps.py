@@ -1549,3 +1549,325 @@ def test_imshow_interpolation_nearest_vs_smooth():
     fig3, ax3 = plotpress.subplots()
     ax3.pcolormesh(X)
     assert "pixelated" in fig3.to_svg()   # unaffected -- imshow-only so far
+
+
+# -- alpha sweep --------------------------------------------------------
+# matplotlib supports alpha= on every one of these; each got an alpha=1.0
+# (or its own already-drawn default) that previously did nothing because the
+# kwarg didn't exist at all. Each test checks: (1) the kwarg is accepted and
+# actually changes the SVG output at a non-default value, (2) it changes the
+# raster (PNG) pixels too, so the two backends can't silently disagree.
+def _svg_and_raster_differ(build_a, build_b):
+    """True if two figure-building callables produce different SVG *and*
+    different raster pixels -- the shared assertion every alpha test below
+    makes, factored out so 13 near-identical artists don't repeat it."""
+    fig_a, ax_a = plotpress.subplots()
+    build_a(ax_a)
+    fig_b, ax_b = plotpress.subplots()
+    build_b(ax_b)
+    if fig_a.to_svg() == fig_b.to_svg():
+        return False
+    from plotpress.raster import figure_to_image
+    arr_a = np.asarray(figure_to_image(fig_a))
+    arr_b = np.asarray(figure_to_image(fig_b))
+    return not np.array_equal(arr_a, arr_b)
+
+
+def test_pie_alpha_renders_in_both_backends():
+    assert _svg_and_raster_differ(
+        lambda ax: ax.pie([3, 1, 2], alpha=1.0),
+        lambda ax: ax.pie([3, 1, 2], alpha=0.3))
+
+
+def test_boxplot_alpha_renders_in_both_backends():
+    d = np.random.RandomState(0).normal(size=30)
+    assert _svg_and_raster_differ(
+        lambda ax: ax.boxplot([d], alpha=1.0),
+        lambda ax: ax.boxplot([d], alpha=0.3))
+
+
+def test_violinplot_alpha_renders_in_both_backends_and_matches_old_default():
+    """0.55 was the hardcoded fill both backends already drew -- it must stay
+    the default now that it's configurable, changing nothing for existing
+    violinplot() calls with no alpha= at all."""
+    d = np.random.RandomState(0).normal(size=50)
+    fig, ax = plotpress.subplots()
+    v = ax.violinplot([d])
+    assert v.alpha == 0.55
+    assert _svg_and_raster_differ(
+        lambda ax: ax.violinplot([d], alpha=1.0),
+        lambda ax: ax.violinplot([d], alpha=0.3))
+
+
+def test_eventplot_alpha_renders_in_both_backends():
+    assert _svg_and_raster_differ(
+        lambda ax: ax.eventplot([[1, 2, 3]], alpha=1.0),
+        lambda ax: ax.eventplot([[1, 2, 3]], alpha=0.3))
+
+
+def test_quiver_alpha_renders_in_both_backends():
+    X, Y = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 4))
+    assert _svg_and_raster_differ(
+        lambda ax: ax.quiver(X, Y, np.cos(X), np.sin(Y), alpha=1.0),
+        lambda ax: ax.quiver(X, Y, np.cos(X), np.sin(Y), alpha=0.3))
+
+
+def test_contour_alpha_renders_in_both_backends():
+    Z = np.random.RandomState(0).normal(size=(10, 10))
+    assert _svg_and_raster_differ(
+        lambda ax: ax.contour(Z, alpha=1.0),
+        lambda ax: ax.contour(Z, alpha=0.3))
+
+
+def test_contour_and_contourf_now_share_the_same_alpha_kwarg():
+    """contourf already had alpha=; contour (its own sibling, same normalization
+    per its docstring) did not -- an inconsistency between two methods that
+    otherwise document themselves as matching."""
+    Z = np.random.RandomState(0).normal(size=(10, 10))
+    fig, ax = plotpress.subplots()
+    c = ax.contour(Z, alpha=0.4)
+    assert c.alpha == 0.4
+
+
+def test_hexbin_alpha_renders_in_both_backends():
+    rng = np.random.RandomState(0)
+    x, y = rng.normal(size=300), rng.normal(size=300)
+    assert _svg_and_raster_differ(
+        lambda ax: ax.hexbin(x, y, alpha=1.0),
+        lambda ax: ax.hexbin(x, y, alpha=0.3))
+
+
+def test_matshow_spy_hist2d_alpha_pass_through_to_imshow():
+    """matshow/spy/hist2d all delegate to imshow() internally, which already
+    had alpha -- they just never exposed a way to pass it in."""
+    rng = np.random.RandomState(0)
+    A = rng.normal(size=(6, 6))
+    assert _svg_and_raster_differ(lambda ax: ax.matshow(A, alpha=1.0),
+                                  lambda ax: ax.matshow(A, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.spy(A, alpha=1.0),
+                                  lambda ax: ax.spy(A, alpha=0.3))
+    x, y = rng.normal(size=300), rng.normal(size=300)
+    assert _svg_and_raster_differ(lambda ax: ax.hist2d(x, y, alpha=1.0),
+                                  lambda ax: ax.hist2d(x, y, alpha=0.3))
+
+
+def test_ecdfplot_alpha_passes_through_to_step():
+    d = np.random.RandomState(0).normal(size=100)
+    assert _svg_and_raster_differ(
+        lambda ax: ax.ecdfplot(d, alpha=1.0),
+        lambda ax: ax.ecdfplot(d, alpha=0.3))
+
+
+def test_spectral_family_alpha_passes_through_to_plot():
+    """psd/csd/cohere/magnitude_spectrum/angle_spectrum/phase_spectrum all
+    delegate to plot() -- one representative per method is enough since they
+    share the exact same one-line passthrough."""
+    rng = np.random.RandomState(0)
+    x, y = rng.normal(size=512), rng.normal(size=512)
+    assert _svg_and_raster_differ(lambda ax: ax.psd(x, alpha=1.0),
+                                  lambda ax: ax.psd(x, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.csd(x, y, alpha=1.0),
+                                  lambda ax: ax.csd(x, y, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.cohere(x, y, alpha=1.0),
+                                  lambda ax: ax.cohere(x, y, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.magnitude_spectrum(x, alpha=1.0),
+                                  lambda ax: ax.magnitude_spectrum(x, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.angle_spectrum(x, alpha=1.0),
+                                  lambda ax: ax.angle_spectrum(x, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.phase_spectrum(x, alpha=1.0),
+                                  lambda ax: ax.phase_spectrum(x, alpha=0.3))
+
+
+def test_specgram_alpha_passes_through_to_imshow():
+    x = np.random.RandomState(0).normal(size=2048)
+    assert _svg_and_raster_differ(lambda ax: ax.specgram(x, alpha=1.0),
+                                  lambda ax: ax.specgram(x, alpha=0.3))
+
+
+def test_xcorr_acorr_alpha_applies_to_lines_and_markers():
+    rng = np.random.RandomState(0)
+    x, y = rng.normal(size=100), rng.normal(size=100)
+    assert _svg_and_raster_differ(lambda ax: ax.xcorr(x, y, alpha=1.0),
+                                  lambda ax: ax.xcorr(x, y, alpha=0.3))
+    assert _svg_and_raster_differ(lambda ax: ax.acorr(x, alpha=1.0),
+                                  lambda ax: ax.acorr(x, alpha=0.3))
+
+
+# -- Spine/grid/legend alpha ----------------------------------------------
+def test_spine_set_alpha_renders_in_both_backends():
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    ax2.spines["top"].set_alpha(0.2)
+    assert 'stroke-opacity="0.2"' in fig2.to_svg()
+    assert ax2.spines["top"].get_alpha() == 0.2
+    assert ax1.spines["top"].get_alpha() == 1.0   # default: fully opaque
+
+
+def test_grid_alpha_overrides_the_style_default_per_axes():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].grid(True)                    # style default (Style.grid_alpha)
+    axes[1].grid(True, alpha=0.1)         # per-axes override
+    svg = fig.to_svg()
+    assert 'stroke-opacity="0.1"' in svg
+    assert axes[0]._grid_alpha is None
+    assert axes[1]._grid_alpha == 0.1
+
+
+def test_grid_alpha_reaches_the_per_axes_interactive_metadata():
+    """Regression class: tick_params() per-axis overrides used to render
+    correctly in the initial SVG but silently revert to the figure-wide
+    default the moment the client rebuilds on pan/zoom, because the rebuild
+    read only the global style payload. grid(alpha=) must not repeat that --
+    its override has to reach the embedded per-axes metadata the JS rebuild
+    actually reads, not just the initial static render. The metadata is
+    columnar (see figure._columnarize_meta), so this decodes it properly
+    rather than substring-searching the HTML -- the real end-to-end proof
+    that a post-zoom rebuild still honors it is
+    test_grid_alpha_override_survives_a_real_zoom in test_pick_interactive.py.
+    """
+    import json
+    import re
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.grid(True, alpha=0.1)
+    html = fig.to_html(interactive=True)
+    m = re.search(r'id="plotpress-meta"[^>]*>(\{.*?\})</script>', html)
+    assert m, "no plotpress-meta payload found"
+    meta = json.loads(m.group(1))
+    assert meta["cols"]["grid_alpha"] == [0.1]
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    ax2.grid(True)   # no override -- must stay None (falls back to the style default)
+    html2 = fig2.to_html(interactive=True)
+    m2 = re.search(r'id="plotpress-meta"[^>]*>(\{.*?\})</script>', html2)
+    meta2 = json.loads(m2.group(1))
+    assert meta2["cols"]["grid_alpha"] == [None]
+
+
+def test_legend_framealpha_renders_in_both_backends_and_backends_now_agree():
+    """Regression: the raster legend box was always fully opaque (255,255,255)
+    regardless of the SVG box's own fill-opacity="0.85" -- the two backends
+    drew a visibly different-looking legend for the same figure."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1], label="a")
+    ax1.legend()   # default framealpha=0.85, matching what was hardcoded before
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1], label="a")
+    ax2.legend(framealpha=0.2)
+    assert 'fill-opacity="0.85"' in fig1.to_svg()
+    assert 'fill-opacity="0.2"' in fig2.to_svg()
+
+    from plotpress.raster import figure_to_image
+    arr1 = np.asarray(figure_to_image(fig1))
+    arr2 = np.asarray(figure_to_image(fig2))
+    assert not np.array_equal(arr1, arr2)
+
+
+def test_figure_legend_framealpha_matches_axes_legend_default():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1], label="a")
+    axes[1].plot([0, 1], [1, 0], label="b")
+    fig.legend(framealpha=0.4)
+    assert 'fill-opacity="0.4"' in fig.to_svg()
+
+
+# -- bbox on text/annotate/fig.text ----------------------------------------
+def test_text_bbox_draws_a_rect_behind_the_text_with_defaults():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", bbox={})
+    svg = fig.to_svg()
+    assert '<rect' in svg
+    # the rect must come before the <text> it sits behind, so it paints under it
+    assert svg.index("<rect") < svg.index("<text")
+    assert 'fill="#ffffff"' in svg   # bbox default facecolor
+
+
+def test_text_bbox_accepts_matplotlib_short_key_aliases():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", bbox={"fc": "yellow", "ec": "black"})
+    svg = fig.to_svg()
+    assert 'fill="yellow"' in svg
+    assert 'stroke="black"' in svg
+
+
+def test_text_bbox_alpha_is_independent_of_text_alpha():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", alpha=0.3, bbox={"facecolor": "yellow", "alpha": 0.6})
+    svg = fig.to_svg()
+    assert 'fill-opacity="0.6"' in svg    # the box
+    assert 'fill-opacity="0.3"' in svg    # the glyphs
+    assert svg.count("fill-opacity") == 2
+
+
+def test_text_bbox_roundstyle_gets_a_nonzero_corner_radius():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", bbox={"boxstyle": "square"})
+    fig2, ax2 = plotpress.subplots()
+    ax2.text(0.5, 0.5, "hi", bbox={"boxstyle": "round"})
+    import re
+    rx_square = re.search(r'<rect[^>]*rx="([\d.]+)"', fig.to_svg())
+    rx_round = re.search(r'<rect[^>]*rx="([\d.]+)"', fig2.to_svg())
+    assert float(rx_square.group(1)) == 0.0
+    assert float(rx_round.group(1)) > 0.0
+
+
+def test_annotate_bbox_moves_the_leader_anchor_to_the_padded_box_edge():
+    """With bbox set, the arrow must stop at the box's own (padded) edge, not
+    at the bare text's tighter bounds -- otherwise it visibly floats short of
+    the box instead of touching it."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.annotate("hi", xy=(0.0, 0.0), xytext=(0.5, 0.5),
+                arrowprops={"color": "red"})
+    fig2, ax2 = plotpress.subplots()
+    ax2.annotate("hi", xy=(0.0, 0.0), xytext=(0.5, 0.5),
+                arrowprops={"color": "red"}, bbox={"pad": 20.0})
+    import re
+    d1 = re.search(r'<path d="M([\d.]+),([\d.]+)', fig1.to_svg())
+    d2 = re.search(r'<path d="M([\d.]+),([\d.]+)', fig2.to_svg())
+    p1 = (float(d1.group(1)), float(d1.group(2)))
+    p2 = (float(d2.group(1)), float(d2.group(2)))
+    assert p1 != p2   # a larger pad must move where the leader starts
+
+
+def test_annotate_arrowprops_alpha_is_independent_of_text_alpha():
+    fig, ax = plotpress.subplots()
+    ax.annotate("hi", xy=(0.0, 0.0), xytext=(0.5, 0.5), alpha=0.9,
+               arrowprops={"color": "red", "alpha": 0.4})
+    svg = fig.to_svg()
+    assert 'stroke-opacity="0.4"' in svg   # the arrow
+    assert 'fill-opacity="0.9"' in svg     # the text glyphs
+
+
+def test_bbox_renders_without_error_in_raster_and_pdf():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", bbox={"facecolor": "yellow", "boxstyle": "round"})
+    ax.annotate("there", xy=(0.2, 0.2), xytext=(0.7, 0.7),
+               arrowprops={"color": "blue"}, bbox={})
+    pytest.importorskip("PIL")
+    import tempfile
+
+    from plotpress.raster import figure_to_image, save_pdf
+    figure_to_image(fig)   # must not raise
+    save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
+
+
+def test_fig_text_alpha_and_bbox_render_in_both_backends():
+    fig, _ = plotpress.subplots()
+    fig2, _ = plotpress.subplots()
+    fig.text(0.5, 0.5, "hi", alpha=0.3)
+    fig2.text(0.5, 0.5, "hi", alpha=1.0)
+    assert fig.to_svg() != fig2.to_svg()
+
+    fig3, _ = plotpress.subplots()
+    fig3.text(0.5, 0.5, "hi", bbox={"facecolor": "cyan"})
+    svg3 = fig3.to_svg()
+    assert '<rect' in svg3 and 'fill="cyan"' in svg3
+    assert svg3.index("<rect") < svg3.index("<text")
+
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+    figure_to_image(fig3)   # must not raise

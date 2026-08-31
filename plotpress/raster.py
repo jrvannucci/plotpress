@@ -232,7 +232,8 @@ def _raster_spines(ax, L, T, Wp, Hp, S, draw):
             continue
         color = spine._color if spine._color is not None else st.spine_color
         width = spine._linewidth if spine._linewidth is not None else st.spine_width
-        draw.line([x0, y0, x1, y1], fill=_rgb(color),
+        fill = _rgba(color, spine._alpha) if spine._alpha is not None else _rgb(color)
+        draw.line([x0, y0, x1, y1], fill=fill,
                   width=max(1, int(round(width * S))))
 
 
@@ -265,7 +266,8 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
               (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
 
     if ax._grid and not ax._axis_off and not overlay:
-        gc = _rgba(st.grid_color, st.grid_alpha)
+        gc = _rgba(st.grid_color, ax._grid_alpha if ax._grid_alpha is not None
+                  else st.grid_alpha)
         gw = max(1, int(round(st.grid_width * S)))
         for xt in xticks:
             x = float(tr.x(xt))
@@ -336,16 +338,21 @@ def _draw_prim(p, S, draw, canvas):
                              fill=_rgba(col, p.alpha), outline=edge, width=ew)
         return
     if isinstance(p, PLine):
-        _polyline(draw, np.array([p.p0, p.p1]), _rgb(p.stroke),
+        # Same stroke_opacity-dropped-on-the-floor bug as PPath below (axvline/
+        # axhline/axline share this prim).
+        col = _rgba(p.stroke, p.stroke_opacity) if p.stroke_opacity < 1 else _rgb(p.stroke)
+        _polyline(draw, np.array([p.p0, p.p1]), col,
                   max(1, int(round(p.stroke_width * S))), _DASH.get(p.linestyle))
     elif isinstance(p, PRect):
         pts = [(p.x, p.y), (p.x + p.w, p.y), (p.x + p.w, p.y + p.h), (p.x, p.y + p.h)]
         _composite_polygon(canvas, pts, _rgba(p.fill, p.fill_opacity))
     elif isinstance(p, PSegments):
+        # Same fix (hlines/vlines share this prim).
+        col = _rgba(p.stroke, p.stroke_opacity) if p.stroke_opacity < 1 else _rgb(p.stroke)
         w = max(1, int(round(p.stroke_width * S)))
         dash = _DASH.get(p.linestyle)
         for a, b, c, d in p.segs:
-            _polyline(draw, np.array([[a, b], [c, d]]), _rgb(p.stroke), w, dash)
+            _polyline(draw, np.array([[a, b], [c, d]]), col, w, dash)
     elif isinstance(p, PPolyBatch):
         outline = _rgb(p.edge) if p.edge else None
         al = int(round(p.alpha * 255))
@@ -367,10 +374,18 @@ def _draw_prim(p, S, draw, canvas):
                 _composite_polygon(canvas, pts, _rgba(p.fill, p.fill_opacity),
                                    outline=outline, outline_width=p.stroke_width * S)
         else:
+            # Regression: stroke_opacity was carried on the prim (SVG already
+            # emits stroke-opacity from it) but never read here, so plot()
+            # and every line-based method built on it (step, ecdfplot, the
+            # psd/csd/cohere/spectrum family, xcorr/acorr) rendered fully
+            # opaque in PNG/PDF regardless of alpha=, agreeing with SVG only
+            # by accident when alpha happened to be 1.0.
+            col = (_rgba(p.stroke, p.stroke_opacity) if p.stroke_opacity < 1
+                  else _rgb(p.stroke))
             w = max(1, int(round(p.stroke_width * S)))
             dash = _DASH.get(p.linestyle)
             for sub in p.subpaths:
-                _polyline(draw, sub, _rgb(p.stroke), w, dash)
+                _polyline(draw, sub, col, w, dash)
 
 
 def _clip_artists(ax, tr, st, S, canvas, rect, frame=0, animate_unit="main"):
@@ -442,12 +457,12 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
     elif isinstance(artist, Quiver):
         _quiver(artist, tr, S, draw)
     elif isinstance(artist, Contour):
-        col = None
         for lvl, color, segs in artist.line_segments:
+            fill = (_rgba(color, artist.alpha) if artist.alpha < 1 else _rgb(color))
             for a, b, c, e in segs:
                 draw.line([float(tr.x(a)), float(tr.y(b)),
                            float(tr.x(c)), float(tr.y(e))],
-                          fill=_rgb(color), width=max(1, int(round(1.2 * S))))
+                          fill=fill, width=max(1, int(round(1.2 * S))))
     elif isinstance(artist, Pie):
         _pie(artist, tr, st, S, draw)
     elif isinstance(artist, BoxPlot):
@@ -455,25 +470,44 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
     elif isinstance(artist, Violin):
         _violin(artist, tr, draw)
     elif isinstance(artist, Text):
-        _text(draw, float(tr.x(artist.x)), float(tr.y(artist.y)), artist.text,
-              _rgb(artist.color), _font(artist.size * S, st.font_family), artist.ha, artist.va,
+        from .svg import _bbox_pad, text_box
+
+        x, y = float(tr.x(artist.x)), float(tr.y(artist.y))
+        if artist.bbox is not None:
+            # text_box measures in unscaled pixels (font metrics don't know
+            # about the raster scale factor); scale the padded box to canvas.
+            box = _bbox_pad(text_box(x / S, y / S, artist.text, artist.size,
+                                     artist.ha, artist.va, st), artist.bbox)
+            _raster_bbox(draw, [c * S for c in box], artist.bbox, S)
+        fill = _rgba(artist.color, artist.alpha) if artist.alpha < 1 else _rgb(artist.color)
+        _text(draw, x, y, artist.text,
+              fill, _font(artist.size * S, st.font_family), artist.ha, artist.va,
               artist.rotation, _rgb(artist.outline) if artist.outline else None,
               artist.size * 0.15 * S)
     elif isinstance(artist, Annotation):
-        from .svg import leader_anchor, text_box
+        from .svg import _bbox_pad, leader_anchor, text_box
 
         tx, ty = float(tr.x(artist.xytext[0])), float(tr.y(artist.xytext[1]))
+        # The box is measured in unscaled pixels, so scale it to this canvas.
+        box = text_box(tx / S, ty / S, artist.text, artist.size,
+                       artist.ha, artist.va, st)
+        if artist.bbox is not None:
+            box = _bbox_pad(box, artist.bbox)   # the leader below anchors to this, padded, edge
         if artist.arrowprops is not None:
             px, py = float(tr.x(artist.xy[0])), float(tr.y(artist.xy[1]))
             col = (artist.arrowprops.get("color", artist.color)
                    if isinstance(artist.arrowprops, dict) else artist.color)
+            a = (artist.arrowprops.get("alpha", 1.0)
+                if isinstance(artist.arrowprops, dict) else 1.0)
             # Same attachment rule as the SVG backend -- see svg.leader_anchor.
-            # The box is measured in unscaled pixels, so scale it to this canvas.
-            box = text_box(tx / S, ty / S, artist.text, artist.size,
-                           artist.ha, artist.va, st)
             sx, sy = leader_anchor(box, (px / S, py / S))
-            _quiver_arrow(draw, sx * S, sy * S, px, py, _rgb(col), S)
-        _text(draw, tx, ty, artist.text, _rgb(artist.color), _font(artist.size * S, st.font_family),
+            _quiver_arrow(draw, sx * S, sy * S, px, py,
+                         _rgba(col, a) if a < 1 else _rgb(col), S)
+        if artist.bbox is not None:
+            _raster_bbox(draw, [c * S for c in box], artist.bbox, S)
+        fill = (_rgba(artist.color, artist.alpha) if artist.alpha < 1
+               else _rgb(artist.color))
+        _text(draw, tx, ty, artist.text, fill, _font(artist.size * S, st.font_family),
               artist.ha, artist.va, 0.0,
               _rgb(artist.outline) if artist.outline else None,
               artist.size * 0.15 * S)
@@ -584,7 +618,7 @@ def _errorbar(eb, tr, st, S, draw):
 
 def _eventplot(ev, tr, S, draw):
     half = ev.linelength / 2.0
-    col = _rgb(ev.color)
+    col = _rgba(ev.color, ev.alpha) if ev.alpha < 1 else _rgb(ev.color)
     for row, off in zip(ev.rows, ev.offsets):
         if ev.orientation == "horizontal":
             y0, y1 = float(tr.y(off - half)), float(tr.y(off + half))
@@ -601,7 +635,7 @@ def _eventplot(ev, tr, S, draw):
 def _quiver(q, tr, S, draw):
     tx, ty = q.tips()
     x0, y0, x1, y1 = tr.x(q.X), tr.y(q.Y), tr.x(tx), tr.y(ty)
-    col = _rgb(q.color)
+    col = _rgba(q.color, q.alpha) if q.alpha < 1 else _rgb(q.color)
     hl = 5.0 * S
     w = max(1, int(round(1.2 * S)))
     for bx, by, ex, ey in zip(x0, y0, x1, y1):
@@ -623,7 +657,7 @@ def _pie(pie, tr, st, S, draw):
     for i, frac in enumerate(pie.fracs):
         a1 = ang - frac * 2 * math.pi
         draw.pieslice(box, -math.degrees(ang), -math.degrees(a1),
-                      fill=_rgb(pie.colors[i]), outline=(255, 255, 255),
+                      fill=_rgba(pie.colors[i], pie.alpha), outline=(255, 255, 255),
                       width=max(1, int(round(1.5 * S))))
         am = (ang + a1) / 2.0
         if pie.labels is not None:
@@ -638,7 +672,7 @@ def _pie(pie, tr, st, S, draw):
 
 
 def _boxplot(bp, tr, st, S, draw):
-    col = _rgb(bp.color)
+    col = _rgba(bp.color, bp.alpha) if bp.alpha < 1 else _rgb(bp.color)
     w = max(1, int(round(1.3 * S)))
     wm = max(1, int(round(1.8 * S)))
     r = st.marker_size / 2.0 * st.dpi / 72.0 * S
@@ -685,7 +719,23 @@ def _violin(v, tr, draw):
             left = np.column_stack([tr.x(grid), tr.y(pos - hw)])
             right = np.column_stack([tr.x(grid)[::-1], tr.y(pos + hw)[::-1]])
         poly = [tuple(p) for p in np.vstack([left, right])]
-        draw.polygon(poly, fill=_rgba(v.color, 0.55), outline=_rgb(v.color))
+        draw.polygon(poly, fill=_rgba(v.color, v.alpha), outline=_rgb(v.color))
+
+
+def _raster_bbox(draw, box, bbox, S):
+    """The raster counterpart of ``svg._bbox_svg`` -- a rect (or rounded rect)
+    drawn behind a label. ``box`` is already padded and scaled to this canvas.
+    """
+    x0, y0, x1, y1 = box
+    fill = _rgba(bbox["facecolor"], bbox["alpha"])
+    edge = _rgb(bbox["edgecolor"]) if bbox["edgecolor"] not in (None, "none") else None
+    width = max(1, int(round(bbox["linewidth"] * S)))
+    if bbox["boxstyle"] == "round":
+        radius = min(8.0 * S, (x1 - x0) / 2.0, (y1 - y0) / 2.0)
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill,
+                               outline=edge, width=width)
+    else:
+        draw.rectangle([x0, y0, x1, y1], fill=fill, outline=edge, width=width)
 
 
 def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0,
@@ -909,7 +959,8 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
     by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
     _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
-                        line_h, sample, pad, title, title_h, font, title_font)
+                        line_h, sample, pad, title, title_h, font, title_font,
+                        ax._legend_framealpha)
 
 
 def _raster_figure_legend(fig, st, W, H, S, draw):
@@ -934,13 +985,21 @@ def _raster_figure_legend(fig, st, W, H, S, draw):
         lay["box_w"] * S, lay["box_h"] * S, lay["ncol"], lay["col_w"] * S,
         lay["line_h"] * S, lay["sample_w"] * S, lay["pad"] * S,
         lay["title"], lay["title_h"] * S,
-        _font(fs, st.font_family), _font(fs, st.font_family, bold=True))
+        _font(fs, st.font_family), _font(fs, st.font_family, bold=True),
+        lay["framealpha"])
 
 
 def _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
-                        line_h, sample, pad, title, title_h, font, title_font):
-    """Paint a legend box whose geometry has already been decided."""
-    draw.rectangle([bx, by, bx + box_w, by + box_h], fill=(255, 255, 255),
+                        line_h, sample, pad, title, title_h, font, title_font,
+                        framealpha=0.85):
+    """Paint a legend box whose geometry has already been decided.
+
+    Regression: this box was always fully opaque (255, 255, 255) regardless
+    of the SVG backend's own fill-opacity="0.85" on the same box -- the two
+    backends drew a different-looking legend for the same figure. Both now
+    read the same framealpha (see Axes.legend/Figure.legend).
+    """
+    draw.rectangle([bx, by, bx + box_w, by + box_h], fill=_rgba("#ffffff", framealpha),
                    outline=(204, 204, 204))
     if title:
         draw.text((bx + box_w / 2, by + pad), title, fill=_rgb(st.text_color),
@@ -997,10 +1056,20 @@ def _raster_figtexts(fig, W, H, S, draw):
         size = (t.get("size") or st.label_size * 1.2) * S
         _vtext(draw, t["text"], 6 * S + size / 2, H / 2, _rgb(st.text_color), _font(size, st.font_family))
     for t in fig._fig_texts:
+        from .svg import _bbox_pad, text_box
+
         size = (t["size"] or st.font_size) * S
         x, y = t["x"] * W, (1.0 - t["y"]) * H
         anchor = _PIL_H.get(t["ha"], "l") + _PIL_V.get(t["va"], "s")
-        draw.text((x, y), t["s"], fill=_rgb(t["color"] or st.text_color),
+        bbox = t.get("bbox")
+        if bbox is not None:
+            box = _bbox_pad(text_box(x / S, y / S, t["s"], t["size"] or st.font_size,
+                                     t["ha"], t["va"], st), bbox)
+            _raster_bbox(draw, [c * S for c in box], bbox, S)
+        alpha = t.get("alpha", 1.0)
+        color = t["color"] or st.text_color
+        fill = _rgba(color, alpha) if alpha < 1 else _rgb(color)
+        draw.text((x, y), t["s"], fill=fill,
                   font=_font(size, st.font_family), anchor=anchor)
 
 

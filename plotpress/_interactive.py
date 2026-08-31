@@ -908,7 +908,11 @@ _JS_SOURCE = r"""
         gl.push('<line x1="' + px.toFixed(2) + '" y1="' + m.y.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (m.y + m.h).toFixed(2) + '"/>'); });
       yr.ticks.forEach(function (yt) { var py = toPixel(m, m.xmin, yt).y;
         gl.push('<line x1="' + m.x.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (m.x + m.w).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>'); });
-      parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + STYLE.grid_alpha + '">' + gl.join('') + '</g>');
+      // om.grid_alpha is null unless grid(alpha=...) actually overrode the
+      // figure default -- a plain `||` would also treat a real alpha=0
+      // override as falsy and silently revert to the figure default.
+      var gridAlpha = (om.grid_alpha == null) ? STYLE.grid_alpha : om.grid_alpha;
+      parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + gridAlpha + '">' + gl.join('') + '</g>');
     }
     var xmarks = [], ymarks = [], labels = [];
     xr.ticks.forEach(function (xt, i) {

@@ -789,6 +789,38 @@ def test_tick_params_style_survives_zoom(page, tmp_path):
         "tick_params() colors reverted to the default style after zoom: %r" % after)
 
 
+def test_grid_alpha_override_survives_a_real_zoom(page, tmp_path):
+    """Same regression class as test_tick_params_style_survives_zoom, for
+    grid(alpha=): the client's grid rebuild on zoom must read the per-axes
+    override from the (columnar) metadata payload, not just the figure-wide
+    Style default the initial static render also happens to satisfy."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 10.0])
+    ax.grid(True, alpha=0.05)   # far from the Style default (0.6), so a
+                                # silent fallback is unmistakable, not a coincidence
+    path = tmp_path / "grid_alpha_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    op_query = (
+        "() => { const g = document.getElementById('ticks0')"
+        ".querySelector('g[stroke-opacity]'); return g && g.getAttribute('stroke-opacity'); }")
+
+    before = page.evaluate(op_query)
+    assert before == "0.05", "initial render did not honor grid(alpha=): %r" % before
+
+    x0, y0 = px(fig, 0, 2.0, 2.0)
+    x1, y1 = px(fig, 0, 8.0, 8.0)
+    _box_zoom(page, x0, y0, x1, y1)
+
+    after = page.evaluate(op_query)
+    assert after == "0.05", (
+        "grid(alpha=) reverted to the Style default after zoom: %r" % after)
+
+
 def _px_at_limits(fig, i, dx, dy, xlim, ylim):
     """Like ``pick_cases.px()``, but against an explicit ``(xlim, ylim)``
     instead of the axes' own current limits -- for computing where a datum
