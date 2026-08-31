@@ -21,7 +21,7 @@ from .artists import (
     PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text,
     Violin, _edges_from,
 )
-from .colors import colorbar_ticks
+from .colors import apply_colormap, colorbar_ticks
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
@@ -826,6 +826,9 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # stay stable regardless of what zorder does to the visual stacking.
     draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
     for k, artist in draw_order:
+        if isinstance(artist, QuadMesh) and artist.vectorized:
+            _render_mesh_vector(artist, tr, index, k, body)
+            continue
         prims = artist_to_prims(artist, tr, index, k, size_scale=st.dpi / 72.0)
         if prims is not None:
             body.extend(_emit_prim(p) for p in prims)
@@ -1135,6 +1138,42 @@ def frame_data(fig, max_mesh_cells=60000):
         if entries:
             frames[i] = entries
     return frames
+
+
+def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
+    """One ``<rect>`` per cell, in exact data-edge positions -- no resampling.
+
+    Reached only when ``art.vectorized`` (see ``artists._resolve_mesh_render``),
+    i.e. a non-uniform, non-curvilinear grid small enough that per-cell rects
+    stay cheap. Unlike the raster path, there is no pixel grid here for a thin
+    cell to fall between: every cell gets its own rect, at its own true edges,
+    however narrow. A NaN cell (alpha 0) is simply skipped rather than drawn
+    transparent -- an absent rect and a fully transparent one look identical
+    but the absent one costs nothing.
+    """
+    xe, ye = art.cell_edges()
+    xpix = tr.x(xe)
+    ypix = tr.y(ye)
+    rgba = apply_colormap(art.C, art.lut, art.norm)
+    ny, nx = art.C.shape
+    label = _esc(art.label) if art.label else ""
+    op = f' fill-opacity="{art.alpha}"' if art.alpha < 1 else ""
+    rects = []
+    for row in range(ny):
+        y0, y1 = sorted((float(ypix[row]), float(ypix[row + 1])))
+        h = y1 - y0
+        for col in range(nx):
+            if rgba[row, col, 3] == 0:
+                continue
+            x0, x1 = sorted((float(xpix[col]), float(xpix[col + 1])))
+            rects.append(
+                f'<rect x="{_fmt(x0)}" y="{_fmt(y0)}" width="{_fmt(x1 - x0)}" '
+                f'height="{_fmt(h)}" fill="{_prim_color(rgba[row, col, :3])}"/>'
+            )
+    body.append(
+        f'<g class="plotpress-series" id="s{ai}_{k}" data-label="{label}"{op}>'
+        f'{"".join(rects)}</g>'
+    )
 
 
 def _render_bars(bars: Bars, tr, ai, k, body):

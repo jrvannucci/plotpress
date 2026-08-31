@@ -6,6 +6,7 @@ import math
 import re
 import os
 import time
+import warnings
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -78,6 +79,132 @@ def test_pcolormesh_is_one_image_and_o1_nodes():
 
     assert small_images == big_images == 1
     assert small_rects == big_rects  # O(1): 160,000 cells add zero nodes
+
+
+# -- rasterized= (vector vs. raster mesh cells) -----------------------------
+
+def _nonuniform_extreme():
+    """The pcolormesh_vs_imshow gallery example's grid: cell 0 is 1/4000 the span."""
+    edges = np.array([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+    y_edges = np.array([0.0, 0.5, 1.0])
+    field = np.tile(np.arange(5.0), (2, 1))
+    return edges, y_edges, field
+
+
+def _mesh_rects(svg):
+    """<rect> count belonging to the mesh -- the axes background/clip rects a
+    bare figure emits regardless of content are not part of what a mesh draws.
+    """
+    empty_fig, _ = plotpress.subplots()
+    baseline = _element_counts(empty_fig.to_svg())[1]
+    return _element_counts(svg)[1] - baseline
+
+
+def test_pcolormesh_auto_vectorizes_small_nonuniform_grid():
+    edges, y_edges, field = _nonuniform_extreme()
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")     # a small grid must not warn either way
+        mesh = ax.pcolormesh(edges, y_edges, field, cmap="viridis")
+    assert mesh.vectorized
+    images, _ = _element_counts(fig.to_svg())
+    assert images == 0
+    assert _mesh_rects(fig.to_svg()) == 5 * 2  # every cell, incl. the 1/4000-wide one
+
+
+def test_pcolormesh_uniform_grid_stays_raster_in_auto_mode():
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.random.rand(4, 4))   # default integer edges: uniform
+    assert not mesh.vectorized
+    images, _ = _element_counts(fig.to_svg())
+    assert images == 1 and _mesh_rects(fig.to_svg()) == 0
+
+
+def test_pcolormesh_rasterized_true_forces_raster_and_drops_the_thin_cell():
+    edges, y_edges, field = _nonuniform_extreme()
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="cell 0"):
+        mesh = ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=True)
+    assert not mesh.vectorized
+    images, _ = _element_counts(fig.to_svg())
+    assert images == 1 and _mesh_rects(fig.to_svg()) == 0
+    assert mesh.dropped_x.tolist() == [0]   # exactly the cell the docs example loses
+
+
+def test_pcolormesh_rasterized_false_keeps_every_cell_even_forced():
+    edges, y_edges, field = _nonuniform_extreme()
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        mesh = ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=False)
+    assert mesh.vectorized
+    images, _ = _element_counts(fig.to_svg())
+    assert images == 0 and _mesh_rects(fig.to_svg()) == 10
+
+
+def test_pcolormesh_rasterized_false_on_a_huge_mesh_warns_about_size():
+    fig, ax = plotpress.subplots()
+    edges = np.concatenate([[0.0], np.cumsum(np.random.default_rng(0)
+                                             .uniform(0.5, 1.5, 3000))])
+    y_edges = np.array([0.0, 1.0])
+    field = np.zeros((1, 3000))
+    with pytest.warns(UserWarning, match="3000.*<rect>"):
+        mesh = ax.pcolormesh(edges, y_edges, field, rasterized=False)
+    assert mesh.vectorized  # the explicit request still wins -- it only warns
+
+
+def test_pcolormesh_uniform_grid_never_drops_a_cell_even_forced_raster():
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ax.pcolormesh(np.random.rand(50, 50), rasterized=True)
+
+
+def test_pcolormesh_dropped_cell_warning_names_the_axis_and_edges():
+    edges, y_edges, field = _nonuniform_extreme()
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match=r"x=0\.\.0\.01"):
+        ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=True)
+
+
+def test_pcolormesh_frames_has_no_rasterized_kwarg_but_still_warns():
+    edges, y_edges, _ = _nonuniform_extreme()
+    C = np.stack([np.tile(np.arange(5.0), (2, 1)) for _ in range(3)])
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="pcolormesh_frames"):
+        art = ax.pcolormesh_frames(edges, y_edges, C)
+    assert not art.vectorized  # frames always rasterize -- see FrameQuadMesh docstring
+    with pytest.raises(TypeError):
+        ax.pcolormesh_frames(edges, y_edges, C, rasterized=False)
+
+
+def test_pcolormesh_vector_cells_keep_the_same_pick_geometry_as_raster():
+    """Pick geometry comes from the mesh's own edges, not the rendering choice."""
+    edges, y_edges, field = _nonuniform_extreme()
+    from plotpress.svg import pick_data
+
+    fig_v, ax_v = plotpress.subplots()
+    ax_v.pcolormesh(edges, y_edges, field, cmap="viridis")                 # auto -> vector
+    fig_r, ax_r = plotpress.subplots()
+    with pytest.warns(UserWarning, match="cell 0"):     # forced raster drops it -- expected
+        ax_r.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=True)
+
+    xedges_v = pick_data(fig_v)[0]["meshes"][0]["xedges"]
+    xedges_r = pick_data(fig_r)[0]["meshes"][0]["xedges"]
+    assert xedges_v == pytest.approx([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+    assert xedges_r == pytest.approx([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+
+
+def test_curvilinear_mesh_never_vectorizes():
+    x = np.linspace(0, 1, 4)
+    y = np.linspace(0, 1, 3)
+    X, Y = np.meshgrid(x, y)
+    X = X + 0.05 * Y  # a genuine shear, not collapsible back to 1-D
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(X, Y, np.random.rand(3, 4), rasterized=False)
+    assert not mesh.vectorized  # no vector path for curvilinear cells at all
+    images, _ = _element_counts(fig.to_svg())
+    assert images == 1 and _mesh_rects(fig.to_svg()) == 0
 
 
 def test_colorbar_adds_second_image():
@@ -1913,12 +2040,17 @@ def test_rectangular_curvilinear_mesh_fills_its_raster():
     *centers* while the scan converter samples centers at index + 0.5 -- so the
     far row and column fell outside the mesh and stayed transparent, drawing a
     hairline gap along two edges of every curvilinear mesh.
+
+    This grid is small enough (10 cells) that auto mode would now draw it as
+    exact vector rects, which have no such gap to test for -- rasterized=True
+    forces the raster path this regression is actually about.
     """
     edges_x = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
     edges_y = np.array([0.0, 0.5, 1.0])
     field = np.tile(np.arange(5.0), (2, 1))
     X, Y = np.meshgrid(edges_x, edges_y)
-    assert (_mesh_alpha(lambda ax: ax.pcolormesh(X, Y, field, cmap="viridis")) == 0).sum() == 0
+    assert (_mesh_alpha(lambda ax: ax.pcolormesh(
+        X, Y, field, cmap="viridis", rasterized=True)) == 0).sum() == 0
 
 
 def test_gouraud_mesh_fills_its_raster():

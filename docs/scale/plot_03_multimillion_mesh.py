@@ -5,12 +5,17 @@ A mesh of two and a quarter million cells
 A 1500 x 1500 ``pcolormesh``. As vector output that is 2,250,000 ``<rect>``
 elements -- somewhere north of 200 MB of SVG, and a file no browser will open.
 
-plotpress never emits mesh cells as vector nodes. The field is normalised,
-mapped through the colormap LUT as a single vectorized NumPy operation, encoded
-as a PNG with the standard library's ``zlib``, and embedded as one ``<image>``
-element with a base64 data URI. The SVG node count for the mesh is therefore
-**one**, independent of the mesh size, and the file size is the size of a
-compressed image rather than of a million coordinate strings.
+plotpress *can* emit mesh cells as vector ``<rect>`` nodes -- see
+``docs/examples/limitations/plot_04_pcolormesh_vs_imshow.py`` -- but only for a
+non-uniform grid under about 2000 cells, where the SVG cost is trivial and the
+payoff (no cell too thin to draw) is real. This grid is uniform *and* the
+wrong end of that trade by six orders of magnitude, so it takes the raster
+path regardless: the field is normalised, mapped through the colormap LUT as
+a single vectorized NumPy operation, encoded as a PNG with the standard
+library's ``zlib``, and embedded as one ``<image>`` element with a base64
+data URI. The SVG node count for the mesh is therefore **one**, independent
+of the mesh size, and the file size is the size of a compressed image rather
+than of 2.25 million coordinate strings.
 
 That is a genuine trade-off and worth stating plainly: the mesh layer is raster,
 so it does not stay sharp when the SVG is scaled up, while the axes, ticks,

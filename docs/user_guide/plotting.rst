@@ -113,10 +113,17 @@ Statistical
 2-D fields
 ----------
 
-``pcolormesh(*args, cmap="viridis", norm=None, vmin=None, vmax=None, alpha=1.0, label=None)``
+``pcolormesh(*args, cmap="viridis", norm=None, vmin=None, vmax=None, alpha=1.0, label=None, rasterized=None)``
     Rectilinear pseudocolor mesh: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``.
-    Rasterized to a single embedded image, so grid size costs no DOM nodes.
-    ``alpha``/``label`` match :meth:`imshow`.
+    A uniform grid always rasterizes to a single embedded image, so its grid
+    size costs no DOM nodes; a *non-uniform* grid (cell widths that vary) does
+    too by default once past ``rasterized=None``'s auto threshold of about
+    2000 cells, below which it draws exact vector ``<rect>`` cells instead --
+    no resampling, so no cell is ever too thin to draw. ``True``/``False``
+    override the automatic choice either way; forcing raster on a non-uniform
+    grid (or a vectorized one past the cell-count threshold) can drop a cell
+    narrower than one output pixel, which warns naming it. ``alpha``/``label``
+    match :meth:`imshow`.
 
 ``imshow(A, cmap="viridis", norm=None, vmin=None, vmax=None, extent=None, origin="upper", alpha=1.0, interpolation="nearest")``
     Display a 2-D (colormapped) or RGB(A) array. ``origin`` is ``"upper"`` or

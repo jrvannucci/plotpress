@@ -299,6 +299,75 @@ def _resample_size(edges, n, max_side):
     return int(min(max_side, max(need, n, 64)))
 
 
+#: Above this many cells, one <rect> per cell would make the SVG bigger than
+#: the raster path's near-flat cost (see docs/scale/plot_09_output_scaling.py:
+#: a mesh's file size tracks how compressible the field is, not its cell
+#: count -- N rects reintroduces exactly the one-mark-one-cost growth that
+#: benchmark shows scatter paying and mesh not). Past this, auto mode falls
+#: back to rasterizing even a non-uniform grid.
+_VECTOR_CELL_LIMIT = 2000
+
+
+def _dropped_indices(edges, n, max_side):
+    """Cell indices along one axis that get zero samples when resampled.
+
+    Reuses the exact pixel-center-to-cell lookup ``_rgba_rectilinear``
+    performs (see there), so this reports what will actually be missing from
+    the raster rather than an estimate of it. Empty on a uniform axis, since
+    that path never resamples at all.
+    """
+    if _uniform(edges):
+        return np.empty(0, dtype=int)
+    out = _resample_size(edges, n, max_side)
+    xs = edges[0] + (np.arange(out) + 0.5) * (edges[-1] - edges[0]) / out
+    idx = np.clip(np.searchsorted(edges, xs) - 1, 0, n - 1)
+    present = np.zeros(n, dtype=bool)
+    present[idx] = True
+    return np.flatnonzero(~present)
+
+
+def _resolve_mesh_render(xe, ye, nx, ny, curvilinear, rasterized, max_side=1024):
+    """Decide raster vs. vector for one rectilinear mesh, and what raster would drop.
+
+    ``rasterized`` is the caller's request: ``True``/``False`` are honored as
+    given -- an explicit choice always wins, even a wasteful one, the same way
+    matplotlib's own ``rasterized=`` never second-guesses an artist that asked
+    for it. ``None`` (auto) picks for itself: vector under
+    :data:`_VECTOR_CELL_LIMIT` cells on a non-uniform grid, raster otherwise --
+    a *uniform* grid stays raster in auto mode specifically, since its raster
+    path is already a byte-identical, lossless copy (see
+    ``QuadMesh._rgba_rectilinear``), so auto-selecting vector there would only
+    add file size for no fidelity gain. A curvilinear mesh has no vector path
+    here at all -- its cells aren't axis-aligned rects -- so it always
+    rasterizes regardless of ``rasterized``.
+
+    Dropped-cell indices are computed whenever the grid is non-uniform,
+    independent of the vector/raster choice, so a caller that renders raster
+    regardless of ``vectorized`` (:class:`FrameQuadMesh` -- see its own
+    docstring) can still warn accurately.
+
+    Returns ``(vectorized, n_cells, uniform_grid, dropped_x, dropped_y)``.
+    """
+    if curvilinear:
+        empty = np.empty(0, dtype=int)
+        return False, None, False, empty, empty
+    n_cells = nx * ny
+    uniform_grid = _uniform(xe) and _uniform(ye)
+    if rasterized is True:
+        vectorized = False
+    elif rasterized is False:
+        vectorized = True
+    else:
+        vectorized = (not uniform_grid) and n_cells <= _VECTOR_CELL_LIMIT
+    if uniform_grid:
+        empty = np.empty(0, dtype=int)
+        dropped_x, dropped_y = empty, empty
+    else:
+        dropped_x = _dropped_indices(xe, nx, max_side)
+        dropped_y = _dropped_indices(ye, ny, max_side)
+    return vectorized, n_cells, uniform_grid, dropped_x, dropped_y
+
+
 def _edges_from(coord, n):
     """``n + 1`` cell edges from a coordinate vector, or ``None`` for indices.
 
@@ -344,7 +413,7 @@ def _as_rectilinear_1d(X, Y):
 
 
 class QuadMesh(Artist):
-    """Color mesh, rasterized to a single embedded ``<image>``.
+    """Color mesh, drawn as a single embedded ``<image>`` or as per-cell vectors.
 
     ``X``/``Y`` may be **1-D** rectilinear edge/center coordinates (uniform grid,
     fast path) or **2-D** node coordinates for a *curvilinear* grid, which is
@@ -355,10 +424,17 @@ class QuadMesh(Artist):
     ``np.meshgrid(x, y)`` pattern -- are detected and collapsed back to 1-D
     (see :func:`_as_rectilinear_1d`), so that shape alone doesn't force the
     slow curvilinear path onto a grid that never needed it.
+
+    ``rasterized`` controls the SVG output path for a non-uniform rectilinear
+    grid -- see :func:`_resolve_mesh_render` for the full decision. The
+    resolved outcome lives on the instance as ``.vectorized``, ``.n_cells``,
+    ``.uniform_grid``, ``.dropped_x``/``.dropped_y`` (cell indices the raster
+    path would drop, computed either way so a caller that always rasterizes
+    regardless of this decision can still warn -- see :class:`FrameQuadMesh`).
     """
 
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
-                 shading="flat", alpha=1.0, label=None):
+                 shading="flat", alpha=1.0, label=None, rasterized=None):
         self.C = np.asarray(C, dtype=float)
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
@@ -399,11 +475,20 @@ class QuadMesh(Artist):
         self.lut = get_cmap(cmap)
         self.norm = resolve_norm(norm, vmin, vmax)
         self.norm.autoscale_none(self.C)
+        self.rasterized = rasterized
         if not self.curvilinear:
             # Resolve the edges now so a coordinate length that is neither
             # centers nor edges fails at the pcolormesh() call, not later inside
             # the renderer where the traceback says nothing about the caller.
-            self.cell_edges()
+            xe, ye = self.cell_edges()
+            ny, nx = self.C.shape
+            (self.vectorized, self.n_cells, self.uniform_grid,
+             self.dropped_x, self.dropped_y) = _resolve_mesh_render(
+                xe, ye, nx, ny, curvilinear=False, rasterized=rasterized)
+        else:
+            empty = np.empty(0, dtype=int)
+            self.vectorized, self.n_cells, self.uniform_grid = False, None, False
+            self.dropped_x, self.dropped_y = empty, empty
 
     def cell_edges(self):
         """``(x_edges, y_edges)`` for the rectilinear grid: one more than cells.
@@ -530,6 +615,15 @@ class FrameQuadMesh(Artist):
     frame's data at once -- so the colour scale stays fixed rather than
     jumping frame to frame, the same reason a shared colorbar is pinned to one
     ``vmin``/``vmax`` across several axes.
+
+    Always rasterizes, regardless of :data:`_VECTOR_CELL_LIMIT` -- the
+    interactive slider swaps one ``<image href>`` per scrub (see
+    ``svg.frame_data``), and animating per-cell vector rects instead would need
+    the client to rewrite every cell's fill on every frame rather than swap one
+    attribute, considerably heavier for no fidelity gain in the common case.
+    ``.dropped_x``/``.dropped_y`` are still computed (from the shared grid,
+    identical every frame) so :func:`plotpress.axes._warn_dropped_cells` can
+    warn accurately even though this artist never vectorizes.
     """
 
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
@@ -548,6 +642,10 @@ class FrameQuadMesh(Artist):
         self.label = label
         self.alpha = alpha
         self.slider_unit = "main"  # set by Axes.pcolormesh_frames
+        self.curvilinear = self.frames[0].curvilinear
+        self.vectorized = False  # see class docstring
+        self.dropped_x = self.frames[0].dropped_x
+        self.dropped_y = self.frames[0].dropped_y
 
     def frame_mesh(self, f):
         return self.frames[f]

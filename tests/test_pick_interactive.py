@@ -395,6 +395,97 @@ def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
             "downsampled curvilinear cell %d: expected z=%r, got %r" % (idx, expected, got))
 
 
+# -- vector-cell (rasterized=) mesh picking ----------------------------------
+#
+# Picking is computed from the embedded pick payload's own cell edges, mapped
+# through the *current* view transform -- never by reading which DOM element
+# the click landed on -- so it should be indifferent to whether a mesh drew as
+# one <image> or one <rect> per cell. These tests drive that through a real
+# click rather than trust the reasoning: they specifically target the cell a
+# raster resample would drop (see plot_04_pcolormesh_vs_imshow.py), confirming
+# it is both visible and clickable once rasterized=False (or auto) vectorizes
+# it, and that a click still finds it correctly after the axes is zoomed and
+# panned -- proving the vector <rect>s ride the same zoom-group affine every
+# other artist does, not just that they exist in the SVG.
+
+def _extreme_mesh(rasterized):
+    """The gallery example's 4000:1 grid: cell (0, 0) is 1/4000 of the x span."""
+    import numpy as np
+    import plotpress
+
+    edges = np.array([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+    y_edges = np.array([0.0, 0.5, 1.0])
+    field = np.tile(np.arange(5.0), (2, 1))
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    mesh = ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=rasterized)
+    return fig, ax, mesh, edges, y_edges, field
+
+
+@pytest.mark.parametrize("rasterized", [None, False], ids=["auto", "forced_vector"])
+def test_vector_mesh_thin_cell_is_clickable_and_reads_its_value(page, tmp_path, rasterized):
+    """The cell a forced raster would drop must be pickable once it vectorizes."""
+    from pick_cases import px
+
+    fig, ax, mesh, edges, y_edges, field = _extreme_mesh(rasterized)
+    assert mesh.vectorized   # sanity: this case must actually exercise vector cells
+
+    path = tmp_path / ("vector_mesh_thin_cell_%s.html" % rasterized)
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ccx, ccy = (edges[0] + edges[1]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 0)
+    markers = _click_mode(page, "Point Pick", *px(fig, 0, ccx, ccy))
+    assert len(markers) == 1, "click on the thin cell made %d marker(s)" % len(markers)
+    assert markers[0]["z"] == pytest.approx(float(field[0, 0]))
+
+
+def test_vector_mesh_stays_pickable_after_zoom(page, tmp_path):
+    """The thin cell must still resolve correctly once the axes view has
+    narrowed -- proving the vector <rect>s sit inside the same per-axes zoom
+    group (svg._render_axes' ``<g class="plotpress-zoom">``) every other
+    artist's geometry does, remapped by the same affine, not drawn outside it
+    at stale positions the way test_point_pick_large_series_stays_accurate_
+    after_zoom guards a large line series against."""
+    from pick_cases import px
+
+    fig, ax, mesh, edges, y_edges, field = _extreme_mesh(rasterized=None)
+    assert mesh.vectorized
+    path = tmp_path / "vector_mesh_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # Zoom into a narrow window around the thin cell.
+    zoom_xlim, zoom_ylim = (0.0, 0.5), (0.0, 1.0)
+    x0, y0 = px(fig, 0, zoom_xlim[0], zoom_ylim[0])
+    x1, y1 = px(fig, 0, zoom_xlim[1], zoom_ylim[1])
+    _box_zoom(page, x0, y0, x1, y1)
+
+    ccx, ccy = (edges[0] + edges[1]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 0)
+    markers = _click_mode(
+        page, "Point Pick", *_px_at_limits(fig, 0, ccx, ccy, zoom_xlim, zoom_ylim))
+    assert len(markers) == 1, "click after zoom made %d marker(s)" % len(markers)
+    assert markers[0]["z"] == pytest.approx(float(field[0, 0]))
+
+
+def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
+    """rasterized=True on the same grid must keep picking the cells that
+    *do* survive resampling -- forcing raster shouldn't break picking on
+    top of losing the thin cell."""
+    from pick_cases import px
+
+    with pytest.warns(UserWarning, match="cell 0"):   # the thin cell being lost -- expected
+        fig, ax, mesh, edges, y_edges, field = _extreme_mesh(rasterized=True)
+    assert not mesh.vectorized
+    path = tmp_path / "forced_raster_mesh_pick.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ccx, ccy = (edges[1] + edges[2]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 1) -- survives
+    markers = _click_mode(page, "Point Pick", *px(fig, 0, ccx, ccy))
+    assert len(markers) == 1
+    assert markers[0]["z"] == pytest.approx(float(field[0, 1]))
+
+
 def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
     """binary_pick_data's meta payload embeds column-wise on a many-axes
     figure (see figure._columnarize_meta) and the client rebuilds

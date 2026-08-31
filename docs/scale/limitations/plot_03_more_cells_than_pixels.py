@@ -24,7 +24,14 @@ The other half of the trade is not measurable in a PNG: because the layer is an
 image, scaling the SVG up softens the field while the axes, ticks and any line
 artists over it stay sharp. For a field sampled far finer than the display that
 is the right trade. For a coarse mesh whose cell edges are the point, it is the
-wrong one, and there is no vector fallback.
+wrong one -- ``pcolormesh(..., rasterized=False)`` is the fallback there,
+forcing exact vector ``<rect>`` cells that stay crisp at any zoom (see
+:doc:`/auto_examples/limitations/plot_04_pcolormesh_vs_imshow`). It is a fix
+for *this* problem specifically, sharp edges on a small, deliberately coarse
+grid, not for the one above: forcing it on any of the three panels here would
+still draw the same visibly-averaged 60/240/960-cell picture, just as one
+``<rect>`` per cell instead of one ``<image>`` -- vector geometry has no more
+cells to show than the array was given, only sharper edges on the ones it has.
 """
 import time
 

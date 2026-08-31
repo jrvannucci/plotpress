@@ -17,7 +17,7 @@ from .artists import (
     Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection, Pie,
     PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
-    Stem, Text, Violin, VLine,
+    Stem, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
 from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
 from .ticker import log_ticks, nice_ticks
@@ -377,7 +377,7 @@ class Axes:
         return art
 
     def pcolormesh(self, *args, cmap="viridis", norm=None, vmin=None, vmax=None,
-                   shading="flat", zorder=0, alpha=1.0, label=None):
+                   shading="flat", zorder=0, alpha=1.0, label=None, rasterized=None):
         """Pseudocolor plot of a 2-D array.
 
         Signatures: ``pcolormesh(C)`` or ``pcolormesh(X, Y, C)``. ``X``/``Y`` may
@@ -386,6 +386,29 @@ class Axes:
         ``alpha``/``label`` match :meth:`imshow` -- its own animated sibling
         :meth:`pcolormesh_frames` already had both; this one just hadn't
         caught up.
+
+        A **non-uniform** rectilinear grid (cell widths that vary) normally has
+        to be resampled into the SVG's one embedded raster image, which can lose
+        a cell narrower than one output pixel entirely -- see
+        :doc:`/auto_examples/limitations/plot_04_pcolormesh_vs_imshow`.
+        ``rasterized`` controls how that grid is drawn:
+
+        * ``None`` (default) -- automatic. A uniform grid rasterizes (its fast
+          path is already a lossless, byte-identical copy, so there is nothing
+          to gain from vectors). A non-uniform grid with at most a few
+          thousand cells draws as exact vector ``<rect>`` elements instead --
+          no resampling, so no cell can ever be too thin to draw. Past that
+          cell count it falls back to the raster path, to keep the file size
+          from scaling with cell count the way one-mark-per-point artists do.
+        * ``True``/``False`` -- force raster or vector outright, overriding
+          the automatic choice above (even on a uniform grid, or a huge one --
+          ``False`` there warns that the SVG will scale with cell count, since
+          :data:`_VECTOR_CELL_LIMIT` is only ever consulted by auto mode).
+
+        Either way, if the raster path ends up dropping a cell, a warning names
+        it. Vector cells are an SVG/PDF-only fix -- a PNG export is pixels by
+        definition, so a cell thinner than one output pixel is unavoidable there
+        regardless of this setting.
         """
         if len(args) == 1:
             X = Y = None
@@ -396,9 +419,14 @@ class Axes:
             raise TypeError("pcolormesh() takes C or X, Y, C")
 
         mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
-                        shading=shading, alpha=alpha, label=label)
+                        shading=shading, alpha=alpha, label=label,
+                        rasterized=rasterized)
         mesh.zorder = zorder
         self.artists.append(mesh)
+        _warn_vector_mesh_size(mesh, "pcolormesh")
+        if not mesh.curvilinear:
+            xe, ye = mesh.cell_edges()
+            _warn_dropped_cells(mesh, "pcolormesh", xe, ye, suggest_vector=True)
         return mesh
 
     def pcolormesh_frames(self, *args, slider_values=None, slider_label="frame",
@@ -416,6 +444,13 @@ class Axes:
 
         Slider scope and ``slider_values``/``slider_label`` match
         :meth:`plot_frames` exactly -- see there for ``shared``/``slider_group``.
+
+        Unlike :meth:`pcolormesh`, this always rasterizes -- there is no
+        ``rasterized`` kwarg here -- since the interactive slider scrubs by
+        swapping one embedded image per frame, and per-cell vector geometry
+        would need it to rewrite every cell's fill on every frame instead. A
+        non-uniform grid can still silently drop a thin cell the same way a
+        static mesh can; a warning names it if so.
         """
         if len(args) == 1:
             X = Y = None
@@ -427,6 +462,9 @@ class Axes:
 
         art = FrameQuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
                             shading=shading, label=label, alpha=alpha)
+        if not art.curvilinear:
+            xe, ye = art.frames[0].cell_edges()
+            _warn_dropped_cells(art, "pcolormesh_frames", xe, ye, suggest_vector=False)
         axes_index = self.figure.axes.index(self)
         if shared:
             unit, index, is_global, axes_key = "main", None, True, None
@@ -2059,6 +2097,60 @@ def _warn_marker_shape(marker, who):
             "markers only, so this will appear as a dot. Distinguish the series "
             "by color, size or a label instead.",
             UserWarning, stacklevel=3)
+
+
+def _warn_vector_mesh_size(mesh, who):
+    """Warn that ``rasterized=False`` was forced on a mesh too big to vectorize cheaply.
+
+    Only fires when the caller explicitly forced vector rendering past
+    :data:`_VECTOR_CELL_LIMIT` -- auto mode (``rasterized=None``) never picks
+    vector above the limit in the first place, so this can't fire from it.
+    """
+    if mesh.vectorized and mesh.n_cells is not None and mesh.n_cells > _VECTOR_CELL_LIMIT:
+        warnings.warn(
+            f"{who}(rasterized=False) on {mesh.n_cells} cells will emit "
+            f"{mesh.n_cells} SVG <rect> elements. Pass rasterized=True (or "
+            "leave rasterized=None) to keep this an embedded image instead.",
+            UserWarning, stacklevel=3)
+
+
+def _dropped_cell_desc(indices, edges, axis):
+    """One clause naming which cell(s) along ``axis`` a raster resample lost."""
+    i0 = int(indices[0])
+    lo, hi = edges[i0], edges[i0 + 1]
+    if indices.size == 1:
+        return f"cell {i0} ({axis}={lo:.4g}..{hi:.4g})"
+    return f"{indices.size} cells along {axis} (e.g. cell {i0}, {axis}={lo:.4g}..{hi:.4g})"
+
+
+def _warn_dropped_cells(mesh, who, xe, ye, suggest_vector):
+    """Warn that the raster path actually dropped one or more cells.
+
+    Only meaningful when ``mesh`` rasterizes at all -- a uniform grid's fast
+    path is lossless, and a vectorized mesh never resamples, so both leave
+    ``dropped_x``/``dropped_y`` empty (see ``artists._resolve_mesh_render``).
+    A cell this warns about is not drawn thin: it is entirely absent from the
+    output, silently, because no raster pixel's center falls inside it.
+    """
+    if mesh.vectorized or (mesh.dropped_x.size == 0 and mesh.dropped_y.size == 0):
+        return
+    parts = []
+    if mesh.dropped_x.size:
+        parts.append(_dropped_cell_desc(mesh.dropped_x, xe, "x"))
+    if mesh.dropped_y.size:
+        parts.append(_dropped_cell_desc(mesh.dropped_y, ye, "y"))
+    fix = (
+        f" Pass rasterized=False to draw exact vector cells instead (cheap "
+        f"under ~{_VECTOR_CELL_LIMIT} cells), or use a log scale if this axis "
+        "spans decades."
+    ) if suggest_vector else (
+        " pcolormesh_frames() does not support rasterized=False; use a log "
+        "scale if this axis spans decades."
+    )
+    warnings.warn(
+        f"{who}(): {'; '.join(parts)} narrower than one output pixel and will "
+        f"not appear in the raster.{fix}",
+        UserWarning, stacklevel=3)
 
 
 def _both_set(lim):

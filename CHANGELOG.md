@@ -13,6 +13,28 @@ anywhere in the source.
 
 ### Added
 
+- **`pcolormesh(..., rasterized=None)`.** A non-uniform rectilinear grid used
+  to always resample into the SVG's one embedded raster image, which can
+  drop a cell entirely once it's narrower than one output pixel (see
+  `docs/examples/limitations/plot_04_pcolormesh_vs_imshow.py`). Auto mode
+  (`None`, the default) now draws a non-uniform grid under ~2000 cells as
+  exact vector `<rect>` elements instead -- no resampling, so no cell can
+  ever be too thin to draw -- and falls back to the raster path above that,
+  the same tradeoff `docs/scale/plot_09_output_scaling.py` already documents
+  for keeping mesh file size independent of cell count. `True`/`False`
+  override the automatic choice outright. Either way, if the raster path
+  ends up dropping a cell, a warning now names it (`cell N (x=a..b) ...`)
+  instead of it vanishing silently; forcing vector past the cell-count
+  threshold warns about the SVG size instead. A uniform grid is unaffected
+  either way -- its raster path was already a lossless, byte-identical copy.
+  `pcolormesh_frames()` gets the dropped-cell warning too, but not the
+  `rasterized` kwarg itself: its interactive slider swaps one embedded image
+  per frame, and animating per-cell vector geometry would need far heavier
+  client-side JS for the same reason a mesh frame already costs more than a
+  line frame (see `docs/scale/limitations/plot_05_slider_frame_cost.py`).
+
+### Added
+
 - `hist()` gains `histtype="bar"|"step"|"stepfilled"`, `cumulative`,
   `weights`, `stacked` -- `data` may now be a single array or a sequence of
   arrays, sharing one set of bins, overlaid by default or `stacked=True`
