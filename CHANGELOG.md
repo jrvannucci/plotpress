@@ -32,6 +32,15 @@ anywhere in the source.
   group so a label like `ax.text(0.95, 0.95, ..., transform=ax.transAxes)`
   stays pinned to a corner under autoscaling, panning, or a data zoom rather
   than needing recomputing whenever the axis limits change.
+- **The interactive toolbar's Hide Annotations toggle now also hides every
+  boxed `ax.text()`/`ax.annotate(bbox=...)` callout**, not just interactive
+  Point Pick/Annotate pins -- a figure-drawn callout reads as the same kind
+  of annotation on screen. A plain, unboxed label is not a callout and stays
+  visible either way. New gallery example
+  `plot_19_grid_of_meshes_with_corner_labels.py`: a 4x4 `pcolormesh` grid
+  where each panel is self-labeled in its own top-right corner via
+  `transform=ax.transAxes`, all sixteen toggled by one click of Hide
+  Annotations.
 - **`alpha=` on every method matplotlib supports it for.** A full sweep
   found 17 gaps: `pie`, `boxplot`, `violinplot`, `eventplot`, `quiver`,
   `contour` (its own sibling `contourf` already had it), `hexbin`,

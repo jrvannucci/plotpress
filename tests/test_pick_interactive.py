@@ -1726,6 +1726,54 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
         "restored markers must carry the exact same data, including text")
 
 
+def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
+    """Hide Annotations must take a figure-drawn ax.text(bbox=...)/
+    ax.annotate(bbox=...) callout too, not just interactive pins -- it reads
+    as the same kind of "annotation" on screen. A plain unboxed label is not
+    a callout and must stay visible throughout."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2, 3], [0, 1, 4, 9])
+    ax.text(0.95, 0.95, "boxed", transform=ax.transAxes, ha="right", va="top",
+            bbox={"facecolor": "yellow"})
+    ax.text(0.05, 0.05, "plain", transform=ax.transAxes)
+    ax.annotate("callout", xy=(1, 1), xytext=(2, 6),
+               arrowprops={"color": "red"}, bbox={})
+    path = tmp_path / "hide_annotations_textbox.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    def read():
+        return page.evaluate(
+            """() => {
+              const boxes = document.querySelectorAll('.plotpress-textbox');
+              const hidden = Array.from(boxes).filter(
+                b => getComputedStyle(b).display === 'none').length;
+              const plain = Array.from(document.querySelectorAll('text'))
+                .find(t => t.textContent === 'plain');
+              return {
+                boxCount: boxes.length,
+                hiddenCount: hidden,
+                plainVisible: getComputedStyle(plain).display !== 'none',
+              };
+            }""")
+
+    before = read()
+    assert before["boxCount"] == 2   # the boxed text() and the boxed annotate()
+    assert before["hiddenCount"] == 0
+    assert before["plainVisible"]
+
+    _click_toolbar(page, "Hide Annotations")
+    hidden = read()
+    assert hidden["hiddenCount"] == 2, "both boxed callouts must hide"
+    assert hidden["plainVisible"], "an unboxed label is not a callout -- stays visible"
+
+    _click_toolbar(page, "Show Annotations")
+    shown = read()
+    assert shown["hiddenCount"] == 0, "toggling back must restore both"
+
+
 def test_standalone_false_scales_a_slider_figures_svg_to_its_container(page, tmp_path):
     """Regression: a plot_frames()/pcolormesh_frames() figure wraps the SVG in
     a div (so docked sliders can be positioned over it) that was hardcoded to

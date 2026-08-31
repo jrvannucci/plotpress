@@ -1506,12 +1506,19 @@ def _render_text(t: Text, tr, st, body):
         x, y = _axes_fraction_xy(tr, t.x, t.y)
     else:
         x, y = float(tr.x(t.x)), float(tr.y(t.y))
+    # A boxed label is a "text box" the toolbar's Hide Annotations toggle
+    # (see _interactive.py's .plotpress-textbox rule) can hide alongside every
+    # pin/annotation -- a plain unboxed label has no comparable "hide the
+    # callout" reading, so it stays outside the group and always shows.
     if t.bbox is not None:
+        body.append('<g class="plotpress-textbox">')
         box = _bbox_pad(text_box(x, y, t.text, t.size, t.ha, t.va, st,
                                   bold=t.bold, italic=t.italic), t.bbox)
         body.append(_bbox_svg(box, t.bbox))
     body.append(_text_svg(x, y, t.text, t.color, t.size, t.ha, t.va, t.rotation,
                           t.outline, t.alpha, bold=t.bold, italic=t.italic))
+    if t.bbox is not None:
+        body.append("</g>")
 
 
 def _render_annotation(an: Annotation, tr, st, body):
@@ -1523,6 +1530,10 @@ def _render_annotation(an: Annotation, tr, st, body):
                     bold=an.bold, italic=an.italic)
     if an.bbox is not None:
         box = _bbox_pad(box, an.bbox)   # the leader below anchors to this, padded, edge
+        # See _render_text: a boxed callout -- box, arrow, and text together,
+        # since an arrow with no visible label at the end of it reads as a
+        # stray line -- is what Hide Annotations can toggle off.
+        body.append('<g class="plotpress-textbox">')
     if an.arrowprops is not None:
         px, py = float(tr.x(an.xy[0])), float(tr.y(an.xy[1]))
         arrow_color = (an.arrowprops.get("color", an.color)
@@ -1548,6 +1559,8 @@ def _render_annotation(an: Annotation, tr, st, body):
         body.append(_bbox_svg(box, an.bbox))
     body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va,
                           0.0, an.outline, an.alpha, bold=an.bold, italic=an.italic))
+    if an.bbox is not None:
+        body.append("</g>")
 
 
 def _render_boxplot(bp: BoxPlot, tr, st, body):

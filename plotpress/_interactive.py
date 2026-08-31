@@ -62,10 +62,13 @@ either built-in row.
 
 **Hide Annotations** is not a mode -- it's a standalone toggle, available
 regardless of the current mode, that hides every pin/annotation (both
-auto-generated Point Pick markers and user-written Annotate notes) without
-deleting them. Toggling it back to "Show Annotations" brings them all back
-exactly as they were, including any text or selection state -- it only ever
-flips a CSS display rule, never touches the underlying marker data.
+auto-generated Point Pick markers and user-written Annotate notes) *and*
+every boxed ``ax.text()``/``ax.annotate(bbox=...)`` callout the figure itself
+drew (a plain, unboxed label is not a callout in this sense and always
+stays visible), without deleting any of it. Toggling it back to "Show
+Annotations" brings everything back exactly as it was, including any text or
+selection state -- it only ever flips a CSS display rule, never touches the
+underlying marker/text data.
 
 **Extract** opens a panel to copy out picked/annotated points as CSV.
 
@@ -320,6 +323,11 @@ _JS_SOURCE = r"""
     '.plotpress-pin.selected circle{fill:#2b8cff}' +   /* r itself: selectPin(), scaled per-pin */
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
     '.plotpress-hide-annotations .plotpress-pin{display:none}' +
+    // A boxed ax.text()/ax.annotate() call -- see svg._render_text's
+    // plotpress-textbox group -- is a *static* callout the figure itself
+    // drew, not an interactive pin, but it reads the same way on screen, so
+    // Hide Annotations takes it too.
+    '.plotpress-hide-annotations .plotpress-textbox{display:none}' +
     '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
     'color:#2b5bd7}' +
     '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
