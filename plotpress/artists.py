@@ -308,19 +308,36 @@ def _resample_size(edges, n, max_side):
 _VECTOR_CELL_LIMIT = 2000
 
 
+def _resample_axis_index(edges, n, out, descending=False):
+    """Cell index each of ``out`` evenly-spaced output samples along one axis falls in.
+
+    The one formula both ``QuadMesh._rgba_rectilinear`` (which colors each
+    output pixel by this index) and :func:`_dropped_indices` (which checks
+    which cell indices never appear here) build on, so the two can never
+    silently drift apart on what the raster path actually does -- a future
+    fix to this formula (a pixel-center-alignment correction, say) changes
+    what both compute, together, automatically.
+    """
+    span = edges[-1] - edges[0]
+    if descending:
+        xs = edges[-1] - (np.arange(out) + 0.5) * span / out
+    else:
+        xs = edges[0] + (np.arange(out) + 0.5) * span / out
+    return np.clip(np.searchsorted(edges, xs) - 1, 0, n - 1)
+
+
 def _dropped_indices(edges, n, max_side):
     """Cell indices along one axis that get zero samples when resampled.
 
-    Reuses the exact pixel-center-to-cell lookup ``_rgba_rectilinear``
-    performs (see there), so this reports what will actually be missing from
-    the raster rather than an estimate of it. Empty on a uniform axis, since
-    that path never resamples at all.
+    Built on the exact pixel-center-to-cell lookup ``_rgba_rectilinear``
+    performs (see :func:`_resample_axis_index`), so this reports what will
+    actually be missing from the raster rather than an estimate of it. Empty
+    on a uniform axis, since that path never resamples at all.
     """
     if _uniform(edges):
         return np.empty(0, dtype=int)
     out = _resample_size(edges, n, max_side)
-    xs = edges[0] + (np.arange(out) + 0.5) * (edges[-1] - edges[0]) / out
-    idx = np.clip(np.searchsorted(edges, xs) - 1, 0, n - 1)
+    idx = _resample_axis_index(edges, n, out)
     present = np.zeros(n, dtype=bool)
     present[idx] = True
     return np.flatnonzero(~present)
@@ -541,11 +558,9 @@ class QuadMesh(Artist):
         ny, nx = self.C.shape
         out_w = nx if _uniform(xe) else _resample_size(xe, nx, max_side)
         out_h = ny if _uniform(ye) else _resample_size(ye, ny, max_side)
-        xs = xe[0] + (np.arange(out_w) + 0.5) * (xe[-1] - xe[0]) / out_w
+        col = _resample_axis_index(xe, nx, out_w)
         # Rows run top-down, so walk y from the top edge downward.
-        ys = ye[-1] - (np.arange(out_h) + 0.5) * (ye[-1] - ye[0]) / out_h
-        col = np.clip(np.searchsorted(xe, xs) - 1, 0, nx - 1)
-        row = np.clip(np.searchsorted(ye, ys) - 1, 0, ny - 1)
+        row = _resample_axis_index(ye, ny, out_h, descending=True)
         return cell[row[:, None], col[None, :]]
 
     def _out_grid(self, max_side):
@@ -644,6 +659,8 @@ class FrameQuadMesh(Artist):
         self.slider_unit = "main"  # set by Axes.pcolormesh_frames
         self.curvilinear = self.frames[0].curvilinear
         self.vectorized = False  # see class docstring
+        self.n_cells = self.frames[0].n_cells
+        self.uniform_grid = self.frames[0].uniform_grid
         self.dropped_x = self.frames[0].dropped_x
         self.dropped_y = self.frames[0].dropped_y
 

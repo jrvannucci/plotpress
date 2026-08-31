@@ -395,20 +395,35 @@ class Axes:
 
         * ``None`` (default) -- automatic. A uniform grid rasterizes (its fast
           path is already a lossless, byte-identical copy, so there is nothing
-          to gain from vectors). A non-uniform grid with at most a few
-          thousand cells draws as exact vector ``<rect>`` elements instead --
-          no resampling, so no cell can ever be too thin to draw. Past that
-          cell count it falls back to the raster path, to keep the file size
-          from scaling with cell count the way one-mark-per-point artists do.
+          to gain from vectors). A non-uniform grid under
+          :data:`~plotpress.artists._VECTOR_CELL_LIMIT` (~2000) cells draws as
+          exact vector ``<rect>`` elements instead -- no resampling, so no
+          cell can ever be too thin to draw. Past that cell count it falls
+          back to the raster path, to keep the file size from scaling with
+          cell count the way one-mark-per-point artists do.
         * ``True``/``False`` -- force raster or vector outright, overriding
           the automatic choice above (even on a uniform grid, or a huge one --
           ``False`` there warns that the SVG will scale with cell count, since
-          :data:`_VECTOR_CELL_LIMIT` is only ever consulted by auto mode).
+          :data:`_VECTOR_CELL_LIMIT` is only ever consulted by auto mode). A
+          *curvilinear* grid (2-D ``X``/``Y``) has no vector path at all --
+          its cells aren't axis-aligned rects -- so it always rasterizes and
+          ``rasterized=False`` there warns that it was ignored, rather than
+          silently drawing raster when exact cells were asked for.
 
         Either way, if the raster path ends up dropping a cell, a warning names
-        it. Vector cells are an SVG/PDF-only fix -- a PNG export is pixels by
-        definition, so a cell thinner than one output pixel is unavoidable there
-        regardless of this setting.
+        it. Vector cells are an SVG/PDF-only fix -- a PNG export always takes
+        the raster path regardless of this setting (a PNG is pixels by
+        definition), so a mesh that vectorized fine for SVG can still drop the
+        same cell if you also export it as PNG; pass ``rasterized=True`` once
+        to see what that export would actually lose.
+
+        The returned :class:`~plotpress.artists.QuadMesh` exposes the
+        resolved decision for introspection: ``.rasterized`` (what you passed),
+        ``.vectorized`` (what actually happened), ``.n_cells``, and
+        ``.dropped_x``/``.dropped_y`` (the cell indices, if any, the raster
+        path would drop along each axis -- see
+        ``docs/examples/limitations/plot_05_pcolormesh_vector_cell_limit.py``
+        for a worked example reading them).
         """
         if len(args) == 1:
             X = Y = None
@@ -421,12 +436,13 @@ class Axes:
         mesh = QuadMesh(X, Y, C, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
                         shading=shading, alpha=alpha, label=label,
                         rasterized=rasterized)
-        mesh.zorder = zorder
-        self.artists.append(mesh)
+        _warn_curvilinear_ignores_vector(mesh, "pcolormesh")
         _warn_vector_mesh_size(mesh, "pcolormesh")
         if not mesh.curvilinear:
             xe, ye = mesh.cell_edges()
             _warn_dropped_cells(mesh, "pcolormesh", xe, ye, suggest_vector=True)
+        mesh.zorder = zorder
+        self.artists.append(mesh)
         return mesh
 
     def pcolormesh_frames(self, *args, slider_values=None, slider_label="frame",
@@ -2108,9 +2124,30 @@ def _warn_vector_mesh_size(mesh, who):
     """
     if mesh.vectorized and mesh.n_cells is not None and mesh.n_cells > _VECTOR_CELL_LIMIT:
         warnings.warn(
-            f"{who}(rasterized=False) on {mesh.n_cells} cells will emit "
-            f"{mesh.n_cells} SVG <rect> elements. Pass rasterized=True (or "
-            "leave rasterized=None) to keep this an embedded image instead.",
+            f"{who}(rasterized=False) on {mesh.n_cells} cells will emit up to "
+            f"{mesh.n_cells} SVG <rect> elements (fewer if some cells are NaN). "
+            "Pass rasterized=True (or leave rasterized=None) to keep this an "
+            "embedded image instead.",
+            UserWarning, stacklevel=3)
+
+
+def _warn_curvilinear_ignores_vector(mesh, who):
+    """Warn that an explicit ``rasterized=False`` was silently dropped.
+
+    A curvilinear grid has no vector path here (see
+    ``artists._resolve_mesh_render``) -- its cells aren't axis-aligned rects
+    -- so it always rasterizes regardless of what was asked for. Without this,
+    a caller relying on ``rasterized=False`` to keep a thin curvilinear cell
+    from vanishing gets silently downgraded to the very raster path they
+    tried to opt out of.
+    """
+    if mesh.curvilinear and mesh.rasterized is False:
+        warnings.warn(
+            f"{who}(rasterized=False) has no effect on a curvilinear grid -- "
+            "it always rasterizes (a curvilinear cell isn't an axis-aligned "
+            "rect, so there is no vector path for it). A thin cell can still "
+            "be dropped by the raster resample; watch for that warning "
+            "separately.",
             UserWarning, stacklevel=3)
 
 
@@ -2130,7 +2167,13 @@ def _warn_dropped_cells(mesh, who, xe, ye, suggest_vector):
     path is lossless, and a vectorized mesh never resamples, so both leave
     ``dropped_x``/``dropped_y`` empty (see ``artists._resolve_mesh_render``).
     A cell this warns about is not drawn thin: it is entirely absent from the
-    output, silently, because no raster pixel's center falls inside it.
+    output, silently, because no raster pixel's center falls inside it. This
+    is also exactly what a PNG/PDF raster export of *any* mesh -- including
+    one that vectorized fine for SVG -- would drop, since only SVG has a
+    vector path at all; that only matters for a mesh under the cell-count
+    limit, where this warning itself never fires (nothing was dropped for
+    SVG), so a mesh you only ever intend to export as PNG is worth checking
+    with ``rasterized=True`` once to see what it actually loses.
     """
     if mesh.vectorized or (mesh.dropped_x.size == 0 and mesh.dropped_y.size == 0):
         return
@@ -2139,14 +2182,19 @@ def _warn_dropped_cells(mesh, who, xe, ye, suggest_vector):
         parts.append(_dropped_cell_desc(mesh.dropped_x, xe, "x"))
     if mesh.dropped_y.size:
         parts.append(_dropped_cell_desc(mesh.dropped_y, ye, "y"))
-    fix = (
-        f" Pass rasterized=False to draw exact vector cells instead (cheap "
-        f"under ~{_VECTOR_CELL_LIMIT} cells), or use a log scale if this axis "
-        "spans decades."
-    ) if suggest_vector else (
-        " pcolormesh_frames() does not support rasterized=False; use a log "
-        "scale if this axis spans decades."
-    )
+    if not suggest_vector:
+        fix = (" pcolormesh_frames() does not support rasterized=False; use "
+               "a log scale if this axis spans decades.")
+    elif mesh.n_cells is not None and mesh.n_cells <= _VECTOR_CELL_LIMIT:
+        fix = (f" Pass rasterized=False to draw exact vector cells instead "
+               f"(cheap here, under ~{_VECTOR_CELL_LIMIT} cells), or use a "
+               "log scale if this axis spans decades.")
+    else:
+        fix = (f" This mesh has {mesh.n_cells} cells, past the "
+               f"~{_VECTOR_CELL_LIMIT}-cell auto threshold, so "
+               "rasterized=False will draw every cell exactly but produce a "
+               "much larger SVG (see pcolormesh_vector_cell_limit.py) -- or "
+               "use a log scale if this axis spans decades.")
     warnings.warn(
         f"{who}(): {'; '.join(parts)} narrower than one output pixel and will "
         f"not appear in the raster.{fix}",

@@ -167,6 +167,60 @@ def test_pcolormesh_dropped_cell_warning_names_the_axis_and_edges():
         ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=True)
 
 
+def test_dropped_cell_warning_calls_the_fix_cheap_only_when_it_actually_is():
+    """The suggested fix must not call rasterized=False 'cheap' for a mesh
+    that is itself past the auto-vectorize threshold -- following that advice
+    would immediately trip the size warning instead."""
+    edges, y_edges, field = _nonuniform_extreme()
+    with pytest.warns(UserWarning, match=r"cheap here, under"):
+        fig, ax = plotpress.subplots()
+        ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=True)
+
+    big_edges = np.concatenate([[0.0], np.cumsum(np.random.default_rng(1)
+                                                  .uniform(0.5, 1.5, 3000))])
+    big_field = np.tile(np.arange(3000.0), (1, 1))
+    with pytest.warns(UserWarning) as caught:
+        fig2, ax2 = plotpress.subplots()
+        ax2.pcolormesh(big_edges, np.array([0.0, 1.0]), big_field)
+    msgs = [str(w.message) for w in caught if "narrower than one output pixel" in str(w.message)]
+    assert msgs, "expected the dropped-cell warning to fire for the big mesh"
+    assert "cheap" not in msgs[0], (
+        "must not call rasterized=False 'cheap' for a >2000-cell mesh: %r" % msgs[0])
+    assert "past the" in msgs[0] and "auto threshold" in msgs[0]
+
+
+def test_vector_mesh_size_warning_hedges_the_rect_count():
+    """NaN cells are skipped by _render_mesh_vector, so the size warning must
+    not overclaim an exact count it can't guarantee."""
+    edges = np.concatenate([[0.0], np.cumsum(np.random.default_rng(2)
+                                             .uniform(0.5, 1.5, 3000))])
+    field = np.full((1, 3000), np.nan)
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="up to 3000"):
+        ax.pcolormesh(edges, np.array([0.0, 1.0]), field, rasterized=False)
+    # And it's telling the truth: every cell is NaN, so zero rects actually land.
+    assert _mesh_rects(fig.to_svg()) == 0
+
+
+def test_pcolormesh_label_toggles_in_the_legend_whether_raster_or_vector():
+    """A pcolormesh(label=...) legend entry must be targetable by the click-to-
+    hide toggle (class=plotpress-series + data-label) regardless of whether
+    the mesh happened to render as an <image> or a <g> of <rect>s."""
+    fig_raster, ax_raster = plotpress.subplots()
+    ax_raster.pcolormesh(np.random.rand(4, 4), label="raster_mesh")  # uniform -> raster
+    root = _parse(fig_raster.to_svg())
+    img = root.find(".//" + NS + "image")
+    assert img.attrib.get("class") == "plotpress-series"
+    assert img.attrib.get("data-label") == "raster_mesh"
+
+    edges, y_edges, field = _nonuniform_extreme()
+    fig_vec, ax_vec = plotpress.subplots()
+    ax_vec.pcolormesh(edges, y_edges, field, label="vector_mesh")  # auto -> vector
+    g = [e for e in _parse(fig_vec.to_svg()).iter(NS + "g")
+         if e.get("data-label") == "vector_mesh"]
+    assert len(g) == 1 and g[0].get("class") == "plotpress-series"
+
+
 def test_pcolormesh_frames_has_no_rasterized_kwarg_but_still_warns():
     edges, y_edges, _ = _nonuniform_extreme()
     C = np.stack([np.tile(np.arange(5.0), (2, 1)) for _ in range(3)])
@@ -176,6 +230,19 @@ def test_pcolormesh_frames_has_no_rasterized_kwarg_but_still_warns():
     assert not art.vectorized  # frames always rasterize -- see FrameQuadMesh docstring
     with pytest.raises(TypeError):
         ax.pcolormesh_frames(edges, y_edges, C, rasterized=False)
+
+
+def test_frame_quad_mesh_carries_the_same_render_attributes_as_quad_mesh():
+    """FrameQuadMesh must expose .n_cells like QuadMesh does -- anything that
+    reads it generically across both mesh types (e.g. _warn_vector_mesh_size)
+    would otherwise AttributeError the moment it's ever pointed at a frame."""
+    edges, y_edges, _ = _nonuniform_extreme()
+    C = np.stack([np.tile(np.arange(5.0), (2, 1)) for _ in range(3)])
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="pcolormesh_frames"):
+        art = ax.pcolormesh_frames(edges, y_edges, C)
+    assert art.n_cells == art.frames[0].n_cells == 10
+    assert art.uniform_grid == art.frames[0].uniform_grid == False
 
 
 def test_pcolormesh_vector_cells_keep_the_same_pick_geometry_as_raster():
@@ -201,10 +268,30 @@ def test_curvilinear_mesh_never_vectorizes():
     X, Y = np.meshgrid(x, y)
     X = X + 0.05 * Y  # a genuine shear, not collapsible back to 1-D
     fig, ax = plotpress.subplots()
-    mesh = ax.pcolormesh(X, Y, np.random.rand(3, 4), rasterized=False)
+    with pytest.warns(UserWarning, match="no effect on a curvilinear grid"):
+        mesh = ax.pcolormesh(X, Y, np.random.rand(3, 4), rasterized=False)
     assert not mesh.vectorized  # no vector path for curvilinear cells at all
     images, _ = _element_counts(fig.to_svg())
     assert images == 1 and _mesh_rects(fig.to_svg()) == 0
+
+
+def test_curvilinear_rasterized_false_warns_that_it_was_ignored():
+    """rasterized=False on a curvilinear mesh must say so, not silently rasterize."""
+    x = np.linspace(0, 1, 4)
+    y = np.linspace(0, 1, 3)
+    X, Y = np.meshgrid(x, y)
+    X = X + 0.05 * Y
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="rasterized=False.*no effect"):
+        ax.pcolormesh(X, Y, np.random.rand(3, 4), rasterized=False)
+    # rasterized=True (the default outcome anyway) must NOT warn -- nothing
+    # was ignored, that's what curvilinear always does.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ax2 = plotpress.subplots()[1]
+        ax2.pcolormesh(X, Y, np.random.rand(3, 4), rasterized=True)
+        ax3 = plotpress.subplots()[1]
+        ax3.pcolormesh(X, Y, np.random.rand(3, 4))  # rasterized=None (auto) too
 
 
 def test_colorbar_adds_second_image():
@@ -2652,14 +2739,11 @@ def test_group_absent_without_the_call():
 
 def _mesh_image_box(draw):
     """The x/y/width/height of the <image> a mesh emits."""
-    import re
-
     fig, ax = plotpress.subplots(figsize=(4.0, 3.0))
     draw(ax)
-    m = re.search(r'<image x="([-\d.]+)" y="([-\d.]+)" '
-                  r'width="([-\d.]+)" height="([-\d.]+)"', fig.to_svg())
-    assert m, "no <image> emitted"
-    return [float(v) for v in m.groups()]
+    el = _parse(fig.to_svg()).find(".//" + NS + "image")
+    assert el is not None, "no <image> emitted"
+    return [float(el.attrib[a]) for a in ("x", "y", "width", "height")]
 
 
 @pytest.mark.parametrize("invert", ["x", "y", "both"])

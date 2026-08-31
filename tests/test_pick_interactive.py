@@ -486,6 +486,47 @@ def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
     assert markers[0]["z"] == pytest.approx(float(field[0, 1]))
 
 
+@pytest.mark.parametrize("rasterized", [True, False], ids=["raster", "vector"])
+def test_pcolormesh_legend_entry_actually_hides_the_mesh(page, tmp_path, rasterized):
+    """Regression: a raster mesh's <image> carried no class/data-label at all,
+    so the legend's click-to-hide toggle (which matches on .plotpress-series +
+    data-label) silently found nothing to hide for it while working fine for a
+    vectorized mesh with the identical label= call -- same public API, two
+    different real-browser outcomes depending on an internal rendering choice.
+    Both must now actually hide when their legend entry is clicked."""
+    import warnings
+
+    import numpy as np
+    import plotpress
+
+    edges = np.array([0.0, 0.01, 2.0, 6.0, 16.0, 40.0])
+    y_edges = np.array([0.0, 0.5, 1.0])
+    field = np.tile(np.arange(5.0), (2, 1))
+    fig, ax = plotpress.subplots(figsize=(6, 5))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")   # rasterized=True drops cell 0 here -- not the point of this test
+        ax.pcolormesh(edges, y_edges, field, cmap="viridis", rasterized=rasterized,
+                      label="mesh")
+    ax.legend()
+    path = tmp_path / ("mesh_legend_toggle_%s.html" % rasterized)
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    display_before = page.evaluate(
+        "() => { const el = document.querySelector('.plotpress-series'); "
+        "return el ? el.style.display : null; }")
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-legend text').forEach(t => {
+             if (t.textContent.includes('mesh')) t.dispatchEvent(
+               new MouseEvent('click', {bubbles: true}));
+           })""")
+    display_after = page.evaluate(
+        "() => document.querySelector('.plotpress-series').style.display")
+    assert display_before != "none"
+    assert display_after == "none", (
+        "legend click did not hide the %s mesh" % rasterized)
+
+
 def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
     """binary_pick_data's meta payload embeds column-wise on a many-axes
     figure (see figure._columnarize_meta) and the client rebuilds

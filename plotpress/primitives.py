@@ -150,6 +150,7 @@ class ImagePrim:
     w: float
     h: float
     smooth: bool = False           # False = image-rendering:pixelated (the default)
+    label: str = ""                 # legend/toggle label, same as every other series
 
 
 @dataclass
@@ -304,6 +305,7 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
             y0, y1 = y1, y0
             rgba = rgba[::-1, :]
         smooth = getattr(a, "interpolation", "nearest") != "nearest"
-        return [ImagePrim(np.ascontiguousarray(rgba), x0, y0, x1 - x0, y1 - y0, smooth)]
+        return [ImagePrim(np.ascontiguousarray(rgba), x0, y0, x1 - x0, y1 - y0, smooth,
+                          label=a.label or "")]
 
     return None

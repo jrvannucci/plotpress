@@ -11,6 +11,46 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`pcolormesh(rasterized=)` follow-up fixes**, found by an audit of 0.11.0:
+  - `rasterized=False` on a *curvilinear* grid silently rasterized anyway
+    with no warning -- it now warns that vector cells aren't available for a
+    curvilinear grid (there's no axis-aligned rect for a warped cell), rather
+    than quietly ignoring the request the same way losing a cell to the
+    raster path does.
+  - The dropped-cell warning's suggested fix always called `rasterized=False`
+    "cheap" -- true only when the mesh triggered the warning via an explicit
+    `rasterized=True` override on a small grid, not when auto mode rasterized
+    because the mesh was already past the vector cell-count threshold (the
+    more common way to see this warning). The message now says which case
+    applies instead of giving advice that immediately trips the *other* new
+    warning.
+  - A `pcolormesh(label=...)` legend entry's click-to-hide toggle worked only
+    when the mesh happened to render as vector -- a raster mesh's `<image>`
+    carried no `class`/`data-label` for the toggle to match on at all (this
+    predates `rasterized=`; vectorizing a mesh was the first time any mesh
+    got that wrapper). Both `imshow()` and `pcolormesh()` now emit it either
+    way.
+  - `_dropped_indices`' docstring claimed it "reuses the exact... lookup"
+    `QuadMesh._rgba_rectilinear` performs; it was actually an independent
+    reimplementation of the same formula that could silently drift out of
+    sync. Both now call one shared `_resample_axis_index` helper, so they
+    provably can't disagree.
+  - The vector-mesh size warning's "will emit N `<rect>` elements" could
+    overstate a NaN-heavy mesh's real output, since NaN cells are skipped;
+    now says "up to N".
+  - `FrameQuadMesh` was missing the `.n_cells`/`.uniform_grid` attributes
+    `QuadMesh` carries, a latent `AttributeError` waiting for any code that
+    reads them generically across both mesh types.
+  - The returned mesh's `.rasterized`/`.vectorized`/`.n_cells`/`.dropped_x`/
+    `.dropped_y` attributes, and the PNG-export caveat, are now documented
+    in `pcolormesh()`'s own docstring instead of being discoverable only by
+    reading source.
+  - `_render_mesh_vector` now batch-formats coordinates and colors with
+    vectorized `numpy.char` calls (the same approach `_seg_to_path` uses for
+    a large line's path string) instead of one Python format call per cell.
+
 ### Added
 
 - **`pcolormesh(..., rasterized=None)`.** A non-uniform rectilinear grid used

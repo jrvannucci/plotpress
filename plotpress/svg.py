@@ -973,7 +973,12 @@ def _emit_prim(p) -> str:
     if isinstance(p, PImage):
         uri = png_data_uri(p.rgba)
         style = "" if p.smooth else ' style="image-rendering:pixelated"'
-        return (f'<image x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
+        # class/data-label match every other series (see _emit_prim's PLine/PRect
+        # branches below) so the legend's click-to-hide toggle -- which matches
+        # on .plotpress-series + data-label -- can find a raster mesh/image the
+        # same way it already finds a vectorized one.
+        return (f'<image class="plotpress-series" data-label="{_esc(p.label)}" '
+                f'x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
                 f'height="{_fmt(p.h)}" preserveAspectRatio="none"'
                 f'{style} href="{uri}"/>')
     if isinstance(p, PMarkers):
@@ -1150,6 +1155,11 @@ def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
     however narrow. A NaN cell (alpha 0) is simply skipped rather than drawn
     transparent -- an absent rect and a fully transparent one look identical
     but the absent one costs nothing.
+
+    Coordinates and colors are batch-formatted with vectorized ``numpy.char``
+    calls (the same approach ``_seg_to_path`` uses for a huge line's path
+    string) rather than one Python format call per cell -- up to
+    ``_VECTOR_CELL_LIMIT`` of them.
     """
     xe, ye = art.cell_edges()
     xpix = tr.x(xe)
@@ -1158,21 +1168,38 @@ def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
     ny, nx = art.C.shape
     label = _esc(art.label) if art.label else ""
     op = f' fill-opacity="{art.alpha}"' if art.alpha < 1 else ""
-    rects = []
-    for row in range(ny):
-        y0, y1 = sorted((float(ypix[row]), float(ypix[row + 1])))
-        h = y1 - y0
-        for col in range(nx):
-            if rgba[row, col, 3] == 0:
-                continue
-            x0, x1 = sorted((float(xpix[col]), float(xpix[col + 1])))
-            rects.append(
-                f'<rect x="{_fmt(x0)}" y="{_fmt(y0)}" width="{_fmt(x1 - x0)}" '
-                f'height="{_fmt(h)}" fill="{_prim_color(rgba[row, col, :3])}"/>'
-            )
+
+    x0 = np.minimum(xpix[:-1], xpix[1:])
+    w = np.abs(np.diff(xpix))
+    y0 = np.minimum(ypix[:-1], ypix[1:])
+    h = np.abs(np.diff(ypix))
+    # Broadcast each axis's per-cell geometry across the other axis, then
+    # flatten row-major (y, x) to match rgba's own (ny, nx, 4) layout.
+    X0 = np.broadcast_to(x0, (ny, nx)).ravel()
+    W = np.broadcast_to(w, (ny, nx)).ravel()
+    Y0 = np.broadcast_to(y0[:, None], (ny, nx)).ravel()
+    H = np.broadcast_to(h[:, None], (ny, nx)).ravel()
+
+    visible = (rgba[..., 3] != 0).ravel()
+    if not visible.any():
+        return
+    X0, Y0, W, H = X0[visible], Y0[visible], W[visible], H[visible]
+    rgb = rgba[..., :3].reshape(-1, 3)[visible]
+
+    fmt = lambda v: np.char.mod("%.2f", v)  # noqa: E731 -- local, used 4x below
+    hexcolor = np.char.add(np.char.add(np.char.add(
+        "#", np.char.mod("%02x", rgb[:, 0].astype(int))),
+        np.char.mod("%02x", rgb[:, 1].astype(int))),
+        np.char.mod("%02x", rgb[:, 2].astype(int)))
+
+    rects = '<rect x="'
+    for piece in (fmt(X0), '" y="', fmt(Y0), '" width="', fmt(W),
+                 '" height="', fmt(H), '" fill="', hexcolor, '"/>'):
+        rects = np.char.add(rects, piece)
+
     body.append(
         f'<g class="plotpress-series" id="s{ai}_{k}" data-label="{label}"{op}>'
-        f'{"".join(rects)}</g>'
+        f'{"".join(rects.tolist())}</g>'
     )
 
 
