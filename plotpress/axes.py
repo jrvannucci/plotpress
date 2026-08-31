@@ -23,6 +23,11 @@ from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
 from .ticker import log_ticks, nice_ticks
 from . import _spectral
 
+#: Sentinel for ``text(transform=ax.transAxes)`` -- identity, not value, is
+#: what matters (there is nothing to configure per-axes), so every axes
+#: shares this one object rather than each carrying its own copy.
+_TRANS_AXES = object()
+
 
 def _finite_datasets(data, positions):
     """Drop non-finite values, then any dataset left with no observations.
@@ -174,6 +179,11 @@ def _merge_share_group(a, b, attr):
 
 
 class Axes:
+    #: Pass to ``text()``/``annotate()``'s ``transform=`` for an axes-fraction
+    #: position -- ``(0, 0)`` bottom-left, ``(1, 1)`` top-right -- instead of
+    #: data coordinates, e.g. a label pinned to a corner regardless of xlim/ylim.
+    transAxes = _TRANS_AXES
+
     def __init__(self, figure, rect):
         self.figure = figure
         self.style = figure.style
@@ -1299,7 +1309,8 @@ class Axes:
         return self.plot(*args, **kwargs)
 
     def text(self, x, y, s, color=None, fontsize=None, ha="left", va="baseline",
-             rotation=0.0, outline=None, alpha=1.0, bbox=None, zorder=0):
+             rotation=0.0, outline=None, alpha=1.0, bbox=None, zorder=0,
+             fontweight="normal", fontstyle="normal", transform=None):
         """Draw text ``s`` at data coordinates ``(x, y)``.
 
         ``outline`` is a halo color drawn behind the glyphs so the label stays
@@ -1319,18 +1330,42 @@ class Axes:
         (default none), ``alpha`` (default ``1.0``), ``pad`` (pixels around the
         text, default ``4.0``), ``boxstyle`` (``"square"`` or ``"round"``), and
         ``linewidth``. Pass ``{}`` for the defaults.
+
+        ``fontweight`` (``"normal"``/``"bold"``, or any matplotlib weight name/
+        number -- ``>= 600`` counts as bold) and ``fontstyle`` (``"normal"``/
+        ``"italic"``/``"oblique"``) select the glyph face; both also feed the
+        width measurement ``bbox`` sizes against and the leader in
+        :meth:`annotate` anchors to, so a bold or italic label still gets a
+        tight box/leader rather than one sized for the regular face.
+
+        ``s`` may contain ``\\n`` for a multi-line label -- each line is
+        independently aligned per ``ha`` (matplotlib's default
+        ``multialignment``), and the block as a whole is placed per ``va``
+        (``"top"`` anchors the block's top edge, ``"bottom"`` its bottom edge,
+        ``"center"`` its middle, ``"baseline"`` the first line's baseline).
+
+        ``transform=ax.transAxes`` places ``(x, y)`` as an axes-fraction
+        position instead of data coordinates -- ``(0, 0)`` is the axes'
+        bottom-left corner, ``(1, 1)`` its top-right, regardless of the current
+        xlim/ylim -- e.g. a corner label or watermark that should stay put
+        under autoscaling, panning, or a data zoom::
+
+            ax.text(0.95, 0.95, "top right", transform=ax.transAxes,
+                    ha="right", va="top")
         """
         t = Text(x, y, s, color=color or self.style.text_color,
                  size=self.style.font_size if fontsize is None else fontsize,
                  ha=ha, va=va, rotation=rotation, outline=outline, alpha=alpha,
-                 bbox=bbox)
+                 bbox=bbox, fontweight=fontweight, fontstyle=fontstyle,
+                 axes_fraction=transform is self.transAxes)
         t.zorder = zorder
         self.artists.append(t)
         return t
 
     def annotate(self, text, xy, xytext=None, color=None, fontsize=None,
                  ha="left", va="baseline", arrowprops=None, outline=None,
-                 alpha=1.0, bbox=None, zorder=0):
+                 alpha=1.0, bbox=None, zorder=0, fontweight="normal",
+                 fontstyle="normal", textcoords=None):
         """Annotate the point ``xy`` with ``text`` placed at ``xytext``.
 
         Pass ``arrowprops={"color": ...}`` (or ``{}``) to draw an arrow from the
@@ -1340,12 +1375,21 @@ class Axes:
         preferring the middle of an edge -- so it never sets off across its own
         label; with ``bbox`` set, that edge is the box's own edge, not the bare
         text's, so the leader visibly touches the box instead of stopping short
-        of it. ``outline``/``alpha``/``bbox`` match :meth:`text`.
+        of it. ``outline``/``alpha``/``bbox``/``fontweight``/``fontstyle``/
+        multi-line ``text`` all match :meth:`text`.
+
+        ``textcoords=ax.transAxes`` places ``xytext`` as an axes-fraction
+        position -- the label sits at a fixed spot on the axes frame while its
+        arrow still points at the data coordinate ``xy``, e.g. a callout
+        pinned to a corner regardless of where the data it labels ends up
+        after a pan or zoom. ``xy`` itself always stays data coordinates.
         """
         a = Annotation(text, xy, xytext, color=color or self.style.text_color,
                        size=self.style.font_size if fontsize is None else fontsize,
                        ha=ha, va=va, arrowprops=arrowprops, outline=outline,
-                       alpha=alpha, bbox=bbox)
+                       alpha=alpha, bbox=bbox, fontweight=fontweight,
+                       fontstyle=fontstyle,
+                       axes_fraction=textcoords is self.transAxes)
         a.zorder = zorder
         self.artists.append(a)
         return a

@@ -470,27 +470,36 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
     elif isinstance(artist, Violin):
         _violin(artist, tr, draw)
     elif isinstance(artist, Text):
-        from .svg import _bbox_pad, text_box
+        from .svg import _axes_fraction_xy, _bbox_pad, text_box
 
-        x, y = float(tr.x(artist.x)), float(tr.y(artist.y))
+        if artist.axes_fraction:
+            x, y = _axes_fraction_xy(tr, artist.x, artist.y)
+        else:
+            x, y = float(tr.x(artist.x)), float(tr.y(artist.y))
         if artist.bbox is not None:
             # text_box measures in unscaled pixels (font metrics don't know
             # about the raster scale factor); scale the padded box to canvas.
             box = _bbox_pad(text_box(x / S, y / S, artist.text, artist.size,
-                                     artist.ha, artist.va, st), artist.bbox)
+                                     artist.ha, artist.va, st,
+                                     bold=artist.bold, italic=artist.italic),
+                            artist.bbox)
             _raster_bbox(draw, [c * S for c in box], artist.bbox, S)
         fill = _rgba(artist.color, artist.alpha) if artist.alpha < 1 else _rgb(artist.color)
         _text(draw, x, y, artist.text,
-              fill, _font(artist.size * S, st.font_family), artist.ha, artist.va,
-              artist.rotation, _rgb(artist.outline) if artist.outline else None,
-              artist.size * 0.15 * S)
+              fill, _font(artist.size * S, st.font_family, bold=artist.bold),
+              artist.ha, artist.va, artist.rotation,
+              _rgb(artist.outline) if artist.outline else None,
+              artist.size * 0.15 * S, italic=artist.italic)
     elif isinstance(artist, Annotation):
-        from .svg import _bbox_pad, leader_anchor, text_box
+        from .svg import _axes_fraction_xy, _bbox_pad, leader_anchor, text_box
 
-        tx, ty = float(tr.x(artist.xytext[0])), float(tr.y(artist.xytext[1]))
+        if artist.axes_fraction:
+            tx, ty = _axes_fraction_xy(tr, artist.xytext[0], artist.xytext[1])
+        else:
+            tx, ty = float(tr.x(artist.xytext[0])), float(tr.y(artist.xytext[1]))
         # The box is measured in unscaled pixels, so scale it to this canvas.
         box = text_box(tx / S, ty / S, artist.text, artist.size,
-                       artist.ha, artist.va, st)
+                       artist.ha, artist.va, st, bold=artist.bold, italic=artist.italic)
         if artist.bbox is not None:
             box = _bbox_pad(box, artist.bbox)   # the leader below anchors to this, padded, edge
         if artist.arrowprops is not None:
@@ -507,10 +516,11 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
             _raster_bbox(draw, [c * S for c in box], artist.bbox, S)
         fill = (_rgba(artist.color, artist.alpha) if artist.alpha < 1
                else _rgb(artist.color))
-        _text(draw, tx, ty, artist.text, fill, _font(artist.size * S, st.font_family),
+        _text(draw, tx, ty, artist.text, fill,
+              _font(artist.size * S, st.font_family, bold=artist.bold),
               artist.ha, artist.va, 0.0,
               _rgb(artist.outline) if artist.outline else None,
-              artist.size * 0.15 * S)
+              artist.size * 0.15 * S, italic=artist.italic)
 
 
 # -- primitives -------------------------------------------------------------
@@ -738,16 +748,55 @@ def _raster_bbox(draw, box, bbox, S):
         draw.rectangle([x0, y0, x1, y1], fill=fill, outline=edge, width=width)
 
 
+#: Faux-italic slant, as a fraction of glyph height -- there is no italic font
+#: *file* in the bundled/installed registry (see fonts/families.py), only a
+#: regular/bold split, so italic is a horizontal shear applied to the rendered
+#: glyphs rather than a different face. Matches roughly what real italic faces
+#: lean (~8-12 degrees); SVG gets a real ``font-style="italic"`` instead,
+#: since a browser resolves an actual italic system face for that.
+_ITALIC_SHEAR = 0.20
+
+
 def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0,
-          outline=None, stroke=0.0):
+          outline=None, stroke=0.0, italic=False):
     """Draw text, optionally with a contrasting halo (see svg._text_svg).
 
     Pillow's ``stroke_width`` paints the rim under the glyph exactly as SVG's
-    ``paint-order="stroke"`` does, so the two backends agree.
+    ``paint-order="stroke"`` does, so the two backends agree. Multi-line ``s``
+    (containing ``\\n``) is Pillow's own job -- ``ImageDraw.text`` detects the
+    newline and switches to its multiline layout automatically, anchor and
+    all, so nothing extra is needed here for that case.
     """
     kw = {}
     if outline and stroke >= 1.0:
         kw = {"stroke_width": int(round(stroke)), "stroke_fill": outline}
+    anchor = _PIL_H.get(ha, "l") + _PIL_V.get(va, "s")
+    if italic and not rotation:
+        # No rotation to fight with, so this can (and should) honor ha/va
+        # exactly rather than falling back to the rotated path's "anchor is
+        # always the image center" approximation below.
+        from PIL import Image as PILImage, ImageDraw
+
+        abbox = draw.textbbox((0, 0), s, font=font, anchor=anchor)
+        w, h = abbox[2] - abbox[0], abbox[3] - abbox[1]
+        pad = 4 + int(round(stroke))
+        # The anchor point itself, in this padded canvas's local coordinates --
+        # drawing *at* that point with the same anchor is a tautology (that is
+        # what "anchor" means), so it is exactly the position drawn at below.
+        ax_local, ay_local = pad - abbox[0], pad - abbox[1]
+        tmp = PILImage.new("RGBA", (max(1, w + 2 * pad), max(1, h + 2 * pad)),
+                           (0, 0, 0, 0))
+        ImageDraw.Draw(tmp).text((ax_local, ay_local), s, fill=fill, font=font,
+                                 anchor=anchor, **kw)
+        shear_pad = int(round(tmp.height * _ITALIC_SHEAR))
+        tmp = tmp.transform(
+            (tmp.width + shear_pad, tmp.height), PILImage.AFFINE,
+            (1, -_ITALIC_SHEAR, shear_pad, 0, 1, 0), resample=PILImage.BICUBIC)
+        # Track the anchor point through that same forward shear (the AFFINE
+        # data above is the inverse, output->input, map PIL actually applies).
+        ax_final = ax_local + _ITALIC_SHEAR * ay_local - shear_pad
+        draw._image.alpha_composite(tmp, (int(round(x - ax_final)), int(round(y - ay_local))))
+        return
     if rotation:
         from PIL import Image as PILImage, ImageDraw
 
@@ -758,10 +807,19 @@ def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0,
                            (0, 0, 0, 0))
         ImageDraw.Draw(tmp).text((pad - bbox[0], pad - bbox[1]), s, fill=fill,
                                  font=font, **kw)
+        if italic:
+            # Rotated italic keeps the same "anchor is the image center"
+            # approximation the plain rotated case already uses below --
+            # tracking an anchor point through shear *and* an expand=True
+            # rotation exactly isn't worth the complexity for a combination
+            # this rare.
+            shear_pad = int(round(tmp.height * _ITALIC_SHEAR))
+            tmp = tmp.transform(
+                (tmp.width + shear_pad, tmp.height), PILImage.AFFINE,
+                (1, -_ITALIC_SHEAR, shear_pad, 0, 1, 0), resample=PILImage.BICUBIC)
         tmp = tmp.rotate(rotation, expand=True)  # PIL & matplotlib: CCW positive
         draw._image.alpha_composite(tmp, (int(x - tmp.width / 2), int(y - tmp.height / 2)))
         return
-    anchor = _PIL_H.get(ha, "l") + _PIL_V.get(va, "s")
     draw.text((x, y), s, fill=fill, font=font, anchor=anchor, **kw)
 
 

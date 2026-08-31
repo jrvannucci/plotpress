@@ -225,9 +225,11 @@ painter's-algorithm surface -- see :ref:`the 3-D caveats <limitation-3d>`.
 Text and annotations
 --------------------
 
-``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0, outline=None, alpha=1.0, bbox=None)``
+``text(x, y, s, color=None, fontsize=None, ha="left", va="baseline", rotation=0.0, outline=None, alpha=1.0, bbox=None, fontweight="normal", fontstyle="normal", transform=None)``
     Text anchored at data coordinates. ``ha`` in ``left/center/right``; ``va``
     in ``baseline/center/top/bottom``. ``alpha`` fades the glyphs themselves.
+    ``s`` may contain ``\n`` for a multi-line label -- each line is aligned
+    independently per ``ha``, the block as a whole placed per ``va``.
 
     ``outline`` is a halo drawn behind the glyphs so the label survives landing
     on a series, a mesh cell or a filled band -- which is decided long after the
@@ -243,14 +245,33 @@ Text and annotations
     the defaults. Where ``outline`` keeps a label legible, ``bbox`` reads as a
     callout chip; the two can combine, or either can be used alone.
 
-``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None, outline=None, alpha=1.0, bbox=None)``
+    ``fontweight`` (``"normal"``/``"bold"``, or any matplotlib weight name/
+    number -- ``>= 600`` counts as bold) and ``fontstyle`` (``"normal"``/
+    ``"italic"``/``"oblique"``) select the glyph face, on both backends
+    (raster has no italic font file, so it fakes the slant with a shear).
+
+    ``transform=ax.transAxes`` places ``(x, y)`` as an axes-fraction position
+    -- ``(0, 0)`` the axes' bottom-left corner, ``(1, 1)`` its top-right --
+    instead of data coordinates, so a label stays put under autoscaling,
+    panning, or a data zoom::
+
+        ax.text(0.95, 0.95, "top right", transform=ax.transAxes,
+                ha="right", va="top")
+
+``annotate(text, xy, xytext=None, color=None, fontsize=None, ha="left", va="baseline", arrowprops=None, outline=None, alpha=1.0, bbox=None, fontweight="normal", fontstyle="normal", textcoords=None)``
     Text at ``xytext`` optionally pointing an arrow to ``xy`` (pass
     ``arrowprops={"color": ...}`` or ``{}`` to draw the arrow; ``arrowprops``
     also accepts ``alpha``, independent of the text's own). The leader
     leaves the text's bounding box at the point nearest ``xy``, preferring the
     middle of an edge, so it never crosses the label it belongs to -- with
     ``bbox`` set, that edge is the box's own padded edge, so the leader
-    visibly touches the box instead of stopping short of it.
+    visibly touches the box instead of stopping short of it. Multi-line
+    ``text``, ``fontweight``, and ``fontstyle`` all match :func:`text`.
+
+    ``textcoords=ax.transAxes`` places ``xytext`` as an axes-fraction position
+    while the arrow still points at the data coordinate ``xy`` -- a callout
+    pinned to a corner regardless of where its data ends up after a pan or
+    zoom. ``xy`` itself always stays data coordinates.
 
 Animated data (sliders)
 -----------------------

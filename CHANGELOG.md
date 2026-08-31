@@ -13,6 +13,25 @@ anywhere in the source.
 
 ### Added
 
+- **`ax.text()`/`ax.annotate()`: multi-line text, `fontweight=`/`fontstyle=`,
+  and `transform=ax.transAxes`.** Fixed a real bug found along the way: a
+  `\n` embedded in a label's string was never actually rendered as a line
+  break -- SVG treats a raw newline inside `<text>` content as ordinary
+  whitespace, so a multi-line label silently ran together onto one line, even
+  though the existing `bbox=`/leader-anchor math already measured it as if it
+  were multiple lines. Each line is now its own `<tspan>` (raster's
+  `ImageDraw.text` already handled `\n` correctly on its own), independently
+  aligned per `ha`, with the block as a whole placed per `va`.
+  `fontweight="bold"`/`fontstyle="italic"` (or any matplotlib weight name/
+  number -- `>= 600` counts as bold) select the glyph face on both backends;
+  raster has no italic font file in its bundled/installed registry, so it
+  fakes the slant with a shear instead. `transform=ax.transAxes` places
+  `(x, y)` (or `annotate()`'s `xytext`, via `textcoords=ax.transAxes`) as an
+  axes-fraction position -- `(0, 0)` bottom-left, `(1, 1)` top-right --
+  instead of data coordinates, rendered outside the per-axes interactive zoom
+  group so a label like `ax.text(0.95, 0.95, ..., transform=ax.transAxes)`
+  stays pinned to a corner under autoscaling, panning, or a data zoom rather
+  than needing recomputing whenever the axis limits change.
 - **`alpha=` on every method matplotlib supports it for.** A full sweep
   found 17 gaps: `pie`, `boxplot`, `violinplot`, `eventplot`, `quiver`,
   `contour` (its own sibling `contourf` already had it), `hexbin`,
@@ -45,9 +64,11 @@ anywhere in the source.
   reads as a callout chip. With `annotate()`, the arrow leader now attaches
   to the box's own padded edge rather than the bare text's tighter bounds,
   so it visibly touches the box instead of stopping short of it.
-- Two new gallery examples: `docs/examples/axes_features/plot_16_alpha_
+- Three new gallery examples: `docs/examples/axes_features/plot_16_alpha_
   everywhere.py` (quiver over contourf, two boxplots at one position,
-  hexbin over a scatter sample) and `plot_17_text_bbox.py`.
+  hexbin over a scatter sample), `plot_17_text_bbox.py`, and
+  `plot_18_text_features.py` (multi-line, bold/italic, `transform=
+  ax.transAxes`).
 
 ### Fixed
 

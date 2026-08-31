@@ -969,11 +969,36 @@ def normalize_bbox(bbox):
     return out
 
 
+#: matplotlib fontweight names at or above "semibold" -- the font infra only
+#: distinguishes regular/bold (no intermediate weights), so anything in this
+#: set (or a numeric weight >= 600, matplotlib's own semibold threshold) maps
+#: to the bold face rather than being silently dropped to regular.
+_BOLD_WEIGHT_NAMES = {"bold", "semibold", "demibold", "demi", "heavy",
+                      "extra bold", "black"}
+
+
+def resolve_font_style(fontweight, fontstyle):
+    """matplotlib's ``fontweight=``/``fontstyle=`` values -> ``(bold, italic)``.
+
+    ``fontweight`` accepts a name (``"normal"``, ``"bold"``, ``"semibold"``,
+    ...) or a numeric weight 0-1000; ``fontstyle`` accepts ``"normal"``,
+    ``"italic"``, or ``"oblique"`` (rendered the same as italic -- there is no
+    separate oblique face).
+    """
+    if isinstance(fontweight, (int, float)):
+        bold = fontweight >= 600
+    else:
+        bold = str(fontweight).lower() in _BOLD_WEIGHT_NAMES
+    italic = str(fontstyle).lower() in ("italic", "oblique")
+    return bold, italic
+
+
 class Text(Artist):
     """A text label anchored at data coordinates (``ax.text``)."""
 
     def __init__(self, x, y, text, color, size, ha="left", va="baseline",
-                 rotation=0.0, outline=None, alpha=1.0, bbox=None):
+                 rotation=0.0, outline=None, alpha=1.0, bbox=None,
+                 fontweight="normal", fontstyle="normal", axes_fraction=False):
         self.x = float(x)
         self.y = float(y)
         self.text = text
@@ -985,6 +1010,11 @@ class Text(Artist):
         self.outline = auto_outline(color) if outline is None else outline
         self.alpha = alpha
         self.bbox = normalize_bbox(bbox)
+        self.bold, self.italic = resolve_font_style(fontweight, fontstyle)
+        # transform=ax.transAxes: (x, y) are an axes-fraction position (0,0
+        # bottom-left, 1,1 top-right) rather than data coordinates -- see
+        # svg._axes_fraction_xy. Doesn't drive autoscaling either way.
+        self.axes_fraction = axes_fraction
 
     def data_bounds(self):
         return None  # text does not drive autoscaling
@@ -994,7 +1024,8 @@ class Annotation(Artist):
     """Text at ``xytext`` optionally pointing an arrow to ``xy`` (``ax.annotate``)."""
 
     def __init__(self, text, xy, xytext, color, size, ha="left", va="baseline",
-                 arrowprops=None, outline=None, alpha=1.0, bbox=None):
+                 arrowprops=None, outline=None, alpha=1.0, bbox=None,
+                 fontweight="normal", fontstyle="normal", axes_fraction=False):
         self.text = text
         self.xy = (float(xy[0]), float(xy[1]))
         self.xytext = (float(xytext[0]), float(xytext[1])) if xytext else self.xy
@@ -1006,6 +1037,11 @@ class Annotation(Artist):
         self.outline = auto_outline(color) if outline is None else outline
         self.alpha = alpha
         self.bbox = normalize_bbox(bbox)
+        self.bold, self.italic = resolve_font_style(fontweight, fontstyle)
+        # transform=ax.transAxes: xytext is an axes-fraction position, not
+        # data coordinates; xy (the arrow's target) always stays data-space --
+        # see Text.axes_fraction and svg._axes_fraction_xy.
+        self.axes_fraction = axes_fraction
 
     def data_bounds(self):
         return None

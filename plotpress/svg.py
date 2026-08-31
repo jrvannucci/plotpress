@@ -841,6 +841,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     # artist's own call-order index -- pick/series ids and legend order must
     # stay stable regardless of what zorder does to the visual stacking.
     draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
+    axes_fraction_artists = []
     for k, artist in draw_order:
         if isinstance(artist, QuadMesh) and artist.vectorized:
             _render_mesh_vector(artist, tr, index, k, body)
@@ -872,10 +873,26 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif isinstance(artist, Contour):
             _render_contour(artist, tr, body)
         elif isinstance(artist, Text):
-            _render_text(artist, tr, st, body)
+            if artist.axes_fraction:
+                axes_fraction_artists.append(artist)
+            else:
+                _render_text(artist, tr, st, body)
         elif isinstance(artist, Annotation):
+            if artist.axes_fraction:
+                axes_fraction_artists.append(artist)
+            else:
+                _render_annotation(artist, tr, st, body)
+    body.append("</g>")   # close the zoom group only -- axes-fraction text is next
+    # transform=ax.transAxes text/annotate sits at a fixed spot on the axes
+    # *frame*, not the data -- rendered outside the zoom group so a per-axes
+    # data zoom/pan leaves it alone, still inside the clip group so it can't
+    # spill past the axes rect the way a data-anchored label already can't.
+    for artist in axes_fraction_artists:
+        if isinstance(artist, Text):
+            _render_text(artist, tr, st, body)
+        else:
             _render_annotation(artist, tr, st, body)
-    body.append("</g></g>")   # close zoom group + clip group
+    body.append("</g>")   # close the clip group
 
     if not ax._axis_off and not overlay:
         _render_spines(ax, px_left, px_top, px_w, px_h, body)
@@ -1356,16 +1373,21 @@ _VA = {"baseline": "alphabetic", "bottom": "text-after-edge",
 _HA_FRAC = {"left": 0.0, "center": -0.5, "right": -1.0}
 _VA_FRAC = {"baseline": -0.78, "bottom": -1.0, "center": -0.5, "top": 0.0}
 
+#: Per-line spacing for multi-line text -- text_box()'s block-height math and
+#: _text_svg()'s tspan stepping both key off this; keep the two in sync.
+_LINE_HEIGHT_FRAC = 1.25
 
-def text_box(x, y, text, size, ha, va, st):
+
+def text_box(x, y, text, size, ha, va, st, bold=False, italic=False):
     """Pixel bounding box ``(x0, y0, x1, y1)`` of a label drawn at ``(x, y)``.
 
     Measured with the same font metrics layout uses, so the box the leader
     attaches to is the box the glyphs actually occupy.
     """
     lines = text.split("\n")
-    w = max((st.text_width(ln, size) for ln in lines), default=0.0)
-    h = size * 1.25 * len(lines)
+    w = max((st.text_width(ln, size, bold=bold, italic=italic) for ln in lines),
+            default=0.0)
+    h = size * _LINE_HEIGHT_FRAC * len(lines)
     x0 = x + _HA_FRAC.get(ha, 0.0) * w
     y0 = y + _VA_FRAC.get(va, -0.78) * h
     return x0, y0, x0 + w, y0 + h
@@ -1394,7 +1416,23 @@ def leader_anchor(box, target, pad=3.0):
                key=lambda c: math.hypot(c[0][0] - tx, c[0][1] - ty) * c[1])[0]
 
 
-def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None, alpha=1.0):
+#: How far a multi-line block's *first* line needs shifting from the anchor
+#: point so the block as a whole (not just line one) lands where ``va`` says --
+#: "top" already puts the block's top at the anchor via dominant-baseline
+#: alone (line one just hangs from it, rest cascade below), and "baseline"
+#: has no natural multi-line convention beyond "first line sits at the
+#: anchor", so both are 0. "bottom"/"center" need the first line pulled up so
+#: the *last* line's bottom, or the block's midpoint, lands on the anchor.
+def _multiline_shift(va, n, line_height):
+    if va == "bottom":
+        return (n - 1) * line_height
+    if va == "center":
+        return (n - 1) * line_height / 2.0
+    return 0.0
+
+
+def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None, alpha=1.0,
+              bold=False, italic=False):
     anchor = _HA.get(ha, "start")
     baseline = _VA.get(va, "alphabetic")
     rot = (f' transform="rotate({_fmt(-rotation)} {_fmt(x)} {_fmt(y)})"'
@@ -1405,9 +1443,27 @@ def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None, alpha
             f' stroke="{outline}" stroke-width="{_fmt(size * 0.30)}" '
             'stroke-linejoin="round" paint-order="stroke"')
     op = f' fill-opacity="{alpha}"' if alpha < 1 else ""
-    return (f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
+    weight = ' font-weight="bold"' if bold else ""
+    style = ' font-style="italic"' if italic else ""
+    lines = text.split("\n")
+    if len(lines) == 1:
+        return (f'<text x="{_fmt(x)}" y="{_fmt(y)}" text-anchor="{anchor}" '
+                f'dominant-baseline="{baseline}" font-size="{size}" '
+                f'fill="{color}"{halo}{op}{weight}{style}{rot}>{_esc(text)}</text>')
+    # Multi-line: dominant-baseline positions line one exactly as it would a
+    # single line, then each further line is a sibling tspan stepped down by
+    # one line height -- an explicit x= on every tspan starts a fresh "text
+    # chunk" so text-anchor re-centers/re-rights each line independently
+    # (matplotlib's default multialignment, which follows ha).
+    line_height = size * _LINE_HEIGHT_FRAC
+    y0 = y - _multiline_shift(va, len(lines), line_height)
+    tspans = "".join(
+        f'<tspan x="{_fmt(x)}"{"" if i == 0 else f" dy=\"{_fmt(line_height)}\""}>'
+        f'{_esc(ln)}</tspan>'
+        for i, ln in enumerate(lines))
+    return (f'<text x="{_fmt(x)}" y="{_fmt(y0)}" text-anchor="{anchor}" '
             f'dominant-baseline="{baseline}" font-size="{size}" '
-            f'fill="{color}"{halo}{op}{rot}>{_esc(text)}</text>')
+            f'fill="{color}"{halo}{op}{weight}{style}{rot}>{tspans}</text>')
 
 
 def _bbox_pad(box, bbox):
@@ -1435,18 +1491,36 @@ def _bbox_svg(padded_box, bbox):
             f'{op}{edge}/>')
 
 
+def _axes_fraction_xy(tr, fx, fy):
+    """``transform=ax.transAxes`` fraction -> pixels, independent of data limits.
+
+    ``(0, 0)`` is the axes' bottom-left, ``(1, 1)`` its top-right -- matplotlib's
+    own convention -- mapped straight off the axes' own pixel rect rather than
+    through the data-space affine, so it holds regardless of xlim/ylim/scale.
+    """
+    return tr.px_left + fx * tr.px_w, tr.px_top + (1.0 - fy) * tr.px_h
+
+
 def _render_text(t: Text, tr, st, body):
-    x, y = float(tr.x(t.x)), float(tr.y(t.y))
+    if t.axes_fraction:
+        x, y = _axes_fraction_xy(tr, t.x, t.y)
+    else:
+        x, y = float(tr.x(t.x)), float(tr.y(t.y))
     if t.bbox is not None:
-        box = _bbox_pad(text_box(x, y, t.text, t.size, t.ha, t.va, st), t.bbox)
+        box = _bbox_pad(text_box(x, y, t.text, t.size, t.ha, t.va, st,
+                                  bold=t.bold, italic=t.italic), t.bbox)
         body.append(_bbox_svg(box, t.bbox))
     body.append(_text_svg(x, y, t.text, t.color, t.size, t.ha, t.va, t.rotation,
-                          t.outline, t.alpha))
+                          t.outline, t.alpha, bold=t.bold, italic=t.italic))
 
 
 def _render_annotation(an: Annotation, tr, st, body):
-    tx, ty = float(tr.x(an.xytext[0])), float(tr.y(an.xytext[1]))
-    box = text_box(tx, ty, an.text, an.size, an.ha, an.va, st)
+    if an.axes_fraction:
+        tx, ty = _axes_fraction_xy(tr, an.xytext[0], an.xytext[1])
+    else:
+        tx, ty = float(tr.x(an.xytext[0])), float(tr.y(an.xytext[1]))
+    box = text_box(tx, ty, an.text, an.size, an.ha, an.va, st,
+                    bold=an.bold, italic=an.italic)
     if an.bbox is not None:
         box = _bbox_pad(box, an.bbox)   # the leader below anchors to this, padded, edge
     if an.arrowprops is not None:
@@ -1473,7 +1547,7 @@ def _render_annotation(an: Annotation, tr, st, body):
     if an.bbox is not None:
         body.append(_bbox_svg(box, an.bbox))
     body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va,
-                          0.0, an.outline, an.alpha))
+                          0.0, an.outline, an.alpha, bold=an.bold, italic=an.italic))
 
 
 def _render_boxplot(bp: BoxPlot, tr, st, body):

@@ -1855,6 +1855,247 @@ def test_bbox_renders_without_error_in_raster_and_pdf():
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
 
+def test_multiline_text_actually_breaks_into_multiple_tspans():
+    """Regression: a raw '\\n' embedded in a single <text> element's content
+    does not create a line break in SVG -- it renders as if the newline were
+    plain whitespace, all on one line. Each line must be its own <tspan>."""
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "line one\nline two\nline three")
+    svg = fig.to_svg()
+    assert svg.count("<tspan") == 3
+    assert "line one" in svg and "line two" in svg and "line three" in svg
+    # every line gets its own x= so each is independently ha-aligned, not just
+    # inheriting the first line's position
+    import re
+    xs = re.findall(r'<tspan x="([\d.]+)"', svg)
+    assert len(xs) == 3 and len(set(xs)) == 1   # same x (this is ha="left", one column)
+
+
+def _find_text_el(svg, contains):
+    """The <text> element whose (possibly multi-tspan) content contains
+    ``contains`` -- there are usually several <text> elements in a figure
+    (tick labels, titles, ...), so matching on content is the only reliable
+    way to find the one a given ax.text()/annotate() call produced."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(svg)
+    ns = "{http://www.w3.org/2000/svg}"
+    for el in root.iter(f"{ns}text"):
+        if contains in "".join(el.itertext()):
+            return el
+    return None
+
+
+def test_multiline_text_va_center_keeps_the_block_centered_on_y():
+    """va="center" on a multi-line block must center the whole block on the
+    given y, not just the first line -- the block grows with the line count,
+    so a naive "center line one" would drift the block off the anchor."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])   # real data so tr.y() isn't a degenerate axes
+    ax.text(0.5, 0.5, "one line", va="center")
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    ax2.text(0.5, 0.5, "one\ntwo\nthree", va="center")
+    y1 = float(_find_text_el(fig.to_svg(), "one line").get("y"))
+    y3 = float(_find_text_el(fig2.to_svg(), "one").get("y"))
+    # the 3-line block's first tspan must sit *above* where a single centered
+    # line would, by exactly one line height on each side of the middle line
+    assert y3 < y1
+
+
+def test_multiline_bbox_wraps_the_whole_block_not_just_one_line():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.5, 0.5, "a\nb\nc", bbox={})
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    ax2.text(0.5, 0.5, "a", bbox={})
+
+    def bbox_height(fig_, contains):
+        ns = "{http://www.w3.org/2000/svg}"
+        els = list(ET.fromstring(fig_.to_svg()).iter())
+        for i, el in enumerate(els):
+            if el.tag == f"{ns}text" and contains in "".join(el.itertext()):
+                prev = els[i - 1]   # see _render_text: rect, then text, adjacent
+                assert prev.tag == f"{ns}rect"
+                return float(prev.get("height"))
+        raise AssertionError("target <text> not found")
+
+    h3 = bbox_height(fig, "a")     # matches "a" from "a\nb\nc" via itertext()
+    h1 = bbox_height(fig2, "a")
+    assert h3 > h1 * 2   # 3 lines vs. 1
+
+
+def test_multiline_text_renders_without_error_in_raster_and_pdf():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "a\nb\nc", bbox={"facecolor": "yellow"})
+    pytest.importorskip("PIL")
+    import tempfile
+
+    from plotpress.raster import figure_to_image, save_pdf
+    figure_to_image(fig)   # must not raise
+    save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
+
+
+def test_fontweight_bold_renders_differently_than_normal():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", fontweight="bold")
+    fig2, ax2 = plotpress.subplots()
+    ax2.text(0.5, 0.5, "hi", fontweight="normal")
+    assert 'font-weight="bold"' in fig.to_svg()
+    assert 'font-weight="bold"' not in fig2.to_svg()
+
+
+def test_fontweight_accepts_matplotlib_names_and_numeric_weights():
+    fig, ax = plotpress.subplots()
+    ax.text(0.1, 0.5, "a", fontweight="semibold")
+    ax.text(0.4, 0.5, "b", fontweight=700)
+    ax.text(0.7, 0.5, "c", fontweight="light")
+    svg = fig.to_svg()
+    assert svg.count('font-weight="bold"') == 2   # semibold and 700, not light
+
+
+def test_fontstyle_italic_renders_differently_than_normal():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", fontstyle="italic")
+    fig2, ax2 = plotpress.subplots()
+    ax2.text(0.5, 0.5, "hi", fontstyle="normal")
+    assert 'font-style="italic"' in fig.to_svg()
+    assert 'font-style="italic"' not in fig2.to_svg()
+
+
+def test_bold_and_italic_widen_the_bbox_over_the_plain_default():
+    """bold/italic glyphs measure wider than regular -- bbox= sizing must use
+    the same face annotate()/text() actually draw with, or the box is either
+    too tight (clipping the glyphs) or visibly loose."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "wwwwwwwwww", fontweight="bold", bbox={})
+    fig2, ax2 = plotpress.subplots()
+    ax2.text(0.5, 0.5, "wwwwwwwwww", bbox={})
+
+    def bbox_width(fig_):
+        ns = "{http://www.w3.org/2000/svg}"
+        els = list(ET.fromstring(fig_.to_svg()).iter())
+        for i, el in enumerate(els):
+            if el.tag == f"{ns}text" and "wwwwwwwwww" in "".join(el.itertext()):
+                return float(els[i - 1].get("width"))   # the bbox rect, adjacent
+        raise AssertionError("target <text> not found")
+
+    assert bbox_width(fig) > bbox_width(fig2)
+
+
+def test_fontweight_fontstyle_render_without_error_in_raster_and_pdf():
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "bold italic", fontweight="bold", fontstyle="italic")
+    ax.annotate("there", xy=(0.2, 0.2), xytext=(0.7, 0.7),
+               fontweight="bold", fontstyle="italic")
+    pytest.importorskip("PIL")
+    import tempfile
+
+    from plotpress.raster import figure_to_image, save_pdf
+    figure_to_image(fig)   # must not raise
+    save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
+
+
+def _effective_axes_rect(fig, ax):
+    """The exact pixel rect _render_axes lays the axes out in -- mirrors
+    pick_cases._transform's construction, the established test-side way to
+    reproduce the renderer's own geometry without re-rendering the SVG."""
+    from plotpress.svg import _effective_rect, _pixel_rect
+
+    dpi = fig.style.dpi
+    (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+    return _effective_rect(ax, *_pixel_rect(ax, fig.figsize[0] * dpi,
+                                            fig.figsize[1] * dpi),
+                           (xmin, xmax), (ymin, ymax))
+
+
+def test_transaxes_places_text_at_a_fixed_axes_fraction_position():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.95, 0.95, "corner", transform=ax.transAxes, ha="right", va="top")
+    x = float(_find_text_el(fig.to_svg(), "corner").get("x"))
+    L, T, W, H = _effective_axes_rect(fig, ax)
+    assert x == pytest.approx(L + 0.95 * W, abs=1.0)
+
+
+def test_transaxes_position_is_independent_of_data_limits():
+    """The whole point of transform=ax.transAxes: the same (0.95, 0.95) must
+    land in the same spot on the axes frame no matter what xlim/ylim end up
+    being -- unlike a data-coordinate label, which would need recomputing."""
+    fig, ax = plotpress.subplots()
+    ax.text(0.95, 0.95, "corner", transform=ax.transAxes, ha="right", va="top")
+    ax.set_xlim(-500, 500)
+    ax.set_ylim(-1e6, 1e6)
+    fig2, ax2 = plotpress.subplots()
+    ax2.text(0.95, 0.95, "corner", transform=ax2.transAxes, ha="right", va="top")
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(0, 1)
+    el1 = _find_text_el(fig.to_svg(), "corner")
+    el2 = _find_text_el(fig2.to_svg(), "corner")
+    assert (el1.get("x"), el1.get("y")) == (el2.get("x"), el2.get("y"))
+
+
+def test_transaxes_text_is_not_inside_the_data_zoom_group():
+    """An axes-fraction label must not move/scale with a per-axes interactive
+    data zoom (see _interactive.py's zoomAffine) -- it is pinned to the axes
+    frame, not the data, so it has to render outside the zoom{index} group
+    a data-anchored label lives in. A data-anchored label, by contrast, must
+    still be inside it (unchanged, existing behavior)."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.95, 0.95, "pinned corner", transform=ax.transAxes)
+    ax.text(0.5, 0.5, "data anchored")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    parent = {c: p for p in root.iter() for c in p}
+
+    def find_text(contains):
+        return next(el for el in root.iter(f"{ns}text")
+                   if contains in "".join(el.itertext()))
+
+    def inside_zoom_group(text_el):
+        node = text_el
+        while node in parent:
+            node = parent[node]
+            if node.get("class") == "plotpress-zoom":
+                return True
+        return False
+
+    assert not inside_zoom_group(find_text("pinned corner"))
+    assert inside_zoom_group(find_text("data anchored"))
+
+
+def test_annotate_textcoords_transaxes_places_the_label_but_arrow_stays_on_data():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 10], [0, 10])
+    ax.annotate("pinned", xy=(5, 5), xytext=(0.9, 0.9),
+               textcoords=ax.transAxes, arrowprops={"color": "red"})
+    text_x = float(_find_text_el(fig.to_svg(), "pinned").get("x"))
+    L, T, W, H = _effective_axes_rect(fig, ax)
+    assert text_x == pytest.approx(L + 0.9 * W, abs=1.0)
+
+
+def test_transaxes_renders_without_error_in_raster_and_pdf():
+    fig, ax = plotpress.subplots()
+    ax.text(0.95, 0.95, "corner", transform=ax.transAxes, ha="right", va="top",
+            bbox={"facecolor": "yellow"})
+    ax.annotate("pinned", xy=(0.2, 0.2), xytext=(0.9, 0.9),
+               textcoords=ax.transAxes, arrowprops={"color": "blue"})
+    pytest.importorskip("PIL")
+    import tempfile
+
+    from plotpress.raster import figure_to_image, save_pdf
+    figure_to_image(fig)   # must not raise
+    save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
+
+
 def test_fig_text_alpha_and_bbox_render_in_both_backends():
     fig, _ = plotpress.subplots()
     fig2, _ = plotpress.subplots()
