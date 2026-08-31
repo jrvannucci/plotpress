@@ -22,14 +22,17 @@ freqs = np.linspace(0.6, 2.4, 4)
 phases = np.linspace(0.0, np.pi, 4)
 for i, ax in enumerate(axes.flat):
     freq, phase = freqs[i // 4], phases[i % 4]
-    Z = np.exp(-(X ** 2 + Y ** 2) / 6.0) * np.cos(freq * X + phase)
+    # No Gaussian falloff this time -- the field stays saturated right into
+    # the corners, so the label's own semi-transparency has something to
+    # visibly blend with, not near-white it'd look opaque against either way.
+    Z = np.cos(freq * X + phase) * np.cos(freq * Y)
     ax.pcolormesh(g, g, Z, cmap="RdBu_r", vmin=-1, vmax=1)
     # Each panel's box carries *its own* parameters -- the whole point of a
     # corner label here, not just a shared title the figure could carry once.
     ax.text(0.95, 0.95, f"f={freq:.1f}\nphase={phase:.2f}",
            transform=ax.transAxes, ha="right", va="top", fontsize=7.5,
            bbox={"facecolor": "#ffffff", "edgecolor": "#888888",
-                 "alpha": 0.85, "pad": 3.0})
+                 "alpha": 0.5, "pad": 3.0})
     ax.set_xticks([]); ax.set_yticks([])
 
 fig.suptitle("16 pcolormesh panels, each self-labeled via transform=ax.transAxes")
