@@ -1223,3 +1223,47 @@ class Pie(Artist):
 
     def data_bounds(self):
         return None  # pie manages its own (hidden) axes
+
+
+class Barbs(Artist):
+    """Wind barbs (``ax.barbs``): a fixed-length shaft per point, pointing
+    ``(U, V)``'s direction, with flags/full/half ticks near the tip encoding
+    ``hypot(U, V)`` by the usual meteorological convention -- unlike
+    :class:`Quiver`, magnitude is never shaft *length*, so autoscaling only
+    ever needs the anchor points themselves, not a magnitude-dependent tip.
+    """
+
+    def __init__(self, X, Y, U, V, length, color, label=None, alpha=1.0):
+        self.X = np.asarray(X, float).ravel()
+        self.Y = np.asarray(Y, float).ravel()
+        self.U = np.asarray(U, float).ravel()
+        self.V = np.asarray(V, float).ravel()
+        self.length = length   # points, like a marker size -- not data units
+        self.color = color
+        self.label = label
+        self.alpha = alpha
+
+    def data_bounds(self):
+        return finite_range(self.X) + finite_range(self.Y)
+
+
+class Table(Artist):
+    """A grid of text cells (``ax.table()``), positioned in axes-fraction
+    space rather than data coordinates -- like a plain unboxed corner label,
+    it describes the axes, not a point in it."""
+
+    def __init__(self, cell_text, row_labels, col_labels, bbox,
+                 cell_colors=None, row_colors=None, col_colors=None,
+                 fontsize=None, alpha=1.0):
+        self.cell_text = [[str(c) for c in row] for row in cell_text]
+        self.row_labels = None if row_labels is None else [str(r) for r in row_labels]
+        self.col_labels = None if col_labels is None else [str(c) for c in col_labels]
+        self.bbox = tuple(bbox)   # (x0, y0, w, h), axes fraction
+        self.cell_colors = cell_colors
+        self.row_colors = row_colors
+        self.col_colors = col_colors
+        self.fontsize = fontsize
+        self.alpha = alpha
+
+    def data_bounds(self):
+        return None  # axes-fraction, not data -- never drives autoscaling

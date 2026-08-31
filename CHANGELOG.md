@@ -13,6 +13,59 @@ anywhere in the source.
 
 ### Added
 
+- **A matplotlib `Axes` API audit, closing every gap found except three
+  that are genuinely multi-day subsystems on their own** (datetime axis
+  support, `streamplot`, and the `tricontour`/`tricontourf`/`tripcolor`/
+  `triplot` triangulation family -- left as deliberate follow-ups, not
+  oversights):
+  - Getters with no previous read-back: `get_aspect`, `get_xbound`/
+    `get_ybound` (always sorted low-high, unlike `get_xlim`/`get_ylim`,
+    which preserve direction), `get_xticklabels`/`get_yticklabels`,
+    `xaxis_inverted`/`yaxis_inverted`, `get_autoscalex_on`/
+    `get_autoscaley_on`.
+  - `ax.set(**kwargs)` -- matplotlib's bulk setter, dispatching each
+    keyword to this axes' own `set_<name>()`; raises naming every
+    unrecognized keyword at once, not just the first.
+  - `set_box_aspect()`/`get_box_aspect()` -- a fixed physical height/width
+    ratio for the drawn box, independent of the data range entirely
+    (unlike `set_aspect`, which shrinks to keep one data unit equal in x
+    and y).
+  - `set_xticks(ticks, minor=True)`/`set_yticks(..., minor=True)` --
+    explicit minor-tick positions, previously only reachable via the
+    all-or-nothing `minorticks_on()`. Reaches the per-axes interactive
+    metadata too, so it survives a client-side zoom rebuild instead of
+    reverting to the auto minor-tick algorithm (the same regression class
+    already fixed once for `tick_params()` and once for `grid(alpha=)`).
+  - `get_legend()`/`get_legend_handles_labels()`, and `legend()` now
+    returns a `Legend` handle (`set_visible`/`get_visible`/`remove`/
+    `set_title`/`get_title`/`get_texts`) for repositioning or hiding a
+    legend after the fact without a full `legend(...)` call.
+  - `pcolor()` -- a true alias of `pcolormesh` (matplotlib itself now
+    recommends `pcolormesh`; kept only so matplotlib-written code still
+    runs unchanged).
+  - `arrow(x, y, dx, dy)` -- a single arrow in data coordinates throughout
+    (a thin wrapper over `quiver` with one vector and no auto-scaling).
+  - `quiverkey(Q, X, Y, U, label)` -- a reference-length arrow + label for
+    a `quiver()` field, `coordinates="axes"` by default.
+  - `indicate_inset(bounds)`/`indicate_inset_zoom(inset_ax)` -- a marker
+    rectangle for the region an `inset_axes()` zooms into (matplotlib's
+    own connector lines from the rectangle to the inset's corners aren't
+    drawn -- those cross from one axes' clipped drawing area into
+    another's, a figure-level connection this library has no artist for
+    yet).
+  - `bar_label(bars)` -- auto-labels each bar in a `bar()`/`barh()` result
+    with its own height/width, just outside the tip.
+  - `clabel(CS)` -- labels a `contour()` result's lines with each level's
+    value (one label per level, at the middle of its longest run of
+    segments, not one per disconnected island the way matplotlib does).
+  - `table(cellText, ...)` -- a grid of text cells, positioned in
+    axes-fraction space the same way `text()`'s `transform=ax.transAxes`
+    is (stays put under a later pan/zoom; `loc=` only reaches positions
+    *inside* the axes box, unlike matplotlib's own outside-the-axes
+    placements like the default `loc="bottom"`).
+  - `barbs(X, Y, U, V)` -- wind barbs: a fixed-length shaft per point,
+    with flags/full/half ticks near the tip encoding `hypot(U, V)` by the
+    usual meteorological convention.
 - **`ax.text()`/`ax.annotate()`: multi-line text, `fontweight=`/`fontstyle=`,
   and `transform=ax.transAxes`.** Fixed a real bug found along the way: a
   `\n` embedded in a label's string was never actually rendered as a line

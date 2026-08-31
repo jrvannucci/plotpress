@@ -16,9 +16,9 @@ import warnings
 import numpy as np
 
 from .artists import (
-    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    Annotation, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, FrameQuadMesh, Image, Line2D, LineCollection, Pie, Polygon,
-    PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Text,
+    PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Table, Text,
     Violin, _edges_from,
 )
 from .colors import apply_colormap, colorbar_ticks
@@ -314,8 +314,14 @@ def axes_metadata(fig):
             # Axis direction, so the client maps data<->pixels the same way
             # _render_axes does (it swaps the limits it feeds the transform).
             "xinv": bool(ax._xinverted), "yinv": bool(ax._yinverted),
-            # Whether ticks are user-fixed (don't auto-recompute on zoom).
-            "xfixed": ax._xticks is not None, "yfixed": ax._yticks is not None,
+            # Whether ticks are user-fixed (don't auto-recompute on zoom) --
+            # explicit *minor* ticks count too: without this, an explicit
+            # set_xticks(vals, minor=True) would render correctly here but
+            # silently revert to the auto minor-tick algorithm the moment a
+            # reader zoomed, the same regression class already fixed once for
+            # tick_params() and once for grid(alpha=) (see grid_alpha above).
+            "xfixed": ax._xticks is not None or ax._xticks_minor is not None,
+            "yfixed": ax._yticks is not None or ax._yticks_minor is not None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
             "minor": bool(ax._minor_ticks_on),
             # Raw tick_params() overrides (Style field -> value), so the
@@ -738,7 +744,16 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
 
 
 def _effective_rect(ax, px_left, px_top, px_w, px_h, xlim, ylim):
-    """Shrink the drawn box to honor ``set_aspect`` (box-adjust), centered."""
+    """Shrink the drawn box to honor ``set_aspect``/``set_box_aspect``, centered."""
+    if ax._box_aspect is not None:
+        # A fixed physical height/width ratio, independent of the data range
+        # entirely -- unlike set_aspect (which shrinks to keep a *data* unit
+        # the same size in x and y), this never looks at xlim/ylim at all.
+        a = ax._box_aspect
+        s = min(px_w, px_h / a)
+        used_w, used_h = s, a * s
+        return (px_left + (px_w - used_w) / 2, px_top + (px_h - used_h) / 2,
+                used_w, used_h)
     if ax._aspect is None:
         return px_left, px_top, px_w, px_h
     fx = math.log10 if ax._xscale == "log" else (lambda v: v)
@@ -827,8 +842,10 @@ def _render_axes(ax, fig, W, H, index, defs, body):
                        if ax._minor_tick_overrides["x"] else xst)
                 myst = (yst.copy(**ax._minor_tick_overrides["y"])
                        if ax._minor_tick_overrides["y"] else yst)
-                xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
-                yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
+                xminor = (ax._xticks_minor if ax._xticks_minor is not None
+                         else minor_ticks(xticks, xmin, xmax, ax._xscale))
+                yminor = (ax._yticks_minor if ax._yticks_minor is not None
+                         else minor_ticks(yticks, ymin, ymax, ax._yscale))
                 _render_minor_ticks(mxst, myst, tr, xminor, yminor,
                                     px_left, px_top, px_w, px_h, body,
                                     xside=ax._xtick_side, yside=ax._ytick_side)
@@ -870,6 +887,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_eventplot(artist, tr, body)
         elif isinstance(artist, Quiver):
             _render_quiver(artist, tr, body)
+        elif isinstance(artist, Barbs):
+            _render_barbs(artist, tr, st, body)
         elif isinstance(artist, Contour):
             _render_contour(artist, tr, body)
         elif isinstance(artist, Text):
@@ -882,16 +901,21 @@ def _render_axes(ax, fig, W, H, index, defs, body):
                 axes_fraction_artists.append(artist)
             else:
                 _render_annotation(artist, tr, st, body)
+        elif isinstance(artist, Table):
+            axes_fraction_artists.append(artist)   # always axes-fraction, like a table() bbox
     body.append("</g>")   # close the zoom group only -- axes-fraction text is next
-    # transform=ax.transAxes text/annotate sits at a fixed spot on the axes
-    # *frame*, not the data -- rendered outside the zoom group so a per-axes
-    # data zoom/pan leaves it alone, still inside the clip group so it can't
-    # spill past the axes rect the way a data-anchored label already can't.
+    # transform=ax.transAxes text/annotate (and table(), always axes-fraction)
+    # sit at a fixed spot on the axes *frame*, not the data -- rendered
+    # outside the zoom group so a per-axes data zoom/pan leaves them alone,
+    # still inside the clip group so they can't spill past the axes rect the
+    # way a data-anchored label already can't.
     for artist in axes_fraction_artists:
         if isinstance(artist, Text):
             _render_text(artist, tr, st, body)
-        else:
+        elif isinstance(artist, Annotation):
             _render_annotation(artist, tr, st, body)
+        else:
+            _render_table(artist, tr, st, body)
     body.append("</g>")   # close the clip group
 
     if not ax._axis_off and not overlay:
@@ -1501,6 +1525,69 @@ def _axes_fraction_xy(tr, fx, fy):
     return tr.px_left + fx * tr.px_w, tr.px_top + (1.0 - fy) * tr.px_h
 
 
+def _render_table(t: Table, tr, st, body):
+    """``ax.table()`` -- a grid of cells at an axes-fraction ``bbox``, in the
+    same pixel space :func:`_axes_fraction_xy` maps text/annotate labels
+    through (only the corners are needed here, not a single point)."""
+    x0, y0, w, h = t.bbox
+    left, bottom = _axes_fraction_xy(tr, x0, y0)
+    right, top = _axes_fraction_xy(tr, x0 + w, y0 + h)
+    rect_w, rect_h = right - left, bottom - top
+
+    has_col_header = t.col_labels is not None
+    has_row_header = t.row_labels is not None
+    body_rows = t.cell_text
+    n_data_rows = len(body_rows)
+    n_data_cols = len(body_rows[0]) if body_rows else (len(t.col_labels) if has_col_header else 0)
+    n_rows = n_data_rows + (1 if has_col_header else 0)
+    n_cols = n_data_cols + (1 if has_row_header else 0)
+    if n_rows == 0 or n_cols == 0:
+        return
+    cell_w, cell_h = rect_w / n_cols, rect_h / n_rows
+    fs = t.fontsize if t.fontsize is not None else st.tick_label_size
+    op = f' fill-opacity="{t.alpha}"' if t.alpha < 1 else ""
+    row0 = 1 if has_col_header else 0
+    col0 = 1 if has_row_header else 0
+
+    def cell_fill(r, c):
+        if has_col_header and r == 0 and c >= col0 and t.col_colors:
+            i = c - col0
+            if i < len(t.col_colors):
+                return t.col_colors[i]
+        if has_row_header and c == 0 and r >= row0 and t.row_colors:
+            i = r - row0
+            if i < len(t.row_colors):
+                return t.row_colors[i]
+        if r >= row0 and c >= col0 and t.cell_colors:
+            ri, ci = r - row0, c - col0
+            if ri < len(t.cell_colors) and ci < len(t.cell_colors[ri]):
+                return t.cell_colors[ri][ci]
+        return "#ffffff"
+
+    def cell_text(r, c):
+        if has_col_header and r == 0:
+            return "" if (c == 0 and has_row_header) else t.col_labels[c - col0]
+        if has_row_header and c == 0:
+            return t.row_labels[r - row0]
+        return body_rows[r - row0][c - col0]
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            cx0, cy0 = left + c * cell_w, top + r * cell_h
+            body.append(
+                f'<rect x="{_fmt(cx0)}" y="{_fmt(cy0)}" width="{_fmt(cell_w)}" '
+                f'height="{_fmt(cell_h)}" fill="{cell_fill(r, c)}"{op} '
+                f'stroke="#888888" stroke-width="0.75"/>')
+            text = cell_text(r, c)
+            if text:
+                tx, ty = cx0 + cell_w / 2.0, cy0 + cell_h / 2.0
+                weight = ' font-weight="bold"' if (r < row0 or c < col0) else ""
+                body.append(
+                    f'<text x="{_fmt(tx)}" y="{_fmt(ty)}" text-anchor="middle" '
+                    f'dominant-baseline="central" font-size="{fs}" '
+                    f'fill="{st.text_color}"{weight}>{_esc(text)}</text>')
+
+
 def _render_text(t: Text, tr, st, body):
     if t.axes_fraction:
         x, y = _axes_fraction_xy(tr, t.x, t.y)
@@ -1662,6 +1749,98 @@ def _render_quiver(q: Quiver, tr, body):
     op = f' stroke-opacity="{q.alpha}"' if q.alpha < 1 else ""
     body.append(f'<g fill="none" stroke="{q.color}" stroke-width="1.2" '
                 f'stroke-linecap="round"{op}>{"".join(parts)}</g>')
+
+
+def _barb_geometry(cx, cy, angle, speed, L):
+    """One wind barb's pixel-space geometry: ``(lines, polygons, calm)``.
+
+    ``lines`` is ``[(x0, y0, x1, y1), ...]`` -- the shaft plus its full/half
+    ticks; ``polygons`` is ``[[(x, y), ...], ...]`` -- its 50-unit pennant
+    triangles. ``speed`` rounds to the nearest 5 first, then decomposes into
+    a pennant per 50, a full tick per 10, and a half tick for a remaining 5
+    -- the usual meteorological convention. ``calm`` is true when that rounds
+    to 0 (matplotlib draws a bare circle there instead of an empty shaft).
+    ``angle`` is the shaft direction in screen-space radians (``atan2``
+    convention); the barb is built shaft-along-+x in a local frame, ticks on
+    the local +y side, then rotated by ``angle`` and placed at ``(cx, cy)``.
+    """
+    speed5 = round(speed / 5.0) * 5.0
+    if speed5 <= 0:
+        return [], [], True
+    n_pennant = int(speed5 // 50)
+    rem = speed5 - n_pennant * 50
+    n_full = int(rem // 10)
+    half = (rem - n_full * 10) >= 5
+
+    spacing = 0.16 * L
+    tick_len = 0.38 * L
+    ca, sa = math.cos(math.radians(60)), math.sin(math.radians(60))
+
+    local_lines = [(0.0, 0.0, L, 0.0)]   # the shaft itself
+    local_polys = []
+    pos = L
+    for _ in range(n_pennant):
+        local_polys.append([(pos, 0.0), (pos - spacing, 0.0),
+                            (pos - spacing / 2.0, tick_len)])
+        pos -= spacing
+    for _ in range(n_full):
+        local_lines.append((pos, 0.0, pos - tick_len * ca, tick_len * sa))
+        pos -= spacing
+    if half:
+        local_lines.append((pos, 0.0, pos - (tick_len / 2) * ca, (tick_len / 2) * sa))
+
+    def rot(x, y):
+        return (cx + x * math.cos(angle) - y * math.sin(angle),
+                cy + x * math.sin(angle) + y * math.cos(angle))
+
+    lines = [(*rot(x0, y0), *rot(x1, y1)) for x0, y0, x1, y1 in local_lines]
+    polygons = [[rot(px, py) for px, py in poly] for poly in local_polys]
+    return lines, polygons, False
+
+
+def _barb_angles(b, tr):
+    """Screen-space direction (radians, ``atan2`` convention) for every barb
+    in ``b`` -- transforms a unit step in ``(U, V)``'s own data-space
+    direction through ``tr``, the same way :func:`_render_quiver` derives its
+    arrow angle, so an unequal x/y data scale (or a non-1:1 ``set_aspect``)
+    still points each barb where it visually should, not where a raw
+    ``atan2(V, U)`` on the untransformed data would."""
+    mag = np.hypot(b.U, b.V)
+    mag_safe = np.where(mag == 0, 1.0, mag)
+    ux, uy = b.U / mag_safe, b.V / mag_safe
+    x0, y0 = tr.x(b.X), tr.y(b.Y)
+    x1, y1 = tr.x(b.X + ux), tr.y(b.Y + uy)
+    return mag, np.arctan2(y1 - y0, x1 - x0)
+
+
+def _render_barbs(b: Barbs, tr, st, body):
+    L = b.length * st.dpi / 72.0   # points -> px, same conversion markers use
+    cx, cy = tr.x(b.X), tr.y(b.Y)
+    mag, ang = _barb_angles(b, tr)
+    op = f' stroke-opacity="{b.alpha}"' if b.alpha < 1 else ""
+    fop = f' fill-opacity="{b.alpha}"' if b.alpha < 1 else ""
+    lines, polys = [], []
+    calm_pts = []
+    r = 0.12 * L
+    for x, y, spd, a in zip(cx, cy, mag, ang):
+        ls, ps, calm = _barb_geometry(float(x), float(y), float(a), float(spd), L)
+        if calm:
+            calm_pts.append((x, y))
+        else:
+            lines.extend(ls)
+            polys.extend(ps)
+    parts = []
+    if lines:
+        d = "".join(f"M{_fmt(x0)},{_fmt(y0)}L{_fmt(x1)},{_fmt(y1)}" for x0, y0, x1, y1 in lines)
+        parts.append(f'<path d="{d}" fill="none" stroke="{b.color}" '
+                     f'stroke-width="1.2" stroke-linecap="round"{op}/>')
+    for poly in polys:
+        coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in poly)
+        parts.append(f'<polygon points="{coords}" fill="{b.color}"{fop}/>')
+    for x, y in calm_pts:
+        parts.append(f'<circle cx="{_fmt(x)}" cy="{_fmt(y)}" r="{_fmt(r)}" '
+                     f'fill="none" stroke="{b.color}" stroke-width="1.2"{op}/>')
+    body.append("".join(parts))
 
 
 def _render_contour(ct: Contour, tr, body):

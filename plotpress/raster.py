@@ -13,9 +13,9 @@ import math
 import numpy as np
 
 from .artists import (
-    Annotation, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
+    Annotation, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, FrameQuadMesh, Pie, Polygon, Quiver, ScatterCollection, Span,
-    Stem, Text, Violin,
+    Stem, Table, Text, Violin,
 )
 from .colors import colorbar_ticks, to_hex
 # Which files can draw a given font stack is declared once, in fonts/families,
@@ -306,8 +306,10 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
                        if ax._minor_tick_overrides["x"] else xst)
                 myst = (yst.copy(**ax._minor_tick_overrides["y"])
                        if ax._minor_tick_overrides["y"] else yst)
-                xminor = minor_ticks(xticks, xmin, xmax, ax._xscale)
-                yminor = minor_ticks(yticks, ymin, ymax, ax._yscale)
+                xminor = (ax._xticks_minor if ax._xticks_minor is not None
+                         else minor_ticks(xticks, xmin, xmax, ax._xscale))
+                yminor = (ax._yticks_minor if ax._yticks_minor is not None
+                         else minor_ticks(yticks, ymin, ymax, ax._yscale))
                 _raster_minor_ticks(mxst, myst, tr, xminor, yminor, L, T, Wp, Hp, S, draw,
                                    xside=ax._xtick_side, yside=ax._ytick_side)
             _raster_spines(ax, L, T, Wp, Hp, S, draw)
@@ -456,6 +458,8 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
         _eventplot(artist, tr, S, draw)
     elif isinstance(artist, Quiver):
         _quiver(artist, tr, S, draw)
+    elif isinstance(artist, Barbs):
+        _barbs(artist, tr, st, S, draw)
     elif isinstance(artist, Contour):
         for lvl, color, segs in artist.line_segments:
             fill = (_rgba(color, artist.alpha) if artist.alpha < 1 else _rgb(color))
@@ -521,6 +525,75 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
               artist.ha, artist.va, 0.0,
               _rgb(artist.outline) if artist.outline else None,
               artist.size * 0.15 * S, italic=artist.italic)
+    elif isinstance(artist, Table):
+        _raster_table(artist, tr, st, S, draw)
+
+
+def _raster_table(t, tr, st, S, draw):
+    """``ax.table()`` -- mirrors svg._render_table's own cell layout exactly
+    (same header logic, same fill-color precedence) so the two backends
+    agree; see there for the shape of ``t.cell_colors``/``row_colors``/
+    ``col_colors``."""
+    from .svg import _axes_fraction_xy
+
+    x0, y0, w, h = t.bbox
+    left, bottom = _axes_fraction_xy(tr, x0, y0)
+    right, top = _axes_fraction_xy(tr, x0 + w, y0 + h)
+    rect_w, rect_h = right - left, bottom - top
+
+    has_col_header = t.col_labels is not None
+    has_row_header = t.row_labels is not None
+    body_rows = t.cell_text
+    n_data_rows = len(body_rows)
+    n_data_cols = len(body_rows[0]) if body_rows else (len(t.col_labels) if has_col_header else 0)
+    n_rows = n_data_rows + (1 if has_col_header else 0)
+    n_cols = n_data_cols + (1 if has_row_header else 0)
+    if n_rows == 0 or n_cols == 0:
+        return
+    cell_w, cell_h = rect_w / n_cols, rect_h / n_rows
+    fs = (t.fontsize if t.fontsize is not None else st.tick_label_size) * S
+    row0 = 1 if has_col_header else 0
+    col0 = 1 if has_row_header else 0
+    font = _font(fs, st.font_family, bold=False)
+    bold_font = _font(fs, st.font_family, bold=True)
+    edge = _rgb("#888888")
+
+    def cell_fill(r, c):
+        if has_col_header and r == 0 and c >= col0 and t.col_colors:
+            i = c - col0
+            if i < len(t.col_colors):
+                return t.col_colors[i]
+        if has_row_header and c == 0 and r >= row0 and t.row_colors:
+            i = r - row0
+            if i < len(t.row_colors):
+                return t.row_colors[i]
+        if r >= row0 and c >= col0 and t.cell_colors:
+            ri, ci = r - row0, c - col0
+            if ri < len(t.cell_colors) and ci < len(t.cell_colors[ri]):
+                return t.cell_colors[ri][ci]
+        return "#ffffff"
+
+    def cell_text(r, c):
+        if has_col_header and r == 0:
+            return "" if (c == 0 and has_row_header) else t.col_labels[c - col0]
+        if has_row_header and c == 0:
+            return t.row_labels[r - row0]
+        return body_rows[r - row0][c - col0]
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            cx0, cy0 = left + c * cell_w, top + r * cell_h
+            fill = cell_fill(r, c)
+            draw.rectangle(
+                [cx0, cy0, cx0 + cell_w, cy0 + cell_h],
+                fill=_rgba(fill, t.alpha) if t.alpha < 1 else _rgb(fill),
+                outline=edge, width=max(1, int(round(0.75 * S))))
+            text = cell_text(r, c)
+            if text:
+                draw.text((cx0 + cell_w / 2.0, cy0 + cell_h / 2.0), text,
+                          fill=_rgb(st.text_color),
+                          font=bold_font if (r < row0 or c < col0) else font,
+                          anchor="mm")
 
 
 # -- primitives -------------------------------------------------------------
@@ -654,6 +727,28 @@ def _quiver(q, tr, S, draw):
         for da in (-math.radians(25), math.radians(25)):
             draw.line([ex, ey, ex - hl * math.cos(ang + da), ey - hl * math.sin(ang + da)],
                       fill=col, width=w)
+
+
+def _barbs(b, tr, st, S, draw):
+    """Mirrors svg._render_barbs -- same shared geometry (svg._barb_geometry/
+    _barb_angles), so the two backends draw identical barbs."""
+    from .svg import _barb_angles, _barb_geometry
+
+    L = b.length * st.dpi / 72.0 * S
+    cx, cy = tr.x(b.X), tr.y(b.Y)
+    mag, ang = _barb_angles(b, tr)
+    col = _rgba(b.color, b.alpha) if b.alpha < 1 else _rgb(b.color)
+    w = max(1, int(round(1.2 * S)))
+    r = 0.12 * L
+    for x, y, spd, a in zip(cx, cy, mag, ang):
+        lines, polys, calm = _barb_geometry(float(x), float(y), float(a), float(spd), L)
+        if calm:
+            draw.ellipse([x - r, y - r, x + r, y + r], outline=col, width=w)
+            continue
+        for x0, y0, x1, y1 in lines:
+            draw.line([x0, y0, x1, y1], fill=col, width=w)
+        for poly in polys:
+            draw.polygon(poly, fill=col)
 
 
 def _pie(pie, tr, st, S, draw):

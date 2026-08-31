@@ -14,10 +14,10 @@ import warnings
 import numpy as np
 
 from .artists import (
-    Annotation, AxLine, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
-    FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection, Pie,
-    PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
-    Stem, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
+    Annotation, AxLine, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot,
+    FillBetween, FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection,
+    Pie, PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
+    Stem, Table, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
 from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
 from .ticker import log_ticks, nice_ticks
@@ -163,6 +163,38 @@ class Spines(dict):
     """Dict-like container of an axes' four :class:`Spine` objects."""
 
 
+class Legend:
+    """A handle onto an axes' own legend -- returned by :meth:`Axes.legend`
+    and :meth:`Axes.get_legend`, backed live by the axes it came from (so a
+    mutation here shows up the next time the figure renders, the same as
+    calling ``ax.legend(...)`` again would).
+    """
+
+    def __init__(self, ax):
+        self._ax = ax
+
+    def set_visible(self, visible):
+        self._ax._show_legend = bool(visible)
+
+    def get_visible(self):
+        return self._ax._show_legend
+
+    def remove(self):
+        """Hide the legend (matplotlib's ``Legend.remove()``); the entries'
+        own artists are untouched -- only the legend box goes away."""
+        self.set_visible(False)
+
+    def set_title(self, title):
+        self._ax._legend_title = title
+
+    def get_title(self):
+        return self._ax._legend_title
+
+    def get_texts(self):
+        """The label strings currently shown, in legend order."""
+        return [h.label for h in self._ax.get_legend_handles_labels()[0]]
+
+
 def _merge_share_group(a, b, attr):
     """Union two axes' share groups (post-hoc ``sharex``/``sharey``).
 
@@ -209,6 +241,8 @@ class Axes:
         self._tick_overrides = {"x": {}, "y": {}}   # per-axis tick style (Style field -> value)
         self._minor_ticks_on = False
         self._minor_tick_overrides = {"x": {}, "y": {}}
+        self._xticks_minor = None   # explicit minor tick positions (set_xticks(minor=True))
+        self._yticks_minor = None
         self._xtick_side = "bottom"
         self._ytick_side = "left"
         self._xlabel = ""
@@ -224,6 +258,7 @@ class Axes:
         self._xscale = "linear"
         self._yscale = "linear"
         self._aspect = None        # None='auto'; 1.0='equal'; float=y/x ratio
+        self._box_aspect = None    # None=unset; float=fixed height/width, independent of data
         self._axis_off = False
         self._visible = True
         self._facecolor = None     # None -> the style's axes_facecolor
@@ -464,6 +499,13 @@ class Axes:
         self.artists.append(mesh)
         return mesh
 
+    def pcolor(self, *args, **kwargs):
+        """Alias of :meth:`pcolormesh` -- matplotlib itself now recommends
+        ``pcolormesh`` (faster, and this library's own vector/raster cell
+        handling already only exists on that path); ``pcolor`` is kept only
+        so code written against matplotlib's name still runs unchanged."""
+        return self.pcolormesh(*args, **kwargs)
+
     def pcolormesh_frames(self, *args, slider_values=None, slider_label="frame",
                           shared=True, slider_group=None, cmap="viridis",
                           norm=None, vmin=None, vmax=None, shading="flat",
@@ -559,6 +601,46 @@ class Axes:
                          marker=None, markersize=0.0, linestyle="none",
                          capsize=capsize)
         return b
+
+    def bar_label(self, bars, labels=None, fmt="{:g}", padding=0.0, color=None,
+                  fontsize=None, zorder=6):
+        """Label each bar in the :class:`~plotpress.artists.Bars` ``bars``
+        (:meth:`bar`/:meth:`barh`'s own return value) with its height/width,
+        just outside the bar's tip -- above for a positive vertical bar,
+        below for a negative one; right/left the same way for a horizontal
+        one.
+
+        ``labels`` overrides the text shown, positionally (default: each
+        bar's own value formatted with ``fmt``). ``padding`` nudges the
+        label away from the tip as a fraction of the axis span -- matplotlib
+        measures its own ``padding`` in points; there is no such absolute
+        unit here, so this is the closest equivalent, not a literal
+        drop-in value.
+
+        Returns the list of :class:`~plotpress.artists.Text` labels added,
+        one per bar, in the same order as ``bars.pos``.
+        """
+        vertical = bars.orientation == "vertical"
+        (xmin, xmax), (ymin, ymax) = self.get_xlim(), self.get_ylim()
+        texts = []
+        for i in range(len(bars.pos)):
+            val = bars.length[i]
+            tip = bars.base[i] + val
+            text = str(labels[i]) if labels is not None else fmt.format(val)
+            if vertical:
+                dy = (ymax - ymin) * padding * 0.01
+                y = tip + dy if val >= 0 else tip - dy
+                t = self.text(bars.pos[i], y, text, ha="center",
+                             va="bottom" if val >= 0 else "top",
+                             color=color, fontsize=fontsize, zorder=zorder)
+            else:
+                dx = (xmax - xmin) * padding * 0.01
+                x = tip + dx if val >= 0 else tip - dx
+                t = self.text(x, bars.pos[i], text,
+                             ha="left" if val >= 0 else "right", va="center",
+                             color=color, fontsize=fontsize, zorder=zorder)
+            texts.append(t)
+        return texts
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
              label=None, alpha=1.0, density=False, zorder=0, histtype="bar",
@@ -1015,6 +1097,94 @@ class Axes:
         self.artists.append(q)
         return q
 
+    def arrow(self, x, y, dx, dy, color=None, alpha=1.0, label=None, zorder=0):
+        """Draw a single arrow from ``(x, y)`` to ``(x + dx, y + dy)``, in
+        data coordinates throughout (unlike matplotlib's own
+        ``head_width``/``head_length``, measured in points).
+
+        A thin wrapper over :meth:`quiver` with one vector and ``scale=1`` --
+        that already draws exactly this, an arrow from a point by a
+        data-space ``(dx, dy)`` offset, without quiver's usual auto-scaling
+        (which would size a *single* arrow to nearly the whole axes).
+        """
+        return self.quiver([x], [y], [dx], [dy], scale=1.0, color=color,
+                           alpha=alpha, label=label, zorder=zorder)
+
+    def quiverkey(self, Q, X, Y, U, label, coordinates="axes", labelpos="E",
+                 color=None, alpha=1.0, fontsize=None, zorder=5):
+        """A reference arrow near ``(X, Y)`` showing what a vector of length
+        ``U`` (in ``Q``'s own data units) looks like, for the :class:`Quiver`
+        ``Q`` returned by :meth:`quiver`.
+
+        ``coordinates="axes"`` (the default, matching matplotlib) treats
+        ``(X, Y)`` as an axes fraction, resolved to a data point from this
+        axes' *current* limits at call time -- unlike text's own
+        ``transform=ax.transAxes``, the key arrow is a data-anchored
+        :class:`Quiver` under the hood (there is no axes-fraction form of
+        one), so it moves with a later data zoom/pan the way any other
+        plotted artist does, rather than staying pinned to the corner.
+        ``coordinates="data"`` gives ``(X, Y)`` directly in data coordinates.
+
+        ``labelpos`` places ``label`` ``"E"``/``"W"``/``"N"``/``"S"`` of the
+        arrow (default east, matching matplotlib).
+        """
+        (xmin, xmax), (ymin, ymax) = self.get_xlim(), self.get_ylim()
+        span_x, span_y = xmax - xmin, ymax - ymin
+        if coordinates == "axes":
+            x, y = xmin + X * span_x, ymin + Y * span_y
+        else:
+            x, y = X, Y
+        key_color = color if color is not None else Q.color
+        self.quiver([x], [y], [U], [0.0], scale=Q.scale, color=key_color,
+                   alpha=alpha, zorder=zorder)
+        tip_x = x + U * Q.scale
+        pad = 0.03
+        offsets = {"E": (tip_x + pad * span_x, y, "left", "center"),
+                  "W": (x - pad * span_x, y, "right", "center"),
+                  "N": (x, y + pad * span_y, "center", "baseline"),
+                  "S": (x, y - pad * span_y, "center", "top")}
+        lx, ly, ha, va = offsets.get(labelpos, offsets["E"])
+        # A key placed near a corner (a common spot for one) can push its own
+        # label past that edge once the arrow's own length and this offset
+        # are added on top -- past the axes' own clip rect, the label just
+        # silently disappears rather than merely looking a little crowded.
+        # Clamping the anchor *and* flipping ha/va to point back inward (not
+        # just clamping the anchor alone) keeps the whole label inside --
+        # otherwise a left-anchored label clamped flush against the right
+        # edge still grows rightward off of it, invisible either way.
+        inset_x, inset_y = 0.01 * span_x, 0.01 * span_y
+        if lx > xmax - inset_x:
+            lx, ha = xmax - inset_x, "right"
+        elif lx < xmin + inset_x:
+            lx, ha = xmin + inset_x, "left"
+        if ly > ymax - inset_y:
+            ly, va = ymax - inset_y, "top"
+        elif ly < ymin + inset_y:
+            ly, va = ymin + inset_y, "bottom"
+        self.text(lx, ly, label, color=key_color, alpha=alpha, ha=ha, va=va,
+                 fontsize=fontsize, zorder=zorder)
+
+    def barbs(self, X, Y, U, V, length=7.0, color=None, alpha=1.0, label=None,
+             zorder=0):
+        """Wind barbs at ``(X, Y)``: a shaft pointing ``(U, V)``'s direction,
+        with flags/full/half ticks near the tip encoding ``hypot(U, V)`` by
+        the usual meteorological convention -- a triangular pennant per 50
+        units of speed, a full tick per 10, a half tick for a remainder
+        ``>= 5`` (speed rounded to the nearest 5 first), and a bare circle
+        for a calm reading under 5.
+
+        Unlike :meth:`quiver`, ``length`` (points, like a marker size) fixes
+        the shaft's *physical* length for every barb the same way regardless
+        of magnitude -- only the ticks near the tip encode speed, matching
+        matplotlib. ``U``/``V`` therefore only set direction here, not shaft
+        length; there is no ``scale=`` to tune.
+        """
+        b = Barbs(X, Y, U, V, length, color=self._resolve_color(color),
+                 label=label, alpha=alpha)
+        b.zorder = zorder
+        self.artists.append(b)
+        return b
+
     def contour(self, *args, levels=8, colors=None, cmap="viridis", vmin=None,
                 vmax=None, label=None, alpha=1.0, zorder=0):
         """Contour lines. ``contour(Z)`` or ``contour(x, y, Z)``.
@@ -1095,6 +1265,39 @@ class Axes:
         img.zorder = zorder
         self.artists.append(img)
         return img
+
+    def clabel(self, CS, levels=None, fmt="%1.3g", fontsize=None, colors=None,
+              inline=True, zorder=6):
+        """Label ``CS`` (the :class:`~plotpress.artists.Contour`
+        :meth:`contour` returned) with each level's own value, placed along
+        its line.
+
+        Unlike matplotlib, this places exactly one label per *level* (at the
+        middle of its longest run of segments), not one per disconnected
+        contour island, and does not break the line to make room for the
+        label -- ``inline`` is accepted for signature compatibility but has
+        no effect here; the label's own contrast halo keeps it legible over
+        the line regardless.
+
+        ``levels`` restricts labeling to a subset of ``CS``'s own levels
+        (default: every level). ``fmt`` is a %-style format string or a
+        callable taking the level value. ``colors`` overrides the label
+        color (default: matches each level's own line color).
+
+        Returns the list of :class:`~plotpress.artists.Text` labels added.
+        """
+        want = set(levels) if levels is not None else None
+        texts = []
+        for lvl, color, segs in CS.line_segments:
+            if (want is not None and lvl not in want) or not segs:
+                continue
+            x0, y0, x1, y1 = segs[len(segs) // 2]
+            x, y = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            text = fmt(lvl) if callable(fmt) else (fmt % lvl)
+            t = self.text(x, y, text, ha="center", va="center", fontsize=fontsize,
+                         color=colors if colors is not None else color, zorder=zorder)
+            texts.append(t)
+        return texts
 
     def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None,
                norm=None, vmin=None, vmax=None, alpha=1.0, zorder=0):
@@ -1295,6 +1498,25 @@ class Axes:
         else:
             self._aspect = float(aspect)
 
+    def get_aspect(self):
+        """The current aspect: ``'auto'``, or the y/x unit ratio (``1.0`` for
+        ``'equal'``)."""
+        return "auto" if self._aspect is None else self._aspect
+
+    def set_box_aspect(self, aspect):
+        """Fix the axes' own physical height/width ratio, independent of the
+        data range -- unlike :meth:`set_aspect`, which shrinks the box to keep
+        one data unit the same size in x and y, this never looks at the data
+        at all. ``None`` (the default) leaves the box filling its allocated
+        space, as normal. The box shrinks and centers within its allocated
+        space to hit the ratio, the same "box-adjust" strategy
+        :meth:`set_aspect` uses.
+        """
+        self._box_aspect = None if aspect is None else float(aspect)
+
+    def get_box_aspect(self):
+        return self._box_aspect
+
     def semilogx(self, *args, **kwargs):
         self.set_xscale("log")
         return self.plot(*args, **kwargs)
@@ -1394,6 +1616,60 @@ class Axes:
         self.artists.append(a)
         return a
 
+    #: loc name -> (which corner of the box anchors, axes-fraction anchor
+    #: point). Only positions *within* the axes box are supported -- unlike
+    #: matplotlib, which can also place a table outside it (e.g. its own
+    #: default, ``loc="bottom"``, sits below the axes entirely); this
+    #: library's axes-fraction rendering is still clipped to the axes rect,
+    #: so pass an explicit ``bbox=`` reaching outside ``[0, 1]`` and it will
+    #: be cut off at the frame instead of extending past it.
+    _TABLE_LOC_ANCHOR = {
+        "center": ("center", "center", 0.5, 0.5),
+        "upper right": ("right", "top", 0.98, 0.98),
+        "upper left": ("left", "top", 0.02, 0.98),
+        "lower left": ("left", "bottom", 0.02, 0.02),
+        "lower right": ("right", "bottom", 0.98, 0.02),
+        "upper center": ("center", "top", 0.5, 0.98), "top": ("center", "top", 0.5, 0.98),
+        "lower center": ("center", "bottom", 0.5, 0.02), "bottom": ("center", "bottom", 0.5, 0.02),
+        "center left": ("left", "center", 0.02, 0.5), "left": ("left", "center", 0.02, 0.5),
+        "center right": ("right", "center", 0.98, 0.5), "right": ("right", "center", 0.98, 0.5),
+    }
+
+    def table(self, cellText, rowLabels=None, colLabels=None, cellColours=None,
+             rowColours=None, colColours=None, loc="center", bbox=None,
+             fontsize=None, alpha=1.0, zorder=6):
+        """A grid of text cells drawn on top of this axes.
+
+        ``cellText`` is a list of rows, each a list of cell strings.
+        ``rowLabels``/``colLabels`` add a labeled header column/row.
+        ``cellColours``/``rowColours``/``colColours`` are matching
+        row-major grids (or single lists for the header row/column) of
+        fill colors, all optional.
+
+        Positioned in axes-fraction space (``loc``, a matplotlib corner/edge
+        name -- see :attr:`_TABLE_LOC_ANCHOR` for the full set -- or an
+        explicit ``bbox=(x0, y0, w, h)``), the same as ``text()``'s own
+        ``transform=ax.transAxes``: it describes a spot on the *axes frame*,
+        not the data, and stays there under a later pan/zoom. Column widths
+        divide the box evenly; there is no per-column ``colWidths=`` sizing
+        by content yet.
+        """
+        n_rows = len(cellText) + (1 if colLabels is not None else 0)
+        n_cols = (len(cellText[0]) if cellText else 0) + (1 if rowLabels is not None else 0)
+        if bbox is None:
+            ha, va, fx, fy = self._TABLE_LOC_ANCHOR.get(loc, self._TABLE_LOC_ANCHOR["center"])
+            w = min(0.9, 0.18 * max(n_cols, 1))
+            h = min(0.9, 0.08 * max(n_rows, 1))
+            x0 = {"left": fx, "center": fx - w / 2, "right": fx - w}[ha]
+            y0 = {"bottom": fy, "center": fy - h / 2, "top": fy - h}[va]
+            bbox = (x0, y0, w, h)
+        t = Table(cellText, rowLabels, colLabels, bbox, cell_colors=cellColours,
+                 row_colors=rowColours, col_colors=colColours, fontsize=fontsize,
+                 alpha=alpha)
+        t.zorder = zorder
+        self.artists.append(t)
+        return t
+
     def set_axis_off(self):
         """Hide the spines, ticks, grid, and axis labels (keep the title)."""
         self._axis_off = True
@@ -1424,6 +1700,34 @@ class Axes:
                 self.set_ylim(ymin, ymax)
         (x0, x1), (y0, y1) = self.get_xlim(), self.get_ylim()
         return (x0, x1, y0, y1)
+
+    def set(self, **kwargs):
+        """Bulk-set several properties in one call, e.g.::
+
+            ax.set(xlim=(0, 10), ylabel="y", title="demo")
+
+        Each keyword ``foo=value`` dispatches to this axes' own
+        ``set_foo(value)`` -- matplotlib's ``Axes.set()`` works the same way,
+        generated from every ``set_*`` method it has. Only covers setters
+        that take a single value (the vast majority: ``xlim``, ``ylim``,
+        ``xlabel``, ``title``, ``xscale``, ``xticks``, ``aspect``,
+        ``box_aspect``, ``facecolor``, ``xmargin``, ``visible``, ... --
+        not the handful of no-argument toggles like ``set_axis_off()``).
+        Raises on any keyword with no matching ``set_*`` method, naming all
+        of them at once rather than stopping at the first.
+        """
+        unknown = []
+        for key, value in kwargs.items():
+            setter = getattr(self, f"set_{key}", None)
+            if setter is None or not callable(setter):
+                unknown.append(key)
+                continue
+            setter(value)
+        if unknown:
+            raise AttributeError(
+                f"Axes.set() got unexpected keyword(s), no set_<name>() "
+                f"method for: {', '.join(sorted(unknown))}")
+        return self
 
     def set_facecolor(self, color):
         """Set this axes' own background color (independent of the figure)."""
@@ -1685,6 +1989,16 @@ class Axes:
         """Set the y data limits (alias of :meth:`set_ylim`)."""
         return self.set_ylim(lower, upper)
 
+    def get_xbound(self):
+        """The resolved x limits, always ``(low, high)`` regardless of
+        ``invert_xaxis()`` -- unlike :meth:`get_xlim`, which reports them in
+        whatever direction they're actually drawn."""
+        return tuple(sorted(self.get_xlim()))
+
+    def get_ybound(self):
+        """The resolved y limits, always ``(low, high)``; see :meth:`get_xbound`."""
+        return tuple(sorted(self.get_ylim()))
+
     def margins(self, m=None, x=None, y=None):
         """Set fractional padding around the autoscaled data (like matplotlib).
 
@@ -1731,22 +2045,50 @@ class Axes:
                 self._ymargin = 0.0
         return self
 
-    def set_xticks(self, ticks, labels=None):
+    def set_autoscalex_on(self, b):
+        """Enable/disable x autoscaling (shorthand for :meth:`autoscale`
+        with ``axis='x'``)."""
+        self.autoscale(enable=bool(b), axis="x")
+
+    def set_autoscaley_on(self, b):
+        """Enable/disable y autoscaling; see :meth:`set_autoscalex_on`."""
+        self.autoscale(enable=bool(b), axis="y")
+
+    def get_autoscalex_on(self):
+        return self._xlim is None
+
+    def get_autoscaley_on(self):
+        return self._ylim is None
+
+    def set_xticks(self, ticks, labels=None, minor=False):
         """Set explicit x tick locations. Pass ``[]`` to hide ticks.
 
         ``labels`` optionally sets the tick label strings in the same call
-        (matplotlib's combined ``set_xticks(ticks, labels)`` form).
+        (matplotlib's combined ``set_xticks(ticks, labels)`` form) -- ignored
+        when ``minor=True``, since minor ticks never carry labels here.
+
+        ``minor=True`` sets *minor* tick positions instead of major ones, and
+        (matching matplotlib) implicitly turns minor ticks on -- the same flag
+        :meth:`minorticks_on` sets -- so they actually get drawn rather than
+        silently sitting unused.
         """
+        if minor:
+            self._xticks_minor = None if ticks is None else np.asarray(ticks, dtype=float)
+            self._minor_ticks_on = True
+            return
         self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
         if labels is not None:
             self.set_xticklabels(labels)
 
-    def set_yticks(self, ticks, labels=None):
+    def set_yticks(self, ticks, labels=None, minor=False):
         """Set explicit y tick locations. Pass ``[]`` to hide ticks.
 
-        ``labels`` optionally sets the tick label strings in the same call
-        (matplotlib's combined ``set_yticks(ticks, labels)`` form).
+        ``labels``/``minor`` match :meth:`set_xticks`.
         """
+        if minor:
+            self._yticks_minor = None if ticks is None else np.asarray(ticks, dtype=float)
+            self._minor_ticks_on = True
+            return
         self._yticks = None if ticks is None else np.asarray(ticks, dtype=float)
         if labels is not None:
             self.set_yticklabels(labels)
@@ -1758,6 +2100,24 @@ class Axes:
     def set_yticklabels(self, labels):
         """Set explicit y tick label strings (pair with :meth:`set_yticks`)."""
         self._yticklabels = None if labels is None else [str(s) for s in labels]
+
+    def get_xticklabels(self):
+        """The x tick label strings that will actually be drawn: explicit
+        ones if set, else the resolved ticks formatted as text -- plain
+        strings rather than matplotlib's ``Text`` objects, matching every
+        other read-only accessor in this class."""
+        from .svg import _resolve_tick_labels
+
+        ticks = self.get_xticks()
+        return _resolve_tick_labels(self._xticklabels, ticks)
+
+    def get_yticklabels(self):
+        """The y tick label strings that will actually be drawn; see
+        :meth:`get_xticklabels`."""
+        from .svg import _resolve_tick_labels
+
+        ticks = self.get_yticks()
+        return _resolve_tick_labels(self._yticklabels, ticks)
 
     def invert_xaxis(self):
         """Reverse the x-axis direction (larger values to the left).
@@ -1778,6 +2138,12 @@ class Axes:
         """
         for ax in (self._sharey_group or [self]):
             ax._yinverted = not ax._yinverted
+
+    def xaxis_inverted(self):
+        return self._xinverted
+
+    def yaxis_inverted(self):
+        return self._yinverted
 
     def sharex(self, other):
         """Link this axes' x-limits/autoscale to ``other``'s, after the fact.
@@ -1869,6 +2235,37 @@ class Axes:
         ax._inset_bounds = tuple(bounds)
         return ax
 
+    def indicate_inset(self, bounds, inset_ax=None, edgecolor="black", alpha=0.5,
+                       linewidth=1.0, zorder=4.5):
+        """Draw a rectangle on this axes marking the data region
+        ``bounds = (x0, y0, width, height)`` -- typically the region an
+        :meth:`inset_axes` zooms into.
+
+        Unlike matplotlib, this does not also draw connector lines from the
+        rectangle's corners to ``inset_ax``'s own corners -- those cross from
+        one axes' own clipped drawing area into another's, a figure-level
+        connection this library has no artist for yet. ``inset_ax`` is
+        accepted (and ignored) only so matplotlib's own call signature still
+        works; the marker rectangle itself is drawn either way.
+        """
+        x0, y0, w, h = bounds
+        return self.plot([x0, x0 + w, x0 + w, x0, x0],
+                         [y0, y0, y0 + h, y0 + h, y0],
+                         color=edgecolor, alpha=alpha, linewidth=linewidth,
+                         zorder=zorder)
+
+    def indicate_inset_zoom(self, inset_ax, edgecolor="black", alpha=0.5,
+                            linewidth=1.0, zorder=4.5):
+        """:meth:`indicate_inset`, with ``bounds`` taken from ``inset_ax``'s
+        own current x/y limits -- the common case of "this inset already
+        shows a zoomed-in view of my data, mark which region that is"."""
+        (x0, x1), (y0, y1) = inset_ax.get_xlim(), inset_ax.get_ylim()
+        x0, x1 = sorted((x0, x1))
+        y0, y1 = sorted((y0, y1))
+        return self.indicate_inset((x0, y0, x1 - x0, y1 - y0), inset_ax=inset_ax,
+                                   edgecolor=edgecolor, alpha=alpha,
+                                   linewidth=linewidth, zorder=zorder)
+
     def set_position(self, pos):
         """Move this axes to an explicit ``(left, bottom, width, height)``
         (figure fractions), opting it out of grid auto-layout: a later
@@ -1939,6 +2336,10 @@ class Axes:
         order given, regardless of their own ``label``. Pair with
         ``labels`` to also override the text shown for each, positionally;
         without it, each handle's own ``label`` is used.
+
+        Returns a :class:`Legend` handle -- also available later via
+        :meth:`get_legend` -- for repositioning/restyling or hiding the
+        legend after the fact without a full ``legend(...)`` call.
         """
         self._show_legend = True
         self._legend_loc = loc
@@ -1952,6 +2353,25 @@ class Axes:
                 for h, lbl in zip(handles, labels):
                     h.label = lbl
         self._legend_handles = handles
+        return self.get_legend()
+
+    def get_legend(self):
+        """The current :class:`Legend`, or ``None`` if :meth:`legend` was
+        never called (or was hidden via ``Legend.remove()``/
+        ``set_visible(False)``)."""
+        return Legend(self) if self._show_legend else None
+
+    def get_legend_handles_labels(self):
+        """``(handles, labels)`` for whatever :meth:`legend` would currently
+        draw -- ``_legend_handles`` (from ``legend(handles=...)``) if set,
+        else every artist on this axes carrying a ``label``, in call order.
+        Mirrors :func:`plotpress.svg._legend_layout`'s own source-selection
+        exactly, so this always answers "what would the legend show right
+        now", not a separate approximation of it.
+        """
+        source = self._legend_handles if self._legend_handles is not None else self.artists
+        handles = [a for a in source if getattr(a, "label", None)]
+        return handles, [h.label for h in handles]
 
     _show_legend = False
     _legend_loc = "upper right"
