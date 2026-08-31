@@ -323,6 +323,15 @@ _JS_SOURCE = r"""
     '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
     'color:#2b5bd7}' +
     '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
+    // Markers are the one exception: a marker's size represents a footprint
+    // on the data (scatter's `s=`, plot's `markersize=`), so a per-axes
+    // rubber-band zoom should grow/shrink it right along with the axis --
+    // unlike a line's stroke width, which stays a constant screen size on
+    // purpose. Without this, a marker sized for the full view stays exactly
+    // that many screen pixels after zooming into a small region and can
+    // swallow the entire (now much smaller) visible axis. Higher-specificity
+    // selector wins over the rule above regardless of source order.
+    '.plotpress-zoom .plotpress-marker path{vector-effect:none}' +
     // Standalone's body centers the figure with flex, which clips (rather
     // than making scrollable) any child that grows past it -- a zoomed-in
     // SVG would be reachable on only one side, never both. Switching to

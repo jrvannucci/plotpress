@@ -934,10 +934,15 @@ def _prim_color(c):
 
 
 def _emit_markers(p) -> str:
-    """Markers as zero-length round-capped strokes -> constant-size dots.
+    """Markers as zero-length round-capped strokes -> circular dots.
 
-    With the zoom group's non-scaling stroke they stay circular and a constant
-    pixel size under per-axes zoom, unlike a scaled ``<circle>``.
+    Tagged ``plotpress-marker`` so the interactive CSS (see _interactive.py)
+    can single them out of the zoom group's usual non-scaling-stroke rule --
+    a marker represents a footprint on the *data*, so it should grow or
+    shrink with a per-axes zoom the same way the axis itself does, unlike a
+    line's stroke width (still constant screen size, deliberately, so a thin
+    line doesn't vanish when zoomed out) or a point-pick pin (its own
+    separate constant-size mechanism -- see layoutPin).
     """
     pts, diam = p.points, p.diameters
     finite = np.isfinite(pts).all(axis=1)
@@ -980,8 +985,8 @@ def _emit_markers(p) -> str:
                 parts.append(
                     f'<path d="{dot(cx, cy)}" fill="none" stroke="{col}" '
                     f'stroke-width="{_fmt(dm)}" stroke-linecap="round"/>')
-    return (f'<g class="plotpress-series"{idattr} data-label="{_esc(p.label)}"{op}>'
-            f'{"".join(parts)}</g>')
+    return (f'<g class="plotpress-series plotpress-marker"{idattr} '
+            f'data-label="{_esc(p.label)}"{op}>{"".join(parts)}</g>')
 
 
 def _emit_prim(p) -> str:

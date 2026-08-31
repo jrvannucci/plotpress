@@ -52,7 +52,7 @@ def test_scatter_emits_constant_size_marker_dots():
     root = _parse(fig.to_svg())
     # Single color/size scatter -> one round-capped marker path with 3 dots.
     g = [e for e in root.iter(NS + "g")
-         if e.get("class") == "plotpress-series"][0]
+         if "plotpress-marker" in (e.get("class") or "").split()][0]
     path = g.find(NS + "path")
     assert path is not None
     assert path.get("stroke-linecap") == "round"

@@ -59,6 +59,20 @@ anywhere in the source.
   `raster.py`'s drawing code for each read only the plain color, silently
   dropping the opacity. `plot(alpha=0.3)` and the like have never actually
   been translucent in a PNG or PDF export before this fix, only in SVG/HTML.
+- **A large marker (`scatter(s=...)`, `plot(markersize=...)`) stayed a
+  constant screen-pixel size across a per-axes rubber-band zoom**, the same
+  `vector-effect:non-scaling-stroke` rule that correctly keeps *line* stroke
+  width constant under that zoom. A marker's size represents a footprint on
+  the data, not a decorative stroke width, so it should scale with the axis
+  the way the data itself does -- left as-is, a marker sized for the full
+  view stayed exactly that many pixels after zooming into a small region and
+  could swallow the entire (now much smaller) visible axis. Marker dots are
+  now tagged `plotpress-marker` and excluded from that rule, so they grow or
+  shrink with a per-axes zoom; line strokes and point-pick pins are
+  unaffected (pins already had their own separate constant-size mechanism).
+  Note this means a non-square zoom box (different x/y zoom factors) now
+  stretches a marker into an ellipse along with the data, the same way a
+  data-space shape would.
 
 ### Fixed
 
