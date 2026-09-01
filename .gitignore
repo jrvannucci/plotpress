@@ -66,3 +66,8 @@ examples/*.pdf
 # Interactive gallery figures, written into _static during the docs build.
 docs/_static/interactive/
 docs/_static/gifs/
+
+# plotly-advanced/'s generated HTML outputs -- large (the 500-subplot one
+# embeds ~800k raw data points plus plotly.js itself), regenerate with the
+# .py scripts in that directory.
+plotly-advanced/*.html
