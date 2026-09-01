@@ -134,6 +134,25 @@ anywhere in the source.
 
 ### Fixed
 
+- **A data-anchored `ax.text()`/`ax.annotate()` label's glyphs (and its
+  `bbox=`, if any) stretched under a per-axes interactive data zoom**,
+  found auditing the marker-scaling fix above for the same regression
+  class: the label sat directly inside the zoom group a data zoom's
+  `matrix(sx,sy,...)` transform scales, so a normal-size label at rest
+  could render many times its own font size after zooming into a small
+  region, or shrink to unreadable after zooming out -- the same bug as the
+  marker one, but the opposite fix. A marker's size represents a footprint
+  *on* the data, so it should scale with the axis; a label exists to be
+  read, so it needs to stay a constant screen size, the way a title, tick
+  label, or point-pick pin already does. Fixed by wrapping the label (and
+  its `bbox=`) in a `plotpress-cscale` group the client JS counter-scales
+  on every zoom -- the same live-recomputation approach pins already use,
+  since a bare CSS trick can't cancel a transform that has not happened
+  yet at render time. `annotate()`'s arrow is deliberately left outside
+  that group (its own geometry should keep tracking the data point it
+  points at), so after a large zoom its leader can end up not quite
+  touching the now constant-size label -- a minor, accepted cosmetic gap
+  next to the alternative of an illegible or gigantic label.
 - **Every stroke-only line in the raster (PNG/PDF) backend ignored
   `alpha` entirely**, discovered while testing the sweep above: `plot()`,
   `step()` (and so `ecdfplot()`), `hlines`/`vlines`/`axhline`/`axvline`/

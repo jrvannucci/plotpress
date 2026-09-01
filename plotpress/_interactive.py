@@ -1021,6 +1021,29 @@ _JS_SOURCE = r"""
     });
   }
 
+  // A data-anchored text()/annotate() label -- svg.py's plotpress-cscale
+  // group, opened around its glyphs (and bbox, if any) with data-x0/data-y0
+  // holding the anchor point zoomAffine() itself already maps correctly.
+  // Composing this group's counter-scale with the zoom{key} group's own
+  // matrix(sx,0,0,sy,...) leaves that anchor point exactly where plain
+  // ancestor scaling already puts it (so it still tracks the data), while
+  // canceling the *local* stretch around it -- the label keeps a constant
+  // screen size instead of growing or shrinking with the zoom level, the
+  // same as a title, tick label, or point-pick pin already does. Unlike a
+  // marker (a footprint *on* the data, deliberately scaling with the axis --
+  // see the marker-scaling fix), a label exists to be read.
+  function relayoutTextCounterScale(key) {
+    var t = zoomAffine(key);
+    document.querySelectorAll('.plotpress-cscale').forEach(function (g) {
+      if (g.dataset.axes !== String(key)) return;
+      var x0 = +g.dataset.x0, y0 = +g.dataset.y0;
+      var isx = t.sx ? 1 / t.sx : 1, isy = t.sy ? 1 / t.sy : 1;
+      g.setAttribute('transform',
+        'translate(' + x0 + ',' + y0 + ') scale(' + isx + ',' + isy + ') ' +
+        'translate(' + (-x0) + ',' + (-y0) + ')');
+    });
+  }
+
   // A twin/secondary axes occupies the exact same pixel rect as its parent,
   // so only one of them is ever the axesAt() hit -- whichever one changed
   // must push its new limits onto the other(s), or the pair visually comes
@@ -1041,14 +1064,14 @@ _JS_SOURCE = r"""
       var pc = CUR[root];
       if (m.twin_shared === 'x') { pc.xmin = rc.xmin; pc.xmax = rc.xmax; }
       else if (m.twin_shared === 'y') { pc.ymin = rc.ymin; pc.ymax = rc.ymax; }
-      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root);
+      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root); relayoutTextCounterScale(root);
       rc = pc;
     } else if (m.secondary_of !== null && m.secondary_of !== undefined &&
               CUR[String(m.secondary_of)]) {
       root = String(m.secondary_of);
       var pc2 = CUR[root];
       pc2.xmin = rc.xmin; pc2.xmax = rc.xmax; pc2.ymin = rc.ymin; pc2.ymax = rc.ymax;
-      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root);
+      applyAxesTransform(root); rebuildTicks(root); relayoutPins(root); relayoutTextCounterScale(root);
       rc = pc2;
     }
     for (var k in META) {
@@ -1057,16 +1080,16 @@ _JS_SOURCE = r"""
       if (String(mo.twin_of) === root) {
         if (mo.twin_shared === 'x') { dst.xmin = rc.xmin; dst.xmax = rc.xmax; }
         else if (mo.twin_shared === 'y') { dst.ymin = rc.ymin; dst.ymax = rc.ymax; }
-        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k);
+        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k); relayoutTextCounterScale(k);
       } else if (String(mo.secondary_of) === root) {
         dst.xmin = rc.xmin; dst.xmax = rc.xmax; dst.ymin = rc.ymin; dst.ymax = rc.ymax;
-        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k);
+        applyAxesTransform(k); rebuildTicks(k); relayoutPins(k); relayoutTextCounterScale(k);
       }
     }
   }
 
   function refreshAxes(key) {
-    applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
+    applyAxesTransform(key); rebuildTicks(key); relayoutPins(key); relayoutTextCounterScale(key);
     syncLinked(key);
   }
   function resetAxesOne(key) {
@@ -1075,6 +1098,7 @@ _JS_SOURCE = r"""
     if (g) g.removeAttribute('transform');
     rebuildTicks(key);
     relayoutPins(key);
+    relayoutTextCounterScale(key);
     // Otherwise double-clicking just the parent of a pan-desynced twin/
     // secondary snaps the parent back but leaves the other one stranded at
     // whatever view it last drifted to.

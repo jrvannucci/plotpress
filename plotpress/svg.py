@@ -895,12 +895,12 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             if artist.axes_fraction:
                 axes_fraction_artists.append(artist)
             else:
-                _render_text(artist, tr, st, body)
+                _render_text(artist, tr, st, body, index=index)
         elif isinstance(artist, Annotation):
             if artist.axes_fraction:
                 axes_fraction_artists.append(artist)
             else:
-                _render_annotation(artist, tr, st, body)
+                _render_annotation(artist, tr, st, body, index=index)
         elif isinstance(artist, Table):
             axes_fraction_artists.append(artist)   # always axes-fraction, like a table() bbox
     body.append("</g>")   # close the zoom group only -- axes-fraction text is next
@@ -1588,11 +1588,38 @@ def _render_table(t: Table, tr, st, body):
                     f'fill="{st.text_color}"{weight}>{_esc(text)}</text>')
 
 
-def _render_text(t: Text, tr, st, body):
+def _cscale_open(index, x, y):
+    """Open a counter-scale group: a data-anchored label's glyphs/box must
+    stay a constant screen size under a per-axes interactive zoom (see
+    _interactive.py's relayoutTextCounterScale) the same way a title, tick
+    label, or point-pick pin already does -- unlike a marker (whose size
+    represents a footprint *on the data*, deliberately scaling with the
+    axis -- see the marker-scaling fix), a text label exists to be read, so
+    its legibility shouldn't depend on how far zoomed in the reader is.
+
+    A bare CSS transform on the label alone can't do this: only *client-side
+    JS*, recomputing the counter-scale on every zoom from the live
+    zoomAffine(), can -- the group starts with no transform (identity) since
+    nothing has zoomed yet at render time. ``(x, y)`` is the anchor JS holds
+    fixed while everything else around it counter-scales; passing the
+    label's own text/box anchor keeps that point pinned exactly where plain
+    ancestor scaling would already put it, so only the *size* around it
+    changes, not its tracked position. Only for a *data*-anchored label
+    (never call this for axes_fraction text -- already immune, being
+    outside the zoom group's scaling entirely).
+    """
+    return (f'<g class="plotpress-cscale" data-axes="{index}" '
+            f'data-x0="{_fmt(x)}" data-y0="{_fmt(y)}">')
+
+
+def _render_text(t: Text, tr, st, body, index=None):
     if t.axes_fraction:
         x, y = _axes_fraction_xy(tr, t.x, t.y)
     else:
         x, y = float(tr.x(t.x)), float(tr.y(t.y))
+    cscale = index is not None and not t.axes_fraction
+    if cscale:
+        body.append(_cscale_open(index, x, y))
     # A boxed label is a "text box" the toolbar's Hide Annotations toggle
     # (see _interactive.py's .plotpress-textbox rule) can hide alongside every
     # pin/annotation -- a plain unboxed label has no comparable "hide the
@@ -1606,9 +1633,11 @@ def _render_text(t: Text, tr, st, body):
                           t.outline, t.alpha, bold=t.bold, italic=t.italic))
     if t.bbox is not None:
         body.append("</g>")
+    if cscale:
+        body.append("</g>")
 
 
-def _render_annotation(an: Annotation, tr, st, body):
+def _render_annotation(an: Annotation, tr, st, body, index=None):
     if an.axes_fraction:
         tx, ty = _axes_fraction_xy(tr, an.xytext[0], an.xytext[1])
     else:
@@ -1617,10 +1646,6 @@ def _render_annotation(an: Annotation, tr, st, body):
                     bold=an.bold, italic=an.italic)
     if an.bbox is not None:
         box = _bbox_pad(box, an.bbox)   # the leader below anchors to this, padded, edge
-        # See _render_text: a boxed callout -- box, arrow, and text together,
-        # since an arrow with no visible label at the end of it reads as a
-        # stray line -- is what Hide Annotations can toggle off.
-        body.append('<g class="plotpress-textbox">')
     if an.arrowprops is not None:
         px, py = float(tr.x(an.xy[0])), float(tr.y(an.xy[1]))
         arrow_color = (an.arrowprops.get("color", an.color)
@@ -1630,6 +1655,11 @@ def _render_annotation(an: Annotation, tr, st, body):
         # Start the leader at the edge of the text (or bbox) nearest the
         # target, not at the text anchor -- from the anchor the line sets off
         # across its own label whenever the target is up and to the left of it.
+        # Left outside the counter-scale group below on purpose: the leader
+        # tracks the *data* point `xy` at one end, which should scale with a
+        # zoom same as any other data-anchored geometry, and matching the box
+        # exactly at the other end after a large zoom is a minor, accepted
+        # cosmetic gap next to the alternative (a giant or unreadable label).
         sx, sy = leader_anchor(box, (px, py))
         ang = math.atan2(py - sy, px - sx)
         hl = 7.0
@@ -1642,11 +1672,19 @@ def _render_annotation(an: Annotation, tr, st, body):
             f'M{_fmt(px)},{_fmt(py)} L{_fmt(h2[0])},{_fmt(h2[1])}" '
             f'fill="none" stroke="{arrow_color}" stroke-width="1.2"{op}/>'
         )
+    cscale = index is not None and not an.axes_fraction
+    if cscale:
+        body.append(_cscale_open(index, tx, ty))
+    # See _render_text: a boxed callout -- box and text together -- is what
+    # Hide Annotations can toggle off.
     if an.bbox is not None:
+        body.append('<g class="plotpress-textbox">')
         body.append(_bbox_svg(box, an.bbox))
     body.append(_text_svg(tx, ty, an.text, an.color, an.size, an.ha, an.va,
                           0.0, an.outline, an.alpha, bold=an.bold, italic=an.italic))
     if an.bbox is not None:
+        body.append("</g>")
+    if cscale:
         body.append("</g>")
 
 

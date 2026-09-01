@@ -1939,6 +1939,87 @@ def test_multiline_text_renders_without_error_in_raster_and_pdf():
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
 
+def test_data_anchored_text_is_wrapped_in_a_counter_scale_group():
+    """Regression: a data-anchored ax.text()/annotate() label sat directly
+    inside the per-axes zoom{index} group, so a client-side data zoom's
+    matrix(sx,sy,...) transform stretched its *glyphs*, not just its
+    position -- a label could render many times its own font size after
+    zooming into a small region, or shrink to unreadable after zooming out.
+    Unlike a marker (a footprint *on* the data, which should scale with the
+    axis -- see the marker-scaling fix), a label exists to be read, so it
+    must stay a constant screen size the way a title/tick label/pin already
+    does. The fix wraps it in a plotpress-cscale group the client JS
+    (_interactive.py's relayoutTextCounterScale) counter-scales on every
+    zoom -- this only checks the group is present with the right anchor
+    data; test_text_counter_scale_survives_a_real_zoom in
+    test_pick_interactive.py proves the actual on-screen size end to end."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.5, 0.5, "hi")
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    g = next(el for el in root.iter(f"{ns}g") if el.get("class") == "plotpress-cscale")
+    assert g.get("data-axes") == "0"
+    assert g.get("data-x0") is not None and g.get("data-y0") is not None
+    # the text element itself must be a descendant of this group
+    assert any(t.text == "hi" for t in g.iter(f"{ns}text"))
+
+
+def test_axes_fraction_text_has_no_counter_scale_group():
+    """transform=ax.transAxes text is already outside the zoom group
+    entirely (see the earlier fix) -- it never needs counter-scaling, since
+    nothing ever stretches it in the first place."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", transform=ax.transAxes)
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    assert not any(el.get("class") == "plotpress-cscale" for el in root.iter(f"{ns}g"))
+
+
+def test_annotate_arrow_is_not_inside_the_counter_scale_group():
+    """The leader/arrowhead must keep tracking the data point xy normally
+    (scaling with a zoom like any other data-anchored geometry) -- only the
+    label (and its bbox, if any) counter-scale. Nesting the arrow inside
+    the counter-scale group too would leave it pointing at the wrong place
+    after a zoom, since its own geometry would stop tracking the data."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.annotate("hi", xy=(0.2, 0.2), xytext=(0.7, 0.7), arrowprops={"color": "red"})
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    parent = {c: p for p in root.iter() for c in p}
+    arrow_path = next(el for el in root.iter(f"{ns}path") if el.get("stroke") == "red")
+    node = arrow_path
+    inside_cscale = False
+    while node in parent:
+        node = parent[node]
+        if node.get("class") == "plotpress-cscale":
+            inside_cscale = True
+            break
+    assert not inside_cscale
+
+
+def test_bbox_is_inside_the_same_counter_scale_group_as_its_text():
+    """The box must counter-scale together with the text it sits behind,
+    or the two would drift apart in size under a zoom."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.text(0.5, 0.5, "hi", bbox={"facecolor": "yellow"})
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    g = next(el for el in root.iter(f"{ns}g") if el.get("class") == "plotpress-cscale")
+    assert any(r.get("fill") == "yellow" for r in g.iter(f"{ns}rect"))
+    assert any(t.text == "hi" for t in g.iter(f"{ns}text"))
+
+
 def test_fontweight_bold_renders_differently_than_normal():
     fig, ax = plotpress.subplots()
     ax.text(0.5, 0.5, "hi", fontweight="bold")

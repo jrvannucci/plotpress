@@ -821,6 +821,43 @@ def test_grid_alpha_override_survives_a_real_zoom(page, tmp_path):
         "grid(alpha=) reverted to the Style default after zoom: %r" % after)
 
 
+def test_text_counter_scale_survives_a_real_zoom(page, tmp_path):
+    """Regression: a data-anchored ax.text() label sat directly inside the
+    per-axes zoom{index} group, so the client's data-zoom matrix(sx,sy,...)
+    transform stretched its *glyphs*, not just its position -- readable as
+    a normal-size label at rest, a blob many times its own font size after
+    zooming into a small region. See the marker-scaling fix for the mirror
+    image of this bug (there, a marker wrongly stayed constant size instead
+    of scaling with the axis -- here, a label wrongly scales instead of
+    staying constant, the same way a title/tick label/pin already does)."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 10.0])
+    ax.text(5.0, 5.0, "label", fontsize=14, bbox={"facecolor": "yellow"})
+    path = tmp_path / "text_counter_scale_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    size_query = (
+        "() => { const el = [...document.querySelectorAll('text')]"
+        ".find(t => t.textContent === 'label'); "
+        "const r = el.getBoundingClientRect(); return [r.width, r.height]; }")
+    before = page.evaluate(size_query)
+    assert before[0] > 0 and before[1] > 0
+
+    x0, y0 = px(fig, 0, 4.0, 4.0)
+    x1, y1 = px(fig, 0, 6.0, 6.0)
+    _box_zoom(page, x0, y0, x1, y1)
+
+    after = page.evaluate(size_query)
+    assert after[0] == pytest.approx(before[0], rel=0.03), (
+        "label width changed after zoom: %.2f -> %.2f" % (before[0], after[0]))
+    assert after[1] == pytest.approx(before[1], rel=0.03), (
+        "label height changed after zoom: %.2f -> %.2f" % (before[1], after[1]))
+
+
 def _px_at_limits(fig, i, dx, dy, xlim, ylim):
     """Like ``pick_cases.px()``, but against an explicit ``(xlim, ylim)``
     instead of the axes' own current limits -- for computing where a datum
