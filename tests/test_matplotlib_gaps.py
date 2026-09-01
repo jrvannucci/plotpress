@@ -2020,6 +2020,32 @@ def test_bbox_is_inside_the_same_counter_scale_group_as_its_text():
     assert any(t.text == "hi" for t in g.iter(f"{ns}text"))
 
 
+def test_pie_is_positioned_outside_the_data_zoom_group():
+    """Regression, found auditing the text counter-scale fix for the same
+    class of bug: pie() draws in axes-*pixel* space (see svg._render_pie)
+    so it stays circular regardless of xlim/ylim -- it has no data-space
+    geometry at all, so a per-axes data zoom's matrix(sx,sy,...) transform
+    (non-uniform sx/sy, in particular) stretched the whole pie into a
+    rectangle instead of leaving it alone. Like table()/transform=
+    ax.transAxes text, it belongs outside the zoom group entirely."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.pie([30, 20, 50])
+    root = ET.fromstring(fig.to_svg())
+    ns = "{http://www.w3.org/2000/svg}"
+    parent = {c: p for p in root.iter() for c in p}
+    wedge = next(el for el in root.iter(f"{ns}path") if el.get("fill") not in (None, "none"))
+    node = wedge
+    inside_zoom = False
+    while node in parent:
+        node = parent[node]
+        if node.get("class") == "plotpress-zoom":
+            inside_zoom = True
+            break
+    assert not inside_zoom
+
+
 def test_fontweight_bold_renders_differently_than_normal():
     fig, ax = plotpress.subplots()
     ax.text(0.5, 0.5, "hi", fontweight="bold")

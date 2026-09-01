@@ -858,6 +858,39 @@ def test_text_counter_scale_survives_a_real_zoom(page, tmp_path):
         "label height changed after zoom: %.2f -> %.2f" % (before[1], after[1]))
 
 
+def test_pie_stays_circular_and_fixed_across_a_real_zoom(page, tmp_path):
+    """Regression, found auditing the text counter-scale fix for the same
+    class of bug: pie() has no data-space geometry (it draws in axes-pixel
+    space so it stays circular regardless of xlim/ylim), so it belongs
+    outside the zoom group entirely -- left inside it, a per-axes data
+    zoom's matrix(sx,sy,...) transform (non-uniform sx/sy especially)
+    stretched the whole pie into a rectangle instead of leaving it alone."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots(figsize=(5, 5))
+    ax.pie([30, 20, 50], labels=["a", "b", "c"])
+    path = tmp_path / "pie_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    wedge_query = (
+        "() => { const p = [...document.querySelectorAll('path')]"
+        ".find(e => e.getAttribute('fill') && e.getAttribute('fill') !== 'none'); "
+        "const r = p.getBoundingClientRect(); return [r.width, r.height]; }")
+    before = page.evaluate(wedge_query)
+
+    x0, y0 = px(fig, 0, -0.5, -0.5)
+    x1, y1 = px(fig, 0, 1.0, 0.2)   # a non-square box -> non-uniform sx/sy
+    _box_zoom(page, x0, y0, x1, y1)
+
+    after = page.evaluate(wedge_query)
+    assert after[0] == pytest.approx(before[0], rel=0.03), (
+        "pie wedge width changed after zoom: %.2f -> %.2f" % (before[0], after[0]))
+    assert after[1] == pytest.approx(before[1], rel=0.03), (
+        "pie wedge height changed after zoom: %.2f -> %.2f" % (before[1], after[1]))
+
+
 def _px_at_limits(fig, i, dx, dy, xlim, ylim):
     """Like ``pick_cases.px()``, but against an explicit ``(xlim, ylim)``
     instead of the axes' own current limits -- for computing where a datum

@@ -878,7 +878,15 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif isinstance(artist, ErrorBar):
             _render_errorbar(artist, tr, st, fig, body)
         elif isinstance(artist, Pie):
-            _render_pie(artist, tr, body)
+            # Drawn in axes-*pixel* space (see _render_pie) so it stays
+            # circular regardless of xlim/ylim -- it has no data-space
+            # geometry to begin with, so it belongs outside the zoom group
+            # entirely, the same as table()/transform=ax.transAxes text.
+            # Left inside it, a per-axes data zoom's matrix(sx,sy,...)
+            # stretched the whole pie into a rectangle instead of leaving it
+            # alone, since non-uniform sx/sy has nothing to do with a pie's
+            # own (data-independent) circular shape.
+            axes_fraction_artists.append(artist)
         elif isinstance(artist, BoxPlot):
             _render_boxplot(artist, tr, st, body)
         elif isinstance(artist, Violin):
@@ -914,6 +922,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             _render_text(artist, tr, st, body)
         elif isinstance(artist, Annotation):
             _render_annotation(artist, tr, st, body)
+        elif isinstance(artist, Pie):
+            _render_pie(artist, tr, body)
         else:
             _render_table(artist, tr, st, body)
     body.append("</g>")   # close the clip group

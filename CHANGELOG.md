@@ -134,6 +134,17 @@ anywhere in the source.
 
 ### Fixed
 
+- **`pie()` distorted into a rectangle under a per-axes interactive data
+  zoom**, found while auditing the text counter-scale fix below for the
+  same class of bug: a pie has no data-space geometry at all -- it draws
+  in axes-*pixel* space specifically so it stays circular regardless of
+  xlim/ylim -- but rendered inside the zoom group anyway, so a data zoom's
+  `matrix(sx,sy,...)` transform (a non-square zoom box especially, giving
+  unequal `sx`/`sy`) stretched the whole pie, wedges and labels together,
+  instead of leaving it alone. Moved outside the zoom group entirely, the
+  same as `table()`/`transform=ax.transAxes` text (its own rendering logic
+  needed no change at all, since it already only ever read the axes' fixed
+  pixel rect, never anything data-dependent).
 - **A data-anchored `ax.text()`/`ax.annotate()` label's glyphs (and its
   `bbox=`, if any) stretched under a per-axes interactive data zoom**,
   found auditing the marker-scaling fix above for the same regression
