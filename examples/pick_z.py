@@ -1,11 +1,11 @@
 """Point picking with values beyond x/y (z and extra dimensions).
 
-Generates an interactive HTML where Point Pick reports:
+Generates an interactive HTML where Point Picking reports:
   * a pcolormesh cell's z value,
   * a scatter point's c (color) value plus an extra 'temp' dimension,
   * a plain line -- only x and y, since extra dimensions are opt-in.
 
-Open pick_z.html, click the "Point Pick" toolbar button, then click points.
+Open pick_z.html, click the "Point Picking" toolbar button, then click points.
 
 Run: python examples/pick_z.py
 """

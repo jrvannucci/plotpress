@@ -148,6 +148,47 @@ anywhere in the source.
 
 ### Fixed
 
+- **A multi-agent audit of the toolbar reorganization and the new layout
+  export/import feature (see Added above) turned up and fixed six real
+  bugs**, plus two documented-but-untested behavior boundaries and a set of
+  stale doc/comment references now covered by new tests and examples:
+  - `linestyle="none"` (matplotlib's "markers only" idiom) silently drew a
+    solid connecting line in `plot()`/`axvline()`/`axhline()`/`axline()`/
+    `hlines()`/`vlines()` -- only `errorbar()`'s own renderer skipped the
+    line for `"none"`. Fixed once, centrally, in `primitives.py`'s
+    `artist_to_prims()` (and mirrored for `plot_frames()`'s separate legacy
+    renderer in both backends) rather than patched per call site.
+  - `Figure.group(pad=<numpy scalar>)` (e.g. `np.int64`, `np.float32`) raised
+    `TypeError: '...' object is not iterable` -- a regression from the
+    plain `float(pad)` coercion `pad`'s single-number case used before this
+    release's `(left, right, top, bottom)` tuple support. `_normalize_pad()`
+    now duck-types on `float(pad)` succeeding instead of an `isinstance`
+    check only genuine Python `int`/`float` passed.
+  - `Figure.group(linestyle=<invalid>)`'s "not a recognized style" warning
+    pointed at a useless location (not the caller's own `group()` line) --
+    `normalize_linestyle()`'s `stacklevel` is now a parameter, since
+    `group()` calls it two frames from user code, not three like every
+    `Axes` plotting method.
+  - `plotpress.subplots_from_layout()` silently dropped any axes placed with
+    a freeform `Figure.add_axes()` rect (no subplot grid cell to recover) --
+    it now warns, naming which axes indices won't come back.
+  - The Annotation tool's `window.prompt()` call, uncaught, could surface as
+    a JS error on every click in an embedding that blocks it (a `Report`
+    entry's `<iframe srcdoc=...>` has an opaque origin, which browsers
+    silently block `alert`/`confirm`/`prompt` from) -- now caught, so it
+    degrades to the same no-op a cancelled prompt already was.
+  - `layout_metadata()` rebuilt the same `id(axes) -> index` map
+    `axes_metadata()` already builds, once per interactive save -- both now
+    accept a shared one instead of independently recomputing it.
+  - New tests cover all of the above, plus the previously-untested
+    boundaries that Reset Figure/Reset Axes leave every pin/annotation
+    untouched (only Clear Points/Clear Annotations/Escape do) and that a
+    pre-removal "Annotate Point" pin restores correctly from an older saved
+    file; stale "Point Pick"/"Annotate Point"/"Annotate Free" references
+    left over from this release's renames were swept from `README.md`,
+    `plotpress/qt.py`, `plotpress/figure.py`, and the `examples/` scripts.
+    New example: `docs/examples/pairwise/plot_15_linestyles.py` now also
+    demonstrates `linestyle="none"`.
 - **`pie()` distorted into a rectangle under a per-axes interactive data
   zoom**, found while auditing the text counter-scale fix below for the
   same class of bug: a pie has no data-space geometry at all -- it draws

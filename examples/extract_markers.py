@@ -3,8 +3,8 @@
 Blocking point-picking session:
   1. Build plots.
   2. fig.show(wait_for_extract=True) opens the window and BLOCKS the kernel.
-  3. Click "Point Pick", click points to drop markers (arrow keys to fine-tune,
-     right-click to delete).
+  3. Click "Point Picking", click points to drop markers (arrow keys to
+     fine-tune, right-click to delete).
   4. Click "Extract" -- the markers are sent to the kernel AND the window closes,
      so the call returns the list of marker dicts for you to use.
 

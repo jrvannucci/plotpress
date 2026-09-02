@@ -1757,11 +1757,11 @@ _JS_SOURCE = r"""
   window.plotpressGetMarkers = getMarkers;   // programmatic access
 
   // For a custom tool (see addTool/plotpressAddTool): the same axes-lookup
-  // + pixel-to-data conversion Point Pick itself uses, minus dropping a
+  // + pixel-to-data conversion Point Picking itself uses, minus dropping a
   // pin -- so a custom onClick can work in real data units, not just the
   // raw SVG-space point it's already handed, without reimplementing the
   // per-axes log-scale/inverted-axis-aware transform. Returns null off any
-  // (pickable) axes, same as a Point Pick click there does nothing.
+  // (pickable) axes, same as a Point Picking click there does nothing.
   window.plotpressToData = function (p) {
     var a = pickableAxesAt(p);
     if (!a) return null;
@@ -2060,10 +2060,12 @@ _JS_SOURCE = r"""
     return best;
   }
 
-  // The same target Point Pick resolves a click to (a point/frame vertex
+  // The same target Point Picking resolves a click to (a point/frame vertex
   // within POINT_THRESHOLD px, else a mesh cell, else a pie wedge, else a
-  // point regardless of distance) -- factored out so "Annotate Point" can
-  // lock a note to exactly what a plain pick would have landed on. Returns
+  // point regardless of distance) -- kept as its own function for the
+  // pick-mode click handler's own readability (it used to also serve the
+  // now-removed "Annotate Point" mode, a second caller wanting the exact
+  // same resolution logic). Returns
   // a steppable anchor ref; ``null`` if there's simply nothing pickable
   // there (the caller may fall back to a geometric readout); or the string
   // ``'blocked'`` for the one case that must produce nothing at all, not a
@@ -2105,7 +2107,16 @@ _JS_SOURCE = r"""
   // and was removed -- Point Picking already covers snapping to a datum.
   function addFreeNote(e) {
     var p = toUser(e);
-    var text = window.prompt('Annotation text:');
+    // A cross-origin-equivalent embedding (an <iframe srcdoc=...>, as
+    // Report.save() uses for every entry) has its own opaque origin, and
+    // browsers silently block alert/confirm/prompt from such a frame --
+    // window.prompt() there can either return null (treated as "cancelled"
+    // below, same as a real one) or throw outright, depending on browser.
+    // Catching it keeps the latter from surfacing as an uncaught error on
+    // every click while this mode is active.
+    var text;
+    try { text = window.prompt('Annotation text:'); }
+    catch (err) { return; }
     if (!text) return;
     var a = axesAt(p);
     var g = addPin(p.x, p.y, text, a ? a.i : undefined);
@@ -2358,10 +2369,15 @@ _JS_SOURCE = r"""
 
   // Escape's own "clear everything" -- the one place that still removes
   // every pin/annotation in one shot, now that Clear Points/Clear
-  // Annotations are each scoped to just one kind.
+  // Annotations are each scoped to just one kind. Composed from those two
+  // rather than a third independent removal loop: every .plotpress-pin is
+  // either an annotation or not, so the pair together is exhaustive, and
+  // selectedPin ends up null either way (whichever of the two actually
+  // held it clears it -- the other is a no-op against an already-cleared
+  // selectedPin).
   function clearAllPins() {
-    selectedPin = null;
-    document.querySelectorAll('.plotpress-pin').forEach(function (p) { p.remove(); });
+    clearPointPins();
+    clearAnnotationPins();
   }
 
   window.addEventListener('keydown', function (e) {

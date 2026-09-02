@@ -272,7 +272,7 @@ def _colorbar_label(ax, fig):
     return ""
 
 
-def axes_metadata(fig):
+def axes_metadata(fig, idx_of=None):
     """Per-axes pixel rect + data limits, for client-side point picking.
 
     Keyed by the axes index (matching the ``s<index>_<k>`` ids on rendered
@@ -287,11 +287,17 @@ def axes_metadata(fig):
     so the toolbar simply does nothing there instead of producing a wrong
     answer. The panel itself still renders fully -- this only affects
     interactivity in the HTML export.
+
+    ``idx_of`` (an ``id(axes) -> index`` map) is accepted rather than always
+    rebuilt -- see :func:`layout_metadata`, which needs the identical map and
+    would otherwise redo this same O(axes) dict build a second time in the
+    same ``to_html()`` call.
     """
     dpi = fig.style.dpi
     W = fig.figsize[0] * dpi
     H = fig.figsize[1] * dpi
-    idx_of = {id(a): i for i, a in enumerate(fig.axes)}
+    if idx_of is None:
+        idx_of = {id(a): i for i, a in enumerate(fig.axes)}
     meta = {}
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar or not ax._visible or ax._is_3d:
@@ -375,22 +381,35 @@ def axes_metadata(fig):
     return meta
 
 
-def layout_metadata(fig):
+def layout_metadata(fig, idx_of=None):
     """Grid shape/position of every subplot-grid axes, plus ``fig.group()``
     boxes -- everything ``load_data()``'s ``"layout"`` needs to rebuild an
     equivalent figure structure with :func:`plotpress.subplots_from_layout`,
     independent of ``axes_metadata()``'s per-axes pixel/style payload above.
 
+    ``idx_of`` (an ``id(axes) -> index`` map) is accepted rather than always
+    rebuilt, so a caller that already has one -- ``to_html()`` builds one for
+    :func:`axes_metadata` moments before calling this -- doesn't pay for the
+    same O(axes) dict twice in the same save.
+
     Only axes placed via :meth:`Figure.add_subplot`/:meth:`Figure.subplots`
-    (``ax._subplotspec is not None``) are included -- a freeform
-    :meth:`Figure.add_axes` rect or a colorbar axes has no grid cell to
-    recover, so it is simply absent from the payload rather than guessed at.
+    (``ax._subplotspec is not None``) end up in ``"axes"`` -- a freeform
+    :meth:`Figure.add_axes` rect has no grid cell to recover, so it is
+    simply absent from the payload rather than guessed at; its index is
+    still recorded in ``"omitted_axes"`` (colorbars excluded -- they were
+    never expected to round-trip) so :func:`plotpress.subplots_from_layout`
+    can warn that a real, once-visible axes won't come back, instead of the
+    drop passing without any signal beyond the payload simply being smaller.
     """
-    idx_of = {id(a): i for i, a in enumerate(fig.axes)}
+    if idx_of is None:
+        idx_of = {id(a): i for i, a in enumerate(fig.axes)}
     axes = {}
+    omitted = []
     for i, ax in enumerate(fig.axes):
         spec = ax._subplotspec
         if spec is None:
+            if not ax._is_colorbar:
+                omitted.append(i)
             continue
         axes[i] = {
             "nrows": spec.nrows, "ncols": spec.ncols,
@@ -411,7 +430,8 @@ def layout_metadata(fig):
         }
         for g in fig._groups
     ]
-    return {"figsize": list(fig.figsize), "axes": axes, "groups": groups}
+    return {"figsize": list(fig.figsize), "axes": axes, "groups": groups,
+           "omitted_axes": omitted}
 
 
 def style_payload(fig):
@@ -1164,15 +1184,22 @@ def _render_frameline(art: FrameLine2D, tr, ai, k, body):
     """Render frame 0 statically; the slider JS rewrites ``d`` for other frames."""
     x0, y0 = art.frame_xy(0)
     d = _line_path_d(tr.xy(x0, y0))
-    dash = _DASH.get(art.linestyle)
-    attrs = (
-        f'fill="none" stroke="{art.color}" stroke-width="{art.linewidth}" '
-        f'stroke-linejoin="round" stroke-linecap="round"'
-    )
-    if dash:
-        attrs += f' stroke-dasharray="{dash}"'
-    if art.alpha < 1:
-        attrs += f' stroke-opacity="{art.alpha}"'
+    # linestyle="none" means invisible, not "no <path> at all" -- unlike
+    # plain plot(), plot_frames() has no marker to fall back to, and the
+    # slider JS needs this element's id to keep existing across every frame
+    # it scrubs to (it rewrites `d` in place, it doesn't recreate the node).
+    if art.linestyle == "none":
+        attrs = 'fill="none" stroke="none"'
+    else:
+        dash = _DASH.get(art.linestyle)
+        attrs = (
+            f'fill="none" stroke="{art.color}" stroke-width="{art.linewidth}" '
+            f'stroke-linejoin="round" stroke-linecap="round"'
+        )
+        if dash:
+            attrs += f' stroke-dasharray="{dash}"'
+        if art.alpha < 1:
+            attrs += f' stroke-opacity="{art.alpha}"'
     label = _esc(art.label) if art.label else ""
     body.append(
         f'<path class="plotpress-series plotpress-frameline" id="s{ai}_{k}" '

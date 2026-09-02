@@ -1,6 +1,7 @@
 """SVG/HTML serialization: well-formedness, structure, and file output."""
 
 import base64
+import inspect
 import json
 import math
 import re
@@ -684,6 +685,50 @@ def test_load_data_layout_omits_axes_without_a_grid_cell(tmp_path):
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
     assert layout["axes"] == {}
     assert layout["groups"] == []
+    assert layout["omitted_axes"] == [0], (
+        "a freeform add_axes() axes has no grid cell to recover -- its "
+        "index must still be recorded, so subplots_from_layout() can warn "
+        "that it won't come back")
+
+
+def test_load_data_layout_does_not_count_a_colorbar_as_omitted(tmp_path):
+    """A colorbar axes is also subplotspec-less, but it was never expected
+    to round-trip through the layout (see axes_metadata()'s own exclusion of
+    colorbars) -- it must not trigger the "an axes could not be recovered"
+    warning the way a genuine freeform add_axes() axes does."""
+    fig, ax = plotpress.subplots()
+    m = ax.pcolormesh(np.zeros((3, 3)))
+    fig.colorbar(m, ax=ax)
+    p = tmp_path / "load_layout_colorbar.html"
+    fig.save(str(p), interactive=True)
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["omitted_axes"] == []
+
+
+def test_subplots_from_layout_warns_about_unrecoverable_freeform_axes(tmp_path):
+    fig = plotpress.Figure()
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax2 = fig.add_axes((0.6, 0.6, 0.3, 0.3))   # freeform inset, no subplotspec
+    ax1.plot([0, 1], [0, 1])
+    ax2.plot([0, 1], [1, 0])
+    p = tmp_path / "omitted_axes_warns.html"
+    fig.save(str(p), interactive=True)
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+
+    with pytest.warns(UserWarning, match="1 axes .* could not be recovered"):
+        fig2, ax2b = plotpress.subplots_from_layout(layout)
+    assert len(fig2.axes) == 1   # only the grid-placed axes comes back
+
+    # The clean-grid case (no freeform axes) must not warn at all.
+    fig3, axes3 = plotpress.subplots(2, 2)
+    for a in axes3.ravel():
+        a.plot([0, 1], [0, 1])
+    p3 = tmp_path / "no_omitted_axes.html"
+    fig3.save(str(p3), interactive=True)
+    layout3 = plotpress.load_data(str(p3))["Figure 1"]["layout"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        plotpress.subplots_from_layout(layout3)   # must not raise/warn
 
 
 def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
@@ -701,7 +746,7 @@ def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
     assert "plotpress-layout" not in stripped   # sanity: the sub actually matched
     p.write_text(stripped, encoding="utf-8")
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
-    assert layout == {"figsize": None, "axes": {}, "groups": []}
+    assert layout == {"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}
 
 
 def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
@@ -1170,6 +1215,68 @@ def test_unrecognized_linestyle_warns_and_falls_back_to_solid():
     path = [p for p in root.findall(f".//{NS}path")
            if p.get("class") == "plotpress-series"][0]
     assert path.get("stroke-dasharray") is None
+
+
+def test_linestyle_none_draws_no_connecting_line_for_plot_and_reference_lines():
+    """Regression: only errorbar()'s own renderer special-cased "none" to
+    skip its connecting line -- plot()/axvline()/axhline()/axline()/hlines()/
+    vlines() all fell through _DASH.get("none") -> None -> a plain solid
+    line, silently ignoring matplotlib's "markers only, no connecting line"
+    idiom. A marker-only plot() must still draw its markers."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], linestyle="none", marker="o")
+    ax.axvline(1, linestyle="none")
+    ax.axhline(1, linestyle="none")
+    ax.axline((0, 0), slope=1, linestyle="none")
+    root = _parse(fig.to_svg())
+    series = [el for el in root.iter()
+             if el.get("class") in ("plotpress-series",
+                                    "plotpress-series plotpress-marker")]
+    assert len(series) == 1, (
+        "only the marker group should remain -- the connecting line and "
+        f"all three reference lines must draw nothing: {series!r}")
+    assert series[0].get("class") == "plotpress-series plotpress-marker"
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.hlines([1, 2], 0, 1, linestyle="none")
+    root2 = _parse(fig2.to_svg())
+    assert not [el for el in root2.iter() if el.get("class") == "plotpress-series"]
+
+    # Sanity: the default (solid) case must still draw its line.
+    fig3, ax3 = plotpress.subplots()
+    ax3.plot([0, 1, 2], [0, 1, 4])
+    root3 = _parse(fig3.to_svg())
+    assert [el for el in root3.iter() if el.get("class") == "plotpress-series"]
+
+
+def test_group_pad_accepts_numpy_scalars():
+    """Regression: _normalize_pad()'s isinstance(pad, (int, float)) check
+    rejected any numpy scalar (np.int64, np.float32, ...) other than
+    np.float64, which happens to subclass Python's own float -- a pad
+    derived from other numpy computation, a realistic case, crashed with
+    "TypeError: '...' object is not iterable" instead of being accepted the
+    same way a plain Python int/float already was."""
+    for pad in (np.int64(10), np.float32(12.5), np.int32(3)):
+        fig, ax = plotpress.subplots()
+        fig.group("t", [ax], pad=pad)   # must not raise
+        assert fig._groups[0]["pad"] == (float(pad),) * 4
+
+
+def test_group_linestyle_warning_points_at_the_callers_own_line():
+    """Regression: normalize_linestyle()'s stacklevel=4 default is tuned for
+    the Axes plotting methods (3 frames below the warning) -- Figure.group()
+    calls it directly, only 2 frames down, so the warning pointed at a
+    useless location (not the caller's own group() line) until group() began
+    passing its own correct stacklevel=3."""
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning) as record:
+        expected_line = inspect.currentframe().f_lineno + 1
+        fig.group("t", [ax], linestyle="bogus")
+    assert len(record) == 1
+    assert record[0].filename == __file__
+    assert record[0].lineno == expected_line, (
+        "the warning must point at this test's own call site, not some "
+        f"unrelated frame: got line {record[0].lineno}, expected {expected_line}")
 
 
 def test_axes_metadata_for_picking():

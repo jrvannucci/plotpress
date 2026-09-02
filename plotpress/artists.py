@@ -34,7 +34,7 @@ _KNOWN_LINESTYLES = (frozenset(("-", "--", ":", "-.")) | frozenset(_LINESTYLE_AL
                     | _NO_LINE_SPELLINGS)
 
 
-def normalize_linestyle(linestyle, who="plot"):
+def normalize_linestyle(linestyle, who="plot", stacklevel=4):
     """Resolve matplotlib's long-form ``linestyle`` aliases to plotpress's
     own short forms (``"dashed"`` -> ``"--"``, etc.), so every backend's own
     ``_DASH.get(linestyle)`` lookup (svg.py, raster.py -- both keyed by short
@@ -47,6 +47,14 @@ def normalize_linestyle(linestyle, who="plot"):
     meaning (measured vs. modeled, censored vs. observed), so quietly
     collapsing every unrecognized value to solid would hide exactly the
     distinction the caller was trying to draw.
+
+    ``stacklevel`` defaults to 4, right for every artist constructor's own
+    call site (warnings.warn -> here -> the artist's __init__ -> the Axes
+    plotting method -> user code). A caller that isn't 3 frames below user
+    code -- ``Figure.group()`` calls this directly, only 2 frames down --
+    must pass its own correct depth, or the warning points at a useless
+    location (this module's own frame, or whatever happens to be 4 frames up)
+    instead of the line the caller actually wants to fix.
     """
     if linestyle in _NO_LINE_SPELLINGS:
         return "none"
@@ -56,7 +64,7 @@ def normalize_linestyle(linestyle, who="plot"):
         f"{who}(linestyle={linestyle!r}) is not a recognized style -- "
         "plotpress draws '-'/'solid', '--'/'dashed', ':'/'dotted', or "
         "'-.'/'dashdot'. This will render as a plain solid line.",
-        UserWarning, stacklevel=4)
+        UserWarning, stacklevel=stacklevel)
     return linestyle
 
 

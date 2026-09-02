@@ -194,15 +194,24 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         subs = _finite_subpaths(tr.xy(x, y))
         if not subs:
             return []
-        prims = [Path(subpaths=subs, stroke=a.color, stroke_width=a.linewidth,
-                     linestyle=a.linestyle, stroke_opacity=a.alpha,
-                     stroke_round=True, series_id=f"s{ai}_{k}", label=lbl)]
+        # linestyle="none" (matplotlib's "markers only" idiom) means no
+        # connecting line at all -- omitting the Path prim here, once, is
+        # what makes every backend honor that, the same way errorbar()'s own
+        # renderers already special-case "none" to skip their line.
+        prims = ([] if a.linestyle == "none" else
+                 [Path(subpaths=subs, stroke=a.color, stroke_width=a.linewidth,
+                      linestyle=a.linestyle, stroke_opacity=a.alpha,
+                      stroke_round=True, series_id=f"s{ai}_{k}", label=lbl)])
         if a.marker:
             # Reuses the exact same constant-pixel-size Markers primitive
             # scatter() already draws with -- a line's own markers are just
             # a dot at each vertex, no new rendering needed in either
-            # backend. No series_id: these are the same points the Path
-            # above already made pickable, not a second series of their own.
+            # backend. Ordinarily no series_id: these are the same points
+            # the Path above already made pickable, not a second series of
+            # their own -- except when linestyle="none" omitted that Path
+            # entirely (markers-only), in which case this Markers prim is
+            # the *only* element for the series and has to carry the id
+            # itself, or nothing in the output identifies it as series k.
             pts = tr.xy(x, y)
             diam = np.full(x.shape, (a.markersize or 6.0) * size_scale, dtype=float)
             face = a.markerfacecolor or a.color
@@ -210,21 +219,32 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
             # colors against points/diameters and silently truncates to
             # whichever is shortest (see ScatterCollection's own [a.color] *
             # a.x.size just above, the same reason it does this).
-            prims.append(Markers(pts, diam, [face] * x.size, single_color=True,
-                                 alpha=a.alpha, label=lbl))
+            prims.append(Markers(
+                pts, diam, [face] * x.size, single_color=True, alpha=a.alpha,
+                label=lbl,
+                series_id=(f"s{ai}_{k}" if a.linestyle == "none" else None)))
         return prims
 
+    # VLine/HLine/AxLine are pure reference lines -- no marker, no other
+    # geometry -- so linestyle="none" leaves genuinely nothing to draw for
+    # any of the three, the same "omit the prim" fix as Line2D above.
     if isinstance(a, VLine):
+        if a.linestyle == "none":
+            return []
         x = float(tr.x(a.x))
         return [Line((x, tr.px_top), (x, tr.px_top + tr.px_h), a.color,
                      a.linewidth, a.linestyle, a.alpha, lbl)]
 
     if isinstance(a, HLine):
+        if a.linestyle == "none":
+            return []
         y = float(tr.y(a.y))
         return [Line((tr.px_left, y), (tr.px_left + tr.px_w, y), a.color,
                      a.linewidth, a.linestyle, a.alpha, lbl)]
 
     if isinstance(a, AxLine):
+        if a.linestyle == "none":
+            return []
         if not np.isfinite(a.slope):
             x = float(tr.x(a.x1))
             p0, p1 = (x, tr.px_top), (x, tr.px_top + tr.px_h)
@@ -261,6 +281,10 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
                      series_id=f"s{ai}_{k}", label=lbl)]
 
     if isinstance(a, LineCollection):
+        # hlines()/vlines()' own bare segments -- linestyle="none" leaves
+        # nothing to draw, same as the reference-line artists above.
+        if a.linestyle == "none":
+            return []
         segs = np.column_stack([
             tr.x(a.segments[:, 0]), tr.y(a.segments[:, 1]),
             tr.x(a.segments[:, 2]), tr.y(a.segments[:, 3]),

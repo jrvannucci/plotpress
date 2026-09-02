@@ -39,9 +39,18 @@ def _normalize_pad(pad):
     (the tight_layout margin reservation in this module, the box geometry in
     svg.py/raster.py) then indexes one side directly instead of each
     re-checking "was this a scalar or a sequence" on its own.
+
+    Duck-typed on ``float(pad)`` succeeding, rather than ``isinstance(pad,
+    (int, float))`` -- a numpy scalar (``np.int64``, ``np.float32``, a 0-d
+    array) satisfies the former but not the latter (only ``np.float64``
+    happens to subclass Python's own ``float``), and a caller deriving pad
+    from other numpy computation is a realistic, not exotic, case.
     """
-    if isinstance(pad, (int, float)):
+    try:
         p = float(pad)
+    except TypeError:
+        pass
+    else:
         return (p, p, p, p)
     pad = tuple(float(v) for v in pad)
     if len(pad) != 4:
@@ -267,7 +276,7 @@ class Figure:
                 f"got {title_position!r}")
         self._groups.append({
             "title": title, "axes": list(axes),
-            "linestyle": normalize_linestyle(linestyle, "group"),
+            "linestyle": normalize_linestyle(linestyle, "group", stacklevel=3),
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
@@ -1051,7 +1060,7 @@ class Figure:
         ``window.plotpressAddTool({label, onClick})`` for an always-on
         action button, or ``{label, mode, onClick, onEnter, onExit,
         cursor}`` for one that joins the same single-selection group as
-        Span/Zoom/Point Pick, called back with ``(event, userSpacePoint)``
+        Axis Span/Axis Zoom/Point Picking, called back with ``(event, userSpacePoint)``
         on a click the built-in modes don't already claim. With
         ``include_default_js=False``, it's the *only* JS this page gets --
         write your own toolbar/interactivity entirely, working from
@@ -1072,7 +1081,8 @@ class Figure:
             pick_dict = pick_data(self, max_points=pick_max_points,
                                   max_mesh_cells=pick_max_mesh_cells,
                                   precision=pick_precision)
-            meta_dict = axes_metadata(self)
+            idx_of = {id(a): i for i, a in enumerate(self.axes)}
+            meta_dict = axes_metadata(self, idx_of=idx_of)
             if binary_pick_data:
                 pick_dict = _encode_binary_arrays(pick_dict, precision=pick_precision)
                 # meta has no long arrays of its own to swap for bytes -- its
@@ -1090,7 +1100,7 @@ class Figure:
             meta = _json_payload(meta_dict)
             pick = _json_payload(pick_dict)
             styl = _json_payload(style_payload(self))
-            layout = _json_payload(layout_metadata(self))
+            layout = _json_payload(layout_metadata(self, idx_of=idx_of))
             payloads = (
                 f'<script type="application/json" id="plotpress-meta">{meta}</script>'
                 f'<script type="application/json" id="plotpress-pick">{pick}</script>'
@@ -1711,14 +1721,33 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
     ``None``). ``style``/``facecolor`` are the same as :class:`Figure`'s own
     constructor -- neither round-trips through ``layout``, since style is a
     figure-authoring choice, not a structural one.
+
+    Warns (``UserWarning``) when ``layout["omitted_axes"]`` is non-empty --
+    axes the source figure placed with a freeform :meth:`Figure.add_axes`
+    rect rather than a subplot grid cell have no recorded position to
+    rebuild from, so they are simply missing from the returned figure; the
+    warning is the only signal of that, since a caller with no other axes
+    count to compare against would otherwise have no way to notice.
     """
+    omitted = layout.get("omitted_axes") or []
+    if omitted:
+        warnings.warn(
+            f"subplots_from_layout(): {len(omitted)} axes from the saved "
+            f"figure (index {omitted}) were placed with a freeform "
+            "Figure.add_axes() rect, not a subplot grid cell, and could not "
+            "be recovered -- they are simply absent from the rebuilt figure.",
+            UserWarning, stacklevel=2)
     fig = Figure(figsize=figsize or tuple(layout.get("figsize") or (6.4, 4.8)),
                 style=style, facecolor=facecolor)
     axes_specs = layout.get("axes") or {}
     order = sorted(axes_specs, key=int)
+    # Each spec is looked up from `order` several times below (grid-shape
+    # checks, the fill loop) -- fetched once here into a plain list aligned
+    # with `order`, rather than re-indexing the dict by (already-int) key
+    # over and over.
+    specs = [axes_specs[i] for i in order]
     by_index = {}
-    for i in order:
-        spec = axes_specs[i]
+    for i, spec in zip(order, specs):
         ss = SubplotSpec(spec["nrows"], spec["ncols"], spec["row0"], spec["row1"],
                          spec["col0"], spec["col1"])
         by_index[int(i)] = fig.add_subplot(ss, projection=spec.get("projection"))
@@ -1733,15 +1762,13 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
                      fontsize=g.get("fontsize"))
 
     ordered = [by_index[int(i)] for i in order]
-    same_shape = len({(axes_specs[i]["nrows"], axes_specs[i]["ncols"]) for i in order}) == 1
-    single_cell = all(axes_specs[i]["row0"] == axes_specs[i]["row1"]
-                      and axes_specs[i]["col0"] == axes_specs[i]["col1"] for i in order)
+    same_shape = len({(s["nrows"], s["ncols"]) for s in specs}) == 1
+    single_cell = all(s["row0"] == s["row1"] and s["col0"] == s["col1"] for s in specs)
     if ordered and same_shape and single_cell:
-        nrows, ncols = axes_specs[order[0]]["nrows"], axes_specs[order[0]]["ncols"]
+        nrows, ncols = specs[0]["nrows"], specs[0]["ncols"]
         if len(ordered) == nrows * ncols:
             grid = np.empty((nrows, ncols), dtype=object)
-            for i in order:
-                s = axes_specs[i]
+            for i, s in zip(order, specs):
                 grid[s["row0"], s["col0"]] = by_index[int(i)]
             if nrows == 1 and ncols == 1:
                 return fig, grid[0, 0]
@@ -2092,7 +2119,7 @@ def _load_layout(text):
     """
     raw = _extract_json_block(text, "plotpress-layout")
     if raw is None:
-        return {"figsize": None, "axes": {}, "groups": []}
+        return {"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}
     return {**raw, "axes": {int(k): v for k, v in raw["axes"].items()}}
 
 

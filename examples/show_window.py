@@ -1,8 +1,9 @@
 """Standalone native window demo -- no browser involved.
 
 ``fig.show()`` opens a native OS window (via pywebview / WebView2 on Windows)
-hosting the same interactive SVG: the corner toolbar (Span / Zoom / Point Pick /
-Reset) all work here too. Close the window to end the program.
+hosting the same interactive SVG: the corner toolbar (Axis Span / Axis Zoom /
+Point Picking / Reset Figure / Reset All Axes) all work here too. Close the
+window to end the program.
 
 Run: python examples/show_window.py
 """

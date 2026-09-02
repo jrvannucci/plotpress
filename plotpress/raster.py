@@ -432,6 +432,11 @@ def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit=
     if isinstance(artist, FrameLine2D):
         # Only the unit being animated steps through its frames; a FrameLine2D
         # under any other slider unit stays on frame 0, same as static output.
+        # linestyle="none" -- nothing to draw, and unlike the SVG backend a
+        # static bitmap has no persistent element id a later frame needs to
+        # find, so it's safe to just skip the draw call outright.
+        if artist.linestyle == "none":
+            return
         f = frame if artist.slider_unit == animate_unit else 0
         f = min(f, artist.n_frames - 1)
         x0, y0 = artist.frame_xy(f)

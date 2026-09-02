@@ -1469,6 +1469,161 @@ def _click_mode(page, mode_label, ux, uy, prompt_text=None):
         [mode_label, ux, uy])
 
 
+def test_reset_figure_and_reset_axes_do_not_clear_pins(page, tmp_path):
+    """The old single "Reset" button used to also clear every pin/annotation;
+    the split Reset Figure/Reset Axes deliberately does neither -- a view
+    reset repositions a pin (it already tracks pan/zoom live), it doesn't
+    delete it. Clear Points/Clear Annotations are the only things that do."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "reset_keeps_pins.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    assert len(markers) == 1
+    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0),
+                          prompt_text="stays put")
+    assert len(markers) == 2
+
+    # Zoom the whole figure (Figure Navigator) and one axes' data range
+    # (Axis Zoom's rubber-band), so both Reset buttons have something real
+    # to undo.
+    page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Figure Navigator') b.click();
+          });
+          const r = svg.getBoundingClientRect();
+          svg.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true,
+            clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, deltaY: -300}));
+        }""")
+    _box_zoom(page, *px(fig, 0, 0.5, 2.0), *px(fig, 0, 2.5, 8.0))
+
+    _click_toolbar(page, "Reset Figure")
+    after_reset_figure = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after_reset_figure) == 2, (
+        "Reset Figure must not clear pins/annotations: %r" % after_reset_figure)
+
+    _click_toolbar(page, "Reset All Axes")
+    after_reset_axes = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after_reset_axes) == 2, (
+        "Reset All Axes must not clear pins/annotations: %r" % after_reset_axes)
+
+
+def test_clear_points_and_clear_annotations_are_independently_scoped(page, tmp_path):
+    """Clear Points removes only Point Picking pins, leaving Annotation notes
+    untouched, and vice versa for Clear Annotations -- the split that
+    replaced the old combined Clear button."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "clear_split.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0),
+                          prompt_text="a note")
+    assert len(markers) == 2
+
+    # A plain Point Picking pin's record has no "text" key at all (only an
+    # annotation's does -- see markerRecord()), so .get("text", "") is the
+    # same "missing means not an annotation" check the save/restore
+    # round-trip test above already relies on.
+    _click_toolbar(page, "Clear Points")
+    after_clear_points = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after_clear_points) == 1, (
+        "Clear Points must remove only the Point Picking pin: %r" % after_clear_points)
+    assert after_clear_points[0].get("text", "") == "a note", (
+        "the surviving marker must be the Annotation note, not the pin: %r"
+        % after_clear_points)
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 0.0, 0.0))
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 2
+
+    _click_toolbar(page, "Clear Annotations")
+    after_clear_annotations = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after_clear_annotations) == 1, (
+        "Clear Annotations must remove only the Annotation note: %r"
+        % after_clear_annotations)
+    assert after_clear_annotations[0].get("text", "") != "a note", (
+        "the surviving marker must be the Point Picking pin, not the "
+        "annotation: %r" % after_clear_annotations)
+
+
+def test_legacy_annotate_point_pin_restores_from_an_older_saved_file(page, tmp_path):
+    """Backward compatibility: an HTML file saved by a plotpress version old
+    enough to still have the since-removed "Annotate Point" tool can carry a
+    pin with a locked-in custom label in its saved-state payload. Reopening
+    it today must still restore that pin's custom text and its
+    .plotpress-note tagging (so Clear Annotations, not Clear Points, is what
+    would remove it) -- the only remaining exerciser of addAnchoredPin()'s
+    ``text`` parameter and its restore-time .plotpress-note tagging now that
+    no live toolbar button drives that path directly."""
+    import json
+
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    html = fig.to_html(interactive=True)
+
+    # A real anchored pin's dataset (kind/axes/series/ptype/index) is the
+    # part that's genuinely hard to hand-author correctly -- captured from an
+    # actual Point Picking click on a fresh load of the same figure, then
+    # reused below with a customLabel added, exactly what addAnchoredPin()
+    # used to set when the old "Annotate Point" tool called it with text.
+    scratch_path = tmp_path / "legacy_scratch.html"
+    scratch_path.write_text(html, encoding="utf-8")
+    page.goto(scratch_path.as_uri())
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    pin_data = page.evaluate(
+        """() => { const d = document.querySelector('.plotpress-pin').dataset;
+                    const out = {}; for (const k in d) out[k] = d[k]; return out; }""")
+    assert pin_data.get("kind"), "fixture pin must be a real anchored pin"
+
+    pin_data["customLabel"] = "legacy note"
+    saved_state = {
+        "zoomScale": 1, "scrollX": 0, "scrollY": 0, "axes": {},
+        "pins": [{"data": pin_data, "note": True, "selected": False,
+                 "text": "legacy note"}],
+        "annotationsHidden": False, "hiddenLegendLabels": [],
+    }
+    # Matches buildSaveHTML()'s own placement: the saved-state script tag as
+    # the first child of <body>, so it exists in the DOM before the toolbar
+    # script (later in body) runs and looks for it.
+    legacy_html = html.replace(
+        "<body>",
+        '<body><script type="application/json" id="plotpress-saved-state">'
+        + json.dumps(saved_state) + "</script>",
+        1)
+    legacy_path = tmp_path / "legacy_annotate_point.html"
+    legacy_path.write_text(legacy_html, encoding="utf-8")
+
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(legacy_path.as_uri())
+    assert not errors, "JS error restoring a legacy saved pin: %s" % errors
+
+    restored = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(restored) == 1
+    assert restored[0]["text"] == "legacy note"
+    assert page.eval_on_selector(
+        ".plotpress-pin", "el => el.classList.contains('plotpress-note')"), (
+        "a restored legacy Annotate Point pin must still be tagged "
+        ".plotpress-note, or Clear Points (not Clear Annotations) would "
+        "wrongly remove it")
+
+
 
 
 
@@ -1478,8 +1633,8 @@ def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
     each frame's rendered PNG (for redraw) -- never its raw z grid -- and
     pick_data() only ever handles a plain (non-frame) QuadMesh, so a
     pcolormesh_frames() axes had no pick data anywhere, at any frame. Point
-    Pick and Annotate Point silently produced no marker at all on one,
-    however precisely a click landed on a cell."""
+    Picking (and the since-removed Annotate Point) silently produced no
+    marker at all on one, however precisely a click landed on a cell."""
     import numpy as np
     import plotpress
     from pick_cases import px
