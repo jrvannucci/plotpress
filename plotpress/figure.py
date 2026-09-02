@@ -19,7 +19,7 @@ import warnings
 
 import numpy as np
 
-from .artists import normalize_bbox
+from .artists import normalize_bbox, normalize_linestyle
 from .axes import Axes
 from .axes3d import Axes3D
 from .polar import PolarAxes
@@ -266,7 +266,8 @@ class Figure:
                 "title_position must be 'top', 'bottom', 'left', or 'right', "
                 f"got {title_position!r}")
         self._groups.append({
-            "title": title, "axes": list(axes), "linestyle": linestyle,
+            "title": title, "axes": list(axes),
+            "linestyle": normalize_linestyle(linestyle, "group"),
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,

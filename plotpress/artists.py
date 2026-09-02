@@ -9,9 +9,55 @@ vectorized NumPy rendering pass. All rendering logic lives in
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from .colors import apply_colormap, get_cmap, resolve_norm
+
+# The four dash patterns every backend's own _DASH table (svg.py, raster.py)
+# actually knows how to draw, keyed by matplotlib's short form -- the long
+# form is also valid matplotlib input and has to resolve to the exact same
+# pattern, not a second, independently-drawn style.
+_LINESTYLE_ALIASES = {
+    "solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-.",
+}
+# matplotlib's several spellings for "no connecting line at all" (used with
+# marker= to show only the markers) -- distinct from the four dash patterns
+# above, and already meaningful downstream: errorbar()'s own SVG/raster
+# rendering specifically checks `linestyle != "none"` to skip drawing the
+# connecting line. All of these have to resolve to that exact lowercase
+# string, or a caller's `linestyle="None"`/`""`/`" "` would silently draw a
+# solid connecting line they explicitly asked to not have.
+_NO_LINE_SPELLINGS = frozenset(("none", "None", "", " "))
+_KNOWN_LINESTYLES = (frozenset(("-", "--", ":", "-.")) | frozenset(_LINESTYLE_ALIASES)
+                    | _NO_LINE_SPELLINGS)
+
+
+def normalize_linestyle(linestyle, who="plot"):
+    """Resolve matplotlib's long-form ``linestyle`` aliases to plotpress's
+    own short forms (``"dashed"`` -> ``"--"``, etc.), so every backend's own
+    ``_DASH.get(linestyle)`` lookup (svg.py, raster.py -- both keyed by short
+    form only) actually finds the pattern instead of silently missing it and
+    falling back to a solid line with nothing on the figure to reveal the
+    mismatch. An unrecognized value is left as-is but warned about, the same
+    "accept it, don't crash, but don't stay silent" choice
+    :func:`plotpress.axes._warn_marker_shape` makes for an unsupported
+    marker shape -- line style, like marker shape, often carries real
+    meaning (measured vs. modeled, censored vs. observed), so quietly
+    collapsing every unrecognized value to solid would hide exactly the
+    distinction the caller was trying to draw.
+    """
+    if linestyle in _NO_LINE_SPELLINGS:
+        return "none"
+    if linestyle in _KNOWN_LINESTYLES:
+        return _LINESTYLE_ALIASES.get(linestyle, linestyle)
+    warnings.warn(
+        f"{who}(linestyle={linestyle!r}) is not a recognized style -- "
+        "plotpress draws '-'/'solid', '--'/'dashed', ':'/'dotted', or "
+        "'-.'/'dashdot'. This will render as a plain solid line.",
+        UserWarning, stacklevel=4)
+    return linestyle
 
 
 class Artist:
@@ -50,7 +96,7 @@ class Line2D(Artist):
         self.y = np.asarray(y, dtype=float)
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "plot")
         self.label = label
         self.alpha = alpha
         # Extra per-point dimensions (name -> array) surfaced by point picking,
@@ -84,7 +130,7 @@ class FrameLine2D(Artist):
         self.X = np.asarray(X, dtype=float)
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "plot_frames")
         self.label = label
         self.alpha = alpha
         self.n_frames = self.Y.shape[0]
@@ -111,7 +157,7 @@ class VLine(Artist):
         self.x = float(x)
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "axvline")
         self.label = label
         self.alpha = alpha
 
@@ -132,7 +178,7 @@ class AxLine(Artist):
         self.slope = slope
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "axline")
         self.label = label
         self.alpha = alpha
 
@@ -150,7 +196,7 @@ class HLine(Artist):
         self.y = float(y)
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "axhline")
         self.label = label
         self.alpha = alpha
 
@@ -761,7 +807,7 @@ class LineCollection(Artist):
         self.segments = np.asarray(segments, float).reshape(-1, 4)
         self.color = color
         self.linewidth = linewidth
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "hlines/vlines")
         self.label = label
         self.alpha = alpha
 
@@ -858,7 +904,7 @@ class ErrorBar(Artist):
         self.marker = marker
         self.markersize = markersize
         self.capsize = capsize
-        self.linestyle = linestyle
+        self.linestyle = normalize_linestyle(linestyle, "errorbar")
         self.linewidth = linewidth
         self.label = label
         self.alpha = alpha

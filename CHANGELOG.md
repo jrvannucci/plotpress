@@ -1228,6 +1228,24 @@ anywhere in the source.
   the side carrying the title. See the new
   `docs/examples/grouping/plot_11_unequal_padding.py`.
 
+### Fixed
+
+- **`linestyle=` silently drew a solid line for matplotlib's long-form
+  style names.** `plot()`/`hlines()`/`vlines()`/`errorbar()`/`axhline()`/
+  `axvline()`/`axline()`/`Figure.group()` all accept `linestyle="--"` short
+  form, but matplotlib's equally valid `"dashed"`/`"dotted"`/`"dashdot"`/
+  `"solid"` aliases missed both backends' own dash-pattern lookup table
+  (keyed by short form only) and silently fell back to a plain solid
+  line -- no error, no warning, nothing on the figure to reveal the
+  requested style was ignored. Now resolved to the identical dash pattern
+  the short form draws. An unrecognized value beyond these (a typo, say)
+  now warns instead of silently drawing solid, the same "accept it, don't
+  crash, but don't stay silent" choice already made for an unsupported
+  marker shape. matplotlib's several spellings for "no connecting line at
+  all" (`"none"`/`"None"`/`""`/`" "`, used with `marker=` to show only the
+  markers) are unaffected -- still resolve the same way they already did.
+  New example: `docs/examples/pairwise/plot_15_linestyles.py`.
+
 ## [0.1.0] - 2026-07-26
 
 First public release.

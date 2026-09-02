@@ -977,6 +977,68 @@ def test_axvline_is_dashed_and_full_height():
     assert vlines, "expected a dashed vertical line"
 
 
+def test_linestyle_accepts_matplotlib_long_form_aliases():
+    """Regression: plotpress's own _DASH tables (svg.py/raster.py) are keyed
+    by the short form only ('--', ':', '-.') -- matplotlib's equally valid
+    long-form spellings ('dashed', 'dotted', 'dashdot') missed that lookup
+    entirely and silently rendered as a plain solid line, with nothing on
+    the figure to reveal that the requested style was ignored."""
+    fig, ax = plotpress.subplots()
+    x = [0, 1, 2, 3]
+    short = ax.plot(x, [0, 1, 0, 1], linestyle="--")
+    long = ax.plot(x, [1, 2, 1, 2], linestyle="dashed")
+    assert short.linestyle == long.linestyle == "--"
+
+    root = _parse(fig.to_svg())
+    paths = [p for p in root.findall(f".//{NS}path")
+            if p.get("class") == "plotpress-series"]
+    assert len(paths) == 2
+    assert all(p.get("stroke-dasharray") == "6,4" for p in paths), (
+        "the long-form 'dashed' alias must draw the identical dash pattern "
+        "the short-form '--' does, not a silent solid line")
+
+
+def test_linestyle_none_spellings_hide_the_errorbar_connecting_line():
+    """matplotlib accepts several spellings of "no connecting line at all"
+    (used with marker= to show only the markers) -- 'none', 'None', '', and
+    ' ' must all resolve the same way, not just the one errorbar()'s own
+    rendering happens to check for verbatim."""
+    for spelling in ("none", "None", "", " "):
+        fig, ax = plotpress.subplots()
+        eb = ax.errorbar([0, 1, 2], [0, 1, 0], yerr=0.1, linestyle=spelling)
+        assert eb.linestyle == "none"
+        root = _parse(fig.to_svg())
+        # No connecting-line <path> for this series -- only marker/errorbar
+        # geometry -- confirms the renderer actually skipped drawing it,
+        # not just that the artist's own attribute looks right.
+        paths = [p for p in root.findall(f".//{NS}path")
+                if p.get("class") == "plotpress-series"]
+        assert not paths, f"linestyle={spelling!r} must draw no connecting line"
+
+
+def test_linestyle_alias_renders_in_both_backends():
+    """The alias normalization happens once, at artist construction -- both
+    svg.py and raster.py read the already-canonical .linestyle off the same
+    artist, so this only needs to confirm the raster path doesn't error on
+    it, not re-derive the dash pattern a second time."""
+    from plotpress import raster
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 0], linestyle="dashed")
+    assert raster.figure_to_image(fig, scale=1) is not None
+
+
+def test_unrecognized_linestyle_warns_and_falls_back_to_solid():
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning, match="not a recognized style"):
+        line = ax.plot([0, 1], [0, 1], linestyle="squiggly")
+    assert line.linestyle == "squiggly"   # left as-is, not silently rewritten
+    root = _parse(fig.to_svg())
+    path = [p for p in root.findall(f".//{NS}path")
+           if p.get("class") == "plotpress-series"][0]
+    assert path.get("stroke-dasharray") is None
+
+
 def test_axes_metadata_for_picking():
     from plotpress.svg import axes_metadata
 
