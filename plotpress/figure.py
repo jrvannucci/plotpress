@@ -44,8 +44,16 @@ def _normalize_pad(pad):
     (int, float))`` -- a numpy scalar (``np.int64``, ``np.float32``, a 0-d
     array) satisfies the former but not the latter (only ``np.float64``
     happens to subclass Python's own ``float``), and a caller deriving pad
-    from other numpy computation is a realistic, not exotic, case.
+    from other numpy computation is a realistic, not exotic, case. Strings
+    are excluded up front despite ``float()`` accepting one: ``"5"`` would
+    otherwise silently take the single-number branch instead of raising --
+    a caller error (pad built from a config/CLI value that came through as
+    text) worth surfacing clearly, not coercing quietly.
     """
+    if isinstance(pad, (str, bytes)):
+        raise TypeError(
+            f"pad must be a number or a 4-item (left, right, top, bottom) "
+            f"sequence, not a string: {pad!r}")
     try:
         p = float(pad)
     except TypeError:
@@ -1727,7 +1735,10 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
     rect rather than a subplot grid cell have no recorded position to
     rebuild from, so they are simply missing from the returned figure; the
     warning is the only signal of that, since a caller with no other axes
-    count to compare against would otherwise have no way to notice.
+    count to compare against would otherwise have no way to notice. A
+    separate warning names any :meth:`Figure.group` whose own box lost a
+    member to that same drop -- the group is still created around whichever
+    of its axes did come back, just smaller than the original.
     """
     omitted = layout.get("omitted_axes") or []
     if omitted:
@@ -1754,6 +1765,19 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
 
     for g in layout.get("groups") or []:
         members = [by_index[int(i)] for i in g["axes"] if int(i) in by_index]
+        # n_members (the group's ORIGINAL size, before layout_metadata()
+        # filtered out members it already knew were unrecoverable) is what
+        # tells apart a group that lost one of its own axes -- the
+        # top-level omitted_axes warning above only says *an* axes was
+        # dropped, never which group that broke.
+        n_original = g.get("n_members", len(g["axes"]))
+        if members and len(members) < n_original:
+            warnings.warn(
+                f"subplots_from_layout(): group {g['title']!r} had "
+                f"{n_original} axes in the saved figure but only "
+                f"{len(members)} could be recovered -- the rebuilt group "
+                "box wraps fewer axes than the original.",
+                UserWarning, stacklevel=2)
         if members:
             fig.group(g["title"], members, linestyle=g.get("linestyle", "--"),
                      color=g.get("color", "black"), linewidth=g.get("linewidth", 1.5),
@@ -2177,17 +2201,22 @@ def load_data(path: str, by_index: bool = False):
          "axes": {index: {"nrows": int, "ncols": int, "row0": int, "row1": int,
                           "col0": int, "col1": int,
                           "projection": "polar" | "3d" | None}, ...},
-         "groups": [{"title": str, "axes": [index, ...], "linestyle": str,
-                     "color": str, "linewidth": float,
+         "groups": [{"title": str, "axes": [index, ...], "n_members": int,
+                     "linestyle": str, "color": str, "linewidth": float,
                      "title_position": str, "pad": [l, r, t, b],
-                     "fontsize": float | None}, ...]}
+                     "fontsize": float | None}, ...],
+         "omitted_axes": [index, ...]}
 
     Pass ``"layout"`` straight to :func:`subplots_from_layout` to recreate
     the source figure's grid and groups before replotting recovered data
     into it -- see :doc:`/auto_examples/data_roundtrip/index`. Axes placed
     with a freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar
-    axes are absent from ``"axes"``, and a file saved before this key
-    existed loads as ``{"figsize": None, "axes": {}, "groups": []}``.
+    axes are absent from ``"axes"`` -- their indices are listed in
+    ``"omitted_axes"`` instead -- and a group's own ``"n_members"`` is its
+    *original* member count, before any unrecoverable member was filtered
+    out of its ``"axes"`` list, so a caller can tell a group that lost one
+    apart from one that didn't. A file saved before this key existed loads
+    as ``{"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}``.
 
     Title keys are convenient but not guaranteed unique -- two figures (or
     two axes within one figure) sharing the same title collide, and the

@@ -232,12 +232,18 @@ def _render_groups(fig, W, H, body):
         y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad_t
         x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad_r
         y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad_b
-        dash = _DASH.get(g["linestyle"])
-        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+        # linestyle="none" means an invisible box (title only, still placed
+        # the same) -- like every other line-drawing method, not a solid
+        # border because "none" fell through _DASH.get() unmatched.
+        if g["linestyle"] == "none":
+            stroke_attr = 'stroke="none"'
+        else:
+            dash = _DASH.get(g["linestyle"])
+            dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+            stroke_attr = f'stroke="{g["color"]}" stroke-width="{g["linewidth"]}"{dash_attr}'
         body.append(
             f'<rect x="{_fmt(x0)}" y="{_fmt(y0)}" width="{_fmt(x1 - x0)}" '
-            f'height="{_fmt(y1 - y0)}" fill="none" stroke="{g["color"]}" '
-            f'stroke-width="{g["linewidth"]}"{dash_attr}/>'
+            f'height="{_fmt(y1 - y0)}" fill="none" {stroke_attr}/>'
         )
         size = g["fontsize"] or fig.style.title_size
         pos = g["title_position"]
@@ -423,7 +429,17 @@ def layout_metadata(fig, idx_of=None):
     groups = [
         {
             "title": g["title"],
-            "axes": [idx_of[id(a)] for a in g["axes"] if id(a) in idx_of],
+            # Only members that are themselves recoverable (present in
+            # `axes` above) -- a freeform add_axes() member is real
+            # (`id(a) in idx_of`) but has no grid cell of its own, the same
+            # reason it's absent from `axes`; leaving it in here would have
+            # `subplots_from_layout()` try to look it up among axes it was
+            # never going to rebuild. `n_members` -- the ORIGINAL count,
+            # before this filter -- is what lets that function tell a
+            # group apart that lost a member from one that didn't.
+            "axes": [idx_of[id(a)] for a in g["axes"]
+                    if id(a) in idx_of and idx_of[id(a)] in axes],
+            "n_members": len(g["axes"]),
             "linestyle": g["linestyle"], "color": g["color"],
             "linewidth": g["linewidth"], "title_position": g["title_position"],
             "pad": list(g["pad"]), "fontsize": g["fontsize"],

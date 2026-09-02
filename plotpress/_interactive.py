@@ -2113,10 +2113,22 @@ _JS_SOURCE = r"""
     // window.prompt() there can either return null (treated as "cancelled"
     // below, same as a real one) or throw outright, depending on browser.
     // Catching it keeps the latter from surfacing as an uncaught error on
-    // every click while this mode is active.
+    // every click while this mode is active -- console.warn (once, not per
+    // click) gives a developer debugging "Annotation does nothing here" an
+    // actual lead, since the click itself otherwise looks identical to a
+    // user simply cancelling the prompt.
     var text;
     try { text = window.prompt('Annotation text:'); }
-    catch (err) { return; }
+    catch (err) {
+      if (!addFreeNote._warned) {
+        addFreeNote._warned = true;
+        console.warn('plotpress: window.prompt() is blocked in this frame '
+          + '(a cross-origin-equivalent embedding, e.g. Report.save()\'s '
+          + '<iframe srcdoc>) -- the Annotation tool cannot ask for text '
+          + 'here and will do nothing when clicked.');
+      }
+      return;
+    }
     if (!text) return;
     var a = axesAt(p);
     var g = addPin(p.x, p.y, text, a ? a.i : undefined);

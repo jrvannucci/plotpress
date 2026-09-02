@@ -189,6 +189,27 @@ anywhere in the source.
     `plotpress/qt.py`, `plotpress/figure.py`, and the `examples/` scripts.
     New example: `docs/examples/pairwise/plot_15_linestyles.py` now also
     demonstrates `linestyle="none"`.
+- **A follow-up re-audit of the fixes directly above caught four more real
+  issues** (three left by the fixes themselves, one a genuine regression in
+  one of them), all now covered by new tests:
+  - `Figure.group(linestyle="none")` still drew a solid box border -- the
+    exact bug class just fixed everywhere else, left open on the one artist
+    (`Figure.group`'s own box) whose `normalize_linestyle()` call site the
+    prior fix pass happened to edit for its `stacklevel` without touching
+    its rendering.
+  - `_normalize_pad("5")` (a numeric-looking *string*) silently succeeded
+    as `(5.0, 5.0, 5.0, 5.0)` instead of raising -- a real regression from
+    duck-typing on `float(pad)` succeeding, since `float()` accepts strings
+    too; strings are now rejected explicitly before the duck-typing check.
+  - `subplots_from_layout()`'s `omitted_axes` warning said *an* axes was
+    dropped but never named which `Figure.group()` box that broke -- a
+    group spanning a freeform `add_axes()` axes and a grid-placed one lost
+    the freeform member with no group-specific signal. A new warning names
+    the group and how many of its original members came back.
+  - The Annotation tool's blocked-`window.prompt()` catch (above) degraded
+    to a totally silent no-op, indistinguishable from a user cancelling --
+    it now also `console.warn`s once, so a developer debugging "Annotation
+    does nothing here" has a lead.
 - **`pie()` distorted into a rectangle under a per-axes interactive data
   zoom**, found while auditing the text counter-scale fix below for the
   same class of bug: a pie has no data-space geometry at all -- it draws

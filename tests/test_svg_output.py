@@ -670,7 +670,7 @@ def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
         "projection": None,
     }
     assert layout["groups"] == [{
-        "title": "Top row", "axes": [0, 1, 2], "linestyle": "--",
+        "title": "Top row", "axes": [0, 1, 2], "n_members": 3, "linestyle": "--",
         "color": "black", "linewidth": 1.5, "title_position": "bottom",
         "pad": [4.0, 4.0, 12.0, 4.0], "fontsize": None,
     }]
@@ -1277,6 +1277,79 @@ def test_group_linestyle_warning_points_at_the_callers_own_line():
     assert record[0].lineno == expected_line, (
         "the warning must point at this test's own call site, not some "
         f"unrelated frame: got line {record[0].lineno}, expected {expected_line}")
+
+
+def test_group_pad_rejects_a_string_despite_float_accepting_one():
+    """Regression in the fix above: duck-typing on float(pad) succeeding
+    means float("5") -- a caller error, pad built from a config/CLI value
+    that came through as text -- would otherwise silently take the
+    single-number branch instead of raising, masking the mistake instead of
+    surfacing it the way the pre-numpy-scalar-fix isinstance check did."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(TypeError, match="not a string"):
+        fig.group("t", [ax], pad="5")
+
+
+def test_group_linestyle_none_draws_no_box_border():
+    """Regression: Figure.group()'s own box border fell through the same
+    _DASH.get(linestyle) gap plot()/axvline()/etc. did before their fix --
+    "none" isn't a key in _DASH, so it silently drew a solid border instead
+    of none at all, in both backends."""
+    fig, axes = plotpress.subplots(1, 2)
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    fig.group("t", list(axes), linestyle="none")
+    root = _parse(fig.to_svg())
+    group_rect = [r for r in root.findall(f".//{NS}rect")
+                 if r.get("fill") == "none" and "stroke-width" not in r.attrib]
+    assert group_rect and group_rect[0].get("stroke") == "none"
+
+    from plotpress import raster
+    assert raster.figure_to_image(fig, scale=1) is not None   # must not error
+
+    # Sanity: the default (dashed) case must still draw a real border.
+    fig2, axes2 = plotpress.subplots(1, 2)
+    for ax in axes2:
+        ax.plot([0, 1], [0, 1])
+    fig2.group("t2", list(axes2))
+    root2 = _parse(fig2.to_svg())
+    group_rect2 = [r for r in root2.findall(f".//{NS}rect")
+                  if r.get("stroke") == "black"]
+    assert group_rect2 and group_rect2[0].get("stroke-dasharray") == "6,4"
+
+
+def test_subplots_from_layout_warns_when_a_group_loses_a_member(tmp_path):
+    """Regression: the top-level omitted_axes warning says *an* axes was
+    dropped but never *which group* that broke -- a group spanning a
+    freeform add_axes() axes and a grid-placed one silently lost the
+    freeform member with no group-specific signal."""
+    fig = plotpress.Figure()
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax2 = fig.add_axes((0.6, 0.6, 0.3, 0.3))   # freeform, no subplotspec
+    ax1.plot([0, 1], [0, 1])
+    ax2.plot([0, 1], [1, 0])
+    fig.group("Mixed", [ax1, ax2])
+    p = tmp_path / "group_loses_member.html"
+    fig.save(str(p), interactive=True)
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["groups"][0]["n_members"] == 2
+    assert layout["groups"][0]["axes"] == [0]   # the freeform member already filtered out
+
+    with pytest.warns(UserWarning, match="'Mixed' had 2 axes .* only 1 could be recovered"):
+        fig2, _ = plotpress.subplots_from_layout(layout)
+    assert len(fig2._groups[0]["axes"]) == 1
+
+    # Sanity: a group that lost nothing must not trigger this warning.
+    fig3, axes3 = plotpress.subplots(1, 2)
+    for a in axes3:
+        a.plot([0, 1], [0, 1])
+    fig3.group("Clean", list(axes3))
+    p3 = tmp_path / "group_clean.html"
+    fig3.save(str(p3), interactive=True)
+    layout3 = plotpress.load_data(str(p3))["Figure 1"]["layout"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        plotpress.subplots_from_layout(layout3)   # must not warn/raise
 
 
 def test_axes_metadata_for_picking():

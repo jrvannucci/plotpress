@@ -1245,10 +1245,14 @@ def _raster_groups(fig, W, H, S, draw):
         x1 = max(r[0] + r[2] + e[3] * S for r, e in zip(rects, extras)) + pad_r
         y1 = max(r[1] + r[3] + e[1] * S for r, e in zip(rects, extras)) + pad_b
         pts = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
-        dash = _DASH.get(g["linestyle"])
-        dash_scaled = tuple(d * S for d in dash) if dash else None
-        _polyline(draw, pts, _rgb(g["color"]),
-                 max(1, int(round(g["linewidth"] * S))), dash_scaled)
+        # linestyle="none" -- an invisible box (title only), same as every
+        # other line-drawing method, not a solid border falling through
+        # _DASH.get() unmatched.
+        if g["linestyle"] != "none":
+            dash = _DASH.get(g["linestyle"])
+            dash_scaled = tuple(d * S for d in dash) if dash else None
+            _polyline(draw, pts, _rgb(g["color"]),
+                     max(1, int(round(g["linewidth"] * S))), dash_scaled)
         size = (g["fontsize"] or fig.style.title_size) * S
         font = _font(size, fig.style.font_family, bold=True)
         color = _rgb(g["color"])

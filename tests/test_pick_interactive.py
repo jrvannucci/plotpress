@@ -1624,6 +1624,48 @@ def test_legacy_annotate_point_pin_restores_from_an_older_saved_file(page, tmp_p
         "wrongly remove it")
 
 
+def test_annotation_click_warns_once_when_prompt_is_blocked(page, tmp_path):
+    """A blocked/throwing window.prompt() (the real behavior of a
+    cross-origin-equivalent embedding, e.g. Report.save()'s <iframe
+    srcdoc>) must not surface as an uncaught JS error, but a developer
+    debugging "Annotation does nothing" still needs a lead -- a single
+    console.warn, not silence indistinguishable from a cancelled prompt."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "prompt_blocked.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # Simulate the blocked-dialog environment directly, rather than relying
+    # on an actual cross-origin iframe (which Playwright's own automation
+    # can't easily force one way or the other): a real blocked prompt()
+    # throws or returns null depending on browser -- throwing is the
+    # stricter case this test exercises.
+    page.evaluate("() => { window.prompt = () => { throw new Error('blocked'); }; }")
+
+    warnings_seen = []
+    page.on("console", lambda m: warnings_seen.append(m.text) if m.type == "warning" else None)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    _click_toolbar(page, "Annotation")
+    box = page.eval_on_selector(
+        "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y}; }")
+    page.mouse.click(box["x"] + 20, box["y"] + 20)
+    page.mouse.click(box["x"] + 40, box["y"] + 40)   # a second click: still no duplicate error
+
+    assert not errors, "a blocked prompt() must not surface as an uncaught JS error: %s" % errors
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 0, (
+        "a blocked prompt() must add no note, the same as a cancelled one")
+    assert any("prompt" in w and "blocked" in w.lower() or "Annotation" in w
+              for w in warnings_seen), (
+        "a developer debugging a non-functional Annotation tool needs a "
+        "console signal: %r" % warnings_seen)
+    assert len(warnings_seen) == 1, (
+        "the warning must fire once, not once per click: %r" % warnings_seen)
 
 
 
