@@ -21,7 +21,9 @@ by row/column position, never by name).
 This example loads a saved grid back this way, computes each panel's
 deviation from the grid-wide mean field -- one broadcast subtraction
 across all 30 panels at once -- and replots the *whole* grid of anomalies,
-titled straight from what ``load_data_xarray()`` recovered.
+titled straight from what ``load_data_xarray()`` recovered. A small
+before/after figure in the middle pictures that same transformation on
+one panel, with an arrow from the original field to its anomaly.
 """
 import os
 import tempfile
@@ -56,6 +58,28 @@ print(ds)
 # dicts has no native way to express at all. `anomaly` keeps the full
 # (row, col, y, x) shape, so it can be replotted panel-for-panel below.
 anomaly = ds["z"] - ds["z"].mean(dim=("row", "col"))
+
+# ---------------------------------------------------------------------------
+# Picture the transformation on one panel before replotting the whole grid
+# below: panel (0, 0)'s own field on the left, its anomaly (the exact same
+# subtraction applied to and replotted for every panel) on the right, an
+# arrow between them standing in for "load_data_xarray() -> subtract the
+# grid-wide mean".
+# ---------------------------------------------------------------------------
+fig_arrow, (ax_before, ax_arrow, ax_after) = plotpress.subplots(1, 3, figsize=(11, 3.2))
+ax_before.pcolormesh(ds["x"].values, ds["y"].values, ds["z"].values[0, 0],
+                     cmap="viridis", vmin=-1, vmax=1)
+ax_before.set_title(f"before: {ds['title'].values[0, 0]}", fontsize=9)
+
+ax_arrow.set_xlim(0, 1); ax_arrow.set_ylim(0, 1)
+ax_arrow.set_axis_off()
+ax_arrow.annotate("", xy=(0.92, 0.5), xytext=(0.08, 0.5), arrowprops={"color": "#555"})
+ax_arrow.text(0.5, 0.72, "subtract the\ngrid-wide mean", ha="center", fontsize=9, color="#555")
+
+ax_after.pcolormesh(ds["x"].values, ds["y"].values, anomaly.values[0, 0],
+                    cmap="RdBu_r", vmin=-0.3, vmax=0.3)
+ax_after.set_title("after: anomaly", fontsize=9)
+fig_arrow.tight_layout()
 
 # Replot: rebuild the same 5x6 grid and draw each panel's anomaly straight
 # from the xarray Dataset -- ds["title"] hands each panel's own title back,

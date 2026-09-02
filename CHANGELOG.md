@@ -43,8 +43,10 @@ anywhere in the source.
   mismatched shapes -- pointing at `load_data()` as the fallback. New
   examples covering both supported panel kinds, each loading the saved
   grid back, running a bulk xarray analysis across every panel at once
-  (a per-panel deviation-from-grid-mean / mean-centering), and replotting
-  the whole analyzed grid straight from the `Dataset`:
+  (a per-panel deviation-from-grid-mean / mean-centering), picturing that
+  same transformation on one panel as an explicit before/after pair joined
+  by an arrow, and replotting the whole analyzed grid straight from the
+  `Dataset`:
   `docs/examples/data_roundtrip/plot_05_reload_as_xarray.py` (mesh grid)
   and `plot_06_reload_line_grid_as_xarray.py` (line-series grid).
 

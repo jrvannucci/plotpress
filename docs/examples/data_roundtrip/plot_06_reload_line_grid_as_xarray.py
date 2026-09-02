@@ -16,7 +16,9 @@ bank of channel recordings saved earlier, with none of the code that built
 them still around. This example loads it back, mean-centers every
 channel's trace in one broadcast subtraction, and replots the *whole*
 grid of centered traces, titled straight from what ``load_data_xarray()``
-recovered.
+recovered. A small before/after figure in the middle pictures that same
+transformation on one channel, with an arrow from its original trace to
+its centered one.
 """
 import os
 import tempfile
@@ -53,6 +55,26 @@ print(ds)
 # `centered` keeps the full (row, col, point) shape, so it can be
 # replotted channel-for-channel below.
 centered = ds["y"] - ds["y"].mean(dim="point")
+
+# ---------------------------------------------------------------------------
+# Picture the transformation on one channel before replotting the whole
+# grid below: channel (0, 0)'s own trace on the left, its centered version
+# (the exact same subtraction applied to and replotted for every channel)
+# on the right, an arrow between them standing in for "load_data_xarray()
+# -> subtract the channel's own mean".
+# ---------------------------------------------------------------------------
+fig_arrow, (ax_before, ax_arrow, ax_after) = plotpress.subplots(1, 3, figsize=(11, 3.2))
+ax_before.plot(ds["point"].values, ds["y"].values[0, 0], color="C0")
+ax_before.set_title(f"before: {ds['title'].values[0, 0]}", fontsize=9)
+
+ax_arrow.set_xlim(0, 1); ax_arrow.set_ylim(0, 1)
+ax_arrow.set_axis_off()
+ax_arrow.annotate("", xy=(0.92, 0.5), xytext=(0.08, 0.5), arrowprops={"color": "#555"})
+ax_arrow.text(0.5, 0.72, "subtract the\nchannel's own mean", ha="center", fontsize=9, color="#555")
+
+ax_after.plot(ds["point"].values, centered.values[0, 0], color="C3")
+ax_after.set_title("after: centered", fontsize=9)
+fig_arrow.tight_layout()
 
 # Replot: rebuild the same 3x4 grid and draw each channel's centered trace
 # straight from the xarray Dataset -- ds["title"] hands each channel's own
