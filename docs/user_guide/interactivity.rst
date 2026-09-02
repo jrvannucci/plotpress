@@ -269,9 +269,13 @@ plus a plain action button).
 **Replacing the interactivity entirely** (``include_default_js=False``):
 drops plotpress's own toolbar/pan/zoom/pick JS from the page altogether --
 ``extra_js`` becomes the *only* interactivity this page gets, built from the
-raw ``#plotpress-meta``/``#plotpress-pick``/``#plotpress-style`` JSON
-payloads (still emitted, since ``interactive=True``) and ``#plotpress-svg``
-directly, rather than extending what plotpress already provides.
+raw ``#plotpress-meta``/``#plotpress-pick``/``#plotpress-style``/
+``#plotpress-layout`` JSON payloads (still emitted, since
+``interactive=True``) and ``#plotpress-svg`` directly, rather than extending
+what plotpress already provides. ``#plotpress-layout`` (grid shape/position
+of every subplot-grid axes, plus any ``Figure.group()`` boxes) is read by
+Python's own ``load_data()``/``subplots_from_layout()`` round trip, not by
+the bundled client JS -- no toolbar tool reads it back out of the page.
 ``binary_pick_data=False`` is worth pairing with this: the default packs
 long numeric arrays as base64 float16/32 for size, which needs plotpress's
 own decoder -- exactly what dropping the built-in JS is turning off.

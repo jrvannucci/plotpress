@@ -34,6 +34,7 @@ import importlib
 _LAZY_ATTRS = {
     "Figure": (".figure", "Figure"),
     "subplots": (".figure", "subplots"),
+    "subplots_from_layout": (".figure", "subplots_from_layout"),
     "Report": (".figure", "Report"),
     "load_data": (".figure", "load_data"),
     "Style": (".style", "Style"),
@@ -89,6 +90,7 @@ __version__ = _detect_version()
 __all__ = [
     "Figure",
     "subplots",
+    "subplots_from_layout",
     "Report",
     "load_data",
     "Style",

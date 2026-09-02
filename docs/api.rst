@@ -10,6 +10,7 @@ Top level
 
    Figure
    subplots
+   subplots_from_layout
    Report
    load_data
    Style
@@ -25,6 +26,8 @@ Figure
    :undoc-members:
 
 .. autofunction:: plotpress.subplots
+
+.. autofunction:: plotpress.subplots_from_layout
 
 Report
 ------

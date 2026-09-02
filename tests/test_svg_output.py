@@ -652,6 +652,139 @@ def test_load_data_raises_on_static_html(tmp_path):
         plotpress.load_data(str(p))
 
 
+def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
+    fig, axes = plotpress.subplots(2, 3, figsize=(9.0, 6.0))
+    for i, ax in enumerate(np.asarray(axes).ravel()):
+        ax.plot([0.0, 1.0], [float(i), float(i) + 1.0])
+    fig.group("Top row", [axes[0, 0], axes[0, 1], axes[0, 2]],
+             pad=(4.0, 4.0, 12.0, 4.0), title_position="bottom")
+    p = tmp_path / "load_layout.html"
+    fig.save(str(p), interactive=True)
+
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["figsize"] == [9.0, 6.0]
+    assert set(layout["axes"]) == {0, 1, 2, 3, 4, 5}
+    assert layout["axes"][0] == {
+        "nrows": 2, "ncols": 3, "row0": 0, "row1": 0, "col0": 0, "col1": 0,
+        "projection": None,
+    }
+    assert layout["groups"] == [{
+        "title": "Top row", "axes": [0, 1, 2], "linestyle": "--",
+        "color": "black", "linewidth": 1.5, "title_position": "bottom",
+        "pad": [4.0, 4.0, 12.0, 4.0], "fontsize": None,
+    }]
+
+
+def test_load_data_layout_omits_axes_without_a_grid_cell(tmp_path):
+    fig = plotpress.Figure()
+    ax = fig.add_axes((0.1, 0.1, 0.8, 0.8))   # freeform rect, no subplotspec
+    ax.plot([0, 1], [0, 1])
+    p = tmp_path / "load_layout_freeform.html"
+    fig.save(str(p), interactive=True)
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["axes"] == {}
+    assert layout["groups"] == []
+
+
+def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
+    """A file saved before the plotpress-layout block existed has no such
+    script tag -- load_data() must still return the documented shape rather
+    than raising."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    p = tmp_path / "load_layout_missing.html"
+    fig.save(str(p), interactive=True)
+    text = p.read_text(encoding="utf-8")
+    stripped = re.sub(
+        r'<script type="application/json" id="plotpress-layout">.*?</script>',
+        "", text, flags=re.DOTALL)
+    assert "plotpress-layout" not in stripped   # sanity: the sub actually matched
+    p.write_text(stripped, encoding="utf-8")
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout == {"figsize": None, "axes": {}, "groups": []}
+
+
+def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
+    fig, axes = plotpress.subplots(2, 3, figsize=(9.0, 6.0))
+    for i, ax in enumerate(np.asarray(axes).ravel()):
+        ax.plot([0.0, 1.0], [float(i), float(i) + 1.0])
+        ax.set_title(f"panel {i}")
+    fig.group("Top row", [axes[0, 0], axes[0, 1], axes[0, 2]])
+    p = tmp_path / "roundtrip.html"
+    fig.save(str(p), interactive=True)
+    entry = plotpress.load_data(str(p))["Figure 1"]
+
+    fig2, axes2 = plotpress.subplots_from_layout(entry["layout"])
+    assert fig2.figsize == (9.0, 6.0)
+    assert isinstance(axes2, np.ndarray) and axes2.shape == (2, 3)
+    assert len(fig2._groups) == 1
+    assert fig2._groups[0]["title"] == "Top row"
+    assert [ax is axes2[0, c] for c, ax in enumerate(fig2._groups[0]["axes"])] == [True] * 3
+
+    # Recovered data replots straight into the rebuilt grid, matched by the
+    # same per-panel title both sides already carry.
+    axes_data = entry["axes"]
+    for i, ax in enumerate(axes2.ravel()):
+        s = axes_data[f"panel {i}"]["series"][0]
+        ax.plot(s["x"], s["y"], color="C1")
+    assert fig2.to_svg()   # renders without error
+
+
+def test_subplots_from_layout_single_axes_squeezes_like_subplots():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    layout = {"figsize": [6.4, 4.8],
+             "axes": {0: {"nrows": 1, "ncols": 1, "row0": 0, "row1": 0,
+                          "col0": 0, "col1": 0, "projection": None}},
+             "groups": []}
+    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    assert ax2 is not None and not isinstance(ax2, (list, np.ndarray))
+
+
+def test_subplots_from_layout_falls_back_to_a_flat_list_for_spans():
+    fig = plotpress.Figure(figsize=(8.0, 6.0))
+    gs = fig.add_gridspec(2, 2)
+    fig.add_subplot(gs[0, :])
+    fig.add_subplot(gs[1, 0])
+    fig.add_subplot(gs[1, 1])
+    layout = {
+        "figsize": [8.0, 6.0],
+        "axes": {
+            0: {"nrows": 2, "ncols": 2, "row0": 0, "row1": 0, "col0": 0, "col1": 1,
+               "projection": None},
+            1: {"nrows": 2, "ncols": 2, "row0": 1, "row1": 1, "col0": 0, "col1": 0,
+               "projection": None},
+            2: {"nrows": 2, "ncols": 2, "row0": 1, "row1": 1, "col0": 1, "col1": 1,
+               "projection": None},
+        },
+        "groups": [],
+    }
+    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    assert isinstance(axes2, list) and len(axes2) == 3
+
+
+def test_subplots_from_layout_empty_layout_returns_an_empty_figure():
+    fig, axes = plotpress.subplots_from_layout(
+        {"figsize": None, "axes": {}, "groups": []})
+    assert fig.axes == [] and axes == []
+
+
+def test_subplots_from_layout_recreates_polar_and_3d_projections(tmp_path):
+    fig = plotpress.Figure()
+    fig.add_subplot(1, 2, 1, projection="polar")
+    fig.add_subplot(1, 2, 2, projection="3d")
+    p = tmp_path / "layout_projections.html"
+    fig.save(str(p), interactive=True)
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["axes"][0]["projection"] == "polar"
+    assert layout["axes"][1]["projection"] == "3d"
+    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    from plotpress.polar import PolarAxes
+    from plotpress.axes3d import Axes3D
+    assert isinstance(axes2[0], PolarAxes)
+    assert isinstance(axes2[1], Axes3D)
+
+
 def test_save_png(tmp_path):
     pytest.importorskip("PIL")
     fig, ax = plotpress.subplots()

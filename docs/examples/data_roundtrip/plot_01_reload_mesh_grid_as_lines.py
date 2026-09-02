@@ -20,6 +20,12 @@ panel's mesh as a 2-D ``z`` array plus its own 1-D ``x``/``y`` cell-center
 coordinates, so slicing a fixed row out of ``z`` and pairing it with ``x``
 is exactly the ``(x, y)`` pair ``ax.plot()`` expects -- no re-deriving the
 grid from the mesh's edges or extent by hand.
+
+The destination figure also no longer needs to hand-know it was a 5x6
+grid: ``load_data()``'s ``"layout"`` entry carries the source figure's grid
+shape (and any :meth:`plotpress.Figure.group` boxes), and
+:func:`plotpress.subplots_from_layout` rebuilds an equivalent, empty figure
+from it -- ready to replot the recovered data into.
 """
 import os
 import tempfile
@@ -52,15 +58,18 @@ source_path = _build_source_html()
 data = plotpress.load_data(source_path)
 # A bare (non-Report) figure has no report-level title of its own, so it
 # falls back to the same "Figure N" label a Report page would show it under.
-axes_data = data["Figure 1"]["axes"]    # keyed by each panel's own title
+fig_entry = data["Figure 1"]
+axes_data = fig_entry["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # Slice every panel's mesh along x at the same fixed row -- one 1-D line per
-# panel, in the same 5x6 layout the source figure used.
+# panel, replotted into a *rebuilt* 5x6 grid: subplots_from_layout() reads
+# the source figure's own grid shape back out of fig_entry["layout"], so
+# nothing here has to already know it was 5x6.
 # ---------------------------------------------------------------------------
 ROW = 5   # a fixed y index, the same across every panel
 
-fig, axes = plotpress.subplots(5, 6, figsize=(16, 9))
+fig, axes = plotpress.subplots_from_layout(fig_entry["layout"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     ax.plot(mesh["x"], mesh["z"][ROW, :], color="C0")

@@ -11,7 +11,10 @@ new mesh in the same grid layout.
 As in that example, the source figure is built and saved here only to have
 a self-contained file to load back from -- ``load_data()`` doesn't care
 whether the file it's reading was written a moment ago or came from an
-entirely separate run.
+entirely separate run. The destination grid is rebuilt from
+``load_data()``'s own ``"layout"`` entry via
+:func:`plotpress.subplots_from_layout`, rather than the caller having to
+already know it was a 5x6 grid.
 """
 import os
 import tempfile
@@ -42,13 +45,16 @@ source_path = _build_source_html()
 data = plotpress.load_data(source_path)
 # A bare (non-Report) figure has no report-level title of its own, so it
 # falls back to the same "Figure N" label a Report page would show it under.
-axes_data = data["Figure 1"]["axes"]    # keyed by each panel's own title
+fig_entry = data["Figure 1"]
+axes_data = fig_entry["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # 2-D FFT every panel's mesh, replotting the (log-scaled, zero-frequency
-# centered) magnitude spectrum as a new mesh in the same 5x6 layout.
+# centered) magnitude spectrum as a new mesh in a rebuilt copy of the same
+# 5x6 layout -- subplots_from_layout() reads the grid shape back out of
+# fig_entry["layout"] instead of it being hand-typed here.
 # ---------------------------------------------------------------------------
-fig, axes = plotpress.subplots(5, 6, figsize=(16, 9))
+fig, axes = plotpress.subplots_from_layout(fig_entry["layout"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(mesh["z"])))

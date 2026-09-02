@@ -1065,7 +1065,9 @@ class Figure:
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
         script = ""
         if interactive:
-            from .svg import axes_metadata, frame_data, pick_data, style_payload
+            from .svg import (
+                axes_metadata, frame_data, layout_metadata, pick_data, style_payload,
+            )
 
             pick_dict = pick_data(self, max_points=pick_max_points,
                                   max_mesh_cells=pick_max_mesh_cells,
@@ -1088,10 +1090,12 @@ class Figure:
             meta = _json_payload(meta_dict)
             pick = _json_payload(pick_dict)
             styl = _json_payload(style_payload(self))
+            layout = _json_payload(layout_metadata(self))
             payloads = (
                 f'<script type="application/json" id="plotpress-meta">{meta}</script>'
                 f'<script type="application/json" id="plotpress-pick">{pick}</script>'
                 f'<script type="application/json" id="plotpress-style">{styl}</script>'
+                f'<script type="application/json" id="plotpress-layout">{layout}</script>'
             )
             if self._sliders:
                 frames_dict = frame_data(self, max_mesh_cells=pick_max_mesh_cells)
@@ -1683,6 +1687,70 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     return fig, axes
 
 
+def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=None):
+    """Rebuild a figure with the exact axes grid and :meth:`Figure.group`
+    boxes recorded in a ``load_data()`` ``"layout"`` dict.
+
+    Lets recovered data (:func:`load_data`'s ``"series"``/``"meshes"``/
+    ``"pies"``) be replotted into a figure structurally identical to the one
+    it came from, without hand-matching ``nrows``/``ncols`` yourself the way
+    :doc:`/auto_examples/data_roundtrip/index` used to before this existed.
+
+    Returns ``(fig, axes)``. When every recorded axes is a single,
+    non-spanning cell that exactly tiles one ``nrows`` x ``ncols`` grid,
+    ``axes`` mirrors what ``plotpress.subplots(nrows, ncols)`` itself would
+    hand back -- a bare ``Axes`` for a 1x1 grid, a 1-D array for a single
+    row/column, otherwise a 2-D array indexed ``axes[row, col]``. Anything
+    else (row/column spans from ``add_gridspec``, mismatched grids across
+    axes, or no grid-placed axes at all) falls back to a flat list of axes
+    in their original save order -- still fully usable, just not
+    array-indexable by row/column.
+
+    ``figsize`` overrides ``layout["figsize"]`` (falling back to plotpress's
+    own default when a loaded layout predates that key and carries
+    ``None``). ``style``/``facecolor`` are the same as :class:`Figure`'s own
+    constructor -- neither round-trips through ``layout``, since style is a
+    figure-authoring choice, not a structural one.
+    """
+    fig = Figure(figsize=figsize or tuple(layout.get("figsize") or (6.4, 4.8)),
+                style=style, facecolor=facecolor)
+    axes_specs = layout.get("axes") or {}
+    order = sorted(axes_specs, key=int)
+    by_index = {}
+    for i in order:
+        spec = axes_specs[i]
+        ss = SubplotSpec(spec["nrows"], spec["ncols"], spec["row0"], spec["row1"],
+                         spec["col0"], spec["col1"])
+        by_index[int(i)] = fig.add_subplot(ss, projection=spec.get("projection"))
+
+    for g in layout.get("groups") or []:
+        members = [by_index[int(i)] for i in g["axes"] if int(i) in by_index]
+        if members:
+            fig.group(g["title"], members, linestyle=g.get("linestyle", "--"),
+                     color=g.get("color", "black"), linewidth=g.get("linewidth", 1.5),
+                     title_position=g.get("title_position", "top"),
+                     pad=tuple(g["pad"]) if g.get("pad") is not None else 8.0,
+                     fontsize=g.get("fontsize"))
+
+    ordered = [by_index[int(i)] for i in order]
+    same_shape = len({(axes_specs[i]["nrows"], axes_specs[i]["ncols"]) for i in order}) == 1
+    single_cell = all(axes_specs[i]["row0"] == axes_specs[i]["row1"]
+                      and axes_specs[i]["col0"] == axes_specs[i]["col1"] for i in order)
+    if ordered and same_shape and single_cell:
+        nrows, ncols = axes_specs[order[0]]["nrows"], axes_specs[order[0]]["ncols"]
+        if len(ordered) == nrows * ncols:
+            grid = np.empty((nrows, ncols), dtype=object)
+            for i in order:
+                s = axes_specs[i]
+                grid[s["row0"], s["col0"]] = by_index[int(i)]
+            if nrows == 1 and ncols == 1:
+                return fig, grid[0, 0]
+            if nrows == 1 or ncols == 1:
+                return fig, grid.ravel()
+            return fig, grid
+    return fig, ordered
+
+
 def _fit_cells(avail, n, gaps, floor=0.02):
     """Cell size and per-boundary gaps that fit ``n`` cells into ``avail``.
 
@@ -2016,6 +2084,18 @@ def _load_single_figure(text):
     return axes
 
 
+def _load_layout(text):
+    """The ``plotpress-layout`` block (see ``svg.layout_metadata``), or the
+    empty layout a figure with no grid-placed axes and no groups would embed
+    -- older files saved before this block existed fall back to the same
+    shape rather than raising, so ``load_data()`` keeps working on them.
+    """
+    raw = _extract_json_block(text, "plotpress-layout")
+    if raw is None:
+        return {"figsize": None, "axes": {}, "groups": []}
+    return {**raw, "axes": {int(k): v for k, v in raw["axes"].items()}}
+
+
 def _split_report_entries(text):
     """One chunk of HTML per :class:`Report` entry, each starting at its
     ``plotpress-report-label`` div (always present, unlike the optional title/
@@ -2046,9 +2126,9 @@ def load_data(path: str, by_index: bool = False):
     itself shows -- for an entry with none, or for a bare :class:`Figure`'s
     HTML, which has no report-level title at all). Each figure's own value
     has ``"details"`` (a `Report` entry's longer description, or ``None``)
-    and ``"axes"``: itself a dict keyed by each axes' own title, falling
-    back to ``"axes {index}"`` (matching a picked record's ``axes_title``
-    fallback) for an untitled one::
+    ``"axes"`` (itself a dict keyed by each axes' own title, falling back to
+    ``"axes {index}"`` -- matching a picked record's ``axes_title`` fallback
+    -- for an untitled one), and ``"layout"``::
 
         {"series": [{"kind": "line", "x": array, "y": array,
                     "vals": {name: array, ...}}, ...],
@@ -2062,15 +2142,35 @@ def load_data(path: str, by_index: bool = False):
          "zlabel": str | None, "xlim": (float, float) | None,
          "ylim": (float, float) | None, "xscale": str, "yscale": str}
 
+    ``"layout"`` is the figure-level structure -- grid shape/position of
+    every subplot-grid axes plus any :meth:`Figure.group` boxes -- needed to
+    rebuild an equivalent figure, independent of the per-axes data above::
+
+        {"figsize": [w, h],
+         "axes": {index: {"nrows": int, "ncols": int, "row0": int, "row1": int,
+                          "col0": int, "col1": int,
+                          "projection": "polar" | "3d" | None}, ...},
+         "groups": [{"title": str, "axes": [index, ...], "linestyle": str,
+                     "color": str, "linewidth": float,
+                     "title_position": str, "pad": [l, r, t, b],
+                     "fontsize": float | None}, ...]}
+
+    Pass ``"layout"`` straight to :func:`subplots_from_layout` to recreate
+    the source figure's grid and groups before replotting recovered data
+    into it -- see :doc:`/auto_examples/data_roundtrip/index`. Axes placed
+    with a freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar
+    axes are absent from ``"axes"``, and a file saved before this key
+    existed loads as ``{"figsize": None, "axes": {}, "groups": []}``.
+
     Title keys are convenient but not guaranteed unique -- two figures (or
     two axes within one figure) sharing the same title collide, and the
     later one wins. Pass ``by_index=True`` when that matters, or when a
     stable, order-based key is simply more useful than a name: this returns
     a list of per-figure dicts instead (one per figure embedded in the file,
     in the order they appear -- a bare figure's HTML still comes back as a
-    one-item list), each with the same ``"title"``/``"details"``/``"axes"``
-    shape as above except ``"axes"`` is keyed by plain integer index rather
-    than title.
+    one-item list), each with the same ``"title"``/``"details"``/``"axes"``/
+    ``"layout"`` shape as above except ``"axes"`` is keyed by plain integer
+    index rather than title.
 
     Only works on HTML saved with ``interactive=True``: a static SVG or an
     ``interactive=False`` HTML embeds no data to read back, only drawn
@@ -2084,7 +2184,8 @@ def load_data(path: str, by_index: bool = False):
         text = f.read()
 
     if 'srcdoc="' not in text:
-        figures = [{"title": None, "details": None, "axes": _load_single_figure(text)}]
+        figures = [{"title": None, "details": None, "axes": _load_single_figure(text),
+                    "layout": _load_layout(text)}]
     else:
         figures = []
         for chunk in _split_report_entries(text):
@@ -2099,6 +2200,7 @@ def load_data(path: str, by_index: bool = False):
                 "title": html.unescape(title_m.group(1)) if title_m else None,
                 "details": html.unescape(details_m.group(1)) if details_m else None,
                 "axes": _load_single_figure(doc),
+                "layout": _load_layout(doc),
             })
 
     if by_index:

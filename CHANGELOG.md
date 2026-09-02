@@ -13,6 +13,20 @@ anywhere in the source.
 
 ### Added
 
+- **Figure layout export/import**, so recovered data can be replotted into
+  a figure structurally identical to the one it came from: every interactive
+  HTML now also embeds a `plotpress-layout` payload (grid shape/position of
+  each subplot-grid axes, plus any `Figure.group()` boxes), surfaced through
+  `load_data()`'s new `"layout"` return key. `plotpress.subplots_from_layout()`
+  reads that back into a fresh `(fig, axes)` -- squeezed the same way
+  `plotpress.subplots()` itself would (bare `Axes`, 1-D, or 2-D array) for a
+  plain uniform grid, falling back to a flat list for row/column spans --
+  and re-applies every recorded group. New example:
+  `docs/examples/data_roundtrip/plot_03_reload_preserving_groups.py`;
+  `plot_01_reload_mesh_grid_as_lines.py`/`plot_02_reload_and_fft_mesh_grid.py`
+  no longer hand-hardcode the destination grid shape, now reading it back
+  via `subplots_from_layout()` instead.
+
 - **A matplotlib `Axes` API audit, closing every gap found except three
   that are genuinely multi-day subsystems on their own** (datetime axis
   support, `streamplot`, and the `tricontour`/`tricontourf`/`tripcolor`/

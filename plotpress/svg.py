@@ -375,6 +375,45 @@ def axes_metadata(fig):
     return meta
 
 
+def layout_metadata(fig):
+    """Grid shape/position of every subplot-grid axes, plus ``fig.group()``
+    boxes -- everything ``load_data()``'s ``"layout"`` needs to rebuild an
+    equivalent figure structure with :func:`plotpress.subplots_from_layout`,
+    independent of ``axes_metadata()``'s per-axes pixel/style payload above.
+
+    Only axes placed via :meth:`Figure.add_subplot`/:meth:`Figure.subplots`
+    (``ax._subplotspec is not None``) are included -- a freeform
+    :meth:`Figure.add_axes` rect or a colorbar axes has no grid cell to
+    recover, so it is simply absent from the payload rather than guessed at.
+    """
+    idx_of = {id(a): i for i, a in enumerate(fig.axes)}
+    axes = {}
+    for i, ax in enumerate(fig.axes):
+        spec = ax._subplotspec
+        if spec is None:
+            continue
+        axes[i] = {
+            "nrows": spec.nrows, "ncols": spec.ncols,
+            "row0": spec.row0, "row1": spec.row1,
+            "col0": spec.col0, "col1": spec.col1,
+            # None for a plain Cartesian axes, so a round trip through
+            # add_subplot(..., projection=...) reproduces it exactly.
+            "projection": ("polar" if getattr(ax, "_is_polar", False)
+                          else "3d" if ax._is_3d else None),
+        }
+    groups = [
+        {
+            "title": g["title"],
+            "axes": [idx_of[id(a)] for a in g["axes"] if id(a) in idx_of],
+            "linestyle": g["linestyle"], "color": g["color"],
+            "linewidth": g["linewidth"], "title_position": g["title_position"],
+            "pad": list(g["pad"]), "fontsize": g["fontsize"],
+        }
+        for g in fig._groups
+    ]
+    return {"figsize": list(fig.figsize), "axes": axes, "groups": groups}
+
+
 def style_payload(fig):
     """Style constants the client tick-rebuilder needs during per-axes zoom."""
     st = fig.style
