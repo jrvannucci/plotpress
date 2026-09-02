@@ -28,9 +28,9 @@ At a glance
      - static
      - --
    * - Jupyter (interactive)
-     - embed ``fig.to_html()`` in an ``<iframe>`` (below)
+     - ``fig.show_in_jupyter()``
      - **yes**
-     - --
+     - ``[jupyter]``
    * - Native window
      - ``fig.show()``
      - **yes**
@@ -88,19 +88,29 @@ Evaluating a figure in a notebook cell displays it **inline as static SVG**
    Evaluating ``fig`` in a notebook cell renders it inline as static SVG
    (``Figure._repr_svg_``).
 
-For the **interactive** toolbar *inside* a notebook, embed the self-contained
-HTML in an ``<iframe>`` (which isolates and runs the inlined JS). Pass
-``standalone=False`` -- meant exactly for embedding in a container you don't
-control the size of -- so the figure scales to fill the iframe instead of
-sitting at a fixed pixel size with empty space centered around it:
+For the **interactive** toolbar *inside* a notebook, use ``fig.show_in_jupyter()``
+(needs ``[jupyter]``: ``pip install plotpress[jupyter]`` -- any real Jupyter
+environment already has IPython). It embeds the same self-contained HTML
+``to_html()`` produces in an ``<iframe>``, which isolates and runs the inlined
+JS, so the toolbar, pan/zoom, and point-picking all work exactly as they do in
+a saved ``.html`` file:
 
 .. code-block:: python
 
-   from IPython.display import HTML
+   fig, ax = plotpress.subplots()
+   ax.plot(x, y)
+   fig.show_in_jupyter()   # last expression in the cell, or wrap in display(...)
 
-   html = fig.to_html(interactive=True, standalone=False).replace('"', "&quot;")
-   HTML(f'<iframe srcdoc="{html}" width="720" height="520" '
-        f'style="border:0"></iframe>')
+``width``/``height`` default to the figure's own pixel size
+(``figsize`` x ``style.dpi``) and can be overridden:
+``fig.show_in_jupyter(width=900, height=600)``.
+
+Under the hood this is just ``to_html(interactive=True, standalone=False)``
+wrapped in an ``IPython.display.HTML(...)`` -- ``standalone=False`` is meant
+exactly for embedding in a container you don't control the size of, so the
+figure scales to fill the iframe instead of sitting at a fixed pixel size with
+empty space centered around it. Write that call yourself for more control
+over the surrounding HTML.
 
 Alternatively, write an ``.html`` file and open it, or pop the figure out into a
 native window with ``fig.show()``.

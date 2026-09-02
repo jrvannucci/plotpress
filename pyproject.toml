@@ -38,6 +38,10 @@ qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
 # title-keyed dict of dicts -- xarray pulls in pandas, so it's kept out of
 # the standard install the same way every other format-specific extra is.
 xarray = ["xarray>=2023.1"]
+# fig.show_in_jupyter(): embeds the interactive HTML in an IPython.display
+# HTML/iframe, for the notebook-inline toolbar. Any real Jupyter environment
+# already has IPython; this extra is for exercising the call outside one.
+jupyter = ["ipython>=7"]
 dev = ["pytest>=7"]
 # End-to-end point-picking tests: they drive the interactive HTML's JavaScript
 # in a headless browser. After installing, fetch the browser itself with

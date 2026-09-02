@@ -13,6 +13,19 @@ anywhere in the source.
 
 ### Added
 
+- **`Figure.show_in_jupyter()`**, a new optional (`pip install
+  plotpress[jupyter]`) way to display the full interactive toolbar inline in
+  a notebook cell -- `fig` alone only ever renders static SVG (there's
+  deliberately no `_repr_html_`: Jupyter prefers `text/html` over
+  `image/svg+xml`, and a full interactive HTML document dropped into an
+  output cell that way renders messily and its `<script>` doesn't run
+  regardless). `show_in_jupyter()` instead wraps `to_html()`'s
+  self-contained output in an `IPython.display.HTML` iframe, which does
+  isolate and run the inlined JS, so pan/zoom, point-picking, and the rest
+  of the toolbar all work exactly as they do in a saved `.html` file.
+  `width`/`height` default to the figure's own pixel size and can be
+  overridden.
+
 - **`plotpress.load_data_xarray()`**, a new optional (`pip install
   plotpress[xarray]`) way to read a saved figure's data back as a single
   labeled `xarray.Dataset`, dimensioned by the figure's own `row`/`col`

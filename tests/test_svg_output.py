@@ -2560,6 +2560,52 @@ def test_wait_for_extract_without_gui_raises(monkeypatch):
         fig.show(wait_for_extract=True)
 
 
+def test_show_in_jupyter_returns_an_iframe_wrapping_the_interactive_html():
+    ipython_display = pytest.importorskip("IPython.display")
+
+    fig, ax = plotpress.subplots(figsize=(5.0, 4.0))
+    ax.plot([0, 1, 2], [0, 1, 4])
+    out = fig.show_in_jupyter()
+
+    assert isinstance(out, ipython_display.HTML)
+    assert out.data.startswith('<iframe srcdoc="')
+    assert 'width="%d"' % round(5.0 * fig.style.dpi) in out.data
+    assert 'height="%d"' % round(4.0 * fig.style.dpi) in out.data
+    # The srcdoc attribute value is quote-escaped, not the JS/SVG inside it --
+    # unescaping must recover a real standalone=False interactive document.
+    inner = out.data.split('srcdoc="', 1)[1].rsplit('"', 2)[0].replace("&quot;", '"')
+    assert inner.startswith("<!doctype html>")
+    assert "plotpressGetMarkers" in inner   # toolbar JS actually inlined
+    assert "#plotpress-svg{cursor:default;display:block" in inner   # standalone=False styling
+
+
+def test_show_in_jupyter_width_and_height_are_overridable():
+    pytest.importorskip("IPython.display")
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    out = fig.show_in_jupyter(width=300, height=200)
+    assert 'width="300"' in out.data
+    assert 'height="200"' in out.data
+
+
+def test_show_in_jupyter_without_ipython_raises_a_friendly_error(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_ipython(name, *args, **kwargs):
+        if name == "IPython.display" or name.startswith("IPython"):
+            raise ImportError("no IPython")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_ipython)
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    with pytest.raises(ImportError, match=r"plotpress\[jupyter\]"):
+        fig.show_in_jupyter()
+
+
 def _without_pywebview(monkeypatch):
     """Force show() down its browser-fallback path."""
     import builtins

@@ -1299,6 +1299,61 @@ class Figure:
         return view(self, title=title, block=block, interactive=interactive,
                     pick_precision=pick_precision)
 
+    def show_in_jupyter(self, width=None, height=None, interactive: bool = True,
+                        pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+                        pick_max_points: int = 20000, binary_pick_data: bool = True,
+                        include_default_js: bool = True, extra_js: str = None):
+        """Display inline in a notebook cell with the full interactive toolbar.
+
+        Evaluating a figure directly (``fig`` as a cell's last expression)
+        renders it inline as static SVG via ``Figure._repr_svg_`` -- there is
+        deliberately no ``_repr_html_``, since Jupyter prefers ``text/html``
+        over ``image/svg+xml`` when a MIME bundle offers both, and a full
+        interactive HTML document dropped into an output cell that way renders
+        messily and its ``<script>`` doesn't run there regardless.
+
+        This instead wraps the same self-contained HTML ``to_html()``
+        produces in an ``<iframe>``, which does isolate and run the inlined
+        JS -- so the toolbar, pan/zoom, and point-picking all work exactly as
+        they do in a saved ``.html`` file opened in a browser.
+
+        ``width``/``height`` default to the figure's own pixel size
+        (``figsize`` x ``style.dpi``); pass either to override. The rest of
+        the keyword arguments are forwarded to ``to_html()`` (see there for
+        what each controls).
+
+        Returns an ``IPython.display.HTML`` object -- return it as a cell's
+        last expression, or pass it to ``IPython.display.display()``. Needs
+        IPython (``pip install plotpress[jupyter]``), which any real Jupyter
+        environment already has.
+        """
+        try:
+            from IPython.display import HTML
+        except ImportError as e:
+            raise ImportError(
+                "show_in_jupyter() needs IPython -- install it with: pip "
+                "install plotpress[jupyter] (any Jupyter environment "
+                "already has it)"
+            ) from e
+        if width is None:
+            width = int(self.figsize[0] * self.style.dpi)
+        if height is None:
+            height = int(self.figsize[1] * self.style.dpi)
+        # standalone=False: meant exactly for embedding in a container this
+        # call doesn't control the size of, so the figure scales to fill the
+        # iframe instead of sitting at a fixed pixel size with empty space
+        # centered around it.
+        html = self.to_html(
+            interactive=interactive, standalone=False,
+            pick_precision=pick_precision, pick_max_mesh_cells=pick_max_mesh_cells,
+            pick_max_points=pick_max_points, binary_pick_data=binary_pick_data,
+            include_default_js=include_default_js, extra_js=extra_js,
+        ).replace('"', "&quot;")
+        return HTML(
+            f'<iframe srcdoc="{html}" width="{width}" height="{height}" '
+            f'style="border:0"></iframe>'
+        )
+
 
 class _MarkerApi:
     """pywebview bridge: the in-window Extract button pushes markers to Python."""
