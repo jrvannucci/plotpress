@@ -117,10 +117,12 @@ webviews). Nothing is active until you pick a tool:
 - **Point Picking** — click to pin the nearest data point's value; arrow keys
   step along the series (nearest-neighbour for scatter, cell-by-cell for
   meshes/contours), reporting extra dims (`z`, `c`, …). Click a pin, or use
-  **Clear Points**, to remove it.
+  **Clear Points**, to remove it. Its label box (connected to the marker by a
+  leader arrow) is draggable while Point Picking is active.
 - **Annotation** — drop a user-written note anywhere on the figure, not
   locked to any datum; **Clear Annotations** removes only these, leaving
-  Point Picking pins untouched (Escape clears both kinds at once).
+  Point Picking pins untouched (Escape clears both kinds at once). Its box
+  drags the same way, while Annotation is active.
 - **Hide All** toggles every pin/annotation's visibility without deleting
   them. **Extract** copies/downloads all markers + annotations as CSV/JSON,
   or hands them back to the kernel (`fig.show(wait_for_extract=True)`).

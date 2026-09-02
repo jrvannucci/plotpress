@@ -1194,12 +1194,13 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
         "double-click under Magnify must reset the whole-figure view: %r" % out)
 
 
-def test_magnify_mode_disables_text_selection_on_the_svg(page, tmp_path):
-    """A drag-to-pan under Magnify sweeps across the figure's own tick
-    labels/titles just like a text-selection drag would; without disabling
-    it, panning highlights that text instead of just moving the view. Other
-    modes leave it alone -- selection is a Magnify-specific problem, not a
-    general one."""
+def test_figure_navigator_mode_disables_text_selection_on_the_svg(page, tmp_path):
+    """A drag-to-pan under Figure Navigator sweeps across the figure's own
+    tick labels/titles just like a text-selection drag would; without
+    disabling it, panning highlights that text instead of just moving the
+    view. (Every other mode disables it too now, for the same reason --
+    see test_text_selection_disabled_under_every_active_toolbar_mode --
+    this test is Figure Navigator's own toggle-on/toggle-off check.)"""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -1217,7 +1218,6 @@ def test_magnify_mode_disables_text_selection_on_the_svg(page, tmp_path):
               return getComputedStyle(document.getElementById('plotpress-svg')).userSelect;
             }""", label)
 
-    assert user_select_under("Axis Span") != "none"
     assert user_select_under("Figure Navigator") == "none"
     # Switching back off Figure Navigator must restore normal selection behavior.
     assert user_select_under("Figure Navigator") != "none"   # clicking the active tool turns it off
@@ -1668,6 +1668,230 @@ def test_annotation_click_warns_once_when_prompt_is_blocked(page, tmp_path):
         "the warning must fire once, not once per click: %r" % warnings_seen)
 
 
+def _drag_box(page, pin_selector, dx, dy):
+    """Simulate a real drag of one pin's label box (its <rect>, not the dot)
+    by (dx, dy) screen pixels -- the same mousedown/mousemove/mouseup
+    sequence a user's own drag produces."""
+    page.evaluate(
+        """([sel, dx, dy]) => {
+          const pin = document.querySelector(sel);
+          const rectEl = pin.querySelector('rect');
+          const r = rectEl.getBoundingClientRect();
+          const sx = r.x + r.width / 2, sy = r.y + r.height / 2;
+          rectEl.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true, cancelable: true, clientX: sx, clientY: sy, button: 0}));
+          window.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true, cancelable: true, clientX: sx + dx, clientY: sy + dy}));
+          window.dispatchEvent(new MouseEvent('mouseup', {
+            bubbles: true, cancelable: true, clientX: sx + dx, clientY: sy + dy}));
+        }""",
+        [pin_selector, dx, dy])
+
+
+def test_text_selection_disabled_under_every_active_toolbar_mode(page, tmp_path):
+    """Every mode's own drag (Span/Zoom across tick labels and titles,
+    Point Picking/Annotation dragging a pin's box across other pins' text)
+    can sweep across text the same way Figure Navigator's whole-figure pan
+    always could -- selection must be off whenever any mode is active, not
+    just Figure Navigator, and back on when no mode is active."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "text_select.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotation", "Figure Navigator"):
+        _click_toolbar(page, label)
+        active = page.eval_on_selector("#plotpress-svg", "el => el.style.userSelect")
+        _click_toolbar(page, label)   # toggle back off
+        inactive = page.eval_on_selector("#plotpress-svg", "el => el.style.userSelect")
+        assert active == "none", "%s must disable text selection while active: %r" % (label, active)
+        assert inactive == "", "%s must restore selection once inactive: %r" % (label, inactive)
+
+
+def test_point_pick_pin_has_a_leader_arrow_to_its_marker(page, tmp_path):
+    """The label box sits offset from its own marker -- a leader line (with
+    an arrowhead, via marker-end) must connect the two, ending on the dot's
+    own edge (a fixed distance == its radius from the origin), not floating
+    disconnected or pointing through the dot's center."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "pin_arrow.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    info = page.evaluate(
+        """() => {
+          const pin = document.querySelector('.plotpress-pin');
+          const arrow = pin.querySelector('.plotpress-pin-arrow');
+          const r = parseFloat(pin.dataset.pinR);
+          return {
+            hasArrow: !!arrow,
+            markerEnd: arrow.getAttribute('marker-end'),
+            x1: +arrow.getAttribute('x1'), y1: +arrow.getAttribute('y1'),
+            x2: +arrow.getAttribute('x2'), y2: +arrow.getAttribute('y2'),
+            r: r,
+          };
+        }""")
+    assert info["hasArrow"]
+    assert info["markerEnd"] == "url(#plotpress-pin-arrow)"
+    end_dist = (info["x2"] ** 2 + info["y2"] ** 2) ** 0.5
+    assert end_dist == pytest.approx(info["r"], abs=0.01), (
+        "the arrow's dot-side end must sit exactly on the dot's own edge "
+        "(distance == its radius from the origin), not at its center or "
+        "floating free: %r" % info)
+    start_dist = (info["x1"] ** 2 + info["y1"] ** 2) ** 0.5
+    assert start_dist > end_dist, "the box-side end must be farther from the dot than the arrowhead end"
+
+    marker = page.evaluate(
+        "() => { const m = document.getElementById('plotpress-pin-arrow'); "
+        "return m ? m.tagName : null; }")
+    assert marker == "marker", "the shared arrowhead <marker> def must exist in the SVG"
+
+
+def test_dragging_a_pins_box_repositions_it_independent_of_its_anchor(page, tmp_path):
+    """Dragging the box moves only the label -- the dot stays exactly on
+    the data point it represents (its own anchorX/anchorY never change),
+    and the leader arrow updates to keep connecting the two."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "drag_box.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    before = page.evaluate(
+        """() => { const p = document.querySelector('.plotpress-pin'), r = p.querySelector('rect');
+                    return {anchorX: p.dataset.anchorX, anchorY: p.dataset.anchorY,
+                            x: r.getAttribute('x'), y: r.getAttribute('y')}; }""")
+
+    _drag_box(page, ".plotpress-pin", 120, 90)
+
+    after = page.evaluate(
+        """() => { const p = document.querySelector('.plotpress-pin'), r = p.querySelector('rect');
+                    return {anchorX: p.dataset.anchorX, anchorY: p.dataset.anchorY,
+                            x: r.getAttribute('x'), y: r.getAttribute('y'),
+                            boxDx: p.dataset.boxDx, boxDy: p.dataset.boxDy}; }""")
+
+    assert after["anchorX"] == before["anchorX"] and after["anchorY"] == before["anchorY"], (
+        "dragging the box must never move the dot's own data anchor: %r -> %r" % (before, after))
+    assert after["x"] != before["x"] or after["y"] != before["y"], "the box itself must have moved"
+    assert after["boxDx"] is not None and after["boxDy"] is not None, (
+        "the drag must persist a custom offset for later re-layouts to respect")
+
+    # The arrow's box-side end must track the box's own new position -- its
+    # nearest-corner-to-the-origin x is either the box's own left edge (x)
+    # or 0 (if the origin now falls within the box's x-span).
+    arrow_x1 = page.evaluate(
+        "() => +document.querySelector('.plotpress-pin-arrow').getAttribute('x1')")
+    assert arrow_x1 == pytest.approx(float(after["x"]), abs=0.01) or abs(arrow_x1) < 1e-6, (
+        "the arrow must have re-anchored to the box's new position after the drag: "
+        "x1=%r, box x=%r" % (arrow_x1, after["x"]))
+
+
+def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
+    """A plain Point Picking pin's box drags only under Point Picking; an
+    Annotation note's box drags only under Annotation -- the same split
+    Clear Points/Clear Annotations already use, now governing which pins a
+    drag can move instead of which a Clear button removes."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "drag_scoped.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0), prompt_text="a note")
+    assert len(markers) == 2
+
+    def box_pos(selector):
+        return page.evaluate(
+            "(sel) => { const r = document.querySelector(sel).querySelector('rect'); "
+            "return [r.getAttribute('x'), r.getAttribute('y')]; }", selector)
+
+    point_sel = ".plotpress-pin:not(.plotpress-note)"
+    note_sel = ".plotpress-pin.plotpress-note"
+
+    # Still under Annotation (the mode _click_mode left active): the note
+    # drags, the plain pin does not.
+    note_before = box_pos(note_sel)
+    _drag_box(page, note_sel, 70, 50)
+    assert box_pos(note_sel) != note_before, "a note must drag under Annotation mode"
+
+    point_before = box_pos(point_sel)
+    _drag_box(page, point_sel, 70, 50)
+    assert box_pos(point_sel) == point_before, "a plain pin must NOT drag under Annotation mode"
+
+    _click_toolbar(page, "Annotation")     # off
+    _click_toolbar(page, "Point Picking")  # on
+
+    point_before2 = box_pos(point_sel)
+    _drag_box(page, point_sel, 70, 50)
+    assert box_pos(point_sel) != point_before2, "a plain pin must drag under Point Picking mode"
+
+    note_before2 = box_pos(note_sel)
+    _drag_box(page, note_sel, 70, 50)
+    assert box_pos(note_sel) == note_before2, "a note must NOT drag under Point Picking mode"
+
+
+def test_dragged_box_offset_survives_pan_and_save_restore(page, tmp_path):
+    """A custom drag offset is a per-pin choice, not a one-time render
+    detail -- it must still hold after the view it was made in changes
+    (panning moves the dot; the label should stay put relative to it) and
+    after a full Save As -> reopen round trip."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "drag_persists.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    _drag_box(page, ".plotpress-pin", 90, 60)
+    dragged = page.evaluate(
+        "() => { const p = document.querySelector('.plotpress-pin'); "
+        "return [p.dataset.boxDx, p.dataset.boxDy]; }")
+
+    # Pan the axes -- the dot moves with the view; the box's *local* offset
+    # from it must stay exactly what the drag set.
+    _drag_pan(page, *px(fig, 0, 1.5, 5.0), *px(fig, 0, 0.5, 3.0))
+    after_pan = page.evaluate(
+        "() => { const p = document.querySelector('.plotpress-pin'); "
+        "return [p.dataset.boxDx, p.dataset.boxDy]; }")
+    assert after_pan == dragged, (
+        "panning must not reset a dragged box's own local offset: %r -> %r" % (dragged, after_pan))
+
+    with page.expect_download() as dl_info:
+        _click_toolbar(page, "Save As")
+    saved = tmp_path / "drag_persists_saved.html"
+    dl_info.value.save_as(str(saved))
+
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(saved.as_uri())
+    assert not errors, "JS error restoring a dragged pin: %s" % errors
+
+    restored = page.evaluate(
+        "() => { const p = document.querySelector('.plotpress-pin'); "
+        "return [p.dataset.boxDx, p.dataset.boxDy]; }")
+    assert restored == dragged, (
+        "a Save As round trip must preserve a dragged box's custom offset: "
+        "%r -> %r" % (dragged, restored))
 
 
 def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):

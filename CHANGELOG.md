@@ -13,6 +13,23 @@ anywhere in the source.
 
 ### Added
 
+- **Text selection is now disabled while any toolbar mode is active**, not
+  just Figure Navigator -- every mode's own drag (Axis Span/Zoom across
+  tick labels and titles, Point Picking/Annotation dragging a pin's own
+  label box across other pins' text) could highlight text underneath it
+  the same way Figure Navigator's whole-figure pan always could.
+- **A Point Picking pin's (and an Annotation note's) label box is now
+  draggable**, independent of the dot/anchor it belongs to: grab the box
+  itself (not the dot) while the mode that created that kind of pin is
+  active, and a thin leader arrow (pointing at the dot's own edge) keeps
+  the two connected wherever the box ends up. A dragged position survives
+  every later pan/zoom/arrow-key step and a Save/Save As round trip, the
+  same as everything else about a pin. A plain Point Picking pin drags
+  under Point Picking mode; an Annotation note (including a legacy
+  "Annotate Point" pin restored from an older saved file) drags under
+  Annotation mode -- the same split `Clear Points`/`Clear Annotations`
+  already use.
+
 - **Figure layout export/import**, so recovered data can be replotted into
   a figure structurally identical to the one it came from: every interactive
   HTML now also embeds a `plotpress-layout` payload (grid shape/position of

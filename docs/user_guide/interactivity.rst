@@ -34,11 +34,12 @@ Extract) below.
        as scrolling any other oversized page content. Drag pans that same
        whole-figure view (native page scroll under the hood) in any
        direction. Double-click resets that view (there is no per-axes zoom
-       to reset here, unlike Axis Span/Zoom below); text on the
-       figure -- tick labels, titles -- is left unselectable for as long as
-       Figure Navigator is active, so a pan drag doesn't also highlight it.
-       Leftmost in the toolbar -- the one whole-figure-level tool, ahead of
-       the per-axes Axis Span/Zoom pair.
+       to reset here, unlike Axis Span/Zoom below). Leftmost in the
+       toolbar -- the one whole-figure-level tool, ahead of the per-axes
+       Axis Span/Zoom pair. (Text on the figure -- tick labels, titles,
+       pin labels -- is left unselectable for as long as *any* mode is
+       active, not just this one: every mode's own drag can sweep across
+       it the same way this one's pan always could.)
    * - **Axis Span**
      - Drag to pan a single plot's data window (log-aware).
    * - **Axis Zoom**
@@ -85,14 +86,20 @@ Extract) below.
        landed on, so it never dwarfs a tiny panel in a large grid the way a
        fixed size would -- and stays that same on-screen size at any
        whole-figure Figure Navigator/Zoom level, rather than growing along
-       with the figure until it covers the very cell it is pointing at.
+       with the figure until it covers the very cell it is pointing at. Its
+       label box (offset from the dot by default, connected to it by a thin
+       leader arrow) is itself draggable -- grab the box, not the dot,
+       while Point Picking is active -- and a dragged position survives
+       pan/zoom/arrow-key steps and a Save/Save As round trip.
    * - **Clear Points**
      - Removes every Point Picking pin at once, and only those -- an
        Annotation note survives untouched. Sits right after Point Picking,
        the tool it clears.
    * - **Annotation**
      - Drop a user-written note anywhere on the figure, not locked to any
-       datum -- including the margins or the gap between subplots.
+       datum -- including the margins or the gap between subplots. Its own
+       box drags the same way a Point Picking pin's does, while Annotation
+       is the active mode.
    * - **Clear Annotations**
      - The mirror of Clear Points: removes every Annotation note at once,
        and only those -- a Point Picking pin survives untouched. Sits right

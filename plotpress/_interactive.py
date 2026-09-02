@@ -5,7 +5,11 @@ as Jupyter and sandboxed webviews.
 
 A floating toolbar in the corner selects one **mode** at a time; nothing is
 interactive until a mode is chosen (single selection -- picking one cancels the
-others):
+others). Text on the figure is left unselectable for as long as any mode is
+active -- every mode's own drag (a pan, a rubber-band box, dragging a pin's
+own label box) can sweep across tick labels, titles, or another pin's text
+the same way Figure Navigator's whole-figure pan always could, so the
+selection guard isn't scoped to any one of them.
 
 * **Figure Navigator** (zoom-in cursor, internal mode ``magnify``) -- the
   same whole-figure wheel zoom as Ctrl+wheel under Axis Zoom, but a *plain*
@@ -18,11 +22,9 @@ others):
   figure stays fully reachable without switching to Axis Span -- always the
   figure's view, never an axes' own data range, isolating it completely
   from per-axes zoom/pan. Double-click resets that view (there is no
-  per-axes zoom here to reset the way Axis Span/Zoom's double-click does);
-  text on the figure is left unselectable while Figure Navigator is active,
-  so a pan drag doesn't also highlight the tick labels/titles it sweeps
-  across. Leftmost in the toolbar -- the one whole-figure-level navigation
-  tool, ahead of the per-axes Span/Zoom pair.
+  per-axes zoom here to reset the way Axis Span/Zoom's double-click does).
+  Leftmost in the toolbar -- the one whole-figure-level navigation tool,
+  ahead of the per-axes Span/Zoom pair.
 * **Axis Span** (internal mode ``span``) -- drag to pan (grab cursor).
 * **Axis Zoom** (internal mode ``zoom``) -- two distinct gestures (crosshair
   cursor). Drag a rubber-band box to zoom *one axes* into it, in data space
@@ -61,7 +63,13 @@ others):
   whole-figure Figure Navigator/Zoom level -- growing right along with the
   rest of the figure would otherwise turn a readable dot into a blob
   covering the very cell it's pointing at a few zoom ticks later, defeating
-  the point of zooming in to see it more clearly.
+  the point of zooming in to see it more clearly. Its label box sits
+  offset from the dot by default; a thin leader line (arrowhead on the dot
+  end) always connects the two, and the box itself is draggable -- grab it
+  (not the dot) and move it wherever reads best, while Point Picking is the
+  active mode -- without moving the dot off the data point it represents.
+  A dragged position sticks through every later pan/zoom/arrow-key step and
+  a Save/Save As round trip, the same as everything else about the pin.
 * **Clear Points** -- removes every Point Picking pin, and *only* those --
   an Annotation note survives a Clear Points click untouched. Sits right
   after Point Picking, the tool it clears. A one-shot action, not a mode.
@@ -72,7 +80,11 @@ others):
   (A separate snap-to-nearest-datum variant, "Annotate Point," existed
   briefly here and was removed -- Point Picking already covers snapping to
   a datum; Annotation covers everything else, including a note dropped near
-  but not exactly on a point.)
+  but not exactly on a point.) Its own box is draggable the same way a
+  Point Picking pin's is -- see above -- while Annotation is the active
+  mode, independent of a Point Picking pin's own dragging (see
+  boxDraggableNow: each kind of pin only drags under the mode that would
+  have created it).
 * **Clear Annotations** -- the mirror of Clear Points: removes every
   Annotation note, and *only* those -- a Point Picking pin survives
   untouched. Sits right after Annotation, the tool it clears. A one-shot
@@ -137,6 +149,24 @@ _JS_SOURCE = r"""
   // added to the live document.
   var ORIGINAL_DOC_HTML = document.documentElement.outerHTML;
   var SVGNS = 'http://www.w3.org/2000/svg';
+  // The arrowhead every pin's box-to-dot leader line ends in (see
+  // layoutPinArrow) -- one shared <marker> def, not one per pin, the same
+  // "define once" reasoning as the injected <style> block below. Added
+  // after ORIGINAL_DOC_HTML above is captured, so a Save/Save As copy's own
+  // script (re-run fresh on that copy's own load) inserts its own rather
+  // than inheriting two.
+  var defs = document.createElementNS(SVGNS, 'defs');
+  var arrowMarker = document.createElementNS(SVGNS, 'marker');
+  arrowMarker.setAttribute('id', 'plotpress-pin-arrow');
+  arrowMarker.setAttribute('viewBox', '0 0 8 8');
+  arrowMarker.setAttribute('refX', '7'); arrowMarker.setAttribute('refY', '4');
+  arrowMarker.setAttribute('markerWidth', '6'); arrowMarker.setAttribute('markerHeight', '6');
+  arrowMarker.setAttribute('orient', 'auto');
+  var arrowHead = document.createElementNS(SVGNS, 'path');
+  arrowHead.setAttribute('d', 'M0,0 L8,4 L0,8 Z'); arrowHead.setAttribute('fill', '#666');
+  arrowMarker.appendChild(arrowHead);
+  defs.appendChild(arrowMarker);
+  svg.insertBefore(defs, svg.firstChild);
   var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
   var home = vb.slice();
   // `view` itself never changes any more -- kept only so pxPerUser() below
@@ -390,6 +420,12 @@ _JS_SOURCE = r"""
     '.plotpress-pin.selected circle{fill:#2b8cff}' +   /* r itself: selectPin(), scaled per-pin */
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
     '.plotpress-hide-annotations .plotpress-pin{display:none}' +
+    // "move" only on the box itself (not the dot, which stays a plain
+    // click target -- see contextmenu/click above) and only while the
+    // mode that would let a drag actually happen is active -- see
+    // boxDraggableNow/refreshDragReady.
+    '.plotpress-pin.plotpress-drag-ready rect,' +
+    '.plotpress-pin.plotpress-drag-ready text{cursor:move}' +
     // A boxed ax.text()/ax.annotate() call -- see svg._render_text's
     // plotpress-textbox group -- is a *static* callout the figure itself
     // drew, not an interactive pin, but it reads the same way on screen, so
@@ -640,13 +676,14 @@ _JS_SOURCE = r"""
       mode === 'magnify' ? 'zoom-in' :
       mode === 'note-free' ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';
-    // Magnify's own drag (pan) sweeps across the figure's tick labels/titles
-    // same as a text selection drag would -- without this, panning highlights
-    // them instead of just moving the view. Other modes don't need it: Span
-    // drags to pan too, but "grab" cursor + no accidental text-drag pattern
-    // hasn't been reported there, and Zoom's own drag is a rubber-band box,
-    // not a pan.
-    svg.style.userSelect = mode === 'magnify' ? 'none' : '';
+    // Any active mode's own drag can sweep across text the same way
+    // Magnify's whole-figure pan always could -- Span/Zoom drag across tick
+    // labels and titles, Point Picking/Annotation drag a pin's own text box
+    // across other pins' labels -- so disabling selection is scoped to
+    // "some tool is selected" generally, not just Magnify specifically.
+    // Inert (no mode) leaves normal text selection alone.
+    svg.style.userSelect = mode ? 'none' : '';
+    refreshDragReady();
   }
   setMode(null);  // start inert with an arrow cursor
 
@@ -1438,16 +1475,47 @@ _JS_SOURCE = r"""
   function layoutPin(g, px, py, label) {
     var fs = 11, padx = 5, pady = 3;
     var bw = label.length * fs * 0.55 + padx * 2, bh = fs + pady * 2;
-    var bx = 8, by = -bh - 4;
+    // A user-dragged box (see startBoxDrag) keeps its own chosen offset
+    // from the dot across every later re-layout (pan, zoom, arrow-key
+    // step) -- the default top-right placement only applies until the box
+    // is actually moved once.
+    var bx = g.dataset.boxDx !== undefined ? +g.dataset.boxDx : 8;
+    var by = g.dataset.boxDy !== undefined ? +g.dataset.boxDy : -bh - 4;
     var dot = g.querySelector('circle'), rect = g.querySelector('rect'),
-        text = g.querySelector('text');
+        text = g.querySelector('text'), arrow = g.querySelector('.plotpress-pin-arrow');
     dot.setAttribute('cx', 0); dot.setAttribute('cy', 0);
     rect.setAttribute('x', bx); rect.setAttribute('y', by);
     rect.setAttribute('width', bw); rect.setAttribute('height', bh);
     text.setAttribute('x', bx + padx); text.setAttribute('y', by + fs + pady - 2);
     text.textContent = label;
+    layoutPinArrow(arrow, bx, by, bw, bh, parseFloat(g.dataset.pinR) || 3.5);
     g.dataset.anchorX = px; g.dataset.anchorY = py;
     updatePinTransform(g);
+  }
+
+  // The leader line from the box's edge to the dot's own edge (not its
+  // center -- the arrowhead should land on the dot, not point past it).
+  // "Nearest point on the box's rectangle to the origin" (clamp 0 into the
+  // box's own x/y bounds) is the box-end regardless of which side/corner of
+  // the dot the box currently sits on, including after an arbitrary drag.
+  function layoutPinArrow(arrow, bx, by, bw, bh, r) {
+    if (!arrow) return;
+    var lx = Math.max(bx, Math.min(bx + bw, 0));
+    var ly = Math.max(by, Math.min(by + bh, 0));
+    var d = Math.hypot(lx, ly);
+    // The box already overlaps/touches the dot -- no line to draw (and
+    // dividing by d below would be undefined at d===0).
+    if (d <= r) {
+      arrow.setAttribute('x1', 0); arrow.setAttribute('y1', 0);
+      arrow.setAttribute('x2', 0); arrow.setAttribute('y2', 0);
+      return;
+    }
+    // The point on the (lx,ly)->(0,0) segment exactly r from the origin --
+    // scaling (lx,ly) by r/d (not 1 - r/d, which barely moves it at all
+    // once the box is far from the dot) lands there regardless of d.
+    var k = r / d;
+    arrow.setAttribute('x1', lx); arrow.setAttribute('y1', ly);
+    arrow.setAttribute('x2', lx * k); arrow.setAttribute('y2', ly * k);
   }
 
   function updatePinTransform(g) {
@@ -1494,23 +1562,86 @@ _JS_SOURCE = r"""
     var dot = document.createElementNS(SVGNS, 'circle');
     dot.setAttribute('r', r); dot.setAttribute('fill', '#111');
     dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', 1);
+    var arrow = document.createElementNS(SVGNS, 'line');
+    arrow.setAttribute('class', 'plotpress-pin-arrow');
+    arrow.setAttribute('stroke', '#666'); arrow.setAttribute('stroke-width', 1);
+    arrow.setAttribute('marker-end', 'url(#plotpress-pin-arrow)');
     var rect = document.createElementNS(SVGNS, 'rect');
     rect.setAttribute('rx', 3); rect.setAttribute('fill', '#111');
     rect.setAttribute('fill-opacity', 0.85);
     var text = document.createElementNS(SVGNS, 'text');
     text.setAttribute('font-size', 11); text.setAttribute('fill', '#fff');
-    g.appendChild(dot); g.appendChild(rect); g.appendChild(text);
+    g.appendChild(dot); g.appendChild(arrow); g.appendChild(rect); g.appendChild(text);
     layoutPin(g, px, py, label);
-    // Left-click selects (arrow keys then step it); right-click deletes.
+    // Left-click selects (arrow keys then step it); right-click deletes;
+    // a left-click/drag specifically on the box (not the dot) repositions
+    // its label -- see startBoxDrag -- while the mode that would have
+    // created this kind of pin is the active one (boxDraggableNow).
     g.addEventListener('click', function (ev) { ev.stopPropagation(); selectPin(g); });
     g.addEventListener('contextmenu', function (ev) {
       ev.preventDefault(); ev.stopPropagation();
       if (selectedPin === g) selectedPin = null;
       g.remove();
     });
+    g.addEventListener('mousedown', function (ev) {
+      if (ev.button !== 0 || (ev.target !== rect && ev.target !== text)) return;
+      if (!boxDraggableNow(g)) return;
+      startBoxDrag(g, ev);
+    });
     svg.appendChild(g);
     selectPin(g);   // a freshly dropped marker starts selected
+    refreshDragReady();
     return g;
+  }
+
+  // Draggable exactly when the mode that would have created this kind of
+  // pin is the active one -- a plain Point Picking pin under 'pick', every
+  // Annotation-classed pin (a free note, or a legacy "Annotate Point"
+  // restore -- see restorePins) under 'note-free'. The same split Clear
+  // Points/Clear Annotations already use (see isAnnotationPin above).
+  function boxDraggableNow(g) {
+    return isAnnotationPin(g) ? mode === 'note-free' : mode === 'pick';
+  }
+
+  // Refreshed on every mode change and pin creation/restore -- purely a
+  // cursor hint (the actual drag gate is boxDraggableNow(), checked fresh
+  // at mousedown regardless of this class), but a "move" cursor over a box
+  // that's about to not respond to a drag would be its own small bug.
+  function refreshDragReady() {
+    document.querySelectorAll('.plotpress-pin').forEach(function (p) {
+      p.classList.toggle('plotpress-drag-ready', boxDraggableNow(p));
+    });
+  }
+
+  // Repositions a pin's own label box independent of its anchor (the dot
+  // stays exactly on the data point/cell it represents) -- converts the
+  // mouse's on-screen pixel delta into the box's *local* coordinate space
+  // (see layoutPin's own comment on that space): a local unit there is
+  // 1/zoomScale user-space units (the group's own scale(1/zoomScale)
+  // keeps a pin's on-screen size constant under whole-figure zoom), and a
+  // user-space unit is 1/pxPerUser() screen pixels -- so a screen delta
+  // needs multiplying by zoomScale and dividing by pxPerUser() to land in
+  // local units, the exact inverse of what rendering does to local
+  // coordinates to put them on screen.
+  function startBoxDrag(g, ev) {
+    ev.stopPropagation(); ev.preventDefault();
+    selectPin(g);
+    var startX = ev.clientX, startY = ev.clientY;
+    var rect = g.querySelector('rect');
+    var bx0 = +rect.getAttribute('x'), by0 = +rect.getAttribute('y');
+    var text = g.querySelector('text');
+    function onMove(e) {
+      var k = zoomScale / pxPerUser();
+      g.dataset.boxDx = bx0 + (e.clientX - startX) * k;
+      g.dataset.boxDy = by0 + (e.clientY - startY) * k;
+      layoutPin(g, +g.dataset.anchorX, +g.dataset.anchorY, text.textContent);
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   }
 
   // The (x, y, vals) arrays a point/frame anchor refers to, at the live frame.
@@ -1654,6 +1785,12 @@ _JS_SOURCE = r"""
       g.dataset.axes = anchor.axes; g.dataset.series = anchor.series;
       g.dataset.ptype = anchor.ptype;
     }
+    // addPin() already refreshed drag-readiness once, before the
+    // .plotpress-note class above (a legacy "Annotate Point" restore) was
+    // applied -- that class is what boxDraggableNow() itself keys its
+    // point-picking-vs-annotation split on, so it has to run again now
+    // that it's actually set.
+    if (text !== undefined) refreshDragReady();
     return g;
   }
 
@@ -1890,6 +2027,14 @@ _JS_SOURCE = r"""
         var anchor = pinAnchor(scratch);
         if (!anchor) return;
         g = addAnchoredPin(anchor, +rec.data.index, rec.data.customLabel);
+        // addAnchoredPin() only copies the specific fields it knows about
+        // onto the fresh pin it creates -- a dragged box's own offset (see
+        // startBoxDrag) isn't one of them, so it's carried over here
+        // explicitly, the same as the free-note branch's full dataset copy
+        // below already does for its own pins.
+        if (g && rec.data.boxDx !== undefined) {
+          g.dataset.boxDx = rec.data.boxDx; g.dataset.boxDy = rec.data.boxDy;
+        }
       } else {
         var px, py;
         if (rec.data.axes !== undefined && CUR[rec.data.axes]) {
@@ -1904,8 +2049,16 @@ _JS_SOURCE = r"""
       if (!g) return;
       if (rec.note) g.classList.add('plotpress-note');
       if (rec.selected) toSelect = g;
+      // Both branches above set g.dataset.boxDx *after* addPin()'s own
+      // initial layoutPin() call already ran (with the default offset,
+      // since the dataset didn't have it yet at that point) -- applying a
+      // restored custom offset needs one more explicit re-layout.
+      if (g.dataset.boxDx !== undefined) {
+        layoutPin(g, +g.dataset.anchorX, +g.dataset.anchorY, g.querySelector('text').textContent);
+      }
     });
     selectPin(toSelect);
+    refreshDragReady();
   }
 
   function buildSaveState() {
@@ -2140,6 +2293,10 @@ _JS_SOURCE = r"""
     } else {
       g.dataset.px = p.x; g.dataset.py = p.y;
     }
+    // addPin() already refreshed drag-readiness once, before the
+    // .plotpress-note class above was applied -- see the same note in
+    // addAnchoredPin().
+    refreshDragReady();
   }
 
   svg.addEventListener('click', function (e) {
