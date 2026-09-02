@@ -262,7 +262,7 @@ class Axes:
         self._axis_off = False
         self._visible = True
         self._facecolor = None     # None -> the style's axes_facecolor
-        self._pickable = True      # False excludes this axes from Point Pick/Annotate Point
+        self._pickable = True      # False excludes this axes from Point Picking
         self._pick_context = {}    # extra key/value pairs merged onto this axes' pick records
         self._xmargin = 0.05
         self._ymargin = 0.05
@@ -1744,13 +1744,13 @@ class Axes:
         return self._visible
 
     def set_pickable(self, pickable=True):
-        """Include or exclude this axes from Point Pick / Annotate Point.
+        """Include or exclude this axes from Point Picking.
 
-        ``False`` makes this axes behave, for those two tools only, as if a
+        ``False`` makes this axes behave, for that tool only, as if a
         click there landed outside every axes -- so restricting picking to
-        one panel of a figure is ``set_pickable(False)`` on the others. Span,
-        Zoom, and Annotate Free are unaffected; every axes is pickable by
-        default.
+        one panel of a figure is ``set_pickable(False)`` on the others. Axis
+        Span, Axis Zoom, Figure Navigator, and Annotation are unaffected;
+        every axes is pickable by default.
         """
         self._pickable = bool(pickable)
 

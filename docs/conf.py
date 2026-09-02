@@ -172,7 +172,7 @@ def _interactive_embed(fig, image_path):
     # not stretched), but for its real, precise top/bottom body padding: a
     # standalone=True document only reserves toolbar/slider clearance via
     # flex-centering slack, which splits evenly top and bottom and so can't
-    # express "80px above, 0-or-more below" -- exactly what's needed here.
+    # express "112px above, 0-or-more below" -- exactly what's needed here.
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
         fh.write(fig.to_html(interactive=True, standalone=False))
 
@@ -296,9 +296,9 @@ def _build_usage_demos():
     ax1.set_xlabel("x"); ax1.set_ylabel("y"); ax1.legend()
     _write_usage_demo(
         fig1, "usage_pan_zoom_pick",
-        "Span to pan, Zoom to zoom (ctrl+wheel or box-drag), Point Pick to "
-        "read a value -- the scatter series also carries a phase value, "
-        "surfaced when a marker is picked.")
+        "Axis Span to pan, Axis Zoom to zoom (ctrl+wheel or box-drag), "
+        "Point Picking to read a value -- the scatter series also carries "
+        "a phase value, surfaced when a marker is picked.")
 
     fig2, ax2 = plotpress.subplots(figsize=(6, 4))
     x2 = np.linspace(0, 10, 300)
@@ -306,9 +306,8 @@ def _build_usage_demos():
     ax2.set_xlabel("x"); ax2.set_ylabel("y")
     _write_usage_demo(
         fig2, "usage_annotate",
-        "Annotate Point locks a note to the nearest datum -- try the peak; "
-        "Annotate Free drops one anywhere on the figure, including outside "
-        "the axes.")
+        "Annotation drops a user-written note anywhere on the figure, "
+        "including outside the axes -- try the peak, or the margin.")
 
     fig3, ax3 = plotpress.subplots(figsize=(6, 4))
     xf = np.linspace(0, 2 * np.pi, 100)
@@ -329,7 +328,7 @@ def _build_usage_demos():
     ax4r.set_pickable(False)
     _write_usage_demo(
         fig4, "usage_pick_context",
-        "Point Pick the left panel: its axes_title (\"Sensor A\") and "
+        "Point Picking the left panel: its axes_title (\"Sensor A\") and "
         "set_pick_context() keys (edge_color, unit) ride along on the marker. "
         "The right panel has set_pickable(False), so clicking it does "
         "nothing -- and were it pickable, its axes_title would fall back to "
@@ -341,9 +340,9 @@ def _build_usage_demos():
     ax5.set_xlabel("x"); ax5.set_ylabel("y")
     _write_usage_demo(
         fig5, "usage_hide_annotations",
-        "Point Pick a few values along the curve, then click Hide "
-        "Annotations -- every pin disappears without being deleted; click "
-        "it again (now labeled Show Annotations) to bring them all back "
+        "Point Picking a few values along the curve, then click Hide "
+        "All -- every pin disappears without being deleted; click "
+        "it again (now labeled Show All) to bring them all back "
         "exactly as they were.")
 
     _build_usage_report_demo()

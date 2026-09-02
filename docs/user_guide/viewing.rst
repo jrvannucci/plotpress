@@ -123,8 +123,9 @@ the ``[gui]`` extra and blocks until the window is closed; without it,
    :width: 100%
 
    ``fig.show()`` -- a native OS window hosting the same interactive figure,
-   with the Span / Zoom / Point Pick / Annotate / Reset / Extract toolbar. The
-   interactive ``.html`` file looks the same in a browser.
+   with the Figure Navigator / Axis Span / Axis Zoom / Point Picking /
+   Annotation / Extract toolbar. The interactive ``.html`` file looks the
+   same in a browser.
 
 See :doc:`output` for ``wait_for_extract`` and the extraction format.
 

@@ -97,7 +97,7 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
-            .forEach(b => { if (b.textContent === 'Point Pick') b.click(); });
+            .forEach(b => { if (b.textContent === 'Point Picking') b.click(); });
           // (2, 2) in SVG user space is the figure's top-left margin, well
           // outside the axes rectangle.
           const pt = svg.createSVGPoint();
@@ -136,7 +136,7 @@ def test_marker_radius_scales_with_its_own_axes_size(page, tmp_path):
         ux, uy = px(fig, ax_index, 1.0, 1.0)
         page.evaluate(
             """() => document.querySelectorAll('.plotpress-toolbar button')
-                 .forEach(b => { if (b.textContent === 'Point Pick') b.click(); })""")
+                 .forEach(b => { if (b.textContent === 'Point Picking') b.click(); })""")
         page.mouse.click(*page.evaluate(
             """([ux, uy]) => {
               const svg = document.getElementById('plotpress-svg');
@@ -185,7 +185,7 @@ def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path)
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 18, 3.0, 5.0)
-    _click_mode(page, "Point Pick", ux, uy)
+    _click_mode(page, "Point Picking", ux, uy)
     diameter_before = page.evaluate(
         "() => document.querySelector('.plotpress-pin circle')"
         ".getBoundingClientRect().width")
@@ -194,7 +194,7 @@ def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path)
         "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Magnify') b.click(); })""")
+             .forEach(b => { if (b.textContent === 'Figure Navigator') b.click(); })""")
     page.evaluate(
         """([ux, uy]) => {
           const svg = document.getElementById('plotpress-svg');
@@ -251,7 +251,7 @@ def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
     # unconditional click would do on every target after the first.
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Point Pick'
+             .forEach(b => { if (b.textContent === 'Point Picking'
                                   && !b.classList.contains('active')) b.click(); })""")
 
     for row, col in [(0, 0), (12, 30), (39, 49), (20, 25)]:
@@ -308,7 +308,7 @@ def test_downsampled_mesh_pick_reads_correct_value(page, tmp_path):
 
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Point Pick'
+             .forEach(b => { if (b.textContent === 'Point Picking'
                                   && !b.classList.contains('active')) b.click(); })""")
 
     xe, ye = pd["xedges"], pd["yedges"]
@@ -371,7 +371,7 @@ def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
 
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Point Pick'
+             .forEach(b => { if (b.textContent === 'Point Picking'
                                   && !b.classList.contains('active')) b.click(); })""")
 
     for idx in (0, dny * dnx // 2, dny * dnx - 1):
@@ -434,7 +434,7 @@ def test_vector_mesh_thin_cell_is_clickable_and_reads_its_value(page, tmp_path, 
     page.goto(path.as_uri())
 
     ccx, ccy = (edges[0] + edges[1]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 0)
-    markers = _click_mode(page, "Point Pick", *px(fig, 0, ccx, ccy))
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, ccx, ccy))
     assert len(markers) == 1, "click on the thin cell made %d marker(s)" % len(markers)
     assert markers[0]["z"] == pytest.approx(float(field[0, 0]))
 
@@ -462,7 +462,7 @@ def test_vector_mesh_stays_pickable_after_zoom(page, tmp_path):
 
     ccx, ccy = (edges[0] + edges[1]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 0)
     markers = _click_mode(
-        page, "Point Pick", *_px_at_limits(fig, 0, ccx, ccy, zoom_xlim, zoom_ylim))
+        page, "Point Picking", *_px_at_limits(fig, 0, ccx, ccy, zoom_xlim, zoom_ylim))
     assert len(markers) == 1, "click after zoom made %d marker(s)" % len(markers)
     assert markers[0]["z"] == pytest.approx(float(field[0, 0]))
 
@@ -481,7 +481,7 @@ def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
     page.goto(path.as_uri())
 
     ccx, ccy = (edges[1] + edges[2]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 1) -- survives
-    markers = _click_mode(page, "Point Pick", *px(fig, 0, ccx, ccy))
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, ccx, ccy))
     assert len(markers) == 1
     assert markers[0]["z"] == pytest.approx(float(field[0, 1]))
 
@@ -554,7 +554,7 @@ def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
     # toggles it *off* (single-selection toolbar).
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Point Pick'
+             .forEach(b => { if (b.textContent === 'Point Picking'
                                   && !b.classList.contains('active')) b.click(); })""")
 
     for target_i in (30, 3):   # well past the gap, and well before it
@@ -600,7 +600,7 @@ def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 1.0, 1.0)
-    _click_mode(page, "Point Pick", ux, uy)
+    _click_mode(page, "Point Picking", ux, uy)
 
     csv_text = page.evaluate(
         """() => {
@@ -635,10 +635,10 @@ def test_extracted_record_carries_group_title(page, tmp_path):
     page.goto(path.as_uri())
 
     ux0, uy0 = px(fig, 0, 1.0, 1.0)
-    grouped = _click_mode(page, "Point Pick", ux0, uy0)
+    grouped = _click_mode(page, "Point Picking", ux0, uy0)
     assert grouped[0]["group"] == "Cluster A"
 
-    # Point Pick is already the active tool -- re-clicking its own button
+    # Point Picking is already the active tool -- re-clicking its own button
     # would toggle it off (see setMode()), so the second click dispatches
     # straight to the SVG instead of going through _click_mode again.
     ux1, uy1 = px(fig, 1, 1.0, 0.0)
@@ -672,7 +672,7 @@ def test_pick_values_key_does_not_clobber_structured_fields(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 1.0, 1.0)
-    markers = _click_mode(page, "Point Pick", ux, uy)
+    markers = _click_mode(page, "Point Picking", ux, uy)
     assert len(markers) == 1
     assert markers[0]["kind"] == "points", (
         "values={'kind': ...} clobbered the structured kind field: %r" % markers[0])
@@ -681,7 +681,7 @@ def test_pick_values_key_does_not_clobber_structured_fields(page, tmp_path):
 
 
 def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
-    """set_pickable(False) blocks Point Pick on that axes without disabling
+    """set_pickable(False) blocks Point Picking on that axes without disabling
     Span/Zoom -- a figure can restrict picking to a single panel while every
     other tool still works everywhere."""
     import plotpress
@@ -700,7 +700,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
         """(p) => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
-            .forEach(b => { if (b.textContent === 'Point Pick') b.click(); });
+            .forEach(b => { if (b.textContent === 'Point Picking') b.click(); });
           const pt = svg.createSVGPoint();
           pt.x = p[0]; pt.y = p[1];
           const c = pt.matrixTransform(svg.getScreenCTM());
@@ -714,7 +714,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
         """(p) => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
-            .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
+            .forEach(b => { if (b.textContent === 'Axis Zoom') b.click(); });
           const before = svg.getBoundingClientRect().width;
           const pt = svg.createSVGPoint();
           pt.x = p[0]; pt.y = p[1];
@@ -909,7 +909,7 @@ def _px_at_limits(fig, i, dx, dy, xlim, ylim):
 
 
 def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
-    """Regression: nearestVertex() -- the fallback Point Pick uses for a
+    """Regression: nearestVertex() -- the fallback Point Picking uses for a
     series too large to embed in the pick payload (over to_html()'s default
     pick_max_points=20000) -- compared the click against that series' raw
     SVG geometry, which is fixed in the axes' *original* pre-zoom limits.
@@ -942,7 +942,7 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
     _box_zoom(page, x0, y0, x1, y1)
 
     markers = _click_mode(
-        page, "Point Pick", *_px_at_limits(fig, 0, target_x, target_y, zoom_xlim, zoom_ylim))
+        page, "Point Picking", *_px_at_limits(fig, 0, target_x, target_y, zoom_xlim, zoom_ylim))
     assert len(markers) == 1
     m = markers[0]
     assert abs(m["x"] - target_x) < 0.5, (
@@ -975,7 +975,7 @@ def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_pa
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Zoom') b.click();
+            if (b.textContent === 'Axis Zoom') b.click();
           });
           const r0 = svg.getBoundingClientRect();
           const cx = r0.x + r0.width * 0.3, cy = r0.y + r0.height * 0.7;
@@ -1036,7 +1036,7 @@ def test_plain_wheel_without_ctrl_does_not_zoom_and_is_not_captured(page, tmp_pa
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Zoom') b.click();
+            if (b.textContent === 'Axis Zoom') b.click();
           });
           const before = svg.getAttribute('viewBox');
           const r = svg.getBoundingClientRect();
@@ -1072,7 +1072,7 @@ def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Magnify') b.click();
+            if (b.textContent === 'Figure Navigator') b.click();
           });
           const before = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
@@ -1113,7 +1113,7 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Magnify') b.click();
+            if (b.textContent === 'Figure Navigator') b.click();
           });
           const r = svg.getBoundingClientRect();
           const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
@@ -1174,7 +1174,7 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Magnify') b.click();
+            if (b.textContent === 'Figure Navigator') b.click();
           });
           const home = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
@@ -1217,10 +1217,10 @@ def test_magnify_mode_disables_text_selection_on_the_svg(page, tmp_path):
               return getComputedStyle(document.getElementById('plotpress-svg')).userSelect;
             }""", label)
 
-    assert user_select_under("Span") != "none"
-    assert user_select_under("Magnify") == "none"
-    # Switching back off Magnify must restore normal selection behavior.
-    assert user_select_under("Magnify") != "none"   # clicking the active tool turns it off
+    assert user_select_under("Axis Span") != "none"
+    assert user_select_under("Figure Navigator") == "none"
+    # Switching back off Figure Navigator must restore normal selection behavior.
+    assert user_select_under("Figure Navigator") != "none"   # clicking the active tool turns it off
 
 
 def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
@@ -1247,7 +1247,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Magnify') b.click();
+            if (b.textContent === 'Figure Navigator') b.click();
           });
           const before = {
             scrollWidth: document.documentElement.scrollWidth,
@@ -1271,7 +1271,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
             scrollX: window.scrollX, scrollY: window.scrollY,
           };
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Reset') b.click();
+            if (b.textContent === 'Reset Figure') b.click();
           });
           const reset = {
             width: svg.getBoundingClientRect().width,
@@ -1295,7 +1295,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
 
 
 def _box_zoom(page, x0, y0, x1, y1):
-    """Simulate a real "Zoom"-mode rubber-band drag between two SVG
+    """Simulate a real "Axis Zoom"-mode rubber-band drag between two SVG
     user-space pixel points -- the mechanism that now drives per-axes,
     data-space zoom (the wheel zooms the whole figure instead; see
     test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor)."""
@@ -1303,7 +1303,7 @@ def _box_zoom(page, x0, y0, x1, y1):
         """([x0, y0, x1, y1]) => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
-            .forEach(b => { if (b.textContent === 'Zoom') b.click(); });
+            .forEach(b => { if (b.textContent === 'Axis Zoom') b.click(); });
           function toClient(ux, uy) {
             const pt = svg.createSVGPoint();
             pt.x = ux; pt.y = uy;
@@ -1321,12 +1321,12 @@ def _box_zoom(page, x0, y0, x1, y1):
 
 
 def _drag_pan(page, x0, y0, x1, y1):
-    """Simulate a real "Span"-mode drag between two SVG user-space points."""
+    """Simulate a real "Axis Span"-mode drag between two SVG user-space points."""
     return page.evaluate(
         """([x0, y0, x1, y1]) => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button')
-            .forEach(b => { if (b.textContent === 'Span') b.click(); });
+            .forEach(b => { if (b.textContent === 'Axis Span') b.click(); });
           function toClient(ux, uy) {
             const pt = svg.createSVGPoint();
             pt.x = ux; pt.y = uy;
@@ -1469,77 +1469,8 @@ def _click_mode(page, mode_label, ux, uy, prompt_text=None):
         [mode_label, ux, uy])
 
 
-def test_annotate_point_locks_a_note_to_the_nearest_datum(page, tmp_path):
-    """"Annotate Point" must resolve to the same target Point Pick would, but
-    carry the user's own text instead of the auto-generated "x=.., y=.."
-    readout -- and keep it after arrow-key stepping."""
-    import plotpress
-    from pick_cases import px
-
-    x = [0.0, 1.0, 2.0, 3.0]
-    y = [0.0, 1.0, 4.0, 9.0]
-    fig, ax = plotpress.subplots()
-    ax.plot(x, y)
-    path = tmp_path / "annotate_point.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
-    page.goto(path.as_uri())
-
-    ux, uy = px(fig, 0, x[2], y[2])
-    markers = _click_mode(page, "Annotate Point", ux, uy, prompt_text="peak here")
-    assert len(markers) == 1
-    m = markers[0]
-    assert m["kind"] == "points" and m["index"] == 2
-    assert m["x"] == pytest.approx(x[2]) and m["y"] == pytest.approx(y[2])
-    assert m["text"] == "peak here"
-
-    # Step to the next point (arrow key) -- the text must survive the move.
-    page.evaluate(
-        """() => document.querySelector('.plotpress-pin')
-             .dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'ArrowRight'}))""")
-    stepped = page.evaluate("() => window.plotpressGetMarkers()")
-    assert len(stepped) == 1
-    assert stepped[0]["index"] == 3
-    assert stepped[0]["text"] == "peak here", "custom text must not be lost on step"
 
 
-def test_annotate_point_note_survives_frame_slider_scrub(page, tmp_path):
-    """Regression: updateFramePins() (fired whenever a plot_frames slider
-    moves) called layoutPin() directly instead of through the pinLabel()
-    helper every other re-layout path uses -- pan/zoom (relayoutPins) and
-    arrow-key stepping (stepPin) both already went through pinLabel(), so
-    only the frame-slider path silently stomped a user's Annotate Point note
-    back to the auto-generated "x=.., y=.." readout on every scrub."""
-    import numpy as np
-    import plotpress
-    from pick_cases import px
-
-    x = np.array([0.0, 1.0, 2.0, 3.0])
-    Y = np.array([x * (f + 1) for f in range(4)])   # frame f: y = x * (f + 1)
-    fig, ax = plotpress.subplots()
-    ax.plot_frames(x, Y, slider_label="t")
-    path = tmp_path / "frame_annotate.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
-    page.goto(path.as_uri())
-
-    ux, uy = px(fig, 0, x[2], Y[0][2])   # frame 0's vertex at x[2]
-    markers = _click_mode(page, "Annotate Point", ux, uy, prompt_text="watch me")
-    assert len(markers) == 1 and markers[0]["text"] == "watch me"
-
-    page.evaluate(
-        """() => {
-          const input = document.querySelector('.plotpress-slider input[type=range]');
-          input.value = 2;
-          input.dispatchEvent(new Event('input', {bubbles: true}));
-        }""")
-
-    label = page.evaluate(
-        "() => document.querySelector('.plotpress-pin text').textContent")
-    assert label == "watch me", (
-        "custom annotation text was stomped back to the auto-readout on "
-        "frame change: %r" % label)
-
-    after = page.evaluate("() => window.plotpressGetMarkers()")
-    assert len(after) == 1 and after[0]["text"] == "watch me"
 
 
 def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
@@ -1562,7 +1493,7 @@ def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # center of cell (row=1, col=2)
-    markers = _click_mode(page, "Point Pick", ux, uy)
+    markers = _click_mode(page, "Point Picking", ux, uy)
     assert len(markers) == 1
     m = markers[0]
     assert m["kind"] == "meshframe"
@@ -1595,7 +1526,7 @@ def test_pcolormesh_frames_pick_arrow_key_steps_to_neighboring_cell(page, tmp_pa
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
-    _click_mode(page, "Point Pick", ux, uy)
+    _click_mode(page, "Point Picking", ux, uy)
     page.evaluate("() => document.querySelector('.plotpress-pin').dispatchEvent("
                   "new MouseEvent('click', {bubbles: true}))")
     page.keyboard.press("ArrowRight")
@@ -1627,7 +1558,7 @@ def test_mesh_pick_arrow_key_up_honors_an_inverted_axis(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
-    _click_mode(page, "Point Pick", ux, uy)
+    _click_mode(page, "Point Picking", ux, uy)
     page.evaluate("() => document.querySelector('.plotpress-pin').dispatchEvent("
                   "new MouseEvent('click', {bubbles: true}))")
 
@@ -1669,33 +1600,15 @@ def test_pcolormesh_frames_curvilinear_pick_uses_nearest_cell_center(page, tmp_p
     ccx = float((X[i, j] + X[i, j + 1] + X[i + 1, j] + X[i + 1, j + 1]) / 4.0)
     ccy = float((Y[i, j] + Y[i, j + 1] + Y[i + 1, j] + Y[i + 1, j + 1]) / 4.0)
     ux, uy = px(fig, 0, ccx, ccy)
-    markers = _click_mode(page, "Point Pick", ux, uy)
+    markers = _click_mode(page, "Point Picking", ux, uy)
     assert len(markers) == 1
     assert markers[0]["z"] == float(Z0[i, j])
 
 
-def test_annotate_point_on_a_pie_miss_makes_no_marker(page, tmp_path):
-    """A pie axes only has its wedges to pick -- "Annotate Point" missing all
-    of them must make no marker, same as Point Pick, not fall back to a
-    free-floating note."""
-    import plotpress
-
-    fig, ax = plotpress.subplots()
-    ax.pie([1, 1, 1])
-    path = tmp_path / "annotate_point_pie_miss.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
-    page.goto(path.as_uri())
-
-    # Center of the axes box: inside the pie's hole, outside every wedge. No
-    # prompt_text: a miss must bail out *before* window.prompt(), and a
-    # page.once('dialog', ...) that's never consumed here would otherwise
-    # leak forward and hijack the next test's prompt on this shared page.
-    markers = _click_mode(page, "Annotate Point", 0.0, 0.0)
-    assert markers == []
 
 
 def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
-    """Inside an axes, "Annotate Free" isn't locked to any datum, but it
+    """Inside an axes, "Annotation" isn't locked to any datum, but it
     should still report a data coordinate (and pan/zoom with that axes),
     matching the pre-existing single "Annotate" tool's behavior."""
     import plotpress
@@ -1708,7 +1621,7 @@ def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 3.0, 2.0)
-    markers = _click_mode(page, "Annotate Free", ux, uy, prompt_text="mid-plot note")
+    markers = _click_mode(page, "Annotation", ux, uy, prompt_text="mid-plot note")
     assert len(markers) == 1
     m = markers[0]
     assert m["kind"] == "annotation" and m["text"] == "mid-plot note"
@@ -1722,7 +1635,7 @@ def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
 def test_annotate_free_works_outside_any_axes(page, tmp_path):
     """Regression: the original single "Annotate" tool required being inside
     an axes (``if (!a) return``), so a figure-margin caption or a note
-    between subplots was impossible. "Annotate Free" must work there too,
+    between subplots was impossible. "Annotation" must work there too,
     reporting a figure pixel position since no data coordinate exists."""
     import plotpress
 
@@ -1734,7 +1647,7 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
 
     # (2, 2) in SVG user space is the figure's top-left margin (see
     # test_click_on_empty_space_makes_no_stray_marker), well outside any axes.
-    markers = _click_mode(page, "Annotate Free", 2, 2, prompt_text="figure caption")
+    markers = _click_mode(page, "Annotation", 2, 2, prompt_text="figure caption")
     assert len(markers) == 1
     m = markers[0]
     assert m["kind"] == "annotation" and m["text"] == "figure caption"
@@ -1743,10 +1656,10 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
 
 
 def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
-    """"Hide Annotations" is a standalone toggle, not a mode -- it must hide
-    every pin (Point Pick markers and Annotate notes alike) without deleting
-    any of them, and bringing it back must restore them exactly, including
-    their text."""
+    """"Hide All" is a standalone toggle, not a mode -- it must hide
+    every pin (Point Picking markers and Annotation notes alike) without
+    deleting any of them, and bringing it back must restore them exactly,
+    including their text."""
     import plotpress
     from pick_cases import px
 
@@ -1758,9 +1671,9 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
     page.goto(path.as_uri())
 
     ux0, uy0 = px(fig, 0, x[1], y[1])
-    _click_mode(page, "Point Pick", ux0, uy0)
+    _click_mode(page, "Point Picking", ux0, uy0)
     ux1, uy1 = px(fig, 0, x[2], y[2])
-    _click_mode(page, "Annotate Point", ux1, uy1, prompt_text="second point")
+    _click_mode(page, "Annotation", ux1, uy1, prompt_text="second point")
     assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 2
 
     def toggle_and_read():
@@ -1768,8 +1681,8 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
             """() => {
               let btn = null;
               document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-                if (b.textContent === 'Hide Annotations' ||
-                    b.textContent === 'Show Annotations') btn = b;
+                if (b.textContent === 'Hide All' ||
+                    b.textContent === 'Show All') btn = b;
               });
               btn.click();
               const pins = document.querySelectorAll('.plotpress-pin');
@@ -1784,20 +1697,20 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
             }""")
 
     hidden = toggle_and_read()
-    assert hidden["label"] == "Show Annotations"
+    assert hidden["label"] == "Show All"
     assert hidden["pinCount"] == 2, "toggling must not delete any pin"
     assert hidden["hiddenCount"] == 2, "every pin must be visually hidden"
     assert len(hidden["markers"]) == 2, "marker data must survive while hidden"
 
     shown = toggle_and_read()
-    assert shown["label"] == "Hide Annotations"
+    assert shown["label"] == "Hide All"
     assert shown["hiddenCount"] == 0, "toggling back must restore visibility"
     assert shown["markers"] == hidden["markers"], (
         "restored markers must carry the exact same data, including text")
 
 
 def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
-    """Hide Annotations must take a figure-drawn ax.text(bbox=...)/
+    """Hide All must take a figure-drawn ax.text(bbox=...)/
     ax.annotate(bbox=...) callout too, not just interactive pins -- it reads
     as the same kind of "annotation" on screen. A plain unboxed label is not
     a callout and must stay visible throughout."""
@@ -1834,12 +1747,12 @@ def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
     assert before["hiddenCount"] == 0
     assert before["plainVisible"]
 
-    _click_toolbar(page, "Hide Annotations")
+    _click_toolbar(page, "Hide All")
     hidden = read()
     assert hidden["hiddenCount"] == 2, "both boxed callouts must hide"
     assert hidden["plainVisible"], "an unboxed label is not a callout -- stays visible"
 
-    _click_toolbar(page, "Show Annotations")
+    _click_toolbar(page, "Show All")
     shown = read()
     assert shown["hiddenCount"] == 0, "toggling back must restore both"
 
@@ -1940,12 +1853,12 @@ def test_report_stretches_a_slider_figure_to_the_iframes_width(page, tmp_path):
     # _REPORT_STYLE's 1px iframe border) runs 2px wider -- both within a
     # couple px is "scaled to fill it", not coincidentally close.
     assert result["svgWidth"] == pytest.approx(result["iframeWidth"], abs=3)
-    # height = width * (4/6), plus the toolbar's fixed 80px clearance (two
-    # stacked button rows -- see _toolbar_clearance) and the one docked
-    # slider's 60px allowance -- both are real body padding inside the
-    # embedded document now (Figure.to_html, standalone=False), so
+    # height = width * (4/6), plus the toolbar's fixed 112px clearance (two
+    # stacked, labeled button rows -- see _toolbar_clearance) and the one
+    # docked slider's 60px allowance -- both are real body padding inside
+    # the embedded document now (Figure.to_html, standalone=False), so
     # scrollHeight (what the resize script measures) already includes them.
-    expected_h = result["svgWidth"] * 4 / 6 + 80 + 60
+    expected_h = result["svgWidth"] * 4 / 6 + 112 + 60
     assert result["iframeHeight"] == pytest.approx(expected_h, abs=3)
 
 
@@ -2029,11 +1942,11 @@ def _click_toolbar(page, label):
 
 
 def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_path):
-    """The core round trip: pan/zoom, a Point Pick, an Annotate Point note, a
-    free annotation, a hidden legend series, and Hide Annotations all have to
-    come back exactly as they were when the downloaded copy is reopened --
-    not just the data plot_data()/load_data() already covers, the live
-    session's own state."""
+    """The core round trip: pan/zoom, a Point Picking pin, an Annotation
+    note locked near a datum, a free annotation, a hidden legend series, and
+    Hide All all have to come back exactly as they were when the
+    downloaded copy is reopened -- not just the data plot_data()/
+    load_data() already covers, the live session's own state."""
     import plotpress
     from pick_cases import px
 
@@ -2052,16 +1965,19 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     page.evaluate("() => { delete window.showSaveFilePicker; }")
 
     ux, uy = px(fig, 0, x[2], 4.0)   # a real point on the "sq" line
-    markers = _click_mode(page, "Point Pick", ux, uy)
+    markers = _click_mode(page, "Point Picking", ux, uy)
     assert len(markers) == 1
 
-    markers = _click_mode(page, "Annotate Point", *px(fig, 0, x[1], 1.0),
+    markers = _click_mode(page, "Annotation", *px(fig, 0, x[1], 1.0),
                           prompt_text="watch me")
     assert len(markers) == 2
 
-    # Annotate Free in the margin, above the axes -- not locked to any datum.
+    # Annotation in the margin, above the axes -- not locked to any datum.
+    # Annotation is already the active mode from the pin just above -- no
+    # _click_toolbar() re-click here: clicking an already-active tool's own
+    # button toggles it *off* (single-selection group), which would leave
+    # this click landing with no mode selected at all.
     page.once("dialog", lambda d: d.accept("free note"))
-    _click_toolbar(page, "Annotate Free")
     box = page.eval_on_selector(
         "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
         "return {x: r.x, y: r.y}; }")
@@ -2075,7 +1991,7 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
            })""")
 
     # Ctrl+wheel-zoom the whole figure.
-    _click_toolbar(page, "Zoom")
+    _click_toolbar(page, "Axis Zoom")
     svg_box = page.eval_on_selector(
         "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
         "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
@@ -2087,8 +2003,8 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
         "#plotpress-svg", "el => el.getBoundingClientRect().width")
     scroll_before = page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
 
-    # Hide Annotations.
-    _click_toolbar(page, "Hide Annotations")
+    # Hide All.
+    _click_toolbar(page, "Hide All")
 
     with page.expect_download() as dl_info:
         _click_toolbar(page, "Save As")
@@ -2122,9 +2038,9 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
 
     toggle_label = page.evaluate(
         """() => { const b = [...document.querySelectorAll('.plotpress-toolbar button')]
-                     .find(b => b.textContent.includes('Annotations'));
+                     .find(b => b.textContent === 'Hide All' || b.textContent === 'Show All');
                    return b ? b.textContent : null; }""")
-    assert toggle_label == "Show Annotations"
+    assert toggle_label == "Show All"
 
 
 def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
@@ -2150,7 +2066,7 @@ def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
 
     page.goto(once.as_uri())
     page.evaluate("() => { delete window.showSaveFilePicker; }")
-    _click_toolbar(page, "Point Pick")
+    _click_toolbar(page, "Point Picking")
     page.mouse.click(
         *page.eval_on_selector(
             "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
@@ -2223,9 +2139,17 @@ def test_toolbar_hides_and_recovers(page, tmp_path):
 
 def test_builtin_toolbar_is_grouped_into_a_nav_row_and_a_mark_row(page, tmp_path):
     """The built-in toolbar is two coherent groups, not one long row:
-    navigate the view and persist it (Span/Zoom/Magnify/Reset/Save/Save As)
-    above, mark data and get it out (Point Pick/Annotate Point/Annotate
-    Free/Hide Annotations/Extract) below."""
+    Navigation -- navigate the view, reset it, and persist it (Figure
+    Navigator/Axis Span/Axis Zoom/Reset All Axes/Reset Figure/Save/Save As)
+    on top; Annotation -- mark data, control what's visible, and get it out
+    (Hide All/Point Picking/Clear Points/Annotation/Clear Annotations/
+    Extract) below. Both resets sit in Navigation, each right after the
+    tool(s) it undoes, with Save/Save As trailing the row -- persisting the
+    page is the last "do something to the view" step. Clear Points/Clear
+    Annotations each sit right after the tool that creates what they clear.
+    (A standalone third row for just Save/Save As was tried and dropped --
+    a full extra row for the toolbar's two sparsest buttons cost more
+    vertical space than it was worth.)"""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -2236,9 +2160,10 @@ def test_builtin_toolbar_is_grouped_into_a_nav_row_and_a_mark_row(page, tmp_path
 
     nav_labels = page.locator(".plotpress-toolbar-nav button").all_inner_texts()
     mark_labels = page.locator(".plotpress-toolbar-mark button").all_inner_texts()
-    assert nav_labels == ["Span", "Zoom", "Magnify", "Reset", "Save", "Save As"]
-    assert mark_labels == ["Point Pick", "Annotate Point", "Annotate Free",
-                           "Hide Annotations", "Extract"]
+    assert nav_labels == ["Figure Navigator", "Axis Span", "Axis Zoom",
+                          "Reset All Axes", "Reset Figure", "Save", "Save As"]
+    assert mark_labels == ["Hide All", "Point Picking", "Clear Points",
+                           "Annotation", "Clear Annotations", "Extract"]
 
     nav_top = page.locator(".plotpress-toolbar-nav").bounding_box()["y"]
     mark_top = page.locator(".plotpress-toolbar-mark").bounding_box()["y"]
@@ -2283,7 +2208,7 @@ def test_extra_js_add_tool_mode_joins_single_selection_group(page, tmp_path):
     """plotpressAddTool({label, mode, onClick, onEnter, onExit, cursor}) --
     a real mode: selecting it deselects whatever built-in tool was active
     and vice versa, its own onClick fires with a real user-space point via
-    the same click pipeline Point Pick uses, and onEnter/onExit fire on
+    the same click pipeline Point Picking uses, and onEnter/onExit fire on
     entry/exit."""
     import plotpress
     from pick_cases import px
@@ -2302,7 +2227,7 @@ def test_extra_js_add_tool_mode_joins_single_selection_group(page, tmp_path):
     path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
     page.goto(path.as_uri())
 
-    _click_mode(page, "Span", *px(fig, 0, 0.5, 0.5))
+    _click_mode(page, "Axis Span", *px(fig, 0, 0.5, 0.5))
     assert page.evaluate(
         "() => document.querySelector('.plotpress-toolbar button[data-mode=\"span\"]')"
         ".classList.contains('active')")
@@ -2336,7 +2261,7 @@ def test_extra_js_add_tool_mode_joins_single_selection_group(page, tmp_path):
     assert clicked["x"] == pytest.approx(ux, abs=1.0)
     assert clicked["y"] == pytest.approx(uy, abs=1.0)
 
-    _click_mode(page, "Span", *px(fig, 0, 0.2, 0.2))
+    _click_mode(page, "Axis Span", *px(fig, 0, 0.2, 0.2))
     assert page.evaluate("() => window.__exitCount") == 1
 
 

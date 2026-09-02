@@ -1234,11 +1234,11 @@ def _raster_groups(fig, W, H, S, draw):
         rects = [_pixel_rect(ax, W, H) for ax in members]
         extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
                  else _group_axes_extra(ax, st) for ax in members]
-        pad = g["pad"] * S
-        x0 = min(r[0] - e[2] * S for r, e in zip(rects, extras)) - pad
-        y0 = min(r[1] - e[0] * S for r, e in zip(rects, extras)) - pad
-        x1 = max(r[0] + r[2] + e[3] * S for r, e in zip(rects, extras)) + pad
-        y1 = max(r[1] + r[3] + e[1] * S for r, e in zip(rects, extras)) + pad
+        pad_l, pad_r, pad_t, pad_b = (v * S for v in g["pad"])
+        x0 = min(r[0] - e[2] * S for r, e in zip(rects, extras)) - pad_l
+        y0 = min(r[1] - e[0] * S for r, e in zip(rects, extras)) - pad_t
+        x1 = max(r[0] + r[2] + e[3] * S for r, e in zip(rects, extras)) + pad_r
+        y1 = max(r[1] + r[3] + e[1] * S for r, e in zip(rects, extras)) + pad_b
         pts = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]])
         dash = _DASH.get(g["linestyle"])
         dash_scaled = tuple(d * S for d in dash) if dash else None

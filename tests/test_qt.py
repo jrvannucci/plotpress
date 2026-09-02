@@ -173,7 +173,7 @@ def test_live_artist_line_and_sparse_mesh(shared_qt_widget):
         (function() {
           var svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(function(b) {
-            if (b.textContent === 'Point Pick' && !b.classList.contains('active')) b.click();
+            if (b.textContent === 'Point Picking' && !b.classList.contains('active')) b.click();
           });
           var pt = svg.createSVGPoint(); pt.x = %f; pt.y = %f;
           var c = pt.matrixTransform(svg.getScreenCTM());

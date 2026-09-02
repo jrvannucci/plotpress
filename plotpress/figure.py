@@ -33,6 +33,24 @@ from .svg import figure_to_svg
 _ALIGN_UNSET = object()
 
 
+def _normalize_pad(pad):
+    """A single number (uniform clearance) or a 4-item ``(left, right, top,
+    bottom)`` sequence, always returned as that 4-tuple -- every consumer
+    (the tight_layout margin reservation in this module, the box geometry in
+    svg.py/raster.py) then indexes one side directly instead of each
+    re-checking "was this a scalar or a sequence" on its own.
+    """
+    if isinstance(pad, (int, float)):
+        p = float(pad)
+        return (p, p, p, p)
+    pad = tuple(float(v) for v in pad)
+    if len(pad) != 4:
+        raise ValueError(
+            "pad must be a single number or a 4-item (left, right, top, "
+            f"bottom) sequence, got {len(pad)} values")
+    return pad
+
+
 class SubplotSpec:
     """A (possibly multi-cell) placement within an ``nrows`` x ``ncols`` grid.
 
@@ -229,10 +247,14 @@ class Figure:
         their individual positions (nothing about grid adjacency is
         checked) -- expanded to also clear each axes' own tick labels, axis
         labels, and title, not just its bare plot rect -- plus ``pad`` pixels
-        of clearance on every side. ``title_position`` is one of
-        ``"top"``/``"bottom"``/``"left"``/``"right"``, placing ``title`` just
-        outside that edge of the box. Returns ``self`` for chaining; several
-        groups may be added to one figure.
+        of clearance. ``pad`` is a single number for the same clearance on
+        all four sides, or a 4-item ``(left, right, top, bottom)`` sequence
+        for unequal padding -- e.g. tighter on the side that already butts
+        against a neighboring group, looser on the side carrying the title.
+        ``title_position`` is one of ``"top"``/``"bottom"``/``"left"``/
+        ``"right"``, placing ``title`` just outside that edge of the box.
+        Returns ``self`` for chaining; several groups may be added to one
+        figure.
         """
         if not axes:
             raise ValueError("group() needs at least one axes")
@@ -246,7 +268,7 @@ class Figure:
         self._groups.append({
             "title": title, "axes": list(axes), "linestyle": linestyle,
             "color": color, "linewidth": float(linewidth),
-            "title_position": title_position, "pad": float(pad),
+            "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
         })
         self._layout_dirty = True
@@ -654,6 +676,12 @@ class Figure:
                 continue
             size = g["fontsize"] or st.title_size
             pos = g["title_position"]
+            # pad is (left, right, top, bottom) -- the margin this title's
+            # own side needs to reserve is that side's own clearance, not
+            # some other edge's (an asymmetric pad -- tight on the side
+            # butting a neighboring group, loose on the title side -- would
+            # otherwise reserve the wrong amount here).
+            pad_l, pad_r, pad_t, pad_b = g["pad"]
             if pos in ("top", "bottom"):
                 # 1.3x size -- not 1x -- for the same reason title_px above
                 # adds a flat +8 rather than measuring real glyph ascent:
@@ -661,12 +689,14 @@ class Figure:
                 # fonts/), not vertical extents, so this errs generous
                 # rather than risk the title's own glyphs clipping the
                 # canvas edge.
-                extent = g["pad"] + size * 1.3 + 10
+                side_pad = pad_t if pos == "top" else pad_b
+                extent = side_pad + size * 1.3 + 10
             else:
                 # A left/right title runs horizontally alongside the box, not
                 # centered over it -- its own rendered *width* is what has to
                 # fit in the reserved margin here, not a height allowance.
-                extent = g["pad"] + st.text_width(g["title"], size, bold=True) + 12
+                side_pad = pad_l if pos == "left" else pad_r
+                extent = side_pad + st.text_width(g["title"], size, bold=True) + 12
             r0 = min(ax._subplotspec.row0 for ax in g_specs)
             r1 = max(ax._subplotspec.row1 for ax in g_specs)
             c0 = min(ax._subplotspec.col0 for ax in g_specs)
@@ -1530,22 +1560,27 @@ def _toolbar_clearance(interactive, n_sliders):
     gallery/usage embeds in ``docs/conf.py``), so a figure looks the same
     either way it ends up on a page.
 
-    80px clears the built-in toolbar's own two stacked rows -- navigate/
-    persist (Span/Zoom/.../Save As) above, mark/extract (Point Pick/.../
-    Extract) below, see ``.plotpress-toolbar-nav``/``.plotpress-toolbar-mark``
-    -- at their own measured ~64px combined height (two ~28px button rows
-    plus the 4px gap between them, see ``.plotpress-toolbar-wrap``), plus
-    its 10px offset from the top, with a few px to spare. Does not budget
-    for a caller's own ``plotpressAddTool()`` row (``extra_js=`` on
-    :meth:`Figure.to_html`) -- an opaque JS string from here, with no way
-    to know ahead of time whether it adds one; a page relying on this
-    clearance (``standalone=False``) with a custom row of its own may need
-    extra top padding added by hand. 60px per slider matches each docked
-    strip's own footprint (``.plotpress-slider``).
+    112px clears the built-in toolbar's own two stacked rows -- Navigation
+    above, Annotation below, see ``.plotpress-toolbar-nav``/
+    ``.plotpress-toolbar-mark`` -- each a small uppercase group label
+    (``.plotpress-toolbar-group-label``) plus its own button row, at their
+    own measured ~94px combined height (two label+button-row groups plus
+    the 4px gap between them, see ``.plotpress-toolbar-wrap``), plus its
+    10px offset from the top, with a few px to spare. (A third row, just
+    for Save/Save As, was tried and dropped -- it cost a full extra
+    label+row of vertical space for the sparsest row in the toolbar; both
+    now sit at the end of Navigation instead, which is what let this go
+    back down from 140.) Does not budget for a caller's own
+    ``plotpressAddTool()`` row (``extra_js=`` on :meth:`Figure.to_html`) --
+    an opaque JS string from here, with no way to know ahead of time
+    whether it adds one; a page relying on this clearance
+    (``standalone=False``) with a custom row of its own may need extra top
+    padding added by hand. 60px per slider matches each docked strip's own
+    footprint (``.plotpress-slider``).
     """
     if not interactive:
         return 0, 0
-    return 80, 60 * n_sliders
+    return 112, 60 * n_sliders
 
 
 def _encode_binary_arrays(obj, precision=6):

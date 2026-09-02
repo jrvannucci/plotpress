@@ -1168,9 +1168,13 @@ anywhere in the source.
   than a round marker. Only round markers are drawn; accepting the argument and
   silently substituting a dot loses distinctions the shape was carrying, such as
   censored versus observed, with nothing on the figure to reveal it.
-- Annotate is now two separate tools instead of one: **Annotate Point** locks
-  a note to the nearest pickable datum, and **Annotate Free** drops it
-  anywhere on the figure in figure-fraction coordinates.
+- Annotate was briefly two separate tools instead of one -- **Annotate
+  Point** locking a note to the nearest pickable datum, **Annotate Free**
+  dropping it anywhere on the figure -- before landing on the single
+  **Annotation** tool further down in this file; noted here rather than
+  left standing, since this section never shipped as its own dated
+  release and a reader following it top-to-bottom would otherwise hit a
+  tool description that contradicts what the toolbar actually ships with.
 - **Both plot-type reference sections split by subject rather than left as one
   long flat list.** The quantum devices field's 52 examples are now five
   fields -- spectroscopy, readout and device maps, coherence and noise, gate
@@ -1195,6 +1199,34 @@ anywhere in the source.
   whole-figure image zoom is. See `docs/usage.rst`'s Zoom bullet for two
   demo GIFs: one zooming into a cluster of a 30-panel `pcolormesh` grid,
   one on a plain single-axes line plot.
+- **The interactive toolbar's built-in tools were renamed and reorganized
+  into two labeled rows, Navigation and Annotation, and Reset/Clear each
+  split into two more precisely scoped actions.** Renamed for clarity:
+  Magnify -> **Figure Navigator**, Span -> **Axis Span**, Zoom -> **Axis
+  Zoom**, Point Pick -> **Point Picking**, Annotate Free -> **Annotation**
+  (Annotate Point removed -- Point Picking already covers snapping to a
+  datum, and Annotation covers everything else), Hide Annotations -> **Hide
+  All** (behavior unchanged; it already hid both marker kinds and every
+  boxed callout, the rename just stopped implying a narrower scope than it
+  ever had). Split: the single **Reset** button is now **Reset All Axes**
+  (per-axes pan/zoom only) and **Reset Figure** (whole-figure magnification
+  only) -- and a single **Clear Points** button that used to remove every
+  pin *and* annotation is now **Clear Points** (Point Picking pins only)
+  and **Clear Annotations** (Annotation notes only), each scoped by the
+  `.plotpress-note` class Annotation notes carry. Escape still clears
+  everything at once, unchanged. **Navigation** groups Figure Navigator,
+  Axis Span/Zoom, both resets, and Save/Save As (navigate the view, reset
+  it, persist it); **Annotation** groups Hide All, Point Picking/Clear
+  Points, Annotation/Clear Annotations, and Extract (mark data, control
+  what's visible, get it out) -- a dedicated third row for just Save/Save
+  As was tried and dropped for costing a full extra row of vertical space
+  on the toolbar's two sparsest buttons. See `docs/user_guide/interactivity.rst`
+  for the full current tool reference.
+- `Figure.group()`'s `pad` now also accepts a `(left, right, top, bottom)`
+  sequence, not just a single number, for unequal clearance on each side of
+  the box -- e.g. tight on the side facing a neighboring group, generous on
+  the side carrying the title. See the new
+  `docs/examples/grouping/plot_11_unequal_padding.py`.
 
 ## [0.1.0] - 2026-07-26
 

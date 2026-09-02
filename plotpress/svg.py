@@ -214,9 +214,12 @@ def _render_groups(fig, W, H, body):
     """``Figure.group()``'s labeled boxes -- one dashed (by default) rect per
     group, tightly wrapping the union of its axes' own allocated rects (each
     expanded for its own title/tick labels/axis labels -- see
-    _group_axes_extra) plus ``pad`` px of clearance, with the title just
-    outside whichever edge ``title_position`` names. Any colorbar belonging
-    entirely to the group's own axes (see _group_colorbars) is wrapped too.
+    _group_axes_extra) plus ``pad`` px of clearance per side (already
+    normalized to a (left, right, top, bottom) 4-tuple by
+    figure._normalize_pad, whether the caller passed one number or four),
+    with the title just outside whichever edge ``title_position`` names.
+    Any colorbar belonging entirely to the group's own axes (see
+    _group_colorbars) is wrapped too.
     """
     st = fig.style
     for g in fig._groups:
@@ -224,11 +227,11 @@ def _render_groups(fig, W, H, body):
         rects = [_pixel_rect(ax, W, H) for ax in members]
         extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
                  else _group_axes_extra(ax, st) for ax in members]
-        pad = g["pad"]
-        x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad
-        y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad
-        x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad
-        y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad
+        pad_l, pad_r, pad_t, pad_b = g["pad"]
+        x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad_l
+        y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad_t
+        x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad_r
+        y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad_b
         dash = _DASH.get(g["linestyle"])
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         body.append(
@@ -351,7 +354,7 @@ def axes_metadata(fig):
             # record from a clustered panel say which cluster it came from,
             # the same way axes_title says which panel.
             "group": ", ".join(g["title"] for g in fig._groups if ax in g["axes"]),
-            # False excludes this axes from Point Pick/Annotate Point --
+            # False excludes this axes from Point Picking --
             # see Axes.set_pickable.
             "pickable": bool(ax._pickable),
             # Arbitrary user-supplied key/value pairs merged onto every pick
@@ -1630,7 +1633,7 @@ def _render_text(t: Text, tr, st, body, index=None):
     cscale = index is not None and not t.axes_fraction
     if cscale:
         body.append(_cscale_open(index, x, y))
-    # A boxed label is a "text box" the toolbar's Hide Annotations toggle
+    # A boxed label is a "text box" the toolbar's Hide All toggle
     # (see _interactive.py's .plotpress-textbox rule) can hide alongside every
     # pin/annotation -- a plain unboxed label has no comparable "hide the
     # callout" reading, so it stays outside the group and always shows.
@@ -1686,7 +1689,7 @@ def _render_annotation(an: Annotation, tr, st, body, index=None):
     if cscale:
         body.append(_cscale_open(index, tx, ty))
     # See _render_text: a boxed callout -- box and text together -- is what
-    # Hide Annotations can toggle off.
+    # Hide All can toggle off.
     if an.bbox is not None:
         body.append('<g class="plotpress-textbox">')
         body.append(_bbox_svg(box, an.bbox))

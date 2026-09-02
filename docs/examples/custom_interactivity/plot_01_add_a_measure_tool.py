@@ -7,12 +7,12 @@ plotpress's own -- so ``window.plotpressAddTool`` and ``plotpressGetMarkers``
 already exist by the time it does. Two custom tools below:
 
 - **Measure** joins the toolbar as a real *mode* (``mode: 'measure'``),
-  selecting/deselecting alongside Span/Zoom/Point Pick the same as any
-  built-in tool -- picking it deselects whatever else was active, and
+  selecting/deselecting alongside Axis Span/Axis Zoom/Point Picking the same
+  as any built-in tool -- picking it deselects whatever else was active, and
   picking something else deselects it. Two clicks on the same axes draw a
   line between them and label it with the distance in *data* units, via
   ``window.plotpressToData`` -- the same per-axes pixel-to-data conversion
-  (log-scale/inverted-axis-aware) Point Pick itself uses internally,
+  (log-scale/inverted-axis-aware) Point Picking itself uses internally,
   exposed so a custom tool doesn't have to reimplement it.
 - **Log Markers** is a plain action button (no ``mode`` at all) -- it fires
   immediately on click, the same as the built-in Extract/Save buttons,

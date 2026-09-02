@@ -1,10 +1,10 @@
 // Drives the real point-picking UI of an interactive figure.
 //
 // Runs inside the page against unmodified fig.to_html() output: it selects
-// "Point Pick" through the actual toolbar button, dispatches a real click at
-// the pixel where the renderer drew a known datum, and reads the resulting
-// marker back through the public window.plotpressGetMarkers() API. Nothing
-// here reaches into the picking code's internals.
+// "Point Picking" through the actual toolbar button, dispatches a real click
+// at the pixel where the renderer drew a known datum, and reads the
+// resulting marker back through the public window.plotpressGetMarkers() API.
+// Nothing here reaches into the picking code's internals.
 //
 // Takes the target list (see tests/pick_cases.py) and returns one result per
 // target, so a failure names the field that disagreed.
@@ -17,9 +17,9 @@
 
   var pick = null;
   document.querySelectorAll('.plotpress-toolbar button').forEach(function (b) {
-    if (b.textContent === 'Point Pick') pick = b;
+    if (b.textContent === 'Point Picking') pick = b;
   });
-  if (!pick) return { error: 'no "Point Pick" button in the toolbar' };
+  if (!pick) return { error: 'no "Point Picking" button in the toolbar' };
   if (!pick.classList.contains('active')) pick.click();
 
   function clearPins() {

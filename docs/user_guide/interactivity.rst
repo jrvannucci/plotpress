@@ -11,9 +11,11 @@ Nothing is interactive until a tool is selected.
 The toolbar
 -----------
 
-Two rows, grouped by what the buttons do: navigate the view and persist it
-(Span/Zoom/Magnify/Reset, then Save/Save As) on top; mark data and get it
-out (Point Pick/Annotate Point/Annotate Free/Hide Annotations, then
+Two rows, grouped by what the buttons do: **Navigation** -- navigate the
+view, reset it, and persist it (Figure Navigator leftmost, then Axis
+Span/Axis Zoom, both resets, then Save/Save As) on top; **Annotation** --
+mark data, control what's visible, and get it out (Hide All leftmost, then
+Point Picking/Clear Points, the Annotation mode/Clear Annotations, then
 Extract) below.
 
 .. list-table::
@@ -22,79 +24,94 @@ Extract) below.
 
    * - Tool
      - Behavior
-   * - **Span**
+   * - **Figure Navigator**
+     - A plain wheel zooms the *whole figure*, centered on the cursor,
+       regardless of which axes (if any) is under it -- the useful gesture
+       on a figure with many small axes, where the cursor is only ever over
+       one tiny panel at a time. It grows the SVG's own rendered size
+       (never any axes' data range or ticks), so once it no longer fits the
+       window the browser's own scrollbars reach the rest of it, the same
+       as scrolling any other oversized page content. Drag pans that same
+       whole-figure view (native page scroll under the hood) in any
+       direction. Double-click resets that view (there is no per-axes zoom
+       to reset here, unlike Axis Span/Zoom below); text on the
+       figure -- tick labels, titles -- is left unselectable for as long as
+       Figure Navigator is active, so a pan drag doesn't also highlight it.
+       Leftmost in the toolbar -- the one whole-figure-level tool, ahead of
+       the per-axes Axis Span/Zoom pair.
+   * - **Axis Span**
      - Drag to pan a single plot's data window (log-aware).
-   * - **Zoom**
+   * - **Axis Zoom**
      - Two distinct gestures. Drag a rubber-band box to zoom *one axes* in
        **data space** -- its ticks recompute and markers keep a constant
-       size. Ctrl+wheel zooms the *whole figure* instead, centered on the
-       cursor, regardless of which axes (if any) is under it -- the useful
-       gesture on a figure with many small axes, where the cursor is only
-       ever over one tiny panel at a time. It grows the SVG's own rendered
-       size (never any axes' data range or ticks), so once it no longer fits
-       the window the browser's own scrollbars reach the rest of it, the
-       same as scrolling any other oversized page content.
-   * - **Magnify**
-     - The same whole-figure wheel zoom as Ctrl+wheel under Zoom, but a
-       *plain* wheel, no Ctrl needed -- for wherever holding Ctrl is
-       awkward, or a browser/OS extension already claims it. Its own mode
-       rather than folded into Zoom, so selecting it is an explicit choice
-       to have this figure capture the page's scroll. Drag pans the same
-       whole-figure view (native page scroll under the hood, same as
-       Zoom's) in any direction, so a zoomed-in figure stays reachable
-       without switching tools, on top of the browser's own scrollbars
-       already working -- always the figure's view, never an axes' own
-       data range. Double-click resets that view (there is no per-axes
-       zoom to reset here, unlike Span/Zoom below); text on the
-       figure -- tick labels, titles -- is left unselectable for as long as
-       Magnify is active, so a pan drag doesn't also highlight it.
-   * - **Reset**
-     - Restore the view; double-click resets just the plot under the cursor.
-   * - **Point Pick**
-     - Click to pin the nearest data value. Arrow keys step along the series
-       (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
-       images). Right-click deletes a marker; Escape clears all. A marker's
-       own dot scales down with the axes it landed on, so it never dwarfs a
-       tiny panel in a large grid the way a fixed size would -- and stays
-       that same on-screen size at any whole-figure Magnify/Zoom level,
-       rather than growing along with the figure until it covers the very
-       cell it is pointing at.
-   * - **Annotate Point**
-     - Like Point Pick, but prompts for text and locks a user-written note to
-       that datum instead of the auto-generated readout; still steppable by
-       arrow key and still tracks pan/zoom.
-   * - **Annotate Free**
-     - Drop a user-written note anywhere on the figure, not locked to any
-       datum -- including the margins or the gap between subplots.
-   * - **Hide Annotations**
-     - A standalone toggle, not a mode -- available regardless of which tool
-       is selected. Hides every pin and annotation without deleting any of
-       them; toggling it back to "Show Annotations" restores them exactly as
-       they were, text included.
-   * - **Extract**
-     - Copy/download all markers + annotations, or return them to Python.
+       size. Ctrl+wheel zooms the *whole figure* instead, the same gesture
+       Figure Navigator's plain wheel does.
+   * - **Reset All Axes**
+     - Restores every axes' own pan/zoom to its original view; leaves
+       whole-figure magnification and every pin/annotation untouched.
+       Double-click resets just the plot under the cursor. Sits right after
+       Axis Span/Zoom, the pair of tools it undoes.
+   * - **Reset Figure**
+     - Restores whole-figure magnification to its natural size; leaves
+       every axes' own pan/zoom and every pin/annotation untouched. Sits
+       right after Reset All Axes -- neither Reset button clears pins or
+       annotations; that's what Clear Points/Clear Annotations below are
+       for.
    * - **Save**
      - Tries to overwrite the file this page was opened from -- pan/zoom,
-       every pin/annotation, hidden legend series, Hide Annotations, all
+       every pin/annotation, hidden legend series, Hide All, all
        included -- instead of downloading a new one. That needs the File
        System Access API (Chromium, a secure context); anywhere it's
        unavailable this falls back to the same download Save As does.
+       Trails the Navigation row -- persisting the page is the last "do
+       something to the view" step, after both resets.
    * - **Save As**
      - The same, but always downloads a new, equally self-contained HTML
        file rather than trying to overwrite the original. Reopening it
        resumes this exact session, not just what was originally plotted.
+   * - **Hide All**
+     - A standalone toggle, not a mode -- available regardless of which tool
+       is selected. Hides every pin and annotation, of either kind, *and*
+       every figure-drawn boxed callout, without deleting any of them;
+       toggling it back to "Show All" restores them exactly as they were,
+       text included. Leftmost in the Annotation row -- the one
+       view-control tool, ahead of the mark/clear pairs it can hide without
+       clearing.
+   * - **Point Picking**
+     - Click to pin the nearest data value. Arrow keys step along the series
+       (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
+       images). Right-click deletes a marker; Escape clears every pin *and*
+       annotation at once. A marker's own dot scales down with the axes it
+       landed on, so it never dwarfs a tiny panel in a large grid the way a
+       fixed size would -- and stays that same on-screen size at any
+       whole-figure Figure Navigator/Zoom level, rather than growing along
+       with the figure until it covers the very cell it is pointing at.
+   * - **Clear Points**
+     - Removes every Point Picking pin at once, and only those -- an
+       Annotation note survives untouched. Sits right after Point Picking,
+       the tool it clears.
+   * - **Annotation**
+     - Drop a user-written note anywhere on the figure, not locked to any
+       datum -- including the margins or the gap between subplots.
+   * - **Clear Annotations**
+     - The mirror of Clear Points: removes every Annotation note at once,
+       and only those -- a Point Picking pin survives untouched. Sits right
+       after Annotation, the tool it clears.
+   * - **Extract**
+     - Copy/download all markers + annotations, or return them to Python.
    * - **▸** / **◂**
-     - Collapses the whole button row (a screenshot, an unobstructed view)
-       without hiding this one handle, which stays put so the row can always
-       be brought back -- no reload needed. Not remembered across a
+     - Collapses both button rows (a screenshot, an unobstructed view)
+       without hiding this one handle, which stays put so the rows can
+       always be brought back -- no reload needed. Not remembered across a
        reload/Save; it always starts expanded.
 
-A box-drag zoom and Span's pan both operate on a single axes' data limits,
-recomputing that axes' ticks live -- including on log scales. Ctrl+wheel (or
-a trackpad pinch) is the one *image*-style zoom of the whole figure: it never
+A box-drag zoom and Axis Span's pan both operate on a single axes' data
+limits, recomputing that axes' ticks live -- including on log scales.
+Ctrl+wheel (or a trackpad pinch) under Axis Zoom, and Figure Navigator's own
+plain wheel, are the one *image*-style zoom of the whole figure: neither ever
 changes any axes' data limits or ticks, only what part of the rendered figure
-is currently visible. A plain wheel, without Ctrl, is left to scroll the page
-instead -- it never zooms.
+is currently visible. A plain wheel with no tool selected is left to scroll
+the page instead -- it never zooms.
 
 Point picking reports extra dimensions
 --------------------------------------
@@ -133,10 +150,10 @@ always wins. See :doc:`../auto_examples/axes_features/plot_11_spine_color_grid`
 for a worked example, and the live figure in :doc:`../usage`.
 
 :meth:`~plotpress.axes.Axes.set_pickable` (default ``True``) excludes an axes
-from **Point Pick** and **Annotate Point** -- a click there behaves as if it
-missed every axes. **Span**, **Zoom**, and **Annotate Free** are unaffected,
-so a figure can restrict picking to a single panel while every other tool
-still works everywhere:
+from **Point Picking** -- a click there behaves as if it missed every axes.
+**Axis Span**, **Axis Zoom**, **Figure Navigator**, and **Annotation** are
+unaffected, so a figure can restrict picking to a single panel while every
+other tool still works everywhere:
 
 .. code-block:: python
 
@@ -233,14 +250,15 @@ shapes mirroring the built-in tools:
     built-in Extract/Save buttons. Never joins the selection group below.
 
 ``{label, mode, onClick, onEnter, onExit, cursor}``
-    A real *mode*, joining the same single-selection group as Span/Zoom/
-    Magnify/Point Pick/Annotate -- selecting it deselects whatever else was
-    active, and vice versa. A click on the SVG that no built-in mode
-    already claims calls ``onClick(event, userSpacePoint)``.
-    ``window.plotpressToData(userSpacePoint)`` converts that further into a
-    real data value (``{axes, x, y}``, or ``null`` off any pickable axes) --
-    the same per-axes, log-scale/inverted-axis-aware conversion Point Pick
-    itself uses, so a custom tool doesn't have to reimplement it.
+    A real *mode*, joining the same single-selection group as Figure
+    Navigator/Axis Span/Zoom/Point Picking/Annotation -- selecting it
+    deselects whatever else was active, and vice versa. A click on the SVG
+    that no built-in mode already claims calls
+    ``onClick(event, userSpacePoint)``. ``window.plotpressToData(userSpacePoint)``
+    converts that further into a real data value (``{axes, x, y}``, or
+    ``null`` off any pickable axes) -- the same per-axes, log-scale/
+    inverted-axis-aware conversion Point Picking itself uses, so a custom
+    tool doesn't have to reimplement it.
     ``onEnter``/``onExit`` fire when the mode is selected/deselected;
     ``cursor`` sets ``svg.style.cursor`` while it's active.
 

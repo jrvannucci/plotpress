@@ -3,12 +3,12 @@ Restricting point picking to one axes
 =======================================
 
 ``set_pickable(False)`` excludes an axes from the interactive toolbar's
-**Point Pick** and **Annotate Point** tools -- a click there behaves as if it
-missed every axes. **Span**, **Zoom**, and **Annotate Free** are unaffected,
-so a figure can restrict picking to a single panel while every other tool
-still works everywhere. The static image below looks like an ordinary grid --
-the effect only shows up in ``interactive=True`` output, so this is also a
-live figure in the online docs.
+**Point Picking** tool -- a click there behaves as if it missed every axes.
+**Axis Span**, **Axis Zoom**, **Figure Navigator**, and **Annotation** are
+unaffected, so a figure can restrict picking to a single panel while every
+other tool still works everywhere. The static image below looks like an
+ordinary grid -- the effect only shows up in ``interactive=True`` output, so
+this is also a live figure in the online docs.
 """
 import numpy as np
 import plotpress

@@ -63,14 +63,19 @@ Interactive HTML and pop-up output carry a self-contained JavaScript toolbar
 (no external requests -- works under strict CSPs like Jupyter). Nothing is
 active until a tool is selected:
 
-* **Span** -- drag to pan a single plot's data window.
-* **Zoom** -- two distinct gestures. Box-drag zooms *one axes* in data space
-  (ticks recompute). Ctrl+wheel (or a trackpad pinch) zooms the *whole
-  figure* instead, centered on the cursor, regardless of which axes (if
-  any) is under it -- the gesture that actually helps on a figure with many
-  small axes, where the cursor is only ever over one tiny panel at a time.
-  A plain wheel (no Ctrl) is left alone to scroll the page, exactly as it
-  would over any other content:
+The toolbar groups into two rows by what its buttons do, not the order
+features were added in: **Navigation** (navigate the view, reset it, and
+persist it) and **Annotation** (mark data, control what's visible, and get
+it out).
+
+Navigation:
+
+* **Figure Navigator** -- a plain wheel zooms the *whole figure*, centered
+  on the cursor, regardless of which axes (if any) is under it -- the
+  gesture that actually helps on a figure with many small axes, where the
+  cursor is only ever over one tiny panel at a time. Drag pans that same
+  whole-figure view. A plain wheel with no tool selected is left alone to
+  scroll the page, exactly as it would over any other content:
 
   .. image:: _static/gifs/wheel_zoom_many_axes.gif
      :alt: Wheel-zooming toward the cursor across a 30-panel pcolormesh grid
@@ -82,25 +87,41 @@ active until a tool is selected:
      :alt: Wheel-zooming toward the cursor on a single-axes line plot
      :width: 480px
 
-* **Point Pick** -- click to read the nearest data value; arrow keys step along
-  the series; right-click deletes. Reports extra dims (``z``, ``c``, ...).
+* **Axis Span** -- drag to pan a single plot's data window.
+* **Axis Zoom** -- two distinct gestures. Box-drag zooms *one axes* in data
+  space (ticks recompute). Ctrl+wheel (or a trackpad pinch) zooms the whole
+  figure instead, the same gesture Figure Navigator's plain wheel does.
+* **Reset All Axes** -- restores every axes' own pan/zoom to its original
+  view; leaves whole-figure magnification and every pin/annotation
+  untouched.
+* **Reset Figure** -- restores whole-figure magnification to its natural
+  size; leaves every axes' own pan/zoom and every pin/annotation untouched.
+* **Save**/**Save As** -- downloads the current page -- pan/zoom, every
+  pin/annotation, hidden-legend-series toggles, and Hide All -- as a new,
+  equally self-contained HTML file; Save tries to overwrite the file the
+  page was opened from instead, where the browser allows it.
 
 .. include:: _static/interactive/usage_pan_zoom_pick.rst.inc
 
-* **Annotate Point** -- like Point Pick, but prompts for text and locks a
-  user-written note to that datum instead of the auto-generated readout;
-  still steppable by arrow key and still tracks pan/zoom.
-* **Annotate Free** -- drop a user-written note anywhere on the figure, not
-  locked to any datum -- including the margins or the gap between subplots.
+Annotation:
+
+* **Hide All** -- a standalone toggle, not a mode: hides every pin and
+  annotation without deleting any of them. Toggling it back to "Show All"
+  restores them exactly as they were, text included.
+* **Point Picking** -- click to read the nearest data value; arrow keys step
+  along the series; right-click deletes. Reports extra dims (``z``, ``c``,
+  ...).
+* **Clear Points** -- removes every Point Picking pin at once, leaving any
+  Annotation notes untouched.
+* **Annotation** -- drop a user-written note anywhere on the figure, not
+  locked to any datum -- including the margins or the gap between
+  subplots.
+* **Clear Annotations** -- the mirror of Clear Points: removes every
+  Annotation note at once, leaving any Point Picking pins untouched.
+* **Extract** -- copy/download all markers and annotations as CSV/JSON (or
+  hand them back to the kernel with ``fig.show(wait_for_extract=True)``).
 
 .. include:: _static/interactive/usage_annotate.rst.inc
-
-* **Reset** / **Extract** -- restore the view, or copy/download all markers and
-  annotations as CSV/JSON (or hand them back to the kernel with
-  ``fig.show(wait_for_extract=True)``).
-* **Hide Annotations** -- a standalone toggle, not a mode: hides every pin and
-  annotation without deleting any of them. Toggling it back to "Show
-  Annotations" restores them exactly as they were, text included.
 
 .. include:: _static/interactive/usage_hide_annotations.rst.inc
 
@@ -115,8 +136,9 @@ multi-panel export always names its source panel.
 :meth:`~plotpress.axes.Axes.set_pick_context` attaches further per-axes
 key/value context (e.g. a panel's own color) that rides along on every record
 picked from it, and :meth:`~plotpress.axes.Axes.set_pickable` excludes an
-axes from Point Pick/Annotate Point entirely -- Span, Zoom, and Annotate Free
-are unaffected. See :doc:`user_guide/interactivity` for the full picture, and
+axes from Point Picking entirely -- Axis Span, Axis Zoom, Figure Navigator,
+and Annotation are unaffected. See :doc:`user_guide/interactivity` for the
+full picture, and
 :doc:`auto_examples/axes_features/plot_11_spine_color_grid` for
 ``set_pick_context`` used to surface a per-panel spine color.
 

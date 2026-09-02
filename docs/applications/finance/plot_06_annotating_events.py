@@ -8,18 +8,19 @@ whole stretch with no single tick that defines it -- the weeks the market
 spent re-rating the stock upward afterward have no one day that *is* the
 re-rating.
 
-plotpress's interactive HTML gives each of those its own tool, on the live
-copy of this figure below. **Annotate Point** locks a note to the nearest
-data point -- pick the tool, click near the gap day, and the note snaps to
-that exact close and stays snapped to it through a pan or zoom, the same way
-Point Pick's markers do. **Annotate Free** drops a note anywhere on the
-figure, including outside any axes -- caption the whole re-rating band, or
-the margin, without it pretending to be about one candle.
+plotpress's interactive HTML lets you drop either kind of note yourself, on
+the live copy of this figure below, via the single **Annotation** tool: click
+right on the gap day for a note that reads as being about that one candle,
+or click in the open margin (or the re-rating band itself) for a caption
+that reads as being about the stretch, not a point. (Point Picking is the
+tool that locks precisely to the nearest close, but its readout is always
+the auto-generated "x=.., y=.." value -- not a place for your own caption
+text the way Annotation is.)
 
 The static annotation below (drawn with ``ax.annotate()``, the same method
 the drawdown example elsewhere in this gallery uses) marks the gap itself,
 since that is the one thing about this chart every reader needs to see
-without touching anything. Try the live version's two annotate tools for the
+without touching anything. Try the live version's Annotation tool for the
 kind of note that is yours alone, not the author's.
 """
 import numpy as np
