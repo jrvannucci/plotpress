@@ -13,6 +13,22 @@ anywhere in the source.
 
 ### Added
 
+- **`plotpress.load_data_xarray()`**, a new optional (`pip install
+  plotpress[xarray]`) way to read a saved figure's data back as a single
+  labeled `xarray.Dataset`, dimensioned by the figure's own `row`/`col`
+  axes grid, instead of `load_data()`'s title-keyed dict of dicts -- the
+  natural fit for the uniform-grid-of-same-shaped-measurements case this
+  gallery already showcases (every panel its own `pcolormesh`, or its own
+  single line series): the whole grid comes back as one `z`/`y` array
+  ready for a bulk reduction across every panel at once, each panel's own
+  title/labels riding along as `(row, col)` coordinates, with no
+  panel-by-panel loop and no title to collide on (xarray indexes by
+  row/column position, never by name). Raises a clear `ValueError` naming
+  exactly what didn't fit for anything outside that scope -- a row/column
+  span, a mix of mesh and line panels, multiple series on one axes,
+  mismatched shapes -- pointing at `load_data()` as the fallback. New
+  example: `docs/examples/data_roundtrip/plot_05_reload_as_xarray.py`.
+
 - **Text selection is now disabled while any toolbar mode is active**, not
   just Figure Navigator -- every mode's own drag (Axis Span/Zoom across
   tick labels and titles, Point Picking/Annotation dragging a pin's own
@@ -184,6 +200,17 @@ anywhere in the source.
   ax.transAxes`).
 
 ### Fixed
+
+- **`load_data()` silently lost data when two axes (or two `Report`
+  entries) shared the same title.** The title-keyed dict this defaults to
+  had no collision handling at all -- a later axes/figure with an
+  identical title simply overwrote (and lost) an earlier one, so
+  `load_data()`'s return dict could come back with fewer entries than the
+  figure actually had, with nothing to signal it happened. A collision is
+  now disambiguated with a `" (2)"`, `" (3)"`, ... suffix instead, with a
+  `UserWarning` naming every one resolved -- every axes/figure stays
+  recoverable, and `by_index=True` remains the fully collision-proof
+  escape hatch it already was.
 
 - **A multi-agent audit of the toolbar reorganization and the new layout
   export/import feature (see Added above) turned up and fixed six real

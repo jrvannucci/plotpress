@@ -13,6 +13,7 @@ Top level
    subplots_from_layout
    Report
    load_data
+   load_data_xarray
    Style
    Normalize
    get_cmap
@@ -36,6 +37,8 @@ Report
    :members:
 
 .. autofunction:: plotpress.load_data
+
+.. autofunction:: plotpress.load_data_xarray
 
 Axes
 ----

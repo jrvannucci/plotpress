@@ -631,6 +631,61 @@ def test_load_data_falls_back_to_generated_titles_when_untitled(tmp_path):
     assert list(data["Figure 1"]["axes"].keys()) == ["axes 0"]
 
 
+def test_load_data_disambiguates_axes_that_share_a_title(tmp_path):
+    """Regression: two axes with the identical explicit title used to
+    collide in the title-keyed dict -- the later one silently overwrote
+    (and lost) the earlier one, with the returned dict simply one entry
+    shorter than the figure's real axes count and no signal why."""
+    fig, axes = plotpress.subplots(1, 3)
+    for i, ax in enumerate(axes):
+        ax.plot([0.0, 1.0, 2.0], [float(i), float(i) + 1.0, float(i) + 2.0])
+        ax.set_title("Panel")
+    p = tmp_path / "title_collision.html"
+    fig.save(str(p), interactive=True)
+
+    with pytest.warns(UserWarning, match="2 axes shared a title"):
+        data = plotpress.load_data(str(p))
+
+    axes_out = data["Figure 1"]["axes"]
+    assert set(axes_out) == {"Panel", "Panel (2)", "Panel (3)"}, (
+        "every axes must stay recoverable, not just the last one to win "
+        "the collision: %r" % set(axes_out))
+    assert axes_out["Panel"]["series"][0]["y"].tolist() == [0.0, 1.0, 2.0]
+    assert axes_out["Panel (2)"]["series"][0]["y"].tolist() == [1.0, 2.0, 3.0]
+    assert axes_out["Panel (3)"]["series"][0]["y"].tolist() == [2.0, 3.0, 4.0]
+
+    # No collision at all -- must not warn.
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    ax2.set_title("Unique")
+    p2 = tmp_path / "no_collision.html"
+    fig2.save(str(p2), interactive=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        plotpress.load_data(str(p2))   # must not warn/raise
+
+
+def test_load_data_disambiguates_report_entries_that_share_a_title(tmp_path):
+    """The same collision, one level up -- two Report entries saved with
+    the identical title used to lose the earlier figure's data entirely."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0.0, 1.0], [0.0, 1.0])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0.0, 1.0], [9.0, 9.0])
+    report = plotpress.Report()
+    report.add(fig1, title="Overview")
+    report.add(fig2, title="Overview")
+    p = tmp_path / "report_title_collision.html"
+    report.save(str(p))
+
+    with pytest.warns(UserWarning, match="1 figure shared a title"):
+        data = plotpress.load_data(str(p))
+
+    assert set(data) == {"Overview", "Overview (2)"}
+    assert data["Overview"]["axes"]["axes 0"]["series"][0]["y"].tolist() == [0.0, 1.0]
+    assert data["Overview (2)"]["axes"]["axes 0"]["series"][0]["y"].tolist() == [9.0, 9.0]
+
+
 def test_load_data_works_with_plain_json_meta(tmp_path):
     """binary_pick_data=False never columnarizes meta -- load_data() must
     handle both the columnar (int-keyed index) and plain (string-keyed dict)

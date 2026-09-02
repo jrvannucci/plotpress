@@ -2228,14 +2228,58 @@ def _split_report_entries(text):
     return text.split('<div class="plotpress-report-label">')[1:]
 
 
+def _dedupe_keyed(pairs, noun, stacklevel):
+    """Build a dict from ``[(key, item), ...]`` pairs (already in the order
+    they should be tried), disambiguating any collision with a
+    ``"<key> (2)"``, ``"<key> (3)"``, ... suffix -- rather than silently
+    letting a later item overwrite, and lose, an earlier one that resolves
+    to the identical key. Two axes (or two Report entries) sharing an
+    explicit title is realistic authoring, not exotic input worth crashing
+    or staying silent about -- a grid of identically-labeled panels, a
+    report re-using a section name -- the same "accept it, don't crash,
+    but don't stay silent" choice :func:`plotpress.artists.normalize_linestyle`
+    already makes for an unrecognized linestyle. Warns once, naming every
+    collision resolved, rather than the caller discovering a shorter dict
+    than they expected with no signal why.
+
+    ``noun`` is ``(singular, plural)`` (e.g. ``("figure", "figures")``),
+    so the one-collision case reads naturally instead of always using the
+    plural form regardless of count.
+    """
+    keyed = {}
+    collisions = []
+    for base, item in pairs:
+        key, n = base, 2
+        while key in keyed:
+            key = f"{base} ({n})"
+            n += 1
+        if key != base:
+            collisions.append((base, key))
+        keyed[key] = item
+    if collisions:
+        singular, plural = noun
+        word = singular if len(collisions) == 1 else plural
+        detail = ", ".join(f"{b!r} -> {k!r}" for b, k in collisions)
+        warnings.warn(
+            f"load_data(): {len(collisions)} {word} shared a title with "
+            f"another already-keyed one -- disambiguated ({detail}) so every "
+            "one stays recoverable instead of a later one silently "
+            "overwriting an earlier one with the same key. Pass "
+            "by_index=True for a stable, collision-free key instead.",
+            UserWarning, stacklevel=stacklevel)
+    return keyed
+
+
 def _title_keyed_axes(axes):
     """Re-key an int-indexed axes dict by each axes' own title, falling back
     to ``"axes {i}"`` when it has none -- the same fallback a picked record's
     ``axes_title`` already uses (see ``_interactive.py``'s
     ``resolvePickTarget``), so both surfaces name an untitled axes the same
-    way.
+    way. Two axes sharing an explicit title is disambiguated, not silently
+    collapsed to one -- see :func:`_dedupe_keyed`.
     """
-    return {(axes[i].get("title") or f"axes {i}"): axes[i] for i in sorted(axes)}
+    pairs = [(axes[i].get("title") or f"axes {i}", axes[i]) for i in sorted(axes)]
+    return _dedupe_keyed(pairs, ("axes", "axes"), stacklevel=4)
 
 
 def load_data(path: str, by_index: bool = False):
@@ -2315,14 +2359,18 @@ def load_data(path: str, by_index: bool = False):
     absent, not ``None``).
 
     Title keys are convenient but not guaranteed unique -- two figures (or
-    two axes within one figure) sharing the same title collide, and the
-    later one wins. Pass ``by_index=True`` when that matters, or when a
-    stable, order-based key is simply more useful than a name: this returns
-    a list of per-figure dicts instead (one per figure embedded in the file,
-    in the order they appear -- a bare figure's HTML still comes back as a
+    two axes within one figure) sharing the same title no longer collide
+    silently: the later one is disambiguated with a ``" (2)"``, ``" (3)"``,
+    ... suffix rather than overwriting (and losing) the earlier one, and a
+    ``UserWarning`` names every collision resolved this way. Pass
+    ``by_index=True`` when even that renaming matters, or when a stable,
+    order-based key is simply more useful than a name: this returns a list
+    of per-figure dicts instead (one per figure embedded in the file, in
+    the order they appear -- a bare figure's HTML still comes back as a
     one-item list), each with the same ``"title"``/``"details"``/``"axes"``/
     ``"layout"`` shape as above except ``"axes"`` is keyed by plain integer
-    index rather than title.
+    index rather than title -- and never renamed, since there is no title
+    collision to resolve when the key is a position instead of a name.
 
     Only works on HTML saved with ``interactive=True``: a static SVG or an
     ``interactive=False`` HTML embeds no data to read back, only drawn
@@ -2358,8 +2406,239 @@ def load_data(path: str, by_index: bool = False):
     if by_index:
         return figures
 
-    out = {}
-    for n, entry in enumerate(figures, start=1):
-        key = entry["title"] or f"Figure {n}"
-        out[key] = {**entry, "axes": _title_keyed_axes(entry["axes"])}
-    return out
+    pairs = [(entry["title"] or f"Figure {n}", entry)
+            for n, entry in enumerate(figures, start=1)]
+    keyed = _dedupe_keyed(pairs, ("figure", "figures"), stacklevel=3)
+    return {key: {**entry, "axes": _title_keyed_axes(entry["axes"])}
+           for key, entry in keyed.items()}
+
+
+def load_data_xarray(path: str, figure=None):
+    """Read one figure's plotted data back as a single ``xarray.Dataset``,
+    dimensioned by the figure's own axes grid (``row``/``col``, from the
+    same layout :func:`load_data` already returns) instead of
+    :func:`load_data`'s title-keyed dict of dicts.
+
+    Needs the optional ``xarray`` dependency: ``pip install
+    plotpress[xarray]``.
+
+    Built for the case :doc:`/auto_examples/data_roundtrip/index` already
+    showcases -- a uniform grid of same-shaped scientific measurements
+    (every panel its own ``pcolormesh``, or its own single line series) --
+    where a title-keyed dict of dicts is the wrong tool entirely: a caller
+    wanting "the z value at row 2, column 3" has to already know that
+    panel's title (or fall back to :func:`load_data`'s own
+    ``by_index=True``, still just a flat list with no row/column
+    structure of its own), loop over every panel by hand to stack them
+    into one array, and hope no two panels happened to share a title --
+    see :func:`load_data`'s own now-fixed collision handling, which this
+    sidesteps structurally rather than by disambiguating: xarray indexes
+    by integer row/column position, never by a string title, so there is
+    no title to collide on in the first place.
+
+    Only supports a *uniform* rectangular grid -- every axes a single,
+    non-spanning cell (as :func:`plotpress.subplots`/:meth:`Figure.add_subplot`
+    place them, never a row/column span from ``add_gridspec``) -- where
+    every axes carries **exactly one** mesh (all the same shape,
+    non-curvilinear) or **exactly one** line series (all the same length),
+    never a mix of the two kinds, and never more than one series/mesh on a
+    single axes. Raises ``ValueError``, naming exactly what about the
+    figure didn't fit, for anything else -- a mixed grid, a span, multiple
+    series per axes, differing mesh shapes -- pointing at
+    :func:`load_data` (``by_index=True`` for the title-collision-proof
+    form) as the fallback for a figure this doesn't cover.
+
+    The returned ``Dataset`` has ``row``/``col`` coordinates plus each
+    panel's own ``title``/``xlabel``/``ylabel`` as ``(row, col)`` string
+    coordinates; a mesh grid's ``x``/``y`` are shared 1-D coordinates when
+    every panel used the identical grid, else per-panel ``(row, col, x)``/
+    ``(row, col, y)`` arrays -- and its data variable is ``z``, dimensioned
+    ``(row, col, y, x)``. A line grid's data variable is ``y``, dimensioned
+    ``(row, col, point)``, with ``x`` the same shared-or-per-panel choice.
+    ``.attrs`` carries the recovered figure's own ``figsize`` and title.
+
+    ``figure`` selects which figure to load from a multi-figure
+    :class:`Report` file -- an int index (0-based, save order) or the
+    exact string title a :class:`Report` entry was given. Left as
+    ``None`` (the default), the file must have exactly one figure, or
+    this raises naming how many it actually found.
+    """
+    try:
+        import xarray as xr
+    except ImportError as e:
+        raise ImportError(
+            "load_data_xarray() needs the optional xarray dependency -- "
+            "install it with: pip install plotpress[xarray]"
+        ) from e
+
+    figures = load_data(path, by_index=True)
+    if figure is None:
+        if len(figures) != 1:
+            raise ValueError(
+                f"load_data_xarray(): this file has {len(figures)} figures, "
+                "not 1 -- pass figure=<int index> or figure=<exact title "
+                "str> to pick one (plotpress.load_data(path, by_index=True) "
+                "lists every figure this file has, each with its own "
+                "\"title\")."
+            )
+        entry = figures[0]
+    elif isinstance(figure, int):
+        try:
+            entry = figures[figure]
+        except IndexError:
+            raise ValueError(
+                f"load_data_xarray(): figure index {figure} out of range -- "
+                f"this file has {len(figures)} figure(s)."
+            ) from None
+    else:
+        matches = [f for f in figures if f["title"] == figure]
+        if not matches:
+            raise ValueError(
+                f"load_data_xarray(): no figure titled {figure!r} in this "
+                f"file -- available titles: {[f['title'] for f in figures]!r}"
+            )
+        entry = matches[0]
+
+    axes = entry["axes"]   # int-indexed (this came from by_index=True above)
+    layout_axes = entry["layout"].get("axes") or {}
+    order = sorted(axes)
+    if not order:
+        raise ValueError("load_data_xarray(): this figure has no plotted axes.")
+    missing_layout = [i for i in order if i not in layout_axes]
+    if missing_layout:
+        raise ValueError(
+            f"load_data_xarray(): axes {missing_layout} have plotted data "
+            "but no recorded grid cell (a freeform Figure.add_axes() rect, "
+            "not a subplot grid cell) -- a uniform subplot grid is required; "
+            "use plotpress.load_data() instead for this figure."
+        )
+
+    specs = [layout_axes[i] for i in order]
+    if len({(s["nrows"], s["ncols"]) for s in specs}) != 1:
+        raise ValueError(
+            "load_data_xarray(): this figure's axes don't share one "
+            "nrows x ncols grid shape -- not a uniform grid; use "
+            "plotpress.load_data() instead."
+        )
+    if not all(s["row0"] == s["row1"] and s["col0"] == s["col1"] for s in specs):
+        raise ValueError(
+            "load_data_xarray(): a row/column span (from add_gridspec) is "
+            "not a single grid cell -- not supported; use "
+            "plotpress.load_data() instead."
+        )
+    nrows, ncols = specs[0]["nrows"], specs[0]["ncols"]
+    if len(order) != nrows * ncols:
+        raise ValueError(
+            f"load_data_xarray(): only {len(order)} of {nrows * ncols} grid "
+            "cells have data -- every cell must be filled; use "
+            "plotpress.load_data() instead for a figure with empty cells."
+        )
+
+    kinds = set()
+    for i in order:
+        a = axes[i]
+        n_series, n_meshes, n_pies = len(a["series"]), len(a["meshes"]), len(a["pies"])
+        if n_meshes == 1 and n_series == 0 and n_pies == 0:
+            kinds.add("mesh")
+        elif n_series == 1 and n_meshes == 0 and n_pies == 0:
+            kinds.add("line")
+        else:
+            raise ValueError(
+                f"load_data_xarray(): axes {i} ({a['title']!r}) has "
+                f"{n_series} series, {n_meshes} mesh(es), {n_pies} pie(s) -- "
+                "only a grid where every axes has exactly one mesh, or "
+                "exactly one line series (never a mix, never more than "
+                "one), is supported; use plotpress.load_data() instead."
+            )
+    if len(kinds) != 1:
+        raise ValueError(
+            "load_data_xarray(): a mix of mesh axes and line-series axes "
+            "in the same grid isn't supported; use plotpress.load_data() "
+            "instead."
+        )
+    kind = kinds.pop()
+
+    def grid_of(values, dtype=object):
+        g = np.empty((nrows, ncols), dtype=dtype)
+        for i, v in zip(order, values):
+            s = layout_axes[i]
+            g[s["row0"], s["col0"]] = v
+        return g
+
+    coords = {
+        "title": (("row", "col"), grid_of([axes[i]["title"] or "" for i in order])),
+        "xlabel": (("row", "col"), grid_of([axes[i]["xlabel"] or "" for i in order])),
+        "ylabel": (("row", "col"), grid_of([axes[i]["ylabel"] or "" for i in order])),
+    }
+    attrs = {"figsize": entry["layout"].get("figsize"), "title": entry["title"]}
+
+    if kind == "mesh":
+        meshes = [axes[i]["meshes"][0] for i in order]
+        if any(m["curvilinear"] for m in meshes):
+            raise ValueError(
+                "load_data_xarray(): a curvilinear mesh (irregular per-cell "
+                "x/y coordinates, no separable 1-D axes) isn't supported; "
+                "use plotpress.load_data() instead."
+            )
+        shapes = {m["z"].shape for m in meshes}
+        if len(shapes) != 1:
+            raise ValueError(
+                f"load_data_xarray(): meshes differ in shape across the "
+                f"grid ({sorted(shapes)}) -- every panel must match; use "
+                "plotpress.load_data() instead."
+            )
+        ny, nx = shapes.pop()
+        # grid_of()'s own object-array shell doesn't fit here -- each cell
+        # holds a whole 2-D mesh, not one scalar the way title/xlabel above
+        # do -- so this one (nrows, ncols, ny, nx) float array is built
+        # directly instead of routing through it.
+        z = np.full((nrows, ncols, ny, nx), np.nan)
+        for i, m in zip(order, meshes):
+            s = layout_axes[i]
+            z[s["row0"], s["col0"], :, :] = m["z"]
+
+        x0, y0 = meshes[0]["x"], meshes[0]["y"]
+        shared = all(np.array_equal(m["x"], x0) and np.array_equal(m["y"], y0)
+                    for m in meshes)
+        if shared:
+            coords["x"] = ("x", x0)
+            coords["y"] = ("y", y0)
+            data_vars = {"z": (("row", "col", "y", "x"), z)}
+        else:
+            X = np.empty((nrows, ncols, nx)); Y = np.empty((nrows, ncols, ny))
+            for i, m in zip(order, meshes):
+                s = layout_axes[i]
+                X[s["row0"], s["col0"], :] = m["x"]
+                Y[s["row0"], s["col0"], :] = m["y"]
+            coords["x"] = (("row", "col", "x"), X)
+            coords["y"] = (("row", "col", "y"), Y)
+            data_vars = {"z": (("row", "col", "y", "x"), z)}
+    else:
+        series = [axes[i]["series"][0] for i in order]
+        lengths = {s["x"].size for s in series}
+        if len(lengths) != 1:
+            raise ValueError(
+                f"load_data_xarray(): series differ in length across the "
+                f"grid ({sorted(lengths)}) -- every panel must match; use "
+                "plotpress.load_data() instead."
+            )
+        n = lengths.pop()
+        y = np.full((nrows, ncols, n), np.nan)
+        for i, s in zip(order, series):
+            spec = layout_axes[i]
+            y[spec["row0"], spec["col0"], :] = s["y"]
+
+        x0 = series[0]["x"]
+        shared = all(np.array_equal(s["x"], x0) for s in series)
+        if shared:
+            coords["point"] = ("point", x0)
+            data_vars = {"y": (("row", "col", "point"), y)}
+        else:
+            X = np.empty((nrows, ncols, n))
+            for i, s in zip(order, series):
+                spec = layout_axes[i]
+                X[spec["row0"], spec["col0"], :] = s["x"]
+            coords["x"] = (("row", "col", "point"), X)
+            data_vars = {"y": (("row", "col", "point"), y)}
+
+    return xr.Dataset(data_vars, coords=coords, attrs=attrs)

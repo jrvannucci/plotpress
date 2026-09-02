@@ -33,6 +33,11 @@ gui = ["pywebview>=4.0"]
 # Embed interactive figures in a PyQt/PySide app (plotpress.qt). PySide6 or
 # PyQt5+PyQtWebEngine work too; this extra pulls the PyQt6 stack by default.
 qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
+# plotpress.load_data_xarray(): a uniform grid of recovered mesh/line data
+# as one labeled xarray.Dataset (row/col dims), instead of load_data()'s
+# title-keyed dict of dicts -- xarray pulls in pandas, so it's kept out of
+# the standard install the same way every other format-specific extra is.
+xarray = ["xarray>=2023.1"]
 dev = ["pytest>=7"]
 # End-to-end point-picking tests: they drive the interactive HTML's JavaScript
 # in a headless browser. After installing, fetch the browser itself with
@@ -50,8 +55,9 @@ bench = ["matplotlib>=3.5", "seaborn>=0.12", "plotly>=5.0"]
 # Building docs/ (`python -m sphinx -b html docs docs/_build/html`): matplotlib
 # for the one head-to-head comparison example (importorskip'd there too, but
 # the published docs carry the real chart, not the "not installed" fallback);
-# polars and adaptive are hard imports in several gallery scripts, not
-# optional. joblib backs sphinx-gallery's own parallel example execution
+# polars, adaptive, and xarray (load_data_xarray()'s own gallery example) are
+# hard imports in several gallery scripts, not optional. joblib backs
+# sphinx-gallery's own parallel example execution
 # (`sphinx_gallery_conf["parallel"]` in docs/conf.py, driven by `-j`) --
 # gallery scripts share no state to race over (see the top-level "No global
 # state" rule), which is what usually keeps projects from turning this on.
@@ -63,6 +69,7 @@ docs = [
     "polars>=1.0",
     "adaptive>=1.0",
     "joblib>=1.3",
+    "xarray>=2023.1",
 ]
 
 [tool.pytest.ini_options]
