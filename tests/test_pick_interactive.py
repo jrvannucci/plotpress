@@ -1990,6 +1990,84 @@ def test_dragged_box_offset_survives_arrow_key_stepping(page, tmp_path):
         "the step must still have actually moved the dot to the next point: %r" % markers)
 
 
+def test_pin_stays_constant_size_and_draggable_under_figure_navigator_zoom(page, tmp_path):
+    """A pin's group counter-scales (see updatePinTransform) so it renders
+    at the same on-screen size regardless of Figure Navigator's whole-figure
+    zoom -- the dot, its label box, and the leader arrow must all hold their
+    on-screen (CSS pixel) size, and a box drag (startBoxDrag's screen-delta
+    to local-coordinate conversion) must still track the mouse 1:1 at a
+    zoom level far from 1."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "pin_under_navigator_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+
+    def measure():
+        return page.evaluate(
+            """() => { const pin = document.querySelector('.plotpress-pin');
+                        const dot = pin.querySelector('circle').getBoundingClientRect();
+                        const rect = pin.querySelector('rect').getBoundingClientRect();
+                        const arrow = pin.querySelector('.plotpress-pin-arrow').getBoundingClientRect();
+                        return {dotD: dot.width, boxW: rect.width, boxH: rect.height,
+                               arrowLen: Math.hypot(arrow.width, arrow.height)}; }""")
+
+    before = measure()
+
+    # Zoom the whole figure via Figure Navigator several ticks -- a plain
+    # wheel, matching a real user gesture, not Ctrl+wheel (Axis Zoom's own).
+    _click_toolbar(page, "Figure Navigator")
+    svg_box = page.eval_on_selector(
+        "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
+    page.mouse.move(svg_box["x"] + svg_box["w"] / 2, svg_box["y"] + svg_box["h"] / 2)
+    for _ in range(6):
+        page.mouse.wheel(0, -300)
+    svg_width_zoomed = page.eval_on_selector("#plotpress-svg", "el => el.getBoundingClientRect().width")
+    assert svg_width_zoomed > svg_box["w"] * 1.5, (
+        "the fixture must actually zoom in, or this test proves nothing: %r -> %r"
+        % (svg_box["w"], svg_width_zoomed))
+
+    after_zoom = measure()
+    for key in before:
+        assert after_zoom[key] == pytest.approx(before[key], abs=0.5), (
+            "%s must stay the same on-screen size under Figure Navigator zoom: "
+            "%r -> %r" % (key, before, after_zoom))
+
+    # Figure Navigator and Point Picking are mutually exclusive (single-
+    # selection toolbar) -- zoom persists independently of which mode is
+    # selected, so re-selecting Point Picking doesn't reset it, and the box
+    # must still be draggable, tracking the mouse 1:1 in screen pixels.
+    _click_toolbar(page, "Point Picking")
+    rect_box = page.eval_on_selector(
+        ".plotpress-pin rect", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y}; }")
+    _drag_box(page, ".plotpress-pin", 70, 45)
+    rect_box_after = page.eval_on_selector(
+        ".plotpress-pin rect", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y}; }")
+    assert rect_box_after["x"] - rect_box["x"] == pytest.approx(70, abs=0.5)
+    assert rect_box_after["y"] - rect_box["y"] == pytest.approx(45, abs=0.5)
+
+    # Reset Figure brings the zoom back down -- the dot and box must shrink
+    # back to their original on-screen size, not stay stuck at the zoomed-in
+    # one. arrowLen is excluded here on purpose: it's the box's *distance*
+    # from the dot, not a size, and the drag just above deliberately moved
+    # the box farther away -- comparing it against the pre-drag baseline
+    # would fail for a reason that has nothing to do with Reset Figure.
+    _click_toolbar(page, "Reset Figure")
+    after_reset = measure()
+    for key in ("dotD", "boxW", "boxH"):
+        assert after_reset[key] == pytest.approx(before[key], abs=0.5), (
+            "%s must return to its original on-screen size after Reset Figure: "
+            "%r -> %r" % (key, before, after_reset))
+
+
 def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
     """Regression: frame_data()'s FrameQuadMesh branch only ever embedded
     each frame's rendered PNG (for redraw) -- never its raw z grid -- and
