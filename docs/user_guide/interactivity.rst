@@ -8,6 +8,35 @@ CSPs (Jupyter, sandboxed webviews).
 
 Nothing is interactive until a tool is selected.
 
+In a Jupyter notebook
+----------------------
+
+Evaluating a figure directly in a cell (``fig`` as the last expression)
+renders it inline as static SVG, not this toolbar -- there's deliberately
+no ``_repr_html_``, since Jupyter prefers ``text/html`` over ``image/svg+xml``
+when a MIME bundle offers both, and a full interactive HTML document
+dropped into an output cell that way renders messily and its ``<script>``
+doesn't run there regardless (see :doc:`viewing` for the full comparison of
+every surface a figure can render on).
+
+``fig.show_in_jupyter()`` (needs ``[jupyter]``: ``pip install
+plotpress[jupyter]`` -- any real Jupyter environment already has IPython)
+is the one line that gets this toolbar working inline instead: it embeds
+``to_html()``'s self-contained output in an ``<iframe>``, which does
+isolate and run the inlined JS, so every tool below -- Figure Navigator,
+Point Picking, sliders, all of it -- works exactly as it does in a saved
+``.html`` file opened in a browser:
+
+.. code-block:: python
+
+   fig, ax = plotpress.subplots()
+   ax.plot(x, y)
+   fig.show_in_jupyter()   # last expression in the cell, or wrap in display(...)
+
+``width``/``height`` default to the figure's own pixel size
+(``figsize`` x ``style.dpi``) and can be overridden --
+``fig.show_in_jupyter(width=900, height=600)``.
+
 The toolbar
 -----------
 

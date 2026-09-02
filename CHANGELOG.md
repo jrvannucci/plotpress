@@ -24,7 +24,8 @@ anywhere in the source.
   isolate and run the inlined JS, so pan/zoom, point-picking, and the rest
   of the toolbar all work exactly as they do in a saved `.html` file.
   `width`/`height` default to the figure's own pixel size and can be
-  overridden.
+  overridden. Documented with a worked example on the interactive-figures
+  page (`docs/user_guide/interactivity.rst`).
 
 - **`plotpress.load_data_xarray()`**, a new optional (`pip install
   plotpress[xarray]`) way to read a saved figure's data back as a single
@@ -40,7 +41,12 @@ anywhere in the source.
   exactly what didn't fit for anything outside that scope -- a row/column
   span, a mix of mesh and line panels, multiple series on one axes,
   mismatched shapes -- pointing at `load_data()` as the fallback. New
-  example: `docs/examples/data_roundtrip/plot_05_reload_as_xarray.py`.
+  examples covering both supported panel kinds, each loading the saved
+  grid back, running a bulk xarray analysis across every panel at once
+  (a per-panel deviation-from-grid-mean / mean-centering), and replotting
+  the whole analyzed grid straight from the `Dataset`:
+  `docs/examples/data_roundtrip/plot_05_reload_as_xarray.py` (mesh grid)
+  and `plot_06_reload_line_grid_as_xarray.py` (line-series grid).
 
 - **Text selection is now disabled while any toolbar mode is active**, not
   just Figure Navigator -- every mode's own drag (Axis Span/Zoom across
