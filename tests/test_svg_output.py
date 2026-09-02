@@ -665,10 +665,16 @@ def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
     assert layout["figsize"] == [9.0, 6.0]
     assert set(layout["axes"]) == {0, 1, 2, 3, 4, 5}
-    assert layout["axes"][0] == {
+    # Grid-shape fields only -- decoration fields (title/xlabel/xlim/...)
+    # are this same axes' own concern but covered by their own dedicated
+    # test (test_layout_metadata_captures_every_axes_decoration), not
+    # re-asserted here field-by-field to keep this one about the grid.
+    a0 = layout["axes"][0]
+    assert {k: a0[k] for k in ("nrows", "ncols", "row0", "row1", "col0", "col1", "projection")} == {
         "nrows": 2, "ncols": 3, "row0": 0, "row1": 0, "col0": 0, "col1": 0,
         "projection": None,
     }
+    assert a0["title"] is None and a0["grid"] is False   # never set on this fixture
     assert layout["groups"] == [{
         "title": "Top row", "axes": [0, 1, 2], "n_members": 3, "linestyle": "--",
         "color": "black", "linewidth": 1.5, "title_position": "bottom",
@@ -746,7 +752,9 @@ def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
     assert "plotpress-layout" not in stripped   # sanity: the sub actually matched
     p.write_text(stripped, encoding="utf-8")
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
-    assert layout == {"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}
+    assert layout == {"figsize": None, "axes": {}, "groups": [], "omitted_axes": [],
+                      "suptitle": None, "supxlabel": None, "supylabel": None,
+                      "facecolor": None}
 
 
 def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
@@ -828,6 +836,143 @@ def test_subplots_from_layout_recreates_polar_and_3d_projections(tmp_path):
     from plotpress.axes3d import Axes3D
     assert isinstance(axes2[0], PolarAxes)
     assert isinstance(axes2[1], Axes3D)
+
+
+def test_layout_metadata_captures_every_axes_decoration(tmp_path):
+    """The layout payload -- and subplots_from_layout()'s reconstruction of
+    it -- has to carry a title/label/limit/scale/grid/aspect/inverted-axis
+    round trip, not just the grid shape: the whole point of the user-facing
+    complaint this closes was "I shouldn't need to already know what
+    labels/titles to re-add"."""
+    fig, axes = plotpress.subplots(1, 2, figsize=(10, 5))
+    ax1, ax2 = axes
+    ax1.plot([0, 1, 2], [0, 1, 4], label="sq")
+    ax1.set_title("Panel A", fontsize=14)
+    ax1.set_xlabel("time"); ax1.set_ylabel("value")
+    ax1.set_xlim(0, 2.5); ax1.set_ylim(-1, 5)
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc="upper left", title="series", ncol=2, fontsize=9, framealpha=0.5)
+    ax2.plot([0, 1, 2], [10, 5, 1])
+    ax2.set_title("Panel B")
+    ax2.set_yscale("log")
+    ax2.invert_xaxis()
+    ax2.set_facecolor("#f0f0f0")
+    ax2.set_box_aspect(0.5)
+    p = tmp_path / "decorations.html"
+    fig.save(str(p), interactive=True)
+
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    a0, a1 = layout["axes"][0], layout["axes"][1]
+    assert a0["title"] == "Panel A" and a0["title_size"] == 14
+    assert a0["xlabel"] == "time" and a0["ylabel"] == "value"
+    assert a0["xlim"] == [0.0, 2.5] and a0["ylim"] == [-1.0, 5.0]
+    assert a0["grid"] is True and a0["grid_alpha"] == pytest.approx(0.3)
+    assert a0["legend"] == {"loc": "upper left", "ncol": 2, "title": "series",
+                            "fontsize": 9, "framealpha": 0.5}
+    assert a1["yscale"] == "log" and a1["xinverted"] is True
+    assert a1["facecolor"] == "#f0f0f0" and a1["box_aspect"] == 0.5
+    assert a1["legend"] is None
+
+    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    b1, b2 = axes2
+    assert b1._title == "Panel A" and b1._title_size == 14
+    assert b1._xlabel == "time" and b1._ylabel == "value"
+    assert b1._xlim == (0.0, 2.5) and b1._ylim == (-1.0, 5.0)
+    assert b1._grid is True and b1._grid_alpha == pytest.approx(0.3)
+    # The legend is captured but never auto-applied -- see the function's
+    # own docstring on why (no plotted/labeled artists exist yet).
+    assert b1._show_legend is False
+    assert b2._yscale == "log" and b2._xinverted is True
+    assert b2._facecolor == "#f0f0f0" and b2._box_aspect == 0.5
+
+
+def test_subplots_from_layout_reproduces_figure_suptitle_and_facecolor(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    fig.suptitle("Demo Figure", size=18)
+    fig.supxlabel("shared x")
+    fig.supylabel("shared y", size=10)
+    fig.style.facecolor = "#eeeeee"
+    p = tmp_path / "suptitle.html"
+    fig.save(str(p), interactive=True)
+
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    assert layout["suptitle"] == {"text": "Demo Figure", "size": 18}
+    assert layout["supxlabel"] == {"text": "shared x", "size": None}
+    assert layout["supylabel"] == {"text": "shared y", "size": 10}
+    assert layout["facecolor"] == "#eeeeee"
+
+    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    assert fig2._suptitle == {"text": "Demo Figure", "size": 18}
+    assert fig2._supxlabel == {"text": "shared x", "size": None}
+    assert fig2._supylabel == {"text": "shared y", "size": 10}
+    assert fig2.style.facecolor == "#eeeeee"
+
+    # An explicit facecolor= argument still overrides the loaded one, the
+    # same way figsize= already does.
+    fig3, ax3 = plotpress.subplots_from_layout(layout, facecolor="#123456")
+    assert fig3.style.facecolor == "#123456"
+
+
+def test_subplots_from_layout_skips_decorations_absent_from_an_older_layout():
+    """A layout saved by a plotpress version between the grid-shape-only
+    release and this one has grid-shape keys but none of the decoration
+    ones -- _apply_axes_decorations() must no-op on the missing keys
+    rather than raise."""
+    layout = {
+        "figsize": [6.4, 4.8],
+        "axes": {0: {"nrows": 1, "ncols": 1, "row0": 0, "row1": 0,
+                     "col0": 0, "col1": 0, "projection": None}},
+        "groups": [],
+    }
+    fig, ax = plotpress.subplots_from_layout(layout)   # must not raise
+    assert ax._title == "" and ax._xlabel == "" and ax._grid is False
+
+
+def test_reconstructed_figure_renders_byte_identical_svg_to_the_original(tmp_path):
+    """The user-facing test: save a figure, load its data and layout back,
+    rebuild the figure and replot the recovered data into it (no title,
+    label, limit, scale, or grid re-typed by hand -- all of it comes back
+    through subplots_from_layout() alone) -- the result must render to
+    *exactly* the same SVG as the original, not just something visually
+    similar."""
+    def build():
+        fig, axes = plotpress.subplots(1, 2, figsize=(10, 5))
+        ax1, ax2 = axes
+        ax1.plot([0, 1, 2], [0, 1, 4], label="sq")
+        ax1.set_title("Panel A", fontsize=14)
+        ax1.set_xlabel("time"); ax1.set_ylabel("value")
+        ax1.set_xlim(0, 2.5); ax1.set_ylim(-1, 5)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc="upper left", title="series")
+        ax2.plot([0, 1, 2], [10, 5, 1])
+        ax2.set_title("Panel B")
+        ax2.set_yscale("log")
+        fig.suptitle("Demo Figure", size=18)
+        fig.tight_layout()
+        return fig
+
+    original = build()
+    p = tmp_path / "roundtrip_original.html"
+    original.save(str(p), interactive=True)
+    original_svg = original.to_svg()
+
+    entry = plotpress.load_data(str(p))["Figure 1"]
+    layout, axes_data = entry["layout"], entry["axes"]
+
+    rebuilt, (ax1b, ax2b) = plotpress.subplots_from_layout(layout)
+    s1 = axes_data["Panel A"]["series"][0]
+    ax1b.plot(s1["x"], s1["y"], label="sq")
+    ax1b.legend(**layout["axes"][0]["legend"])   # the one field the caller must re-apply
+    s2 = axes_data["Panel B"]["series"][0]
+    ax2b.plot(s2["x"], s2["y"])
+    rebuilt.tight_layout()
+
+    assert rebuilt.to_svg() == original_svg, (
+        "a figure rebuilt from load_data() + subplots_from_layout() must "
+        "render byte-identical SVG to the source figure once its recovered "
+        "data is replotted, with no manual title/label/limit/scale/grid "
+        "re-application needed")
 
 
 def test_save_png(tmp_path):

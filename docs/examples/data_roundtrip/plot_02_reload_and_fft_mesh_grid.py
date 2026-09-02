@@ -14,7 +14,7 @@ whether the file it's reading was written a moment ago or came from an
 entirely separate run. The destination grid is rebuilt from
 ``load_data()``'s own ``"layout"`` entry via
 :func:`plotpress.subplots_from_layout`, rather than the caller having to
-already know it was a 5x6 grid.
+already know it was a 5x6 grid -- or re-type each panel's own title.
 """
 import os
 import tempfile
@@ -59,6 +59,5 @@ for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(mesh["z"])))
     ax.pcolormesh(np.log1p(spectrum), cmap="magma")
-    ax.set_title(f"panel {i}", fontsize=7)
     ax.tick_params(labelsize=5)
 fig.tight_layout()

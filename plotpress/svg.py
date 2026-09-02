@@ -388,10 +388,15 @@ def axes_metadata(fig, idx_of=None):
 
 
 def layout_metadata(fig, idx_of=None):
-    """Grid shape/position of every subplot-grid axes, plus ``fig.group()``
-    boxes -- everything ``load_data()``'s ``"layout"`` needs to rebuild an
-    equivalent figure structure with :func:`plotpress.subplots_from_layout`,
-    independent of ``axes_metadata()``'s per-axes pixel/style payload above.
+    """Grid shape/position of every subplot-grid axes, its own decorations
+    (title, labels, limits, scale, ...), plus ``fig.group()`` boxes and the
+    figure's own sup-title/label -- everything ``load_data()``'s
+    ``"layout"`` needs to rebuild an equivalent, already-labeled figure
+    with :func:`plotpress.subplots_from_layout`, independent of
+    ``axes_metadata()``'s per-axes pixel/style payload above (built for the
+    live interactive view, not for reconstruction -- the two overlap in a
+    few fields, e.g. title, by coincidence of both needing it, not because
+    one is derived from the other).
 
     ``idx_of`` (an ``id(axes) -> index`` map) is accepted rather than always
     rebuilt, so a caller that already has one -- ``to_html()`` builds one for
@@ -406,6 +411,19 @@ def layout_metadata(fig, idx_of=None):
     never expected to round-trip) so :func:`plotpress.subplots_from_layout`
     can warn that a real, once-visible axes won't come back, instead of the
     drop passing without any signal beyond the payload simply being smaller.
+
+    Deliberately NOT captured (real, currently unrecoverable gaps -- a
+    caller that needs one of these still has to re-apply it by hand):
+    colorbars (need their mappable, which doesn't exist until the data is
+    replotted), a custom :class:`~plotpress.Style` (colors/fonts/dpi -- a
+    figure-wide concern, not a per-axes one), tick_params()/explicit tick
+    overrides, and twin/secondary/inset axes (each needs its *parent*
+    axes to already exist, so they can't be grid cells of their own).
+    ``"legend"`` is captured but never auto-applied here either, for a
+    narrower reason: :meth:`Axes.legend` draws from already-plotted,
+    labeled artists, none of which exist yet on a freshly rebuilt axes --
+    call ``ax.legend(**entry["legend"])`` yourself once you've replotted
+    the recovered data into it.
     """
     if idx_of is None:
         idx_of = {id(a): i for i, a in enumerate(fig.axes)}
@@ -417,6 +435,7 @@ def layout_metadata(fig, idx_of=None):
             if not ax._is_colorbar:
                 omitted.append(i)
             continue
+        (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
         axes[i] = {
             "nrows": spec.nrows, "ncols": spec.ncols,
             "row0": spec.row0, "row1": spec.row1,
@@ -425,6 +444,25 @@ def layout_metadata(fig, idx_of=None):
             # add_subplot(..., projection=...) reproduces it exactly.
             "projection": ("polar" if getattr(ax, "_is_polar", False)
                           else "3d" if ax._is_3d else None),
+            "title": ax._title or None, "title_size": ax._title_size,
+            "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
+            # Always explicit, even for an originally auto-scaled axes --
+            # "the same figure back" means the same rendered extent, not
+            # whatever autoscale happens to recompute from however much of
+            # the original data the caller chooses to replot.
+            "xlim": [round(float(xmin), 6), round(float(xmax), 6)],
+            "ylim": [round(float(ymin), 6), round(float(ymax), 6)],
+            "xscale": ax._xscale, "yscale": ax._yscale,
+            "xinverted": bool(ax._xinverted), "yinverted": bool(ax._yinverted),
+            "grid": bool(ax._grid), "grid_alpha": ax._grid_alpha,
+            "aspect": ax._aspect, "box_aspect": ax._box_aspect,
+            "axis_off": bool(ax._axis_off),
+            "facecolor": ax._facecolor,
+            "legend": ({
+                "loc": ax._legend_loc, "ncol": ax._legend_ncol,
+                "title": ax._legend_title, "fontsize": ax._legend_fontsize,
+                "framealpha": ax._legend_framealpha,
+            } if ax._show_legend else None),
         }
     groups = [
         {
@@ -447,7 +485,9 @@ def layout_metadata(fig, idx_of=None):
         for g in fig._groups
     ]
     return {"figsize": list(fig.figsize), "axes": axes, "groups": groups,
-           "omitted_axes": omitted}
+           "omitted_axes": omitted,
+           "suptitle": fig._suptitle, "supxlabel": fig._supxlabel,
+           "supylabel": fig._supylabel, "facecolor": fig.style.facecolor}
 
 
 def style_payload(fig):

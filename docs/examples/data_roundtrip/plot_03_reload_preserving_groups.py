@@ -10,7 +10,8 @@ also returns, next to ``"axes"``: :func:`plotpress.subplots_from_layout`
 reads it back and re-creates the exact same grid *and* the same
 :meth:`~plotpress.Figure.group` boxes, so a rebuilt dashboard groups its
 panels the same way the source did without a single ``fig.group()`` call
-written by hand on the reload side.
+written by hand on the reload side -- each panel's own title comes back
+the same way, with no ``set_title()`` needed either.
 """
 import os
 import tempfile
@@ -54,5 +55,4 @@ fig, axes = plotpress.subplots_from_layout(fig_entry["layout"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     s = axes_data[f"sensor {i}"]["series"][0]
     ax.plot(s["x"], s["y"] + 2.0, color="C3")
-    ax.set_title(f"sensor {i}", fontsize=9)
 fig.tight_layout()

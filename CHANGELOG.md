@@ -44,6 +44,26 @@ anywhere in the source.
   no longer hand-hardcode the destination grid shape, now reading it back
   via `subplots_from_layout()` instead.
 
+- **The exported layout now carries every axes' own decorations, not just
+  its grid position** -- title (and its own fontsize), x/y labels,
+  explicit limits, scale, grid, aspect/box aspect, an inverted axis, a
+  per-axes facecolor, and legend settings, plus the figure's own
+  `suptitle()`/`supxlabel()`/`supylabel()` and background color.
+  `subplots_from_layout()` re-applies all of it automatically (everything
+  except the legend, which needs already-plotted, labeled artists to draw
+  from -- call `ax.legend(**layout["axes"][i]["legend"])` yourself once
+  you've replotted into it), so a caller never has to already know what
+  titles or labels to re-add. A figure rebuilt this way and replotted with
+  its recovered data now renders **byte-identical SVG** to the source
+  figure -- enforced by
+  `test_reconstructed_figure_renders_byte_identical_svg_to_the_original`.
+  Colorbars, `tick_params()`/explicit tick overrides, twin/secondary/inset
+  axes, and a custom `Style` are documented, deliberate gaps, not
+  oversights -- see `subplots_from_layout()`'s own docstring. New example:
+  `docs/examples/data_roundtrip/plot_04_full_decoration_round_trip.py`;
+  the three existing reload examples no longer hand-call `set_title()` on
+  the reload side either, now that it comes back on its own.
+
 - **A matplotlib `Axes` API audit, closing every gap found except three
   that are genuinely multi-day subsystems on their own** (datetime axis
   support, `streamplot`, and the `tricontour`/`tricontourf`/`tripcolor`/

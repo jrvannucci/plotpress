@@ -1705,6 +1705,45 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     return fig, axes
 
 
+def _apply_axes_decorations(ax, spec):
+    """Re-apply everything ``layout_metadata()`` captured about one axes'
+    own decorations, so :func:`subplots_from_layout`'s caller never has to
+    re-set a title/label/limit/scale by hand. ``.get(...)`` throughout,
+    not direct indexing: a layout loaded from a file saved before these
+    fields existed (see ``_load_layout``'s old-file fallback) simply has
+    none of them, and every one is meant to no-op rather than raise then.
+
+    Routed through :meth:`Axes.set` where possible (the single-value
+    setters it already validates and dispatches) rather than one direct
+    call per property -- keeps this in sync with ``Axes.set()``'s own
+    growing coverage instead of hand-duplicating its dispatch table one
+    property at a time.
+    """
+    bulk = {}
+    for key in ("xlabel", "ylabel", "xscale", "yscale", "aspect", "box_aspect",
+               "facecolor"):
+        if spec.get(key) is not None:
+            bulk[key] = spec[key]
+    if spec.get("xlim") is not None:
+        bulk["xlim"] = tuple(spec["xlim"])
+    if spec.get("ylim") is not None:
+        bulk["ylim"] = tuple(spec["ylim"])
+    if bulk:
+        ax.set(**bulk)
+    # Not covered by .set() -- see its own docstring on the no-argument
+    # toggles and multi-value setters it deliberately excludes.
+    if spec.get("title") is not None:
+        ax.set_title(spec["title"], size=spec.get("title_size"))
+    if spec.get("axis_off"):
+        ax.set_axis_off()
+    if spec.get("xinverted"):
+        ax.invert_xaxis()
+    if spec.get("yinverted"):
+        ax.invert_yaxis()
+    if spec.get("grid"):
+        ax.grid(True, alpha=spec.get("grid_alpha"))
+
+
 def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=None):
     """Rebuild a figure with the exact axes grid and :meth:`Figure.group`
     boxes recorded in a ``load_data()`` ``"layout"`` dict.
@@ -1726,9 +1765,27 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
 
     ``figsize`` overrides ``layout["figsize"]`` (falling back to plotpress's
     own default when a loaded layout predates that key and carries
-    ``None``). ``style``/``facecolor`` are the same as :class:`Figure`'s own
-    constructor -- neither round-trips through ``layout``, since style is a
-    figure-authoring choice, not a structural one.
+    ``None``). ``style`` is the same as :class:`Figure`'s own constructor --
+    it doesn't round-trip through ``layout`` at all (a custom
+    :class:`~plotpress.Style` -- colors, fonts, dpi -- is a bigger,
+    separate concern this doesn't attempt). ``facecolor`` overrides
+    ``layout["facecolor"]`` the same way ``figsize`` overrides its own key.
+
+    Every axes comes back already carrying its own title, x/y labels,
+    limits, scale, grid, aspect, and inverted-axis state -- exactly as
+    :meth:`Figure.group` boxes and the grid shape itself already did --
+    so a caller only has to replot the recovered data, never re-set a
+    single label or title by hand. The figure's own :meth:`Figure.suptitle`/
+    :meth:`~Figure.supxlabel`/:meth:`~Figure.supylabel` and background
+    color come back the same way. Not carried over (real gaps, not
+    oversights -- see :func:`plotpress.svg.layout_metadata`'s own
+    docstring for why): colorbars, tick_params()/explicit tick overrides,
+    twin/secondary/inset axes, and a custom ``Style``. An axes that had a
+    :meth:`~Axes.legend` is recorded too, but never auto-applied -- a
+    legend draws from already-plotted, labeled artists, none of which
+    exist on a freshly rebuilt axes yet; call
+    ``ax.legend(**layout["axes"][i]["legend"])`` yourself once you've
+    replotted into it.
 
     Warns (``UserWarning``) when ``layout["omitted_axes"]`` is non-empty --
     axes the source figure placed with a freeform :meth:`Figure.add_axes`
@@ -1749,7 +1806,8 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
             "be recovered -- they are simply absent from the rebuilt figure.",
             UserWarning, stacklevel=2)
     fig = Figure(figsize=figsize or tuple(layout.get("figsize") or (6.4, 4.8)),
-                style=style, facecolor=facecolor)
+                style=style,
+                facecolor=facecolor if facecolor is not None else layout.get("facecolor"))
     axes_specs = layout.get("axes") or {}
     order = sorted(axes_specs, key=int)
     # Each spec is looked up from `order` several times below (grid-shape
@@ -1761,7 +1819,19 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
     for i, spec in zip(order, specs):
         ss = SubplotSpec(spec["nrows"], spec["ncols"], spec["row0"], spec["row1"],
                          spec["col0"], spec["col1"])
-        by_index[int(i)] = fig.add_subplot(ss, projection=spec.get("projection"))
+        ax = fig.add_subplot(ss, projection=spec.get("projection"))
+        _apply_axes_decorations(ax, spec)
+        by_index[int(i)] = ax
+
+    sup = layout.get("suptitle")
+    if sup:
+        fig.suptitle(sup["text"], size=sup.get("size"))
+    supx = layout.get("supxlabel")
+    if supx:
+        fig.supxlabel(supx["text"], size=supx.get("size"))
+    supy = layout.get("supylabel")
+    if supy:
+        fig.supylabel(supy["text"], size=supy.get("size"))
 
     for g in layout.get("groups") or []:
         members = [by_index[int(i)] for i in g["axes"] if int(i) in by_index]
@@ -2143,7 +2213,9 @@ def _load_layout(text):
     """
     raw = _extract_json_block(text, "plotpress-layout")
     if raw is None:
-        return {"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}
+        return {"figsize": None, "axes": {}, "groups": [], "omitted_axes": [],
+                "suptitle": None, "supxlabel": None, "supylabel": None,
+                "facecolor": None}
     return {**raw, "axes": {int(k): v for k, v in raw["axes"].items()}}
 
 
@@ -2193,30 +2265,54 @@ def load_data(path: str, by_index: bool = False):
          "zlabel": str | None, "xlim": (float, float) | None,
          "ylim": (float, float) | None, "xscale": str, "yscale": str}
 
-    ``"layout"`` is the figure-level structure -- grid shape/position of
-    every subplot-grid axes plus any :meth:`Figure.group` boxes -- needed to
-    rebuild an equivalent figure, independent of the per-axes data above::
+    ``"layout"`` is the figure-level structure -- grid shape/position and
+    every decoration (title, labels, limits, scale, ...) of each
+    subplot-grid axes, plus any :meth:`Figure.group` boxes and the
+    figure's own sup-title/label -- needed to rebuild an equivalent,
+    already-labeled figure, independent of the per-axes data above::
 
         {"figsize": [w, h],
          "axes": {index: {"nrows": int, "ncols": int, "row0": int, "row1": int,
                           "col0": int, "col1": int,
-                          "projection": "polar" | "3d" | None}, ...},
+                          "projection": "polar" | "3d" | None,
+                          "title": str | None, "title_size": float | None,
+                          "xlabel": str | None, "ylabel": str | None,
+                          "xlim": [float, float], "ylim": [float, float],
+                          "xscale": str, "yscale": str,
+                          "xinverted": bool, "yinverted": bool,
+                          "grid": bool, "grid_alpha": float | None,
+                          "aspect": float | None, "box_aspect": float | None,
+                          "axis_off": bool, "facecolor": str | None,
+                          "legend": {"loc": str, "ncol": int, "title": str | None,
+                                    "fontsize": float | None,
+                                    "framealpha": float} | None}, ...},
          "groups": [{"title": str, "axes": [index, ...], "n_members": int,
                      "linestyle": str, "color": str, "linewidth": float,
                      "title_position": str, "pad": [l, r, t, b],
                      "fontsize": float | None}, ...],
-         "omitted_axes": [index, ...]}
+         "omitted_axes": [index, ...],
+         "suptitle": {"text": str, "size": float | None} | None,
+         "supxlabel": {"text": str, "size": float | None} | None,
+         "supylabel": {"text": str, "size": float | None} | None,
+         "facecolor": str}
 
     Pass ``"layout"`` straight to :func:`subplots_from_layout` to recreate
-    the source figure's grid and groups before replotting recovered data
-    into it -- see :doc:`/auto_examples/data_roundtrip/index`. Axes placed
-    with a freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar
-    axes are absent from ``"axes"`` -- their indices are listed in
+    the source figure's grid, every axes' own decorations, and its groups
+    before replotting recovered data into it -- see
+    :doc:`/auto_examples/data_roundtrip/index`. Axes placed with a
+    freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar axes
+    are absent from ``"axes"`` -- their indices are listed in
     ``"omitted_axes"`` instead -- and a group's own ``"n_members"`` is its
     *original* member count, before any unrecoverable member was filtered
     out of its ``"axes"`` list, so a caller can tell a group that lost one
-    apart from one that didn't. A file saved before this key existed loads
-    as ``{"figsize": None, "axes": {}, "groups": [], "omitted_axes": []}``.
+    apart from one that didn't. ``"legend"`` is recorded but not
+    auto-applied by ``subplots_from_layout`` -- see that function's own
+    docstring for why. A file saved before these keys existed loads as
+    ``{"figsize": None, "axes": {}, "groups": [], "omitted_axes": [],
+    "suptitle": None, "supxlabel": None, "supylabel": None, "facecolor": None}``,
+    and one saved by an in-between version has ``"axes"`` entries with the
+    grid-shape keys above but none of the decoration ones (each simply
+    absent, not ``None``).
 
     Title keys are convenient but not guaranteed unique -- two figures (or
     two axes within one figure) sharing the same title collide, and the
