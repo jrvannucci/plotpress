@@ -65,9 +65,10 @@ selection guard isn't scoped to any one of them.
   covering the very cell it's pointing at a few zoom ticks later, defeating
   the point of zooming in to see it more clearly. Its label box sits
   offset from the dot by default; a thin leader line (arrowhead on the dot
-  end) always connects the two, and the box itself is draggable -- grab it
-  (not the dot) and move it wherever reads best, while Point Picking is the
-  active mode -- without moving the dot off the data point it represents.
+  end) connects the two whenever the box isn't already touching the dot,
+  and the box itself is draggable -- grab it (not the dot) and move it
+  wherever reads best, while Point Picking is the active mode -- without
+  moving the dot off the data point it represents.
   A dragged position sticks through every later pan/zoom/arrow-key step and
   a Save/Save As round trip, the same as everything else about the pin.
 * **Clear Points** -- removes every Point Picking pin, and *only* those --
@@ -585,6 +586,11 @@ _JS_SOURCE = r"""
   // fire when the mode is selected/deselected (setMode's own prevMode
   // bookkeeping below), and `cursor` sets svg.style.cursor while it's
   // active, the same as a built-in mode's own fixed cursor choice does.
+  // One side effect a custom mode inherits with no opt-out: selecting it
+  // also disables text selection on the figure (setMode's own
+  // svg.style.userSelect line), the same as every built-in mode -- a
+  // custom tool whose own interaction depends on letting the user select
+  // text will need to restore it manually from its own onEnter/onExit.
   var CUSTOM_MODES = {};
   var customBar = null;   // created on first addTool() call, not up front
   function addTool(opts) {
@@ -1488,9 +1494,29 @@ _JS_SOURCE = r"""
     rect.setAttribute('width', bw); rect.setAttribute('height', bh);
     text.setAttribute('x', bx + padx); text.setAttribute('y', by + fs + pady - 2);
     text.textContent = label;
-    layoutPinArrow(arrow, bx, by, bw, bh, parseFloat(g.dataset.pinR) || 3.5);
+    syncPinArrow(g);
     g.dataset.anchorX = px; g.dataset.anchorY = py;
     updatePinTransform(g);
+  }
+
+  // Re-lays-out just the leader line, from whatever the box/dot's own
+  // current attributes already are -- called after layoutPin() has just
+  // set the box (dot/rect already current), and again from selectPin()
+  // when a dot's rendered radius itself changes (selecting/deselecting)
+  // without anything else about the pin moving. Reads the dot's *rendered*
+  // `r` attribute, not the resting dataset.pinR: selectPin() enlarges a
+  // selected dot to 1.4x that resting size without going through
+  // layoutPin() again, and a freshly dropped pin starts selected (see
+  // addPin()) -- feeding the arrow the resting radius while the dot itself
+  // was already bigger left the arrowhead visibly short of the dot's own
+  // edge on every single pin, not just an edge case.
+  function syncPinArrow(g) {
+    var rect = g.querySelector('rect'), dot = g.querySelector('circle'),
+        arrow = g.querySelector('.plotpress-pin-arrow');
+    if (!rect || !dot || !arrow) return;
+    layoutPinArrow(arrow, +rect.getAttribute('x'), +rect.getAttribute('y'),
+                   +rect.getAttribute('width'), +rect.getAttribute('height'),
+                   +dot.getAttribute('r'));
   }
 
   // The leader line from the box's edge to the dot's own edge (not its
@@ -1526,18 +1552,23 @@ _JS_SOURCE = r"""
   // The selected dot draws a bit larger than its resting size -- scaled from
   // that pin's *own* radius (see pinRadius), not a flat bump, so a selected
   // marker on a tiny panel still reads as "this one, bigger" rather than
-  // ballooning back up to the fixed size pinRadius was added to avoid.
+  // ballooning back up to the fixed size pinRadius was added to avoid. Each
+  // dot whose radius actually changes here gets its own leader arrow synced
+  // right after -- see syncPinArrow's own comment for why this can't wait
+  // for the next ordinary re-layout.
   function selectPin(g) {
     if (selectedPin && selectedPin !== g) {
       selectedPin.classList.remove('selected');
       var prevDot = selectedPin.querySelector('circle');
       if (prevDot) prevDot.setAttribute('r', selectedPin.dataset.pinR || 3.5);
+      syncPinArrow(selectedPin);
     }
     selectedPin = g;
     if (g) {
       g.classList.add('selected');
       var dot = g.querySelector('circle');
       if (dot) dot.setAttribute('r', (parseFloat(g.dataset.pinR) || 3.5) * 1.4);
+      syncPinArrow(g);
     }
   }
 
@@ -1590,7 +1621,7 @@ _JS_SOURCE = r"""
     });
     svg.appendChild(g);
     selectPin(g);   // a freshly dropped marker starts selected
-    refreshDragReady();
+    refreshOneDragReady(g);
     return g;
   }
 
@@ -1603,14 +1634,25 @@ _JS_SOURCE = r"""
     return isAnnotationPin(g) ? mode === 'note-free' : mode === 'pick';
   }
 
-  // Refreshed on every mode change and pin creation/restore -- purely a
-  // cursor hint (the actual drag gate is boxDraggableNow(), checked fresh
-  // at mousedown regardless of this class), but a "move" cursor over a box
+  // Just this one pin -- O(1), not a full document sweep -- for the common
+  // case of a single pin's own draggability possibly changing (created,
+  // just gained/lost .plotpress-note). A mode CHANGE (see setMode) still
+  // needs the full sweep below, since every existing pin's answer can flip
+  // at once; creating/restoring pins one at a time never needs more than
+  // this, and restorePins() replaying a whole saved file through addPin()/
+  // addAnchoredPin() one call at a time is exactly the case where an O(n)
+  // sweep *per pin created* would make loading n saved pins O(n^2).
+  function refreshOneDragReady(g) {
+    g.classList.toggle('plotpress-drag-ready', boxDraggableNow(g));
+  }
+
+  // Refreshed on every mode change (every existing pin's answer can flip at
+  // once) and once after a whole restorePins() replay -- purely a cursor
+  // hint (the actual drag gate is boxDraggableNow(), checked fresh at
+  // mousedown regardless of this class), but a "move" cursor over a box
   // that's about to not respond to a drag would be its own small bug.
   function refreshDragReady() {
-    document.querySelectorAll('.plotpress-pin').forEach(function (p) {
-      p.classList.toggle('plotpress-drag-ready', boxDraggableNow(p));
-    });
+    document.querySelectorAll('.plotpress-pin').forEach(refreshOneDragReady);
   }
 
   // Repositions a pin's own label box independent of its anchor (the dot
@@ -1790,7 +1832,7 @@ _JS_SOURCE = r"""
     // applied -- that class is what boxDraggableNow() itself keys its
     // point-picking-vs-annotation split on, so it has to run again now
     // that it's actually set.
-    if (text !== undefined) refreshDragReady();
+    if (text !== undefined) refreshOneDragReady(g);
     return g;
   }
 
@@ -2296,7 +2338,7 @@ _JS_SOURCE = r"""
     // addPin() already refreshed drag-readiness once, before the
     // .plotpress-note class above was applied -- see the same note in
     // addAnchoredPin().
-    refreshDragReady();
+    refreshOneDragReady(g);
   }
 
   svg.addEventListener('click', function (e) {

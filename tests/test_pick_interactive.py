@@ -1730,22 +1730,28 @@ def test_point_pick_pin_has_a_leader_arrow_to_its_marker(page, tmp_path):
         """() => {
           const pin = document.querySelector('.plotpress-pin');
           const arrow = pin.querySelector('.plotpress-pin-arrow');
-          const r = parseFloat(pin.dataset.pinR);
+          const dot = pin.querySelector('circle');
           return {
             hasArrow: !!arrow,
             markerEnd: arrow.getAttribute('marker-end'),
             x1: +arrow.getAttribute('x1'), y1: +arrow.getAttribute('y1'),
             x2: +arrow.getAttribute('x2'), y2: +arrow.getAttribute('y2'),
-            r: r,
+            renderedR: +dot.getAttribute('r'),
           };
         }""")
     assert info["hasArrow"]
     assert info["markerEnd"] == "url(#plotpress-pin-arrow)"
     end_dist = (info["x2"] ** 2 + info["y2"] ** 2) ** 0.5
-    assert end_dist == pytest.approx(info["r"], abs=0.01), (
-        "the arrow's dot-side end must sit exactly on the dot's own edge "
-        "(distance == its radius from the origin), not at its center or "
-        "floating free: %r" % info)
+    # Against the dot's own *rendered* r, not the resting pinR -- a freshly
+    # dropped pin starts selected (see addPin), so the dot is already at its
+    # enlarged 1.4x size by the time this reads it (see syncPinArrow's own
+    # comment: this is exactly the distinction a prior version of this
+    # assertion missed, comparing against the resting size instead and
+    # missing the arrow-falls-short-of-the-enlarged-dot regression).
+    assert end_dist == pytest.approx(info["renderedR"], abs=0.01), (
+        "the arrow's dot-side end must sit exactly on the dot's own current "
+        "edge (distance == its rendered radius from the origin), not at its "
+        "center, floating free, or short of an enlarged selected dot: %r" % info)
     start_dist = (info["x1"] ** 2 + info["y1"] ** 2) ** 0.5
     assert start_dist > end_dist, "the box-side end must be farther from the dot than the arrowhead end"
 
@@ -1753,6 +1759,59 @@ def test_point_pick_pin_has_a_leader_arrow_to_its_marker(page, tmp_path):
         "() => { const m = document.getElementById('plotpress-pin-arrow'); "
         "return m ? m.tagName : null; }")
     assert marker == "marker", "the shared arrowhead <marker> def must exist in the SVG"
+
+
+def test_leader_arrow_tracks_the_dots_radius_when_selection_changes(page, tmp_path):
+    """Regression: selectPin() enlarges a selected dot to 1.4x its resting
+    radius (and shrinks the previously-selected one back) without going
+    through layoutPin() again -- the leader arrow has to be resynced
+    separately each time, or it's left pointing short of an enlarged dot
+    (or, for the just-deselected one, past a dot that's already shrunk back
+    under it)."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 4.0, 9.0, 16.0])
+    path = tmp_path / "arrow_selection_sync.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    def arrow_end_matches_dot(selector):
+        info = page.evaluate(
+            """(sel) => { const pin = document.querySelector(sel);
+                          const arrow = pin.querySelector('.plotpress-pin-arrow');
+                          const dot = pin.querySelector('circle');
+                          const dist = Math.hypot(+arrow.getAttribute('x2'), +arrow.getAttribute('y2'));
+                          return {dist: dist, r: +dot.getAttribute('r')}; }""",
+            selector)
+        return info["dist"] == pytest.approx(info["r"], abs=0.01), info
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 1.0, 1.0))
+    ok, info = arrow_end_matches_dot(".plotpress-pin")
+    assert ok, "a freshly dropped (and thus already-selected) pin's arrow must match its enlarged dot: %r" % info
+
+    # A second pin deselects the first -- its dot shrinks back to resting
+    # size, and its arrow must shrink to match, not stay sized for 1.4x.
+    # Point Picking is already the active tool -- re-clicking its own
+    # button would toggle it off (see setMode()), so this click dispatches
+    # straight to the SVG instead of going through _click_mode again.
+    ux1, uy1 = px(fig, 0, 3.0, 9.0)
+    page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          const el = document.elementFromPoint(c.x, c.y) || svg;
+          el.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, button: 0}));
+        }""", [ux1, uy1])
+    pins = page.evaluate("() => [...document.querySelectorAll('.plotpress-pin')].length")
+    assert pins == 2
+    ok_first, info_first = arrow_end_matches_dot(".plotpress-pin:not(.selected)")
+    assert ok_first, "the just-deselected pin's arrow must shrink back with its dot: %r" % info_first
+    ok_second, info_second = arrow_end_matches_dot(".plotpress-pin.selected")
+    assert ok_second, "the newly-selected pin's arrow must match its enlarged dot: %r" % info_second
 
 
 def test_dragging_a_pins_box_repositions_it_independent_of_its_anchor(page, tmp_path):
@@ -1892,6 +1951,43 @@ def test_dragged_box_offset_survives_pan_and_save_restore(page, tmp_path):
     assert restored == dragged, (
         "a Save As round trip must preserve a dragged box's custom offset: "
         "%r -> %r" % (dragged, restored))
+
+
+def test_dragged_box_offset_survives_arrow_key_stepping(page, tmp_path):
+    """layoutPin() (called by stepPin() on every arrow-key step, the same
+    as pan/zoom/restore) only falls back to the default box offset when
+    dataset.boxDx/boxDy is unset -- an arrow-key step must move the dot to
+    the neighboring point without resetting a box the user already dragged
+    to a custom position."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 4.0, 9.0, 16.0])
+    path = tmp_path / "drag_then_step.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    _drag_box(page, ".plotpress-pin", 90, 60)
+    dragged = page.evaluate(
+        "() => { const p = document.querySelector('.plotpress-pin'); "
+        "return [p.dataset.boxDx, p.dataset.boxDy]; }")
+
+    page.evaluate("() => document.querySelector('.plotpress-pin').dispatchEvent("
+                  "new MouseEvent('click', {bubbles: true}))")   # re-select it
+    page.keyboard.press("ArrowRight")
+
+    after_step = page.evaluate(
+        "() => { const p = document.querySelector('.plotpress-pin'); "
+        "return [p.dataset.boxDx, p.dataset.boxDy]; }")
+    assert after_step == dragged, (
+        "an arrow-key step must not reset a dragged box's own local offset: "
+        "%r -> %r" % (dragged, after_step))
+
+    markers = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(markers) == 1 and markers[0]["y"] == 9.0, (
+        "the step must still have actually moved the dot to the next point: %r" % markers)
 
 
 def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
