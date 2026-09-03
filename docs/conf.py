@@ -436,6 +436,14 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     it = block_vars["image_path_iterator"]
     seen = block_vars.setdefault("_plotpress_seen", set())
     interactive = _wants_interactive(block_vars["src_file"])
+    # An example can name figures that are purely illustrative (a schematic
+    # before/after diagram, say) and so shouldn't get a live embed even in an
+    # interactive-root gallery -- there's nothing on them worth picking or
+    # zooming into, and an embed would compete for attention with the real
+    # data-carrying figure(s) on the same page. Still scraped as a static
+    # image like any other figure; only the interactive copy is skipped.
+    static_only_ids = {id(f) for f in
+                       block_vars["example_globals"].get("_gallery_static_only", ())}
     paths, embeds = [], []
     for value in list(block_vars["example_globals"].values()):
         if isinstance(value, plotpress.Figure) and id(value) not in seen:
@@ -451,7 +459,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             else:
                 value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
-            if interactive:
+            if interactive and id(value) not in static_only_ids:
                 embeds.append(_interactive_embed(value, path))
 
     # A handful of examples (progressive/live-acquisition demos, one

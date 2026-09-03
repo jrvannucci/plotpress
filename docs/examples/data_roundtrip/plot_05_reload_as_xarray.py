@@ -80,6 +80,11 @@ ax_after.pcolormesh(ds["x"].values, ds["y"].values, anomaly.values[0, 0],
                     cmap="RdBu_r", vmin=-0.3, vmax=0.3)
 ax_after.set_title("after: anomaly", fontsize=9)
 fig_arrow.tight_layout()
+# A schematic, not real data to explore -- skip the live interactive embed
+# this gallery page otherwise gives every figure, so it doesn't compete
+# with the two full grids below for the one embed slot a reader expects
+# to actually be worth picking/zooming into.
+_gallery_static_only = [fig_arrow]
 
 # Replot: rebuild the same 5x6 grid and draw each panel's anomaly straight
 # from the xarray Dataset -- ds["title"] hands each panel's own title back,
