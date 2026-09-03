@@ -467,6 +467,48 @@ def test_vector_mesh_stays_pickable_after_zoom(page, tmp_path):
     assert markers[0]["z"] == pytest.approx(float(field[0, 0]))
 
 
+def test_mesh_click_away_from_an_overlaid_line_still_picks_the_mesh(page, tmp_path):
+    """Regression: a short line drawn over/near a mesh (a threshold marker, a
+    turbine rotor disc, a boundary trace) used to "steal" every click within
+    POINT_THRESHOLD (28px) of one of its own vertices, even ones plainly
+    aimed at a mesh cell well away from the line itself -- nearestPoint() had
+    no notion that a mesh cell, a much stronger positional signal, was also
+    under the cursor. A click clearly inside the mesh but only loosely near
+    the line must resolve to the mesh; a precise click on the line's own
+    vertex must still resolve to the line."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    x = np.arange(6, dtype=float)
+    y = np.arange(6, dtype=float)
+    Z = np.arange(25, dtype=float).reshape(5, 5)
+    ax.pcolormesh(x, y, Z)
+    # A short vertical line at x=1, spanning y=[2, 3] -- like a turbine's
+    # rotor disc or a threshold marker drawn across the mesh.
+    ax.plot([1.0, 1.0], [2.0, 3.0], color="cyan", linewidth=2.5)
+    path = tmp_path / "mesh_line_overlay.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # Well inside a mesh cell (col 3, row 0), several cells away from the line.
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, 3.5, 0.5))
+    assert len(markers) == 1
+    assert markers[0]["kind"] == "mesh", (
+        "a click plainly aimed at the mesh must not snap to the distant "
+        "line's vertex just because it fell within the loose snap radius: %r"
+        % markers[0])
+
+    # Exactly on the line's own vertex -- must still win over the mesh cell
+    # it also lands inside.
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, 1.0, 2.0))
+    assert len(markers) == 2
+    assert markers[1]["kind"] == "points", (
+        "a precise click on the line's own vertex must still pick the line, "
+        "not the mesh cell underneath it: %r" % markers[1])
+
+
 def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
     """rasterized=True on the same grid must keep picking the cells that
     *do* survive resampling -- forcing raster shouldn't break picking on

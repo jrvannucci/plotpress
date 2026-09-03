@@ -998,6 +998,15 @@ _JS_SOURCE = r"""
   var pickEl = document.getElementById('plotpress-pick');
   var PICK = pickEl ? reviveBinary(JSON.parse(pickEl.textContent)) : {};
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
+  // A much tighter radius for a line/scatter point to win over a mesh cell
+  // the click also landed inside (see resolvePickTarget) -- a deliberate,
+  // precise click on a small marker should still win, but the loose 28px
+  // snap radius above is generous enough that a line merely drawn near or
+  // across a mesh (a threshold marker, a boundary trace) would otherwise
+  // "steal" clicks plainly aimed at a mesh cell well away from the line
+  // itself, just because one of the line's vertices happened to be within
+  // 28px of it.
+  var MESH_OVERRIDE_THRESHOLD = 10;
 
   // PICK is a closure over this IIFE -- unreachable from outside, which is
   // exactly right for the embedded payload itself, but a live-updating
@@ -2424,11 +2433,12 @@ _JS_SOURCE = r"""
   }
 
   // The same target Point Picking resolves a click to (a point/frame vertex
-  // within POINT_THRESHOLD px, else a mesh cell, else a pie wedge, else a
-  // point regardless of distance) -- kept as its own function for the
-  // pick-mode click handler's own readability (it used to also serve the
-  // now-removed "Annotate Point" mode, a second caller wanting the exact
-  // same resolution logic). Returns
+  // within MESH_OVERRIDE_THRESHOLD px if the click also landed inside a mesh
+  // cell -- see below -- else within POINT_THRESHOLD px, else a mesh cell,
+  // else a pie wedge, else a point regardless of distance) -- kept as its
+  // own function for the pick-mode click handler's own readability (it used
+  // to also serve the now-removed "Annotate Point" mode, a second caller
+  // wanting the exact same resolution logic). Returns
   // a steppable anchor ref; ``null`` if there's simply nothing pickable
   // there (the caller may fall back to a geometric readout); or the string
   // ``'blocked'`` for the one case that must produce nothing at all, not a
@@ -2453,7 +2463,10 @@ _JS_SOURCE = r"""
         (!cand || Math.sqrt(cand.d) > POINT_THRESHOLD)) {
       return 'blocked';
     }
-    if (cand && Math.sqrt(cand.d) <= POINT_THRESHOLD) return cand.ref;
+    // Inside a mesh cell's own bounds, only a genuinely precise click on a
+    // line/scatter point overrides it -- see MESH_OVERRIDE_THRESHOLD above.
+    var pointThreshold = mesh ? MESH_OVERRIDE_THRESHOLD : POINT_THRESHOLD;
+    if (cand && Math.sqrt(cand.d) <= pointThreshold) return cand.ref;
     if (mesh) return mesh;
     if (pieHit) return pieHit;
     if (cand) return cand.ref;

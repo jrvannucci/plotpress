@@ -270,6 +270,33 @@ anywhere in the source.
 
 ### Fixed
 
+- **Point Picking no longer lets a line/scatter point "steal" a click plainly
+  aimed at a mesh cell behind it.** A short line drawn over or near a
+  `pcolormesh` (a threshold marker, a turbine rotor disc, a boundary trace)
+  used to win any click within the generous 28px snap-to-point radius of one
+  of its own vertices, even when the click landed squarely inside a mesh
+  cell well away from the line itself -- the resolver had no notion that a
+  mesh cell under the cursor was also a candidate, let alone a stronger
+  positional signal than a loose point-distance threshold. A click inside a
+  mesh cell now only loses to a line/scatter point on a genuinely precise
+  click (within 10px); a precise click still always wins, so nothing that
+  depended on that continues to work exactly as before.
+
+- **A found-while-auditing-the-new-toolbar bug: the menu bar's mode
+  indicator could sit flush against, or partly behind, the window's right
+  edge.** `.plotpress-menubar` is `position:fixed; width:100%; padding:5px
+  8px` without `box-sizing:border-box`, so the 16px of horizontal padding
+  was added on top of the 100% width instead of being absorbed by it,
+  pushing the bar's own right edge (and the indicator pinned to it) 16px
+  past the scrollbar-safe viewport width.
+
+- **Another found-while-auditing bug: a Point Picking pin could drift off
+  its true constant on-screen size across a Pan/Zoom.** The baseline
+  `naturalW`/`naturalH` a pin's zoom compensation scales from were measured
+  before the toolbar's own docked-menu-bar DOM restructuring ran later in
+  the same script, capturing the SVG's stale pre-reflow size instead of its
+  real final one.
+
 - **An API audit ("try to break every matplotlib-shaped plot type") found
   and fixed two silent-corruption bugs, six empty-input crashes, an
   SVG-only color-resolution gap, and added a batch of previously-missing
