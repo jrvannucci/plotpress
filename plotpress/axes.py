@@ -19,7 +19,7 @@ from .artists import (
     Pie, PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
     Stem, Table, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, apply_colormap, get_cmap, resolve_norm
+from .colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
 from .ticker import log_ticks, nice_ticks
 from . import _spectral
 
@@ -27,6 +27,15 @@ from . import _spectral
 #: what matters (there is nothing to configure per-axes), so every axes
 #: shares this one object rather than each carrying its own copy.
 _TRANS_AXES = object()
+
+#: Sentinel distinguishing "not passed" from an explicit, meaningful ``None``
+#: (:meth:`Axes.errorbar`'s ``marker=None`` already means "no marker" -- used
+#: internally by :meth:`Axes.bar`/:meth:`Axes.barh` for their own auto-added
+#: error-bar-only line -- so ``None`` can't double as "let ``fmt=`` decide").
+#: Used as a default *value* (evaluated at module load, when the ``Axes``
+#: class body executes), so it has to be defined before that, unlike a name
+#: only referenced inside a method body.
+_UNSET = object()
 
 
 def _finite_datasets(data, positions):
@@ -132,7 +141,7 @@ class Spine:
 
     def set_color(self, color):
         """Set this side's color; ``None`` reverts to the figure style's default."""
-        self._color = color
+        self._color = to_hex(color)
 
     def get_color(self):
         """This side's color, falling back to the figure style's ``spine_color``."""
@@ -299,20 +308,42 @@ class Axes:
         self._color_idx = 0
 
     def _resolve_color(self, color):
-        """None -> next cycle color; ``'C0'``..``'CN'`` -> that cycle entry."""
+        """None -> next cycle color; ``'C0'``..``'CN'`` -> that cycle entry;
+        matplotlib's single-letter shortcuts (``'r'``, ``'k'``, ...) -> hex.
+
+        The single-letter shortcuts aren't valid CSS/SVG color keywords on
+        their own (unlike a full name -- ``"red"``/``"orange"``/... are
+        already real CSS keywords, so a browser renders those with no help
+        needed) -- passed straight through to ``stroke=``/``fill=`` in the
+        SVG backend, they used to render as nothing a browser recognizes,
+        silently, with no error anywhere (the raster backend already
+        resolves through :func:`~plotpress.colors.to_hex` itself, so this
+        was an SVG-only gap: exactly backwards for an SVG-first library).
+        Resolving here, once, covers it for every backend and every color
+        this method already routes through -- rather than teaching the SVG
+        renderer this same lookup at every call site that writes a color.
+        """
         if color is None:
             return self._next_color()
         if (isinstance(color, str) and len(color) >= 2
                 and color[0] in "Cc" and color[1:].isdigit()):
             cyc = self.style.color_cycle
             return cyc[int(color[1:]) % len(cyc)]
-        return color
+        return to_hex(color)
 
     # -- plotting methods ---------------------------------------------------
-    def plot(self, *args, color=None, linewidth=None, linestyle="-",
+    def plot(self, *args, color=None, linewidth=None, linestyle=None,
              label=None, alpha=1.0, values=None, marker=None, markersize=None,
              markerfacecolor=None, zorder=0):
-        """Plot ``y`` or ``x, y`` as a line. Returns the :class:`Line2D`.
+        """Plot ``y``, ``x, y``, or ``x, y, fmt`` as a line. Returns the
+        :class:`Line2D`.
+
+        ``fmt`` is matplotlib's format-string shorthand (``'ro-'``,
+        ``'k.'``, ``'C1--'``) -- any of a color, a linestyle, and a marker,
+        in one string (see :func:`_parse_fmt`). An explicit ``color=``/
+        ``linestyle=``/``marker=`` keyword overrides whatever ``fmt`` says
+        for that piece; a marker with no linestyle character in ``fmt``
+        means no connecting line, matplotlib's own convention.
 
         ``values`` is an optional ``{name: array}`` of extra per-point
         dimensions (e.g. ``z``) surfaced when a point is picked interactively.
@@ -324,14 +355,34 @@ class Axes:
         other ``marker`` is accepted for matplotlib compatibility but warns,
         the same limitation :meth:`scatter`/:meth:`errorbar` already have.
         """
+        fmt = None
         if len(args) == 1:
             y = np.asarray(args[0], dtype=float)
             x = np.arange(y.size, dtype=float)
-        elif len(args) >= 2:
+        elif len(args) in (2, 3):
             x = np.asarray(args[0], dtype=float)
             y = np.asarray(args[1], dtype=float)
+            if len(args) == 3:
+                fmt = args[2]
+                if not isinstance(fmt, str):
+                    raise TypeError(
+                        "plot(): the third positional argument is a "
+                        f"matplotlib-style format string (e.g. 'ro-'), got "
+                        f"{type(fmt).__name__}"
+                    )
         else:
-            raise TypeError("plot() requires y or x, y")
+            raise TypeError("plot() requires y, or x, y, or x, y, fmt")
+
+        if fmt:
+            fmt_color, fmt_linestyle, fmt_marker = _parse_fmt(fmt)
+            if color is None:
+                color = fmt_color
+            if linestyle is None:
+                linestyle = fmt_linestyle
+            if marker is None:
+                marker = fmt_marker
+        if linestyle is None:
+            linestyle = "-"
 
         if marker:
             _warn_marker_shape(marker, "plot")
@@ -558,10 +609,14 @@ class Axes:
         )
         return art
 
-    def bar(self, x, height, width=0.8, bottom=0.0, color=None, edgecolor=None,
-            linewidth=0.8, label=None, alpha=1.0, yerr=None, xerr=None,
-            capsize=3.0, ecolor=None, zorder=0):
+    def bar(self, x, height, width=0.8, bottom=0.0, align="center", color=None,
+            edgecolor=None, linewidth=0.8, label=None, alpha=1.0, yerr=None,
+            xerr=None, capsize=3.0, ecolor=None, zorder=0):
         """Vertical bar chart.
+
+        ``align`` (matplotlib's own choices) is ``"center"`` (default: each
+        bar centered on its own ``x``) or ``"edge"`` (``x`` is the bar's
+        *left* edge instead -- pass a negative ``width`` for a right edge).
 
         ``yerr``/``xerr`` draw error bars centered at each bar's own top
         (``bottom + height``), composed from the same whiskers-and-caps
@@ -570,8 +625,12 @@ class Axes:
         would. ``ecolor`` (default black, independent of the bars' own
         ``color``) matches matplotlib's own bar-error-bar default.
         """
+        if align == "edge":
+            x = np.asarray(x, float) + np.asarray(width, float) / 2.0
+        elif align != "center":
+            raise ValueError(f"bar(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(x, height, width, bottom, "vertical",
-                 color=self._resolve_color(color), edgecolor=edgecolor,
+                 color=self._resolve_color(color), edgecolor=to_hex(edgecolor),
                  linewidth=linewidth, label=label, alpha=alpha)
         b.zorder = zorder
         self.artists.append(b)
@@ -583,14 +642,18 @@ class Axes:
                          capsize=capsize)
         return b
 
-    def barh(self, y, width, height=0.8, left=0.0, color=None, edgecolor=None,
-             linewidth=0.8, label=None, alpha=1.0, xerr=None, yerr=None,
-             capsize=3.0, ecolor=None, zorder=0):
-        """Horizontal bar chart. ``xerr``/``yerr``/``capsize``/``ecolor``
-        match :meth:`bar`, centered at each bar's own right edge
+    def barh(self, y, width, height=0.8, left=0.0, align="center", color=None,
+             edgecolor=None, linewidth=0.8, label=None, alpha=1.0, xerr=None,
+             yerr=None, capsize=3.0, ecolor=None, zorder=0):
+        """Horizontal bar chart. ``align``/``xerr``/``yerr``/``capsize``/
+        ``ecolor`` match :meth:`bar`, centered at each bar's own right edge
         (``left + width``)."""
+        if align == "edge":
+            y = np.asarray(y, float) + np.asarray(height, float) / 2.0
+        elif align != "center":
+            raise ValueError(f"barh(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(y, width, height, left, "horizontal",
-                 color=self._resolve_color(color), edgecolor=edgecolor,
+                 color=self._resolve_color(color), edgecolor=to_hex(edgecolor),
                  linewidth=linewidth, label=label, alpha=alpha)
         b.zorder = zorder
         self.artists.append(b)
@@ -644,8 +707,13 @@ class Axes:
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
              label=None, alpha=1.0, density=False, zorder=0, histtype="bar",
-             cumulative=False, weights=None, stacked=False):
+             cumulative=False, weights=None, stacked=False,
+             orientation="vertical"):
         """Histogram. Returns ``(counts, edges, bars)``.
+
+        ``orientation="horizontal"`` bins along the y-axis instead (bars
+        extend rightward from the y-axis; a ``"step"``/``"stepfilled"``
+        outline runs along y too).
 
         ``x`` may be a single array or a sequence of arrays -- multiple
         datasets share one set of bin edges (from their combined range when
@@ -705,8 +773,8 @@ class Axes:
             running = np.zeros_like(edges[:-1])
             for counts, c, lbl in zip(all_counts, resolved_colors, labels_in):
                 base = running.copy() if stacked else 0.0
-                b = Bars(centers, counts, widths, base, "vertical",
-                         color=c, edgecolor=edgecolor, linewidth=0.6,
+                b = Bars(centers, counts, widths, base, orientation,
+                         color=c, edgecolor=to_hex(edgecolor), linewidth=0.6,
                          label=lbl, alpha=alpha)
                 b.zorder = zorder
                 self.artists.append(b)
@@ -721,10 +789,11 @@ class Axes:
             for counts, c, lbl in zip(all_counts, resolved_colors, labels_in):
                 top = (running + counts) if stacked else counts
                 base = running if stacked else np.zeros_like(counts)
-                xs = np.repeat(edges, 2)
-                ys = np.concatenate([[base[0]], np.repeat(top, 2), [base[-1]]])
+                along = np.repeat(edges, 2)                      # the bin-edge axis
+                across = np.concatenate([[base[0]], np.repeat(top, 2), [base[-1]]])
+                xs, ys = (along, across) if orientation == "vertical" else (across, along)
                 p = Polygon(xs, ys, color=(c if fill else None), alpha=alpha,
-                           edgecolor=(edgecolor if fill else c), linewidth=1.5,
+                           edgecolor=(to_hex(edgecolor) if fill else c), linewidth=1.5,
                            label=lbl)
                 p.zorder = zorder
                 self.artists.append(p)
@@ -751,43 +820,96 @@ class Axes:
         return self.plot(xs, ys, color=self._resolve_color(color),
                          linewidth=linewidth, label=label, alpha=alpha)
 
-    def fill_between(self, x, y1, y2=0.0, color=None, alpha=0.4, label=None,
-                     edgecolor=None, linewidth=0.0, zorder=0):
+    def fill_between(self, x, y1, y2=0.0, where=None, color=None, alpha=0.4,
+                     label=None, edgecolor=None, linewidth=0.0, zorder=0):
         """Fill the area between ``y1`` and ``y2``.
 
         ``edgecolor``/``linewidth`` outline the filled region -- the same
         two options :meth:`fill` already has, since both draw the same
         closed-path primitive; there was no reason the outline was
         ``fill()``-only.
-        """
-        fb = FillBetween(x, y1, y2, color=self._resolve_color(color),
-                         alpha=alpha, label=label, edgecolor=edgecolor,
-                         linewidth=linewidth)
-        fb.zorder = zorder
-        self.artists.append(fb)
-        return fb
 
-    def fill_betweenx(self, y, x1, x2=0.0, color=None, alpha=0.4, label=None,
-                      edgecolor=None, linewidth=0.0, zorder=0):
+        ``where`` (a boolean mask matching ``x``) restricts the fill to its
+        contiguous ``True`` runs -- each its own artist (no interpolation at
+        the boundary between a ``True`` and ``False`` point, unlike
+        matplotlib's own default). Returns a list of them, one per run,
+        instead of a single artist when given.
+        """
+        x = np.asarray(x, float)
+        y1b = np.broadcast_to(np.asarray(y1, float), x.shape)
+        y2b = np.broadcast_to(np.asarray(y2, float), x.shape)
+        resolved = self._resolve_color(color)
+        if where is None:
+            fb = FillBetween(x, y1b, y2b, color=resolved, alpha=alpha,
+                             label=label, edgecolor=to_hex(edgecolor),
+                             linewidth=linewidth)
+            fb.zorder = zorder
+            self.artists.append(fb)
+            return fb
+        where = np.asarray(where, bool)
+        segments = []
+        i, n = 0, len(x)
+        while i < n:
+            if not where[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and where[j]:
+                j += 1
+            fb = FillBetween(x[i:j], y1b[i:j], y2b[i:j], color=resolved,
+                             alpha=alpha, label=(label if not segments else None),
+                             edgecolor=to_hex(edgecolor), linewidth=linewidth)
+            fb.zorder = zorder
+            self.artists.append(fb)
+            segments.append(fb)
+            i = j
+        return segments
+
+    def fill_betweenx(self, y, x1, x2=0.0, where=None, color=None, alpha=0.4,
+                      label=None, edgecolor=None, linewidth=0.0, zorder=0):
         """Fill the horizontal area between ``x1`` and ``x2`` across ``y``.
 
-        ``edgecolor``/``linewidth`` match :meth:`fill_between`."""
+        ``edgecolor``/``linewidth`` match :meth:`fill_between`. ``where``
+        (a boolean mask matching ``y``) restricts the fill to its
+        contiguous ``True`` runs, the same way -- returns a list of
+        artists, one per run, instead of a single one when given.
+        """
         y = np.asarray(y, float)
         x1 = np.broadcast_to(np.asarray(x1, float), y.shape)
         x2 = np.broadcast_to(np.asarray(x2, float), y.shape)
-        px = np.concatenate([x1, x2[::-1]])
-        py = np.concatenate([y, y[::-1]])
-        p = Polygon(px, py, color=self._resolve_color(color), alpha=alpha,
-                    edgecolor=edgecolor, linewidth=linewidth, label=label)
-        p.zorder = zorder
-        self.artists.append(p)
-        return p
+        resolved = self._resolve_color(color)
+
+        def _one(yy, xx1, xx2, lbl):
+            px = np.concatenate([xx1, xx2[::-1]])
+            py = np.concatenate([yy, yy[::-1]])
+            p = Polygon(px, py, color=resolved, alpha=alpha,
+                        edgecolor=to_hex(edgecolor), linewidth=linewidth, label=lbl)
+            p.zorder = zorder
+            self.artists.append(p)
+            return p
+
+        if where is None:
+            return _one(y, x1, x2, label)
+        where = np.asarray(where, bool)
+        segments = []
+        i, n = 0, len(y)
+        while i < n:
+            if not where[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and where[j]:
+                j += 1
+            segments.append(_one(y[i:j], x1[i:j], x2[i:j],
+                                 label if not segments else None))
+            i = j
+        return segments
 
     def fill(self, x, y, color=None, alpha=1.0, edgecolor=None, linewidth=0.0,
              label=None, zorder=0):
         """Fill an arbitrary polygon given by vertices ``x``/``y``."""
         p = Polygon(x, y, color=self._resolve_color(color), alpha=alpha,
-                    edgecolor=edgecolor, linewidth=linewidth, label=label)
+                    edgecolor=to_hex(edgecolor), linewidth=linewidth, label=label)
         p.zorder = zorder
         self.artists.append(p)
         return p
@@ -836,11 +958,21 @@ class Axes:
         self.artists.append(s)
         return s
 
-    def errorbar(self, x, y, yerr=None, xerr=None, color=None, marker="o",
-                 markersize=None, capsize=3.0, linestyle="-", linewidth=None,
-                 label=None, alpha=1.0, zorder=0, ecolor=None, elinewidth=None,
-                 capthick=None):
+    def errorbar(self, x, y, yerr=None, xerr=None, fmt="", color=None,
+                 marker=_UNSET, markersize=None, capsize=3.0, linestyle=_UNSET,
+                 linewidth=None, label=None, alpha=1.0, zorder=0, ecolor=None,
+                 elinewidth=None, capthick=None):
         """Line/markers with error bars. Only round markers are drawn.
+
+        ``fmt`` is matplotlib's 5th positional argument here too (its own
+        real signature is ``errorbar(x, y, yerr, xerr, fmt, ...)``) -- a
+        format string like ``'ro-'`` (see :meth:`plot`/:func:`_parse_fmt`).
+        This used to be plotpress's own ``color`` slot, so a matplotlib
+        caller's 5th positional argument -- almost always a fmt string --
+        silently landed in ``color`` instead, rendering with whatever
+        garbage color string that happened to be and no error anywhere.
+        An explicit ``color=``/``marker=``/``linestyle=`` keyword still
+        overrides whatever ``fmt`` says for that piece.
 
         ``ecolor``/``elinewidth`` style the whiskers/caps independently of
         the connecting line and marker -- each falls back to ``color``
@@ -848,6 +980,19 @@ class Axes:
         changes unless you pass them. ``capthick`` (the caps' own width)
         falls back to ``elinewidth`` in turn.
         """
+        if fmt:
+            fmt_color, fmt_linestyle, fmt_marker = _parse_fmt(fmt)
+            if color is None:
+                color = fmt_color
+            if linestyle is _UNSET:
+                linestyle = fmt_linestyle
+            if marker is _UNSET:
+                marker = fmt_marker
+        if marker is _UNSET:
+            marker = "o"          # plotpress's own long-standing default
+        if linestyle is _UNSET or linestyle is None:
+            linestyle = "-"
+
         _warn_marker_shape(marker, "errorbar")
         eb = ErrorBar(
             x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
@@ -864,7 +1009,7 @@ class Axes:
 
     def imshow(self, X, cmap="viridis", norm=None, vmin=None, vmax=None,
                extent=None, origin="upper", alpha=1.0, label=None, zorder=0,
-               interpolation="nearest"):
+               interpolation="nearest", aspect=None):
         """Display an image / 2-D array.
 
         ``interpolation="nearest"`` (default) draws each data cell as a
@@ -873,12 +1018,20 @@ class Axes:
         instead. Only affects SVG output: raster (PNG/PDF) output already
         samples at its own fixed resolution, so there's no separate scaling
         step for this to change.
+
+        ``aspect``, if given, is applied via :meth:`set_aspect` (this
+        axes' own aspect, not per-image) -- left alone by default, unlike
+        matplotlib's own ``imshow()``, which forces ``'equal'`` even
+        without an explicit ``aspect=`` (see :meth:`matshow`, which does
+        the same here).
         """
         im = Image(X, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
                    origin=origin, alpha=alpha, label=label,
                    interpolation=interpolation)
         im.zorder = zorder
         self.artists.append(im)
+        if aspect is not None:
+            self.set_aspect(aspect)
         return im
 
     def matshow(self, A, cmap="viridis", norm=None, vmin=None, vmax=None, alpha=1.0):
@@ -903,6 +1056,8 @@ class Axes:
         if colors is None:
             cyc = self.style.color_cycle
             colors = [cyc[i % len(cyc)] for i in range(n)]
+        else:
+            colors = [to_hex(c) for c in colors]
         p = Pie(x, colors, labels=labels, startangle=startangle,
                 radius=radius, autopct=autopct, alpha=alpha)
         p.zorder = zorder
@@ -913,14 +1068,30 @@ class Axes:
         return p
 
     def boxplot(self, x, positions=None, widths=0.5, color=None,
-                orientation="vertical", label=None, alpha=1.0, zorder=0,
-                whis=1.5, showfliers=True):
+                orientation="vertical", vert=None, label=None, alpha=1.0,
+                zorder=0, whis=1.5, showfliers=True, showmeans=False,
+                labels=None, tick_labels=None):
         """Box-and-whisker plot of one or more datasets.
 
         ``whis`` sets the whisker reach in IQRs past ``q1``/``q3`` (matching
         matplotlib's own default of ``1.5``); points past that are drawn as
         fliers unless ``showfliers=False`` drops them instead.
+
+        ``vert`` is matplotlib's older ``True``/``False`` spelling of
+        ``orientation`` (``True`` -> ``"vertical"``, ``False`` ->
+        ``"horizontal"``) -- an explicit ``orientation=`` still wins if both
+        are given.
+
+        ``labels``/``tick_labels`` (matplotlib 3.9 renamed the former to the
+        latter; both work here) label each box at its own ``positions``
+        entry, via :meth:`set_xticks`/:meth:`set_yticks`.
+
+        ``showmeans`` adds a marker at each box's own mean, alongside the
+        median line already drawn -- round, like every plotpress marker
+        (see :func:`_warn_marker_shape`), not matplotlib's own triangle.
         """
+        if vert is not None:
+            orientation = "vertical" if vert else "horizontal"
         if isinstance(x, np.ndarray) and x.ndim == 1:
             x = [x]
         data = [np.asarray(d, float) for d in x]
@@ -942,11 +1113,27 @@ class Axes:
                     orientation=orientation, label=label, alpha=alpha)
         b.zorder = zorder
         self.artists.append(b)
+
+        tick_labels = labels if tick_labels is None else tick_labels
+        if tick_labels is not None:
+            if orientation == "vertical":
+                self.set_xticks(positions, list(tick_labels))
+            else:
+                self.set_yticks(positions, list(tick_labels))
+        if showmeans:
+            means = [d.mean() for d in data]
+            if orientation == "vertical":
+                self.scatter(positions, means, marker="o", color="#2ca02c",
+                             zorder=zorder + 1)
+            else:
+                self.scatter(means, positions, marker="o", color="#2ca02c",
+                             zorder=zorder + 1)
         return b
 
     def violinplot(self, data, positions=None, widths=0.5, color=None,
-                   orientation="vertical", label=None, points=100, cut=0.0,
-                   inner=None, alpha=0.55, zorder=0):
+                   orientation="vertical", vert=None, label=None, points=100,
+                   cut=0.0, inner=None, alpha=0.55, zorder=0, showmeans=False,
+                   showmedians=False):
         """Violin plot (kernel-density silhouettes).
 
         ``cut`` extends each density past its data extremes by that many
@@ -955,7 +1142,15 @@ class Axes:
         ``'box'`` (IQR bar + 1.5-IQR whiskers + median dot), ``'quartile'``
         (lines across the density at Q1/median/Q3), ``'stick'`` (one line per
         observation), or ``None``.
+
+        ``vert`` is matplotlib's older ``True``/``False`` spelling of
+        ``orientation``. ``showmeans``/``showmedians`` each draw one solid/
+        dashed line across the violin at that value, independent of
+        ``inner`` (which summarizes the raw data a different way -- combine
+        either or both freely).
         """
+        if vert is not None:
+            orientation = "vertical" if vert else "horizontal"
         if isinstance(data, np.ndarray) and data.ndim == 1:
             data = [data]
         data = [np.asarray(d, float) for d in data]
@@ -978,6 +1173,18 @@ class Axes:
         if inner:
             self._violin_inner(data, positions, grids, halfwidths, inner,
                                orientation)
+        if showmeans or showmedians:
+            across = self.hlines if orientation == "vertical" else self.vlines
+            for d, p, grid, hw in zip(data, positions, grids, halfwidths):
+                if showmedians:
+                    med = float(np.median(d))
+                    half = float(np.interp(med, grid, hw))
+                    across(med, p - half, p + half, color="#333333", linewidth=1.4)
+                if showmeans:
+                    mean = float(d.mean())
+                    half = float(np.interp(mean, grid, hw))
+                    across(mean, p - half, p + half, color="#333333",
+                          linewidth=1.4, linestyle="--")
         return v
 
     def _violin_inner(self, data, positions, grids, halfwidths, inner,
@@ -1069,7 +1276,7 @@ class Axes:
     def eventplot(self, positions, lineoffsets=None, linelengths=0.8, color=None,
                   orientation="horizontal", label=None, alpha=1.0, zorder=0):
         """Raster of event lines (one row per sequence)."""
-        if np.ndim(positions[0]) == 0:
+        if len(positions) == 0 or np.ndim(positions[0]) == 0:
             positions = [positions]
         rows = [np.asarray(r, float) for r in positions]
         if lineoffsets is None:
@@ -1086,11 +1293,14 @@ class Axes:
         X = np.asarray(X, float); Y = np.asarray(Y, float)
         U = np.asarray(U, float); V = np.asarray(V, float)
         if scale is None:
-            mag = np.hypot(U, V)
-            mmax = mag.max() or 1.0
-            span = max(X.max() - X.min(), Y.max() - Y.min()) or 1.0
-            n = max(U.size, 1)
-            scale = 0.9 * (span / np.sqrt(n)) / mmax
+            if U.size == 0:
+                scale = 1.0    # nothing to draw either way; any finite value works
+            else:
+                mag = np.hypot(U, V)
+                mmax = mag.max() or 1.0
+                span = max(X.max() - X.min(), Y.max() - Y.min()) or 1.0
+                n = max(U.size, 1)
+                scale = 0.9 * (span / np.sqrt(n)) / mmax
         q = Quiver(X, Y, U, V, scale, color=self._resolve_color(color), label=label,
                   alpha=alpha)
         q.zorder = zorder
@@ -1217,7 +1427,9 @@ class Axes:
                          0, 255)
             colors = ["#%02x%02x%02x" % tuple(lut[i]) for i in idx]
         elif isinstance(colors, str):
-            colors = [colors]
+            colors = [to_hex(colors)]
+        else:
+            colors = [to_hex(c) for c in colors]
         c = Contour(x, y, Z, levels, colors, label=label, alpha=alpha)
         c.zorder = zorder
         self.artists.append(c)
@@ -1575,7 +1787,7 @@ class Axes:
             ax.text(0.95, 0.95, "top right", transform=ax.transAxes,
                     ha="right", va="top")
         """
-        t = Text(x, y, s, color=color or self.style.text_color,
+        t = Text(x, y, s, color=to_hex(color) if color else self.style.text_color,
                  size=self.style.font_size if fontsize is None else fontsize,
                  ha=ha, va=va, rotation=rotation, outline=outline, alpha=alpha,
                  bbox=bbox, fontweight=fontweight, fontstyle=fontstyle,
@@ -1606,7 +1818,7 @@ class Axes:
         pinned to a corner regardless of where the data it labels ends up
         after a pan or zoom. ``xy`` itself always stays data coordinates.
         """
-        a = Annotation(text, xy, xytext, color=color or self.style.text_color,
+        a = Annotation(text, xy, xytext, color=to_hex(color) if color else self.style.text_color,
                        size=self.style.font_size if fontsize is None else fontsize,
                        ha=ha, va=va, arrowprops=arrowprops, outline=outline,
                        alpha=alpha, bbox=bbox, fontweight=fontweight,
@@ -1731,7 +1943,7 @@ class Axes:
 
     def set_facecolor(self, color):
         """Set this axes' own background color (independent of the figure)."""
-        self._facecolor = color
+        self._facecolor = to_hex(color)
 
     def get_facecolor(self):
         return self._facecolor if self._facecolor is not None else self.style.axes_facecolor
@@ -1891,14 +2103,14 @@ class Axes:
 
     def axvspan(self, xmin, xmax, color="#1f77b4", alpha=0.3, label=None, zorder=0):
         """Shade a vertical band between x=``xmin`` and x=``xmax``."""
-        sp = Span(xmin, xmax, "vertical", color=color, alpha=alpha, label=label)
+        sp = Span(xmin, xmax, "vertical", color=to_hex(color), alpha=alpha, label=label)
         sp.zorder = zorder
         self.artists.append(sp)
         return sp
 
     def axhspan(self, ymin, ymax, color="#1f77b4", alpha=0.3, label=None, zorder=0):
         """Shade a horizontal band between y=``ymin`` and y=``ymax``."""
-        sp = Span(ymin, ymax, "horizontal", color=color, alpha=alpha, label=label)
+        sp = Span(ymin, ymax, "horizontal", color=to_hex(color), alpha=alpha, label=label)
         sp.zorder = zorder
         self.artists.append(sp)
         return sp
@@ -2318,7 +2530,8 @@ class Axes:
         self._grid_alpha = alpha
 
     def legend(self, loc="upper right", ncol=1, title=None, handles=None,
-               labels=None, fontsize=None, framealpha=0.85):
+               labels=None, fontsize=None, framealpha=0.85,
+               bbox_to_anchor=None):
         """Enable a legend (by default, drawn from artists that have a
         ``label``).
 
@@ -2330,6 +2543,15 @@ class Axes:
         legend box's own background opacity (matplotlib's default is ``0.8``;
         ``0.85`` matches what this box already drew before the value was
         configurable).
+
+        ``bbox_to_anchor=(x, y)``, in this axes' own fraction coordinates
+        (``(0, 0)`` bottom-left, ``(1, 1)`` top-right -- matplotlib's own
+        default transform for it), places the ``loc`` corner of the legend
+        box at that exact point instead of inset within the axes box --
+        the common way to put a legend outside the plot entirely, e.g.
+        ``loc="upper left", bbox_to_anchor=(1.02, 1)`` for just past the
+        right edge. Unlike ``loc`` alone, this can and often does place the
+        box outside the axes' own drawn area.
 
         ``handles`` overrides which artists appear -- any plotpress artist
         (from this axes, another, or never added to one at all), in the
@@ -2347,6 +2569,9 @@ class Axes:
         self._legend_title = title
         self._legend_fontsize = fontsize
         self._legend_framealpha = framealpha
+        self._legend_bbox_to_anchor = (
+            None if bbox_to_anchor is None else
+            (float(bbox_to_anchor[0]), float(bbox_to_anchor[1])))
         if handles is not None:
             handles = list(handles)
             if labels is not None:
@@ -2380,6 +2605,7 @@ class Axes:
     _legend_fontsize = None
     _legend_framealpha = 0.85
     _legend_handles = None
+    _legend_bbox_to_anchor = None
     _grid_alpha = None
 
     # -- autoscaling --------------------------------------------------------
@@ -2598,6 +2824,64 @@ def _norm_limits(lower, upper):
     lo = None if lower is None else float(lower)
     hi = None if upper is None else float(upper)
     return None if lo is None and hi is None else (lo, hi)
+
+
+#: matplotlib format-string tokens (``plot(x, y, 'ro-')`` /
+#: ``errorbar(x, y, yerr, xerr, 'ro-')``) -- longest linestyle spellings first,
+#: so ``'--'``/``'-.'`` match before the bare ``'-'`` inside them does.
+_FMT_LINESTYLES = ("--", "-.", ":", "-")
+_FMT_MARKERS = frozenset(".,ov^<>1234sp*hH+xXDd|_")
+_FMT_COLORS = frozenset("bgrcmykw")
+
+
+def _parse_fmt(fmt):
+    """Parse a matplotlib ``plot()``/``errorbar()`` format string into
+    ``(color, linestyle, marker)`` -- ``color``/``marker`` are ``None`` and
+    ``linestyle`` is ``"none"`` when that piece isn't present in ``fmt``
+    (matplotlib's own rule: a marker with no linestyle character means no
+    connecting line, only the markers).
+
+    Handles any order/combination of one color (a single letter, or
+    matplotlib's ``"C0"``..``"C9"`` cycle notation), one linestyle
+    (``'-'``/``'--'``/``'-.'``/``':'``), and one marker -- the common cases,
+    not a byte-for-byte port of matplotlib's own parser. Raises
+    ``ValueError`` naming whatever is left over if ``fmt`` contains anything
+    else, the same "don't guess wrong" choice
+    :func:`plotpress.artists.normalize_linestyle` makes for an unrecognized
+    ``linestyle=`` -- silently ignoring part of a format string is exactly
+    the bug this function exists to close.
+    """
+    s = fmt
+    color = None
+    if len(s) >= 2 and s[0] in "Cc" and s[1].isdigit():
+        j = 2
+        while j < len(s) and s[j].isdigit():
+            j += 1
+        color = "C" + s[1:j]
+        s = s[:0] + s[j:]
+    linestyle = None
+    for ls in _FMT_LINESTYLES:
+        if ls in s:
+            linestyle = ls
+            s = s.replace(ls, "", 1)
+            break
+    marker = None
+    leftover = []
+    for ch in s:
+        if color is None and ch in _FMT_COLORS:
+            color = ch
+        elif marker is None and ch in _FMT_MARKERS:
+            marker = ch
+        else:
+            leftover.append(ch)
+    if leftover:
+        raise ValueError(
+            f"could not parse fmt {fmt!r}: {''.join(leftover)!r} is not a "
+            "recognized color, linestyle, or marker"
+        )
+    if marker is not None and linestyle is None:
+        linestyle = "none"
+    return color, linestyle, marker
 
 
 #: Marker specifications that render as drawn. Markers are emitted as

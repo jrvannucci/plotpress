@@ -751,6 +751,8 @@ class Bars(Artist):
         self.alpha = alpha
 
     def data_bounds(self):
+        if self.pos.size == 0:
+            return None
         lo = np.minimum(self.base, self.base + self.length)
         hi = np.maximum(self.base, self.base + self.length)
         cat0 = self.pos - self.thickness / 2
@@ -781,6 +783,8 @@ class FillBetween(Artist):
         self.linewidth = linewidth
 
     def data_bounds(self):
+        if self.x.size == 0:
+            return None
         ys = np.concatenate([self.y1, self.y2])
         return (self.x.min(), self.x.max(), ys.min(), ys.max())
 
@@ -893,6 +897,8 @@ class Stem(Artist):
         self.label = label
 
     def data_bounds(self):
+        if self.x.size == 0:
+            return None
         return (self.x.min(), self.x.max(),
                 min(self.y.min(), self.baseline), max(self.y.max(), self.baseline))
 
@@ -925,6 +931,8 @@ class ErrorBar(Artist):
         self.capthick = capthick if capthick is not None else self.elinewidth
 
     def data_bounds(self):
+        if self.x.size == 0:
+            return None
         xlo, xhi = self.x.copy(), self.x.copy()
         ylo, yhi = self.y.copy(), self.y.copy()
         if self.yerr is not None:
@@ -1166,8 +1174,12 @@ class EventPlot(Artist):
         self.alpha = alpha
 
     def data_bounds(self):
-        allev = np.concatenate(self.rows) if self.rows else np.array([0.0, 1.0])
+        allev = np.concatenate(self.rows) if self.rows else np.array([])
+        if allev.size == 0:
+            allev = np.array([0.0, 1.0])
         emin, emax = allev.min(), allev.max()
+        if self.offsets.size == 0:
+            return None
         omin = self.offsets.min() - self.linelength
         omax = self.offsets.max() + self.linelength
         if self.orientation == "horizontal":
@@ -1192,6 +1204,8 @@ class Quiver(Artist):
         return self.X + self.U * self.scale, self.Y + self.V * self.scale
 
     def data_bounds(self):
+        if self.X.size == 0:
+            return None
         tx, ty = self.tips()
         xs = np.concatenate([self.X, tx])
         ys = np.concatenate([self.Y, ty])

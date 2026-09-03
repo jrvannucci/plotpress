@@ -660,6 +660,8 @@ def _bars(bars, tr, S, draw):
 
 
 def _stem(stem, tr, st, S, draw):
+    if stem.x.size == 0:
+        return
     y0 = float(tr.y_base(stem.baseline))
     xb, yb = tr.x(stem.x), tr.y(stem.y)
     for x, y in zip(xb, yb):
@@ -1114,8 +1116,16 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     box_h = line_h * nrows + pad + title_h
 
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
-    bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
-    by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
+    if ax._legend_bbox_to_anchor is not None:
+        # Mirrors svg.py's own _legend_origin() -- see there for why this
+        # is a corner-at-a-point placement, not the plain-loc inset below.
+        ax_x, ax_y = ax._legend_bbox_to_anchor
+        anchor_x = L + ax_x * Wp
+        anchor_y = T + (1.0 - ax_y) * Hp
+        bx, by = anchor_x - fx * box_w, anchor_y - fy * box_h
+    else:
+        bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
+        by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
     _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
                         line_h, sample, pad, title, title_h, font, title_font,
                         ax._legend_framealpha)

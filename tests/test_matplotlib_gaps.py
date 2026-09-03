@@ -320,7 +320,11 @@ def test_cn_color_notation():
     cyc = ax.style.color_cycle
     assert ax.plot([0, 1], [0, 1], color="C0").color == cyc[0]
     assert ax.plot([0, 1], [1, 2], color="C3").color == cyc[3]
-    assert ax.plot([0, 1], [2, 3], color="r").color == "r"   # named still passes
+    # A matplotlib single-letter shortcut resolves to real hex here too, not
+    # just for the raster backend -- 'r' isn't a valid CSS/SVG color keyword
+    # on its own (unlike a full name, e.g. "red"), so passed straight
+    # through this used to render as nothing a browser recognizes.
+    assert ax.plot([0, 1], [2, 3], color="r").color == "#ff0000"
 
 
 def test_matshow_and_spy():
@@ -1388,9 +1392,9 @@ def test_scatter_edgecolors_and_linewidths_render_in_both_backends():
     fig, ax = plotpress.subplots()
     coll = ax.scatter([0, 1, 2], [0, 1, 0], s=20, color="#ffdd00",
                       edgecolors="black", linewidths=3.0)
-    assert coll.edgecolor == "black" and coll.linewidths == 3.0
+    assert coll.edgecolor == "#000000" and coll.linewidths == 3.0
     svg = fig.to_svg()
-    assert 'stroke="black"' in svg
+    assert 'stroke="#000000"' in svg
 
     fig2, ax2 = plotpress.subplots()
     ax2.scatter([0, 1, 2], [0, 1, 0], s=20, color="#ffdd00")
@@ -1453,11 +1457,11 @@ def test_hist_histtype_step_and_stepfilled():
 
     fig2, ax2 = plotpress.subplots()
     _, _, p = ax2.hist(x, bins=4, histtype="step", color="red")
-    assert isinstance(p, Polygon) and p.color is None and p.edgecolor == "red"
+    assert isinstance(p, Polygon) and p.color is None and p.edgecolor == "#ff0000"
 
     fig3, ax3 = plotpress.subplots()
     _, _, pf = ax3.hist(x, bins=4, histtype="stepfilled", color="blue")
-    assert isinstance(pf, Polygon) and pf.color == "blue"
+    assert isinstance(pf, Polygon) and pf.color == "#0000ff"
 
 
 def test_hist_cumulative_is_monotonic():
@@ -1521,10 +1525,10 @@ def test_errorbar_ecolor_elinewidth_capthick_are_independent():
     fig, ax = plotpress.subplots()
     eb = ax.errorbar([0, 1], [1, 1], yerr=[0.2, 0.2], color="blue",
                      ecolor="red", elinewidth=3.0, capthick=1.0)
-    assert eb.color == "blue" and eb.ecolor == "red"
+    assert eb.color == "#0000ff" and eb.ecolor == "#ff0000"
     assert eb.elinewidth == 3.0 and eb.capthick == 1.0
     svg = fig.to_svg()
-    assert 'stroke="red"' in svg
+    assert 'stroke="#ff0000"' in svg
 
 
 def test_errorbar_ecolor_defaults_match_color_and_linewidth():
@@ -1533,7 +1537,7 @@ def test_errorbar_ecolor_defaults_match_color_and_linewidth():
     every pre-existing errorbar() call."""
     fig, ax = plotpress.subplots()
     eb = ax.errorbar([0, 1], [1, 1], yerr=[0.2, 0.2], color="blue", linewidth=2.0)
-    assert eb.ecolor == eb.color == "blue"
+    assert eb.ecolor == eb.color == "#0000ff"
     assert eb.elinewidth == eb.capthick == eb.linewidth == 2.0
 
 
@@ -1994,7 +1998,7 @@ def test_annotate_arrow_is_not_inside_the_counter_scale_group():
     root = ET.fromstring(fig.to_svg())
     ns = "{http://www.w3.org/2000/svg}"
     parent = {c: p for p in root.iter() for c in p}
-    arrow_path = next(el for el in root.iter(f"{ns}path") if el.get("stroke") == "red")
+    arrow_path = next(el for el in root.iter(f"{ns}path") if el.get("stroke") == "#ff0000")
     node = arrow_path
     inside_cscale = False
     while node in parent:
@@ -2219,3 +2223,273 @@ def test_fig_text_alpha_and_bbox_render_in_both_backends():
     pytest.importorskip("PIL")
     from plotpress.raster import figure_to_image
     figure_to_image(fig3)   # must not raise
+
+
+# ---------------------------------------------------------------------------
+# plot()/errorbar() format-string shorthand (audit fix: a 3rd/5th positional
+# argument used to be silently dropped or, for errorbar(), silently bound to
+# the wrong parameter -- color -- corrupting the render with no error at all).
+# ---------------------------------------------------------------------------
+def test_plot_fmt_string_sets_color_linestyle_marker():
+    _, ax = plotpress.subplots()
+    line = ax.plot([0, 1, 2], [0, 1, 4], "ro-")
+    assert line.color == "#ff0000" and line.linestyle == "-" and line.marker == "o"
+
+
+def test_plot_fmt_string_marker_only_means_no_connecting_line():
+    _, ax = plotpress.subplots()
+    line = ax.plot([0, 1, 2], [0, 1, 4], "k.")
+    assert line.color == "#000000" and line.linestyle == "none" and line.marker == "."
+
+
+def test_plot_fmt_string_c_notation_and_dashed():
+    _, ax = plotpress.subplots()
+    cyc = ax.style.color_cycle
+    line = ax.plot([0, 1], [0, 1], "C2--")
+    assert line.color == cyc[2] and line.linestyle == "--" and line.marker is None
+
+
+def test_plot_explicit_kwargs_override_fmt_string():
+    _, ax = plotpress.subplots()
+    line = ax.plot([0, 1, 2], [0, 1, 4], "ro-", color="blue", linestyle=":")
+    assert line.color == "#0000ff" and line.linestyle == ":" and line.marker == "o"
+
+
+def test_plot_unparseable_fmt_string_raises():
+    _, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="could not parse fmt"):
+        ax.plot([0, 1], [0, 1], "zzz")
+
+
+def test_plot_non_string_third_positional_raises_a_clear_error():
+    _, ax = plotpress.subplots()
+    with pytest.raises(TypeError, match="format string"):
+        ax.plot([0, 1], [0, 1], [0, 1])
+
+
+def test_errorbar_matplotlib_positional_fmt_no_longer_corrupts_color():
+    """The bug: errorbar()'s 5th positional slot used to be `color`, not
+    matplotlib's own `fmt` -- so `ax.errorbar(x, y, yerr, xerr, 'o')`, an
+    entirely idiomatic matplotlib call, silently set color='o' (rendering
+    an invalid SVG stroke) instead of drawing markers with no line."""
+    _, ax = plotpress.subplots()
+    eb = ax.errorbar([1, 2, 3], [1, 2, 3], [.1, .2, .3], None, "o")
+    assert eb.marker == "o" and eb.linestyle == "none"
+    assert eb.color != "o"
+    cyc = ax.style.color_cycle
+    assert eb.color == cyc[0]   # no color in 'o' -- falls back to the cycle
+
+
+def test_errorbar_fmt_keyword_parses_like_plot():
+    _, ax = plotpress.subplots()
+    eb = ax.errorbar([1, 2, 3], [1, 2, 3], yerr=0.2, fmt="C1--s")
+    assert eb.color == ax.style.color_cycle[1]
+    assert eb.linestyle == "--"
+    assert eb.marker == "s"
+
+
+def test_errorbar_no_fmt_keeps_the_pre_existing_default_marker():
+    """Backward compatibility: with no fmt at all, errorbar() must still
+    default to a round marker, exactly as before this fix."""
+    _, ax = plotpress.subplots()
+    eb = ax.errorbar([1, 2], [1, 2], yerr=0.1)
+    assert eb.marker == "o"
+
+
+def test_bar_yerr_internal_call_still_suppresses_its_own_marker():
+    """bar()'s own auto-added error-bar-only line passes marker=None
+    explicitly (no fmt) -- must still mean "no marker", not fall back to
+    the new fmt-driven default the way an *unset* marker would."""
+    _, ax = plotpress.subplots()
+    b = ax.bar([1, 2], [1, 2], yerr=[0.1, 0.1])
+    eb = next(a for a in ax.artists if isinstance(a, plotpress.artists.ErrorBar))
+    assert eb.marker is None
+
+
+# ---------------------------------------------------------------------------
+# SVG-backend color resolution (audit fix: matplotlib's single-letter color
+# shortcuts -- 'r', 'k', 'b', ... -- aren't valid CSS/SVG keywords on their
+# own, unlike a full name ("red"); passed straight through to stroke=/fill=,
+# they silently rendered as nothing a browser recognizes. The raster backend
+# already resolved these through colors.to_hex(); SVG never did.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("build,expect_attr,expect_hex", [
+    (lambda ax: ax.plot([0, 1], [0, 1], color="r"), "stroke", "#ff0000"),
+    (lambda ax: ax.bar([1], [1], color="g"), "fill", "#008000"),
+    (lambda ax: ax.bar([1], [1], color="#fff", edgecolor="b"), "stroke", "#0000ff"),
+    (lambda ax: ax.axvspan(0, 1, color="c"), "fill", "#00bfbf"),
+    (lambda ax: ax.text(0.5, 0.5, "hi", color="m"), "fill", "#bf00bf"),
+], ids=["plot_color", "bar_facecolor", "bar_edgecolor", "axvspan", "text"])
+def test_single_letter_colors_resolve_to_real_hex_in_svg(build, expect_attr, expect_hex):
+    fig, ax = plotpress.subplots()
+    build(ax)
+    svg = fig.to_svg()
+    assert f'{expect_attr}="{expect_hex}"' in svg
+    # never the bare, browser-meaningless letter
+    import re
+    assert not re.search(rf'{expect_attr}="[a-z]"', svg)
+
+
+def test_pie_and_contour_explicit_colors_resolve_to_hex():
+    fig, ax = plotpress.subplots()
+    p = ax.pie([1, 2, 3], colors=["r", "g", "b"])
+    assert p.colors == ["#ff0000", "#008000", "#0000ff"]
+
+    fig2, ax2 = plotpress.subplots()
+    c = ax2.contour(np.arange(9.0).reshape(3, 3), colors="k")
+    assert c.colors == ["#000000"]
+
+
+def test_spine_and_axes_facecolor_resolve_to_hex():
+    _, ax = plotpress.subplots()
+    ax.spines["top"].set_color("r")
+    assert ax.spines["top"].get_color() == "#ff0000"
+    ax.set_facecolor("k")
+    assert ax.get_facecolor() == "#000000"
+
+
+# ---------------------------------------------------------------------------
+# Empty-array input (audit fix: bar/barh/fill_between/fill_betweenx/
+# stackplot/errorbar/stem/eventplot/quiver used to crash -- deferred all the
+# way to fig.to_svg()/save(), far from the actual call that caused it --
+# instead of drawing nothing, the way plot([], [])/scatter([], [])/hist([])
+# already did).
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("build", [
+    lambda ax: ax.bar([], []),
+    lambda ax: ax.barh([], []),
+    lambda ax: ax.fill_between([], [], []),
+    lambda ax: ax.fill_betweenx([], [], []),
+    lambda ax: ax.stackplot([], []),
+    lambda ax: ax.errorbar([], []),
+    lambda ax: ax.stem([], []),
+    lambda ax: ax.eventplot([]),
+    lambda ax: ax.quiver([], [], [], []),
+], ids=["bar", "barh", "fill_between", "fill_betweenx", "stackplot",
+        "errorbar", "stem", "eventplot", "quiver"])
+def test_empty_input_draws_nothing_instead_of_crashing(build):
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    build(ax)
+    fig.to_svg()                 # must not raise
+    figure_to_image(fig, scale=1)   # must not raise, either backend
+
+
+# ---------------------------------------------------------------------------
+# Previously-missing matplotlib kwargs (audit fix).
+# ---------------------------------------------------------------------------
+def test_boxplot_vert_false_matches_orientation_horizontal():
+    _, ax = plotpress.subplots()
+    b = ax.boxplot([[1, 2, 3]], vert=False)
+    assert b.orientation == "horizontal"
+
+
+def test_boxplot_labels_and_tick_labels_set_the_position_ticks():
+    _, ax = plotpress.subplots()
+    ax.boxplot([[1, 2, 3], [4, 5, 6]], labels=["a", "b"])
+    assert ax._xticklabels == ["a", "b"]
+
+    _, ax2 = plotpress.subplots()
+    ax2.boxplot([[1, 2, 3]], vert=False, tick_labels=["only"])
+    assert ax2._yticklabels == ["only"]
+
+
+def test_boxplot_showmeans_adds_a_marker_per_box():
+    _, ax = plotpress.subplots()
+    n_before = len(ax.artists)
+    ax.boxplot([[1, 2, 3], [4, 5, 9]], showmeans=True)
+    scatters = [a for a in ax.artists[n_before:]
+                if isinstance(a, plotpress.artists.ScatterCollection)]
+    assert len(scatters) == 1 and len(scatters[0].x) == 2
+
+
+def test_violinplot_vert_false_matches_orientation_horizontal():
+    _, ax = plotpress.subplots()
+    v = ax.violinplot([[1, 2, 3, 4, 5]], vert=False)
+    assert v.orientation == "horizontal"
+
+
+def test_violinplot_showmeans_and_showmedians_each_add_one_line():
+    _, ax = plotpress.subplots()
+    n_before = len(ax.artists)
+    ax.violinplot([[1, 2, 3, 4, 100]], showmeans=True, showmedians=True)
+    added = ax.artists[n_before:]
+    lines = [a for a in added if isinstance(a, plotpress.artists.LineCollection)]
+    assert len(lines) == 2   # one hline for the mean, one for the median
+
+
+def test_bar_align_edge_shifts_the_bar_instead_of_centering_it():
+    _, ax = plotpress.subplots()
+    b_center = ax.bar([1], [1], width=0.6)
+    _, ax2 = plotpress.subplots()
+    b_edge = ax2.bar([1], [1], width=0.6, align="edge")
+    assert b_center.pos[0] == 1.0          # centered on x
+    assert b_edge.pos[0] == 1.0 + 0.3      # left edge at x, so center = x + width/2
+
+
+def test_bar_align_rejects_unknown_value():
+    _, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="align"):
+        ax.bar([1], [1], align="bogus")
+
+
+def test_hist_orientation_horizontal_bar_and_step():
+    _, ax = plotpress.subplots()
+    _, _, bars = ax.hist([1, 1, 2, 3], bins=3, orientation="horizontal")
+    assert bars.orientation == "horizontal"
+
+    _, ax2 = plotpress.subplots()
+    _, _, p = ax2.hist([1, 1, 2, 3], bins=3, orientation="horizontal", histtype="step")
+    # staircase outline runs along y now -- more distinct y values than x
+    assert len(set(p.y.tolist())) > len(set(p.x.tolist()))
+
+
+def test_fill_between_where_splits_into_one_artist_per_contiguous_run():
+    _, ax = plotpress.subplots()
+    x = [0, 1, 2, 3, 4]
+    y = [1, 1, 1, 1, 1]
+    where = [True, True, False, True, True]
+    out = ax.fill_between(x, y, 0.0, where=where, label="only-first-labeled")
+    assert isinstance(out, list) and len(out) == 2
+    assert out[0].x.tolist() == [0.0, 1.0]
+    assert out[1].x.tolist() == [3.0, 4.0]
+    assert out[0].label == "only-first-labeled" and out[1].label is None
+
+
+def test_fill_between_without_where_still_returns_one_artist():
+    _, ax = plotpress.subplots()
+    fb = ax.fill_between([0, 1, 2], [1, 1, 1])
+    assert not isinstance(fb, list)
+
+
+def test_imshow_aspect_calls_set_aspect():
+    _, ax = plotpress.subplots()
+    ax.imshow(np.zeros((3, 3)), aspect="equal")
+    assert ax.get_aspect() == 1.0
+
+    _, ax2 = plotpress.subplots()
+    ax2.imshow(np.zeros((3, 3)))   # default: untouched, unlike matplotlib's own imshow
+    assert ax2.get_aspect() == "auto"
+
+
+def test_legend_bbox_to_anchor_places_the_box_outside_the_axes():
+    fig, ax = plotpress.subplots(figsize=(4, 3))
+    ax.plot([0, 1], [0, 1], label="a")
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1))
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(svg)
+    ns = "{http://www.w3.org/2000/svg}"
+    legend_g = next(el for el in root.iter(f"{ns}g")
+                    if el.get("class") == "plotpress-legend")
+    rect = legend_g.find(f"{ns}rect")
+    axes_rect = next(el for el in root.iter(f"{ns}rect")
+                     if el.get("class") is None and float(el.get("width", 0)) > 50)
+    # the legend box's own left edge must sit at or past the axes' own right edge
+    assert float(rect.get("x")) >= float(axes_rect.get("x")) + float(axes_rect.get("width")) - 1
+
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+    figure_to_image(fig)   # must not raise

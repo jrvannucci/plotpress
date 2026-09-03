@@ -21,7 +21,7 @@ from .artists import (
     PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Table, Text,
     Violin, _edges_from,
 )
-from .colors import apply_colormap, colorbar_ticks
+from .colors import apply_colormap, colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
@@ -1426,6 +1426,8 @@ def _render_bars(bars: Bars, tr, ai, k, body):
 
 
 def _render_stem(stem: Stem, tr, st, fig, body):
+    if stem.x.size == 0:
+        return
     xb = tr.x(stem.x)
     yb = tr.y(stem.y)
     y0 = tr.y_base(stem.baseline)
@@ -1783,8 +1785,8 @@ def _render_annotation(an: Annotation, tr, st, body, index=None):
         box = _bbox_pad(box, an.bbox)   # the leader below anchors to this, padded, edge
     if an.arrowprops is not None:
         px, py = float(tr.x(an.xy[0])), float(tr.y(an.xy[1]))
-        arrow_color = (an.arrowprops.get("color", an.color)
-                       if isinstance(an.arrowprops, dict) else an.color)
+        arrow_color = to_hex(an.arrowprops.get("color", an.color)
+                             if isinstance(an.arrowprops, dict) else an.color)
         arrow_alpha = (an.arrowprops.get("alpha", 1.0)
                        if isinstance(an.arrowprops, dict) else 1.0)
         # Start the leader at the edge of the text (or bbox) nearest the
@@ -2377,6 +2379,17 @@ def _render_figure_legend(fig, st, W, H, body):
 
 def _legend_origin(ax, lay, px_left, px_top, px_w, px_h):
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
+    if ax._legend_bbox_to_anchor is not None:
+        # (x, y) in this axes' own fraction coordinates -- y-up, matplotlib's
+        # own convention for it -- flipped to pixel space (y-down) here. The
+        # loc corner (fx, fy) is which corner of the box sits at that point,
+        # not an inset-space interpolation the way the plain-loc case below
+        # is, so this is free to land outside the axes box entirely -- the
+        # common reason to reach for bbox_to_anchor at all.
+        ax_x, ax_y = ax._legend_bbox_to_anchor
+        anchor_x = px_left + ax_x * px_w
+        anchor_y = px_top + (1.0 - ax_y) * px_h
+        return anchor_x - fx * lay["box_w"], anchor_y - fy * lay["box_h"]
     bx = px_left + 6 + fx * max(0.0, px_w - lay["box_w"] - 12)
     by = px_top + 6 + fy * max(0.0, px_h - lay["box_h"] - 12)
     return bx, by

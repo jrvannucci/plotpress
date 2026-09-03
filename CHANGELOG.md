@@ -13,6 +13,18 @@ anywhere in the source.
 
 ### Added
 
+- **A batch of previously-missing matplotlib kwargs**, found by the same
+  API audit as the Fixed entry below: `boxplot(vert=, labels=,
+  tick_labels=, showmeans=)`, `violinplot(vert=, showmeans=,
+  showmedians=)`, `bar`/`barh(align="edge")`, `hist(orientation=
+  "horizontal")` (both `histtype="bar"` and `"step"`/`"stepfilled"`),
+  `fill_between`/`fill_betweenx(where=)` (splits into one artist per
+  contiguous `True` run -- returns a list instead of a single artist when
+  given), `imshow(aspect=)`, and `legend(bbox_to_anchor=)` (places the
+  `loc` corner of the legend box at an exact axes-fraction point instead
+  of inset within the axes -- the usual way to put a legend outside the
+  plot entirely; implemented in both the SVG and raster backends).
+
 - **`Figure.show_in_jupyter()`**, a new optional (`pip install
   plotpress[jupyter]`) way to display the full interactive toolbar inline in
   a notebook cell -- `fig` alone only ever renders static SVG (there's
@@ -221,6 +233,58 @@ anywhere in the source.
   ax.transAxes`).
 
 ### Fixed
+
+- **An API audit ("try to break every matplotlib-shaped plot type") found
+  and fixed two silent-corruption bugs, six empty-input crashes, an
+  SVG-only color-resolution gap, and added a batch of previously-missing
+  matplotlib kwargs.** Full detail:
+
+  - **`plot(x, y, fmt)` silently dropped matplotlib's format-string
+    shorthand.** `ax.plot(x, y, 'ro-')` rendered with the default color, no
+    marker, and no error -- the third positional argument was never read
+    at all. `plot()` now parses it (`_parse_fmt`): any combination of one
+    color, one linestyle, and one marker, in any order, matching
+    matplotlib's own mini-language for the common cases. An explicit
+    `color=`/`linestyle=`/`marker=` keyword still overrides whatever `fmt`
+    says for that piece; an unparseable `fmt` raises `ValueError` naming
+    the leftover characters rather than guessing.
+  - **`errorbar()`'s 5th positional argument silently corrupted `color`.**
+    matplotlib's own signature is `errorbar(x, y, yerr, xerr, fmt, ...)`;
+    plotpress's was `errorbar(x, y, yerr, xerr, color, ...)` -- the exact
+    same slot, different meaning. `ax.errorbar(x, y, yerr, xerr, 'o')`, an
+    entirely idiomatic matplotlib call, silently set `color='o'` and
+    rendered `stroke="o"` into the SVG -- an invalid value no browser
+    recognizes -- with no error anywhere in the pipeline. `errorbar()` now
+    takes `fmt` in that same 5th slot and parses it the same way `plot()`
+    does; `color`/`marker`/`linestyle` moved later in the signature (still
+    fully keyword-compatible) and each still overrides `fmt` if given
+    explicitly.
+  - **matplotlib's single-letter color shortcuts (`'r'`, `'k'`, `'b'`, ...)
+    silently didn't render in SVG output**, plotpress's default and
+    SVG-first format -- unlike a full name (`"red"`), a bare letter isn't a
+    valid CSS/SVG color keyword on its own, so passed straight through to
+    `stroke=`/`fill=` it rendered as nothing a browser recognizes. The
+    raster backend already resolved every color through
+    `colors.to_hex()`; SVG never did. `Axes._resolve_color()` -- already
+    the chokepoint nearly every plotting method's own `color=` routes
+    through -- now resolves through `to_hex()` too, closing this for every
+    such method at once; `edgecolor=`/`ecolor=`-style secondary colors
+    (`bar`/`barh`/`hist`/`fill`/`fill_between`/`fill_betweenx`),
+    `pie(colors=)`, `contour(colors=)`, `axvspan`/`axhspan`,
+    `text`/`annotate` (including `annotate(arrowprops={"color": ...})`),
+    and `Spine.set_color()`/`Axes.set_facecolor()` were fixed at their own
+    call sites the same way.
+  - **`bar`/`barh`/`fill_between`/`fill_betweenx`/`stackplot`/`errorbar`/
+    `stem`/`eventplot`/`quiver` crashed on empty input** (`ax.bar([],
+    [])`, etc.) with a raw, unhelpful numpy `ValueError`/`IndexError`
+    deferred all the way to `fig.to_svg()`/`.save()` -- far from the
+    actual call that caused it -- instead of drawing nothing, the way
+    `plot([], [])`/`scatter([], [])`/`hist([])` already did. The fix
+    pattern already existed in the codebase and just hadn't been
+    propagated: `Polygon.data_bounds()` already guarded the empty case;
+    the other artists' `data_bounds()` (plus `Stem`'s own SVG/raster
+    renderer and `eventplot()`/`quiver()`'s own call-time auto-scaling,
+    which had the same gap one level up) now do too.
 
 - **`load_data()` silently lost data when two axes (or two `Report`
   entries) shared the same title.** The title-keyed dict this defaults to
