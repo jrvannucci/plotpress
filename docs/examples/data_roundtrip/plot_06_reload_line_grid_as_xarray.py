@@ -75,11 +75,6 @@ ax_arrow.text(0.5, 0.72, "subtract the\nchannel's own mean", ha="center", fontsi
 ax_after.plot(ds["point"].values, centered.values[0, 0], color="C3")
 ax_after.set_title("after: centered", fontsize=9)
 fig_arrow.tight_layout()
-# A schematic, not real data to explore -- skip the live interactive embed
-# this gallery page otherwise gives every figure, so it doesn't compete
-# with the two full grids below for the one embed slot a reader expects
-# to actually be worth picking/zooming into.
-_gallery_static_only = [fig_arrow]
 
 # Replot: rebuild the same 3x4 grid and draw each channel's centered trace
 # straight from the xarray Dataset -- ds["title"] hands each channel's own

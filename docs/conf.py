@@ -76,21 +76,19 @@ html_context = {
 # gallery-wide: switching it on for the plot-type reference too would add
 # megabytes of mostly-redundant payload for figures that have nothing to
 # explore. The real-application gallery is the one worth exploring, so it gets
-# live figures throughout; data_roundtrip's figures are themselves the point
-# of those examples (load_data() reads plotted data back out of exactly this
-# kind of file), so they get the same treatment.
+# live figures throughout; data_roundtrip's own point is the *data* load_data()
+# recovers, not a toolbar to play with, so its figures stay static images only.
 _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 _INTERACTIVE_ROOTS = (
     os.path.join(_DOCS_DIR, "applications"),
-    os.path.join(_DOCS_DIR, "examples", "data_roundtrip"),
 )
 
 # More axes than any hand-authored example currently uses (the largest
-# `docs/applications` figure has 3) -- a many-panel grid like data_roundtrip's
-# 30-axes figures, cramped into a fixed-size iframe, stops being a meaningful
-# interactive experience: most panels would be too small to usefully pick or
-# zoom into. Past this, the gallery page links to the full standalone HTML
-# instead of embedding it, so it opens as its own real page at full size.
+# `docs/applications` figure has 3) -- a many-panel grid cramped into a
+# fixed-size iframe stops being a meaningful interactive experience: most
+# panels would be too small to usefully pick or zoom into. Past this, the
+# gallery page links to the full standalone HTML instead of embedding it, so
+# it opens as its own real page at full size.
 _LARGE_AXES_THRESHOLD = 6
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
@@ -436,14 +434,6 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     it = block_vars["image_path_iterator"]
     seen = block_vars.setdefault("_plotpress_seen", set())
     interactive = _wants_interactive(block_vars["src_file"])
-    # An example can name figures that are purely illustrative (a schematic
-    # before/after diagram, say) and so shouldn't get a live embed even in an
-    # interactive-root gallery -- there's nothing on them worth picking or
-    # zooming into, and an embed would compete for attention with the real
-    # data-carrying figure(s) on the same page. Still scraped as a static
-    # image like any other figure; only the interactive copy is skipped.
-    static_only_ids = {id(f) for f in
-                       block_vars["example_globals"].get("_gallery_static_only", ())}
     paths, embeds = [], []
     for value in list(block_vars["example_globals"].values()):
         if isinstance(value, plotpress.Figure) and id(value) not in seen:
@@ -459,7 +449,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             else:
                 value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
-            if interactive and id(value) not in static_only_ids:
+            if interactive:
                 embeds.append(_interactive_embed(value, path))
 
     # A handful of examples (progressive/live-acquisition demos, one
