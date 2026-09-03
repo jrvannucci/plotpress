@@ -11,6 +11,37 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Removed
+
+- **3-D plotting is gone.** `plotpress/axes3d.py`/`Axes3D`, `projection="3d"`,
+  `scatter3D`/`plot3D`/`plot_surface`/`plot_wireframe`/`view_init`/
+  `set_zlabel`/`set_xlim3d`/`set_ylim3d`/`set_zlim3d`, the `examples/threed`
+  gallery section, and every doc mention of 3-D are all removed. **Breaking
+  change** for any code that plots on a `projection="3d"` axes.
+  `add_axes`/`add_subplot(projection="3d")` now raises a clear
+  `ValueError` naming the unsupported projection, matching every other
+  out-of-scope case this library already rejects explicitly rather than
+  silently degrading.
+
+  This was never going to be competitive: plotpress is pure Python with no
+  compiled extension, so its 3-D was always an orthographic-projection,
+  painter's-algorithm approximation bolted onto the 2-D core -- no real
+  depth buffer, no perspective, separate collections that could occlude
+  wrongly where they interpenetrated -- a permanently weaker corner next to
+  dedicated 3-D tools (Plotly's WebGL-backed 3-D, or even matplotlib's own
+  `mplot3d` despite its similar, longstanding limitations), and a poor fit
+  for what actually differentiates this library (SVG-first 2-D rendering,
+  the interactive toolbar, broad matplotlib-shaped 2-D coverage).
+
+  `plotpress.load_data()`'s `"layout"` can still report the literal `"3d"`
+  string when reading back a file saved before this removal (it just reads
+  back whatever was stored, unvalidated) -- `subplots_from_layout()` raises
+  the same clear `ValueError` for that case, since it genuinely cannot
+  rebuild an axes kind that no longer exists. Existing static output
+  (`.svg`/`.png`/`.pdf`) already saved from a 3-D axes is unaffected --
+  this only touches the ability to *create* new 3-D plots or *rebuild* one
+  from a saved layout going forward.
+
 ### Changed
 
 - **`pick_max_mesh_cells`'s default is raised from 60,000 to 250,000**

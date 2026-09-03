@@ -25,7 +25,7 @@ fig.show()                                # native pop-up window
 
 plotpress is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or triangulated
-grids, one font-metric family, and its polar / 3-D axes project onto the 2-D
+grids, one font-metric family, no 3-D, and its polar axes project onto the 2-D
 core rather than a dedicated pipeline — see [Supported plot types](#supported-plot-types)
 below). It aims at a narrower, underserved spot: plotting where matplotlib's
 install footprint or global state gets in the way.
@@ -41,7 +41,7 @@ install footprint or global state gets in the way.
   figure" or a process-wide `rcParams`.
 
 **Reach for matplotlib** (or seaborn, Plotly) when you need publication-grade
-typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or the
+typography across arbitrary fonts, the full plot-type gallery, 3-D, or the
 deep ecosystem that pandas, seaborn and scikit-learn plot into.
 
 Two galleries in the docs, on separate pages: a
@@ -173,12 +173,10 @@ plotpress covers the core of matplotlib's "Plot types" reference grid:
 `acorr`.
 
 **Polar** (`projection="polar"`): `plot`, `scatter`, `fill`, with
-`set_rmax`/`set_rlim`/`set_rticks`/`set_thetagrids` and orientation control.
-**3-D** (`projection="3d"`): `scatter`/`scatter3D`, `plot`/`plot3D`,
-`plot_surface` (depth-sorted, colorbar-ready), `plot_wireframe`, `view_init` —
-projected onto the 2-D core (orthographic, painter's algorithm), see the
+`set_rmax`/`set_rlim`/`set_rticks`/`set_thetagrids` and orientation control,
+projected onto the 2-D core — see the
 [limitations docs](https://jrvannucci.github.io/plotpress/user_guide/limitations.html)
-for the caveats.
+for the caveats. No 3-D (see below).
 
 Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
 `fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
@@ -288,7 +286,7 @@ feature, not a trade-off.
 - Finish unifying the SVG and raster renderers behind the shared primitive
   layer (pure Python) so features aren't implemented twice.
 - More plot types: `streamplot`/`barbs` and triangulation (`tri*`).
-- Deeper polar / 3-D (polar bars, cross-collection depth sorting).
+- Deeper polar (polar bars, cross-collection depth sorting).
 - Hover tooltips; decimation for huge scatter collections.
 
 ## Architecture notes
@@ -300,7 +298,6 @@ feature, not a trade-off.
 | `figure.py` | `Figure`, `subplots()`, layout, save/show/`_repr_*` |
 | `axes.py` | `Axes`: plotting methods, limits, autoscale |
 | `polar.py` | `PolarAxes`: (θ, r) projection + polar frame, built from existing artists |
-| `axes3d.py` | `Axes3D`: orthographic (x, y, z) projection, depth-sorted surface |
 | `_spectral.py` | pure-NumPy Welch spectral estimators (psd/csd/cohere/specgram/…) |
 | `artists.py` | data-only scene primitives (`Line2D`, `ScatterCollection`, `QuadMesh`) |
 | `style.py` | per-figure `Style` (replaces global `rcParams`) |

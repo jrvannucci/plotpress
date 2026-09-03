@@ -278,7 +278,6 @@ class Axes:
         self._subplotspec = None   # SubplotSpec (figure.py) for tight_layout
         self.spines = Spines((side, Spine(self, side))
                              for side in ("top", "bottom", "left", "right"))
-        self._is_3d = False        # Axes3D.__init__ overrides this to True
 
         # Colorbar bookkeeping. On a colorbar axes, _cbar_parents/_fraction/_pad
         # record the space it stole, so tight_layout can re-apply it.
@@ -2016,8 +2015,8 @@ class Axes:
         neutral, but it would still receive a shared explicit limit from a
         sibling's ``set_xlim``/``set_ylim``.
 
-        Re-runs the constructor (so subclasses like ``PolarAxes``/``Axes3D``
-        reset their own extra state too) without duplicating the attribute
+        Re-runs the constructor (so a subclass like ``PolarAxes`` resets its
+        own extra state too) without duplicating the attribute
         list here, then restores the figure position and grid membership that
         the constructor doesn't know about.
         """

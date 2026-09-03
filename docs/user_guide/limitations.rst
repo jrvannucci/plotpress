@@ -131,27 +131,27 @@ looks blocky. The switch-over is by sample size alone, so a given dataset always
 renders the same way. See
 :doc:`../auto_examples/limitations/plot_02_kde_binning`.
 
-.. _limitation-3d:
+.. _limitation-polar:
 
-3-D and polar are projected onto the 2-D core
----------------------------------------------
+Polar is projected onto the 2-D core
+-------------------------------------
 
-Polar (``projection="polar"``) and 3-D (``projection="3d"``) axes are real, but
-they are built by projecting the data into the existing 2-D renderer rather than
-by a dedicated 3-D pipeline -- so a few things follow from that choice:
+Polar (``projection="polar"``) axes are real, but built by projecting the data
+into the existing 2-D renderer rather than by a dedicated polar pipeline -- so
+a few things follow from that choice:
 
-* **3-D uses orthographic projection with a painter's algorithm.** There is no
-  perspective and no per-fragment depth buffer. Faces *within* one
-  ``plot_surface`` are sorted back-to-front, which is correct for a single
-  height field, but separate collections (two surfaces, or a surface and a line)
-  are drawn in call order and can occlude wrongly where they interpenetrate.
-* **Polar orientation is fixed before plotting.** ``set_theta_direction`` /
+* **Orientation is fixed before plotting.** ``set_theta_direction`` /
   ``set_theta_zero_location`` project the data as it is added, so they raise if
-  called after the first plot. 3-D ``view_init`` *can* move after plotting -- it
-  reprojects the whole scene.
-* Polar covers ``plot``/``scatter``/``fill``; 3-D covers
-  ``scatter``/``plot``/``plot_surface``/``plot_wireframe``. Other plot types are
-  not polar- or 3-D-aware.
+  called after the first plot.
+* Polar covers ``plot``/``scatter``/``fill`` only -- other plot types are not
+  polar-aware.
+
+There is no 3-D plotting -- pure-Python and no compiled extension rules out a
+real depth-buffered/perspective pipeline, and an orthographic-projection
+approximation over the 2-D core (as an earlier version of this library had)
+was consistently weaker than dedicated 3-D tools without being meaningfully
+simpler to build than doing 2-D well; it was removed rather than kept as a
+permanently-second-tier feature.
 
 Not implemented
 ---------------

@@ -513,7 +513,6 @@ sphinx_gallery_conf = {
         "examples/parallel_building",
         "examples/custom_interactivity",
         "examples/polar",
-        "examples/threed",
         "examples/signal",
         "examples/seaborn",
         "examples/data_roundtrip",

@@ -21,7 +21,6 @@ import numpy as np
 
 from .artists import normalize_bbox, normalize_linestyle
 from .axes import Axes
-from .axes3d import Axes3D
 from .polar import PolarAxes
 from .style import Style
 from .svg import figure_to_svg
@@ -150,10 +149,8 @@ def _axes_class(projection):
         return Axes
     if projection == "polar":
         return PolarAxes
-    if projection == "3d":
-        return Axes3D
     raise ValueError(
-        "unknown projection %r (use None, 'polar', or '3d')" % projection)
+        "unknown projection %r (use None or 'polar')" % projection)
 
 
 class Figure:
@@ -414,8 +411,7 @@ class Figure:
     def add_axes(self, rect, projection=None) -> Axes:
         """Add an axes at ``rect = (left, bottom, width, height)`` (fractions).
 
-        ``projection='polar'`` makes it a :class:`~plotpress.polar.PolarAxes`;
-        ``projection='3d'`` an :class:`~plotpress.axes3d.Axes3D`.
+        ``projection='polar'`` makes it a :class:`~plotpress.polar.PolarAxes`.
         """
         ax = _axes_class(projection)(self, rect)
         self.axes.append(ax)
@@ -431,7 +427,7 @@ class Figure:
         to the full span.
 
         ``projection`` accepts the same values as :meth:`add_axes`
-        (``'polar'`` / ``'3d'``).
+        (``'polar'``).
         """
         if isinstance(nrows, SubplotSpec):
             spec = nrows
@@ -2384,7 +2380,7 @@ def load_data(path: str, by_index: bool = False):
         {"figsize": [w, h],
          "axes": {index: {"nrows": int, "ncols": int, "row0": int, "row1": int,
                           "col0": int, "col1": int,
-                          "projection": "polar" | "3d" | None,
+                          "projection": "polar" | None,
                           "title": str | None, "title_size": float | None,
                           "xlabel": str | None, "ylabel": str | None,
                           "xlim": [float, float], "ylim": [float, float],
@@ -2409,7 +2405,12 @@ def load_data(path: str, by_index: bool = False):
     Pass ``"layout"`` straight to :func:`subplots_from_layout` to recreate
     the source figure's grid, every axes' own decorations, and its groups
     before replotting recovered data into it -- see
-    :doc:`/auto_examples/data_roundtrip/index`. Axes placed with a
+    :doc:`/auto_examples/data_roundtrip/index`. A file saved before 3-D
+    support was removed can still report the literal ``"3d"`` here (this
+    function only reads back whatever string was stored, it doesn't
+    validate it) -- :func:`subplots_from_layout` raises a clear "unknown
+    projection" for that one, since it cannot rebuild an axes kind that no
+    longer exists. Axes placed with a
     freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar axes
     are absent from ``"axes"`` -- their indices are listed in
     ``"omitted_axes"`` instead -- and a group's own ``"n_members"`` is its

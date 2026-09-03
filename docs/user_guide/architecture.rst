@@ -52,7 +52,6 @@ Module                        Responsibility
 ``figure.py``                 ``Figure``, ``subplots()``, layout, save/show
 ``axes.py``                   ``Axes``: plotting methods, limits, autoscale
 ``polar.py``                  ``PolarAxes``: (theta, r) projection + polar frame
-``axes3d.py``                 ``Axes3D``: orthographic 3-D projection + surface
 ``_spectral.py``              pure-NumPy Welch spectral estimators
 ``artists.py``                data-only scene primitives
 ``style.py``                  per-figure ``Style`` (replaces ``rcParams``)

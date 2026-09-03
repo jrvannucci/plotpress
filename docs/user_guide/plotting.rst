@@ -196,32 +196,6 @@ Create a polar axes with ``projection="polar"``; angles are in **radians**.
     plotting; radial extent with ``set_rmax``/``set_rlim``/``set_rticks`` and the
     spokes with ``set_thetagrids``.
 
-3-D
----
-
-Create a 3-D axes with ``projection="3d"``; set the camera with
-``view_init(elev=, azim=)``.
-
-.. code-block:: python
-
-   fig, ax = plotpress.subplots(projection="3d")
-   X, Y = np.meshgrid(np.linspace(-3, 3, 60), np.linspace(-3, 3, 60))
-   ax.plot_surface(X, Y, np.sin(np.hypot(X, Y)), cmap="viridis")
-   ax.set_zlabel("z")
-
-``scatter(xs, ys, zs, ...)`` / ``plot(xs, ys, zs, ...)``
-    3-D points and polylines (also ``scatter3D`` / ``plot3D``).
-
-``plot_surface(X, Y, Z, cmap="viridis", edgecolor=None, ...)``
-    Depth-sorted colormapped surface. The returned collection works with
-    :meth:`~plotpress.figure.Figure.colorbar`.
-
-``plot_wireframe(X, Y, Z, color=None, ...)``
-    Grid wireframe.
-
-The camera and per-axis scaling are honest orthographic projection with a
-painter's-algorithm surface -- see :ref:`the 3-D caveats <limitation-3d>`.
-
 Text and annotations
 --------------------
 

@@ -306,7 +306,7 @@ def axes_metadata(fig, idx_of=None):
         idx_of = {id(a): i for i, a in enumerate(fig.axes)}
     meta = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar or not ax._visible or ax._is_3d:
+        if ax._is_colorbar or not ax._visible:
             continue
         (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
         px_left, px_top, px_w, px_h = _effective_rect(
@@ -442,8 +442,7 @@ def layout_metadata(fig, idx_of=None):
             "col0": spec.col0, "col1": spec.col1,
             # None for a plain Cartesian axes, so a round trip through
             # add_subplot(..., projection=...) reproduces it exactly.
-            "projection": ("polar" if getattr(ax, "_is_polar", False)
-                          else "3d" if ax._is_3d else None),
+            "projection": "polar" if getattr(ax, "_is_polar", False) else None,
             "title": ax._title or None, "title_size": ax._title_size,
             "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
             # Always explicit, even for an originally auto-scaled axes --
@@ -653,7 +652,7 @@ def pick_data(fig, max_points=20000, max_mesh_cells=250000, precision=6):
     downsampled = []
     data = {}
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar or not ax._visible or ax._is_3d:
+        if ax._is_colorbar or not ax._visible:
             continue
         series, meshes, pies = [], [], []
         for art in ax.artists:

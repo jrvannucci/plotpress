@@ -44,7 +44,6 @@ need rather than the whole file.
 | `plotpress/artists.py` | 927 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
 | `plotpress/raster.py` | 820 | PNG backend via Pillow; PDF via svglib/reportlab |
 | `plotpress/figure.py` | 729 | The root object: layout, `to_svg`, `save`, `show`, figure-level text and legend |
-| `plotpress/axes3d.py` | 310 | 3-D `(x, y, z)` axes on top of the 2-D core |
 | `plotpress/colors.py` | 290 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `plotpress/primitives.py` | 286 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
 | `plotpress/qt.py` | 230 | Embed interactive figures in PyQt/PySide (`qt` extra) |

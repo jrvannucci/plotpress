@@ -879,20 +879,46 @@ def test_subplots_from_layout_empty_layout_returns_an_empty_figure():
     assert fig.axes == [] and axes == []
 
 
-def test_subplots_from_layout_recreates_polar_and_3d_projections(tmp_path):
+def test_subplots_from_layout_recreates_polar_projection(tmp_path):
     fig = plotpress.Figure()
     fig.add_subplot(1, 2, 1, projection="polar")
-    fig.add_subplot(1, 2, 2, projection="3d")
+    fig.add_subplot(1, 2, 2)
     p = tmp_path / "layout_projections.html"
     fig.save(str(p), interactive=True)
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
     assert layout["axes"][0]["projection"] == "polar"
-    assert layout["axes"][1]["projection"] == "3d"
+    assert layout["axes"][1]["projection"] is None
     fig2, axes2 = plotpress.subplots_from_layout(layout)
     from plotpress.polar import PolarAxes
-    from plotpress.axes3d import Axes3D
     assert isinstance(axes2[0], PolarAxes)
-    assert isinstance(axes2[1], Axes3D)
+    assert type(axes2[1]) is plotpress.figure.Axes
+
+
+def test_3d_projection_is_unsupported():
+    """3-D support was removed -- add_subplot(projection="3d") must raise a
+    clear error, not silently fall back to a plain Cartesian axes or some
+    other surprising behavior."""
+    fig = plotpress.Figure()
+    with pytest.raises(ValueError, match="unknown projection"):
+        fig.add_subplot(projection="3d")
+
+
+def test_subplots_from_layout_rejects_a_3d_projection_from_an_old_file():
+    """A file saved before 3-D support was removed can still report the
+    literal "3d" in its layout -- load_data() just reads back whatever
+    string was stored, it doesn't validate it. subplots_from_layout() must
+    raise a clear error rather than silently rebuild something else, since
+    it genuinely cannot recreate an axes kind that no longer exists."""
+    layout = {
+        "figsize": [6.4, 4.8],
+        "axes": {0: {"nrows": 1, "ncols": 1, "row0": 0, "row1": 0,
+                     "col0": 0, "col1": 0, "projection": "3d"}},
+        "groups": [], "omitted_axes": [],
+        "suptitle": None, "supxlabel": None, "supylabel": None,
+        "facecolor": None,
+    }
+    with pytest.raises(ValueError, match="unknown projection"):
+        plotpress.subplots_from_layout(layout)
 
 
 def test_layout_metadata_captures_every_axes_decoration(tmp_path):

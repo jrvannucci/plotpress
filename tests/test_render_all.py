@@ -1,6 +1,6 @@
 """Every plotting method renders across all output surfaces.
 
-A breadth-first smoke test: each public plotting method (2-D, polar, 3-D) is
+A breadth-first smoke test: each public plotting method (2-D, polar) is
 called with representative data and rendered to SVG, PNG, and interactive HTML.
 It guards against regressions where a method throws, emits malformed SVG, or
 silently draws nothing on one of the backends.
@@ -40,9 +40,6 @@ _Z = np.cos(_X) * np.cos(_Y)
 _groups = [_rng.normal(m, s, 200) for m, s in [(0, 1), (1, 1.5), (-1, 0.8)]]
 _sig = np.sin(2 * np.pi * 3 * np.linspace(0, 4, 400)) + _rng.normal(0, .3, 400)
 _th = np.linspace(0, 2 * np.pi, 100)
-_sx = np.linspace(-2, 2, 20)
-_SX, _SY = np.meshgrid(_sx, _sx)
-_SZ = np.exp(-(_SX ** 2 + _SY ** 2))
 
 # (name, projection, build) -- one entry per plotting method.
 CASES = [
@@ -119,14 +116,6 @@ CASES = [
     ("polar.scatter", "polar", lambda ax: ax.scatter(
         _rng.uniform(0, 2 * np.pi, 40), _rng.uniform(0, 1, 40))),
     ("polar.fill", "polar", lambda ax: ax.fill(_th, 1 + 0.3 * np.sin(3 * _th))),
-    # 3-D
-    ("3d.scatter", "3d", lambda ax: ax.scatter(_rng.normal(size=60),
-                                              _rng.normal(size=60),
-                                              _rng.normal(size=60))),
-    ("3d.plot", "3d", lambda ax: ax.plot(np.cos(_th), np.sin(_th), _th / 6)),
-    ("3d.plot_surface", "3d", lambda ax: ax.plot_surface(_SX, _SY, _SZ,
-                                                        cmap="viridis")),
-    ("3d.plot_wireframe", "3d", lambda ax: ax.plot_wireframe(_SX, _SY, _SZ)),
 ]
 IDS = [c[0] for c in CASES]
 
