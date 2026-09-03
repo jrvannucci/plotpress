@@ -236,3 +236,72 @@ def test_missing_xarray_raises_a_clear_import_error(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked)
     with pytest.raises(ImportError, match=r"pip install plotpress\[xarray\]"):
         plotpress.load_data_xarray(str(p))
+
+
+def test_missing_subplots_come_back_nan_with_has_data_false(tmp_path):
+    """A grid cell with nothing plotted on it (or no axes at all) used to
+    make load_data_xarray() refuse the whole figure -- it now comes back
+    NaN, distinguished from a panel whose real data legitimately happened
+    to be all-NaN by the has_data coordinate."""
+    fig, axes = plotpress.subplots(2, 2, figsize=(6.0, 6.0))
+    x = np.linspace(0, 10, 5)
+    y = np.linspace(0, 5, 4)
+    Z = np.arange(12.0).reshape(3, 4)
+    axes[0, 0].pcolormesh(x, y, Z)
+    axes[0, 0].set_title("filled")
+    axes[1, 0].pcolormesh(x, y, Z + 100.0)
+    axes[1, 0].set_title("also filled")
+    # (0, 1) and (1, 1) are left entirely unplotted.
+    p = tmp_path / "mesh_with_gaps.html"
+    fig.save(str(p), interactive=True)
+
+    ds = plotpress.load_data_xarray(str(p))
+    assert dict(ds.sizes) == {"row": 2, "col": 2, "y": 3, "x": 4}
+    assert ds["has_data"].values.tolist() == [[True, False], [True, False]]
+    assert np.allclose(ds["z"].values[0, 0], Z)
+    assert np.allclose(ds["z"].values[1, 0], Z + 100.0)
+    assert np.isnan(ds["z"].values[0, 1]).all()
+    assert np.isnan(ds["z"].values[1, 1]).all()
+    assert ds["title"].values[0, 0] == "filled"
+    assert ds["title"].values[0, 1] == ""   # missing panel, not None
+
+
+def test_missing_subplots_in_a_line_grid_also_come_back_nan(tmp_path):
+    fig, axes = plotpress.subplots(1, 3)
+    x = np.linspace(0, 1, 5)
+    axes[0].plot(x, x)
+    axes[2].plot(x, x * 2)
+    # axes[1] left unplotted.
+    p = tmp_path / "line_with_gap.html"
+    fig.save(str(p), interactive=True)
+
+    ds = plotpress.load_data_xarray(str(p))
+    assert ds["has_data"].values.tolist() == [[True, False, True]]
+    assert np.allclose(ds["y"].values[0, 0], x)
+    assert np.isnan(ds["y"].values[0, 1]).all()
+    assert np.allclose(ds["y"].values[0, 2], x * 2)
+
+
+def test_attrs_layout_matches_load_data_and_feeds_subplots_from_layout(tmp_path):
+    """The whole layout dict load_data() returns under "layout" is now also
+    reachable straight off the Dataset -- no second, separate load_data()
+    call (a second parse of the file) just to get it before replotting."""
+    fig, axes = plotpress.subplots(1, 2, figsize=(8.0, 4.0))
+    x = np.linspace(0, 1, 5)
+    for i, ax in enumerate(axes):
+        ax.plot(x, x * (i + 1))
+        ax.set_title(f"panel {i}")
+        ax.set_xlabel("t")
+    p = tmp_path / "layout_attr.html"
+    fig.save(str(p), interactive=True)
+
+    ds = plotpress.load_data_xarray(str(p))
+    expected_layout = plotpress.load_data(str(p), by_index=True)[0]["layout"]
+    assert ds.attrs["layout"] == expected_layout
+
+    fig2, axes2 = plotpress.subplots_from_layout(ds.attrs["layout"])
+    # squeezed to 1-D, same as plotpress.subplots(1, 2) itself would return.
+    assert axes2.shape == (2,)
+    assert axes2[0].get_title() == "panel 0"
+    assert axes2[1].get_title() == "panel 1"
+    assert axes2[0].get_xlabel() == "t"

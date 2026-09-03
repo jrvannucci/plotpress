@@ -13,6 +13,22 @@ anywhere in the source.
 
 ### Added
 
+- **`load_data_xarray()` now handles a grid with missing panels**, instead
+  of refusing the whole figure the moment one grid cell had no axes, or an
+  axes with nothing plotted on it. A missing panel comes back NaN (its own
+  `x`/`y` too, in the per-panel-coordinate case) with the new `has_data`
+  `(row, col)` coordinate `False` for it -- distinguishing "this panel is
+  genuinely empty" from "this panel's real data legitimately happened to be
+  all-NaN", which just checking for NaN can't tell apart.
+
+- **`load_data_xarray()`'s returned `Dataset` now also carries the full
+  layout dict** (the same one `load_data()` returns under `"layout"`) as
+  `ds.attrs["layout"]`, ready to hand straight to `subplots_from_layout()`.
+  Previously, getting both the `Dataset` *and* the layout needed a second,
+  separate `load_data()` call -- a second parse of the same file just to
+  get a dict `load_data_xarray()` had already read internally and thrown
+  away.
+
 - **The interactive toolbar is now a single full-width menu bar**, replacing
   the old floating two-row button cluster. **Pan/Zoom** and **Home** (the
   renamed Figure Navigator/Reset Figure) sit standalone at the far left

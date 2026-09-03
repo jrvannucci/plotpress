@@ -2495,23 +2495,34 @@ def load_data_xarray(path: str, figure=None):
     Only supports a *uniform* rectangular grid -- every axes a single,
     non-spanning cell (as :func:`plotpress.subplots`/:meth:`Figure.add_subplot`
     place them, never a row/column span from ``add_gridspec``) -- where
-    every axes carries **exactly one** mesh (all the same shape,
+    every axes with data carries **exactly one** mesh (all the same shape,
     non-curvilinear) or **exactly one** line series (all the same length),
     never a mix of the two kinds, and never more than one series/mesh on a
-    single axes. Raises ``ValueError``, naming exactly what about the
-    figure didn't fit, for anything else -- a mixed grid, a span, multiple
-    series per axes, differing mesh shapes -- pointing at
-    :func:`load_data` (``by_index=True`` for the title-collision-proof
-    form) as the fallback for a figure this doesn't cover.
+    single axes. A cell with no axes at all, or an axes nothing was ever
+    plotted on, is fine -- it comes back NaN (its ``x``/``y`` too, in the
+    per-panel-coordinate case), distinguished from a panel whose real data
+    legitimately happened to be all-NaN by the ``has_data`` coordinate
+    below. Raises ``ValueError``, naming exactly what about the figure
+    didn't fit, for anything else -- a mixed grid, a span, multiple series
+    per axes, differing mesh shapes -- pointing at :func:`load_data`
+    (``by_index=True`` for the title-collision-proof form) as the fallback
+    for a figure this doesn't cover.
 
     The returned ``Dataset`` has ``row``/``col`` coordinates plus each
-    panel's own ``title``/``xlabel``/``ylabel`` as ``(row, col)`` string
-    coordinates; a mesh grid's ``x``/``y`` are shared 1-D coordinates when
-    every panel used the identical grid, else per-panel ``(row, col, x)``/
-    ``(row, col, y)`` arrays -- and its data variable is ``z``, dimensioned
-    ``(row, col, y, x)``. A line grid's data variable is ``y``, dimensioned
-    ``(row, col, point)``, with ``x`` the same shared-or-per-panel choice.
-    ``.attrs`` carries the recovered figure's own ``figsize`` and title.
+    panel's own ``title``/``xlabel``/``ylabel`` (``""`` for a missing
+    panel) and ``has_data`` (``True`` for a grid cell an axes with plotted
+    data actually occupies, ``False`` for one with no axes or nothing
+    plotted) as ``(row, col)`` coordinates; a mesh grid's ``x``/``y`` are
+    shared 1-D coordinates when every panel used the identical grid, else
+    per-panel ``(row, col, x)``/``(row, col, y)`` arrays -- and its data
+    variable is ``z``, dimensioned ``(row, col, y, x)``. A line grid's data
+    variable is ``y``, dimensioned ``(row, col, point)``, with ``x`` the
+    same shared-or-per-panel choice. ``.attrs`` carries the recovered
+    figure's own ``figsize`` and title, plus ``"layout"`` -- the exact same
+    dict :func:`load_data` returns under that key, ready to pass straight
+    to :func:`subplots_from_layout` without a second, separate
+    :func:`load_data` call just to get it -- ``ds.attrs["layout"]``, not a
+    duplicate parse of the file.
 
     ``figure`` selects which figure to load from a multi-figure
     :class:`Report` file -- an int index (0-based, save order) or the
@@ -2583,29 +2594,36 @@ def load_data_xarray(path: str, figure=None):
             "plotpress.load_data() instead."
         )
     nrows, ncols = specs[0]["nrows"], specs[0]["ncols"]
-    if len(order) != nrows * ncols:
-        raise ValueError(
-            f"load_data_xarray(): only {len(order)} of {nrows * ncols} grid "
-            "cells have data -- every cell must be filled; use "
-            "plotpress.load_data() instead for a figure with empty cells."
-        )
 
+    # `order` is every axes the grid actually has, whether or not anything
+    # was ever plotted on it (an empty axes still reports "" series/meshes/
+    # pies, not an absent entry) -- `filled` narrows that to the ones with
+    # real data, which is what the kind/shape checks and every data array
+    # below care about. title/xlabel/ylabel below still read from `order`,
+    # not `filled` -- an otherwise-empty panel can carry a real title.
     kinds = set()
+    filled = []
     for i in order:
         a = axes[i]
         n_series, n_meshes, n_pies = len(a["series"]), len(a["meshes"]), len(a["pies"])
-        if n_meshes == 1 and n_series == 0 and n_pies == 0:
-            kinds.add("mesh")
+        if n_meshes == 0 and n_series == 0 and n_pies == 0:
+            continue   # nothing plotted here -- a missing panel, not an error
+        elif n_meshes == 1 and n_series == 0 and n_pies == 0:
+            kinds.add("mesh"); filled.append(i)
         elif n_series == 1 and n_meshes == 0 and n_pies == 0:
-            kinds.add("line")
+            kinds.add("line"); filled.append(i)
         else:
             raise ValueError(
                 f"load_data_xarray(): axes {i} ({a['title']!r}) has "
                 f"{n_series} series, {n_meshes} mesh(es), {n_pies} pie(s) -- "
-                "only a grid where every axes has exactly one mesh, or "
-                "exactly one line series (never a mix, never more than "
-                "one), is supported; use plotpress.load_data() instead."
+                "only a grid where every axes with data has exactly one "
+                "mesh, or exactly one line series (never a mix, never more "
+                "than one), is supported; use plotpress.load_data() instead."
             )
+    if not filled:
+        raise ValueError(
+            "load_data_xarray(): this figure's grid has no plotted axes."
+        )
     if len(kinds) != 1:
         raise ValueError(
             "load_data_xarray(): a mix of mesh axes and line-series axes "
@@ -2614,22 +2632,38 @@ def load_data_xarray(path: str, figure=None):
         )
     kind = kinds.pop()
 
-    def grid_of(values, dtype=object):
-        g = np.empty((nrows, ncols), dtype=dtype)
-        for i, v in zip(order, values):
+    def grid_of(items, default="", dtype=object):
+        # A cell no `items` entry ever touches (an axes with nothing
+        # plotted, or no axes at all) keeps `default` rather than whatever
+        # an object array happens to default-initialize to (None) --
+        # title/xlabel/ylabel stay uniformly str either way, empty or not,
+        # never a mix of "" and None.
+        g = np.full((nrows, ncols), default, dtype=dtype)
+        for i, v in items:
             s = layout_axes[i]
             g[s["row0"], s["col0"]] = v
         return g
 
+    # True for every grid cell an axes with plotted data actually occupies,
+    # False for one with no axes at all or an axes nothing was ever plotted
+    # on. Missing cells stay NaN in every numeric array below too (they're
+    # pre-filled with NaN, and only cells in `filled` are ever written into)
+    # -- has_data is what lets a caller tell "this panel is genuinely empty"
+    # apart from "this panel's own data legitimately happened to be
+    # all-NaN".
+    has_data = grid_of([(i, True) for i in filled], default=False, dtype=bool)
+
     coords = {
-        "title": (("row", "col"), grid_of([axes[i]["title"] or "" for i in order])),
-        "xlabel": (("row", "col"), grid_of([axes[i]["xlabel"] or "" for i in order])),
-        "ylabel": (("row", "col"), grid_of([axes[i]["ylabel"] or "" for i in order])),
+        "title": (("row", "col"), grid_of([(i, axes[i]["title"] or "") for i in order])),
+        "xlabel": (("row", "col"), grid_of([(i, axes[i]["xlabel"] or "") for i in order])),
+        "ylabel": (("row", "col"), grid_of([(i, axes[i]["ylabel"] or "") for i in order])),
+        "has_data": (("row", "col"), has_data),
     }
-    attrs = {"figsize": entry["layout"].get("figsize"), "title": entry["title"]}
+    attrs = {"figsize": entry["layout"].get("figsize"), "title": entry["title"],
+             "layout": entry["layout"]}
 
     if kind == "mesh":
-        meshes = [axes[i]["meshes"][0] for i in order]
+        meshes = [axes[i]["meshes"][0] for i in filled]
         if any(m["curvilinear"] for m in meshes):
             raise ValueError(
                 "load_data_xarray(): a curvilinear mesh (irregular per-cell "
@@ -2649,7 +2683,7 @@ def load_data_xarray(path: str, figure=None):
         # do -- so this one (nrows, ncols, ny, nx) float array is built
         # directly instead of routing through it.
         z = np.full((nrows, ncols, ny, nx), np.nan)
-        for i, m in zip(order, meshes):
+        for i, m in zip(filled, meshes):
             s = layout_axes[i]
             z[s["row0"], s["col0"], :, :] = m["z"]
 
@@ -2661,8 +2695,11 @@ def load_data_xarray(path: str, figure=None):
             coords["y"] = ("y", y0)
             data_vars = {"z": (("row", "col", "y", "x"), z)}
         else:
-            X = np.empty((nrows, ncols, nx)); Y = np.empty((nrows, ncols, ny))
-            for i, m in zip(order, meshes):
+            # NaN-filled, not np.empty()'s uninitialized garbage -- a
+            # missing cell's own x/y has no data to report either.
+            X = np.full((nrows, ncols, nx), np.nan)
+            Y = np.full((nrows, ncols, ny), np.nan)
+            for i, m in zip(filled, meshes):
                 s = layout_axes[i]
                 X[s["row0"], s["col0"], :] = m["x"]
                 Y[s["row0"], s["col0"], :] = m["y"]
@@ -2670,7 +2707,7 @@ def load_data_xarray(path: str, figure=None):
             coords["y"] = (("row", "col", "y"), Y)
             data_vars = {"z": (("row", "col", "y", "x"), z)}
     else:
-        series = [axes[i]["series"][0] for i in order]
+        series = [axes[i]["series"][0] for i in filled]
         lengths = {s["x"].size for s in series}
         if len(lengths) != 1:
             raise ValueError(
@@ -2680,7 +2717,7 @@ def load_data_xarray(path: str, figure=None):
             )
         n = lengths.pop()
         y = np.full((nrows, ncols, n), np.nan)
-        for i, s in zip(order, series):
+        for i, s in zip(filled, series):
             spec = layout_axes[i]
             y[spec["row0"], spec["col0"], :] = s["y"]
 
@@ -2690,8 +2727,10 @@ def load_data_xarray(path: str, figure=None):
             coords["point"] = ("point", x0)
             data_vars = {"y": (("row", "col", "point"), y)}
         else:
-            X = np.empty((nrows, ncols, n))
-            for i, s in zip(order, series):
+            # NaN-filled, not np.empty()'s uninitialized garbage -- see the
+            # matching comment in the mesh branch above.
+            X = np.full((nrows, ncols, n), np.nan)
+            for i, s in zip(filled, series):
                 spec = layout_axes[i]
                 X[spec["row0"], spec["col0"], :] = s["x"]
             coords["x"] = (("row", "col", "point"), X)
