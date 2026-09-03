@@ -351,3 +351,33 @@ def test_select_panel_argument_errors(tmp_path):
         plotpress.select_panel(ds)
     with pytest.raises(ValueError, match="row=.*col="):
         plotpress.select_panel(ds, row=0)   # col missing
+
+
+def test_select_panel_multiple_returns_every_duplicate_as_a_list(tmp_path):
+    fig, axes = plotpress.subplots(1, 3)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    axes[2].plot([0, 1], [0.5, 0.5])
+    axes[0].set_title("dup")
+    axes[1].set_title("dup")
+    axes[2].set_title("unique")
+    p = tmp_path / "select_panel_multiple.html"
+    fig.save(str(p), interactive=True)
+    ds = plotpress.load_data_xarray(str(p))
+
+    dups = plotpress.select_panel(ds, title="dup", multiple=True)
+    assert isinstance(dups, list) and len(dups) == 2
+    assert [p["title"].item() for p in dups] == ["dup", "dup"]
+    assert np.allclose(dups[0]["y"].values, [0, 1])
+    assert np.allclose(dups[1]["y"].values, [1, 0])
+
+    # multiple=True still returns a list even when exactly one thing matched
+    # -- a unique title, or an explicit row=/col= -- so a caller looping
+    # over the result never has to branch on how many actually matched.
+    unique = plotpress.select_panel(ds, title="unique", multiple=True)
+    assert isinstance(unique, list) and len(unique) == 1
+    assert unique[0]["title"].item() == "unique"
+
+    by_position = plotpress.select_panel(ds, row=0, col=2, multiple=True)
+    assert isinstance(by_position, list) and len(by_position) == 1
+    assert by_position[0]["title"].item() == "unique"

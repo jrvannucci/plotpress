@@ -2739,7 +2739,7 @@ def load_data_xarray(path: str, figure=None):
     return xr.Dataset(data_vars, coords=coords, attrs=attrs)
 
 
-def select_panel(ds, title=None, row=None, col=None):
+def select_panel(ds, title=None, row=None, col=None, multiple=False):
     """Pull one panel out of a :func:`load_data_xarray` grid, dropping
     ``row``/``col`` entirely instead of leaving them behind as length-1
     dimensions -- ``ds.isel(row=r, col=c)`` already does exactly that for a
@@ -2750,10 +2750,19 @@ def select_panel(ds, title=None, row=None, col=None):
     string :func:`load_data`/a panel's own ``ax.set_title()`` used) **or**
     both ``row``/``col`` (plain 0-based grid position) -- not a mix of the
     two, and not neither. Raises ``ValueError`` when ``title`` matches no
-    panel, or more than one (two panels sharing a title -- pass ``row``/
-    ``col`` instead, since there is no name left to disambiguate by).
+    panel at all. When ``title`` matches more than one panel (two panels
+    sharing a title, so there is no name left to disambiguate by), this
+    raises too *unless* ``multiple=True``, which returns every match as a
+    list instead of picking one.
 
-    The returned ``Dataset`` keeps every data variable/coordinate
+    ``multiple=True`` always returns a ``list`` of ``Dataset``\\ s -- one
+    item for a unique ``title`` or an explicit ``row=``/``col=``, or one
+    per match for a duplicated ``title`` -- rather than a list only
+    *sometimes* and a bare ``Dataset`` otherwise, so a caller that always
+    wants to loop over the result doesn't have to branch on how many
+    panels actually matched.
+
+    Each returned ``Dataset`` keeps every data variable/coordinate
     :func:`load_data_xarray` built, just without ``row``/``col`` -- a mesh
     panel's ``z`` is ``(y, x)`` instead of ``(row, col, y, x)``, a line
     panel's ``y`` is ``(point,)`` instead of ``(row, col, point)``, and
@@ -2765,6 +2774,11 @@ def select_panel(ds, title=None, row=None, col=None):
         ds = plotpress.load_data_xarray(path)
         panel = plotpress.select_panel(ds, title="panel 4")
         panel["z"].plot()   # a plain (y, x) DataArray, xarray's own .plot()
+
+        # Two panels both titled "control" -- get both instead of raising.
+        controls = plotpress.select_panel(ds, title="control", multiple=True)
+        for p in controls:
+            p["z"].plot()
     """
     if title is not None:
         if row is not None or col is not None:
@@ -2776,13 +2790,17 @@ def select_panel(ds, title=None, row=None, col=None):
                 f"select_panel(): no panel titled {title!r} -- available: "
                 f"{sorted(set(ds['title'].values.ravel()))!r}"
             )
-        if len(matches) > 1:
-            raise ValueError(
-                f"select_panel(): {len(matches)} panels are titled "
-                f"{title!r} -- not unique, so title alone can't pick one; "
-                "use row=/col= instead."
-            )
-        row, col = (int(v) for v in matches[0])
+        positions = [(int(r), int(c)) for r, c in matches]
     elif row is None or col is None:
         raise ValueError("select_panel(): pass title=, or both row= and col=.")
-    return ds.isel(row=row, col=col)
+    else:
+        positions = [(row, col)]
+
+    if len(positions) > 1 and not multiple:
+        raise ValueError(
+            f"select_panel(): {len(positions)} panels are titled {title!r} "
+            "-- not unique, so title alone can't pick one; pass row=/col= "
+            "for a specific one, or multiple=True for every match as a list."
+        )
+    panels = [ds.isel(row=r, col=c) for r, c in positions]
+    return panels if multiple else panels[0]

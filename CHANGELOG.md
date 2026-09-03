@@ -20,7 +20,11 @@ anywhere in the source.
   `has_data` become plain scalar attributes of that one panel. Previously
   this needed knowing the `ds.where(ds["title"] == ..., drop=True)
   .squeeze(("row", "col"))` idiom by hand, with no built-in check for a
-  title that matches zero or more than one panel.
+  title that matches zero or more than one panel. `multiple=True` returns
+  every panel sharing a duplicated `title` as a `list` instead of raising
+  -- and always a `list`, even for a unique `title` or an explicit
+  `row=`/`col=`, so a caller that loops over the result never has to
+  branch on how many panels actually matched.
 
 - **`load_data_xarray()` now handles a grid with missing panels**, instead
   of refusing the whole figure the moment one grid cell had no axes, or an
