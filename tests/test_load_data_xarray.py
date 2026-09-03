@@ -305,3 +305,49 @@ def test_attrs_layout_matches_load_data_and_feeds_subplots_from_layout(tmp_path)
     assert axes2[0].get_title() == "panel 0"
     assert axes2[1].get_title() == "panel 1"
     assert axes2[0].get_xlabel() == "t"
+
+
+def test_select_panel_by_title_drops_row_and_col(tmp_path):
+    fig, axes = plotpress.subplots(2, 3, figsize=(9.0, 6.0))
+    x = np.linspace(0, 10, 21)
+    y = np.linspace(0, 5, 11)
+    X, Y = np.meshgrid(x, y)
+    grid = np.asarray(axes)
+    for i, ax in enumerate(grid.ravel()):
+        Z = np.sin(X - 0.3 * i) * np.exp(-0.05 * Y)
+        ax.pcolormesh(x, y, Z, cmap="viridis")
+        ax.set_title(f"panel {i}")
+    p = tmp_path / "select_panel.html"
+    fig.save(str(p), interactive=True)
+
+    ds = plotpress.load_data_xarray(str(p))
+    by_title = plotpress.select_panel(ds, title="panel 4")
+    by_position = plotpress.select_panel(ds, row=1, col=1)   # panel 4 is (1, 1)
+
+    assert "row" not in by_title.dims and "col" not in by_title.dims
+    assert by_title["z"].dims == ("y", "x")
+    assert by_title["title"].item() == "panel 4"
+    assert np.array_equal(by_title["z"].values, by_position["z"].values)
+    assert np.array_equal(by_title["z"].values, ds["z"].values[1, 1])
+
+
+def test_select_panel_argument_errors(tmp_path):
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [1, 0])
+    axes[0].set_title("same")
+    axes[1].set_title("same")   # deliberately not unique
+    p = tmp_path / "select_panel_errors.html"
+    fig.save(str(p), interactive=True)
+    ds = plotpress.load_data_xarray(str(p))
+
+    with pytest.raises(ValueError, match="no panel titled"):
+        plotpress.select_panel(ds, title="nope")
+    with pytest.raises(ValueError, match="not unique"):
+        plotpress.select_panel(ds, title="same")
+    with pytest.raises(ValueError, match="not both"):
+        plotpress.select_panel(ds, title="same", row=0)
+    with pytest.raises(ValueError, match="row=.*col="):
+        plotpress.select_panel(ds)
+    with pytest.raises(ValueError, match="row=.*col="):
+        plotpress.select_panel(ds, row=0)   # col missing

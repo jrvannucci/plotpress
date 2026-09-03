@@ -13,6 +13,15 @@ anywhere in the source.
 
 ### Added
 
+- **`plotpress.select_panel(ds, title=...)`** (or `row=`/`col=`) pulls one
+  panel out of a `load_data_xarray()` grid, dropping `row`/`col` entirely --
+  a mesh panel's `z` comes back `(y, x)` instead of `(row, col, y, x)`, a
+  line panel's `y` comes back `(point,)`, and `title`/`xlabel`/`ylabel`/
+  `has_data` become plain scalar attributes of that one panel. Previously
+  this needed knowing the `ds.where(ds["title"] == ..., drop=True)
+  .squeeze(("row", "col"))` idiom by hand, with no built-in check for a
+  title that matches zero or more than one panel.
+
 - **`load_data_xarray()` now handles a grid with missing panels**, instead
   of refusing the whole figure the moment one grid cell had no axes, or an
   axes with nothing plotted on it. A missing panel comes back NaN (its own

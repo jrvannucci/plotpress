@@ -14,6 +14,7 @@ Top level
    Report
    load_data
    load_data_xarray
+   select_panel
    Style
    Normalize
    get_cmap
@@ -39,6 +40,8 @@ Report
 .. autofunction:: plotpress.load_data
 
 .. autofunction:: plotpress.load_data_xarray
+
+.. autofunction:: plotpress.select_panel
 
 Axes
 ----
