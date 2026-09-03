@@ -509,6 +509,55 @@ def test_mesh_click_away_from_an_overlaid_line_still_picks_the_mesh(page, tmp_pa
         "not the mesh cell underneath it: %r" % markers[1])
 
 
+def test_mesh_override_radius_stays_a_constant_screen_size_under_magnify(page, tmp_path):
+    """Regression: MESH_OVERRIDE_THRESHOLD (see the test above) is compared
+    in root SVG user-space units, the same space toPixel()/toUser() work in
+    -- a constant number of *those* is not a constant number of actual
+    screen pixels once Pan/Zoom magnifies the whole figure (it grows the
+    SVG's own rendered CSS size while the viewBox, and so this space, stays
+    fixed). A click 8 user-space units from the line's vertex -- comfortably
+    inside the un-magnified override radius, so it used to still snap to the
+    line -- must resolve to the mesh once the figure is zoomed in several
+    ticks, the same as it already does un-zoomed, because the click is by
+    then dozens of real screen pixels away from the line, not 8."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    y = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    Z = [[float(r * 5 + c) for c in range(5)] for r in range(5)]
+    ax.pcolormesh(x, y, Z)
+    ax.plot([1.0, 1.0], [2.0, 3.0], color="cyan", linewidth=2.5)
+    path = tmp_path / "mesh_override_zoom.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    # A data point ~8 root-user-space units from the line's (1.0, 2.0)
+    # vertex -- inside the un-magnified 10px override radius.
+    target = (1.065, 2.065)
+    ux0, uy0 = px(fig, 0, *target)
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Pan/Zoom') b.click(); })""")
+    page.evaluate(
+        """([ux, uy]) => {
+          const svg = document.getElementById('plotpress-svg');
+          const pt = svg.createSVGPoint(); pt.x = ux; pt.y = uy;
+          const c = pt.matrixTransform(svg.getScreenCTM());
+          for (let i = 0; i < 8; i++) {
+            document.elementFromPoint(c.x, c.y).dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: c.x, clientY: c.y, deltaY: -100}));
+          }
+        }""", [ux0, uy0])
+
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, *target))
+    assert len(markers) == 1
+    assert markers[0]["kind"] == "mesh", (
+        "8 user-space units from the line's vertex must still resolve to "
+        "the mesh once magnified, not just at native zoom: %r" % markers[0])
+
+
 def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
     """rasterized=True on the same grid must keep picking the cells that
     *do* survive resampling -- forcing raster shouldn't break picking on

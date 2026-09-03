@@ -280,7 +280,16 @@ anywhere in the source.
   positional signal than a loose point-distance threshold. A click inside a
   mesh cell now only loses to a line/scatter point on a genuinely precise
   click (within 10px); a precise click still always wins, so nothing that
-  depended on that continues to work exactly as before.
+  depended on that continues to work exactly as before. That 10px radius
+  (and the original 28px one) is now also converted to a real, constant
+  screen-pixel distance rather than compared directly in root SVG
+  user-space units -- those units stop meaning a fixed number of screen
+  pixels the moment Pan/Zoom magnifies the whole figure (its viewBox stays
+  fixed while the rendered SVG grows), so at any real magnification the old
+  raw-unit comparison silently let both radii balloon to many dozens of
+  actual screen pixels, reproducing the same steal-the-click bug at a
+  farther and farther visual distance the more a reader zoomed in to
+  target a specific cell precisely.
 
 - **A found-while-auditing-the-new-toolbar bug: the menu bar's mode
   indicator could sit flush against, or partly behind, the window's right

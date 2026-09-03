@@ -2457,16 +2457,29 @@ _JS_SOURCE = r"""
     var cand = null;
     if (np) cand = { d: np.d, ref: np.ref };
     if (fp && (!cand || fp.d < cand.d)) cand = { d: fp.d, ref: fp.ref };
+    // np.d/fp.d are squared distances in root SVG user-space units (the
+    // same space toPixel()/toUser() both work in) -- a constant number of
+    // *those* is not a constant number of actual screen pixels once the
+    // whole figure is magnified (Pan/Zoom grows the SVG's own rendered CSS
+    // size while its viewBox, and so this space, stays fixed -- see
+    // pxPerUser()); an axes' own Axis Span/Zoom, by contrast, already
+    // reshapes this same space when the view changes, so it needs no
+    // separate handling here. Converting the *distance* to real screen px
+    // (rather than the threshold to user-space units) keeps every
+    // POINT_THRESHOLD/MESH_OVERRIDE_THRESHOLD comparison below meaning what
+    // it says regardless of Pan/Zoom level, the same "constant on-screen
+    // size" guarantee a pin's own marker already gets (see layoutPin).
+    var scale = pxPerUser();
+    var candPx = cand ? Math.sqrt(cand.d) * scale : Infinity;
 
     var pd = PICK[a.i];
-    if (pd && pd.pies && pd.pies.length && !pieHit && !mesh &&
-        (!cand || Math.sqrt(cand.d) > POINT_THRESHOLD)) {
+    if (pd && pd.pies && pd.pies.length && !pieHit && !mesh && candPx > POINT_THRESHOLD) {
       return 'blocked';
     }
     // Inside a mesh cell's own bounds, only a genuinely precise click on a
     // line/scatter point overrides it -- see MESH_OVERRIDE_THRESHOLD above.
     var pointThreshold = mesh ? MESH_OVERRIDE_THRESHOLD : POINT_THRESHOLD;
-    if (cand && Math.sqrt(cand.d) <= pointThreshold) return cand.ref;
+    if (cand && candPx <= pointThreshold) return cand.ref;
     if (mesh) return mesh;
     if (pieHit) return pieHit;
     if (cand) return cand.ref;
