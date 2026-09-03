@@ -23,7 +23,7 @@ every surface a figure can render on).
 plotpress[jupyter]`` -- any real Jupyter environment already has IPython)
 is the one line that gets this toolbar working inline instead: it embeds
 ``to_html()``'s self-contained output in an ``<iframe>``, which does
-isolate and run the inlined JS, so every tool below -- Figure Navigator,
+isolate and run the inlined JS, so every tool below -- Pan/Zoom,
 Point Picking, sliders, all of it -- works exactly as it does in a saved
 ``.html`` file opened in a browser:
 
@@ -40,12 +40,31 @@ Point Picking, sliders, all of it -- works exactly as it does in a saved
 The toolbar
 -----------
 
-Two rows, grouped by what the buttons do: **Navigation** -- navigate the
-view, reset it, and persist it (Figure Navigator leftmost, then Axis
-Span/Axis Zoom, both resets, then Save/Save As) on top; **Annotation** --
-mark data, control what's visible, and get it out (Hide All leftmost, then
-Point Picking/Clear Points, the Annotation mode/Clear Annotations, then
-Extract) below.
+A single row, spanning the full width of the window and pinned to its top
+(``position:fixed``, immune to scrolling, panning, or Pan/Zoom's own
+whole-figure zoom). Pan/Zoom and Home sit standalone at the
+far left -- whole-figure tools reached for often enough to skip a menu's
+extra click. Everything else groups into four menus by what the buttons do:
+**Axes** (Axis Span/Axis Zoom, then Reset All Axes, the pair it undoes),
+**Point Picking** (the tool, Hide Points, Clear Points, and Extract),
+**Annotate** (the tool, Hide Annotations, then Clear Annotations), and
+**File** (Save, Save As). A caller's own custom tools (``plotpressAddTool``,
+see :doc:`../auto_examples/custom_interactivity/plot_01_add_a_measure_tool`)
+get a fifth **Custom** menu, created only once one is actually added. A
+persistent indicator naming the current tool (or "No tool active") is pinned
+to the bar's own far right.
+
+A menu item that selects a tool is checkable, not one-shot: clicking it
+selects that tool (deselecting whatever else was active) and leaves the
+menu open, so picking a different tool from the same menu doesn't need
+reopening it first. Double-click the active tool to deselect it -- or press
+Escape, which works from anywhere, not just while that tool's own button
+has focus (handy for a keyboard-only user, who has no double-click to
+deselect with). One-shot actions -- Save, Home, Clear Points, Extract, and
+the like -- fire immediately and close their menu, the same as clicking
+outside any menu does; so does Escape, when a menu happens to be open
+(otherwise Escape clears every pin/annotation *and* deselects the active
+tool in one press, see the Point Picking row below).
 
 .. list-table::
    :header-rows: 1
@@ -53,7 +72,7 @@ Extract) below.
 
    * - Tool
      - Behavior
-   * - **Figure Navigator**
+   * - **Pan/Zoom**
      - A plain wheel zooms the *whole figure*, centered on the cursor,
        regardless of which axes (if any) is under it -- the useful gesture
        on a figure with many small axes, where the cursor is only ever over
@@ -63,87 +82,93 @@ Extract) below.
        as scrolling any other oversized page content. Drag pans that same
        whole-figure view (native page scroll under the hood) in any
        direction. Double-click resets that view (there is no per-axes zoom
-       to reset here, unlike Axis Span/Zoom below). Leftmost in the
-       toolbar -- the one whole-figure-level tool, ahead of the per-axes
-       Axis Span/Zoom pair. (Text on the figure -- tick labels, titles,
-       pin labels -- is left unselectable for as long as *any* mode is
-       active, not just this one: every mode's own drag can sweep across
-       it the same way this one's pan always could.)
+       to reset here, unlike Axis Span/Zoom below). Sits standalone at the
+       toolbar's far left, not behind a menu -- the one whole-figure-level
+       navigation tool, reached for often enough to skip a menu's extra
+       click. (Text on the figure -- tick labels, titles, pin labels -- is
+       left unselectable for as long as *any* mode is active, not just this
+       one: every mode's own drag can sweep across it the same way this
+       one's pan always could.)
+   * - **Home**
+     - Restores whole-figure magnification to its natural size; leaves
+       every axes' own pan/zoom and every pin/annotation untouched. Sits
+       standalone right after Pan/Zoom, the tool it undoes. Neither Reset
+       button (this one, or Reset All Axes below) clears pins or
+       annotations; that's what Clear Points/Clear Annotations below are
+       for.
    * - **Axis Span**
      - Drag to pan a single plot's data window (log-aware).
    * - **Axis Zoom**
      - Two distinct gestures. Drag a rubber-band box to zoom *one axes* in
        **data space** -- its ticks recompute and markers keep a constant
        size. Ctrl+wheel zooms the *whole figure* instead, the same gesture
-       Figure Navigator's plain wheel does.
+       Pan/Zoom's plain wheel does.
    * - **Reset All Axes**
      - Restores every axes' own pan/zoom to its original view; leaves
        whole-figure magnification and every pin/annotation untouched.
-       Double-click resets just the plot under the cursor. Sits right after
-       Axis Span/Zoom, the pair of tools it undoes.
-   * - **Reset Figure**
-     - Restores whole-figure magnification to its natural size; leaves
-       every axes' own pan/zoom and every pin/annotation untouched. Sits
-       right after Reset All Axes -- neither Reset button clears pins or
-       annotations; that's what Clear Points/Clear Annotations below are
-       for.
-   * - **Save**
-     - Tries to overwrite the file this page was opened from -- pan/zoom,
-       every pin/annotation, hidden legend series, Hide All, all
-       included -- instead of downloading a new one. That needs the File
-       System Access API (Chromium, a secure context); anywhere it's
-       unavailable this falls back to the same download Save As does.
-       Trails the Navigation row -- persisting the page is the last "do
-       something to the view" step, after both resets.
-   * - **Save As**
-     - The same, but always downloads a new, equally self-contained HTML
-       file rather than trying to overwrite the original. Reopening it
-       resumes this exact session, not just what was originally plotted.
-   * - **Hide All**
-     - A standalone toggle, not a mode -- available regardless of which tool
-       is selected. Hides every pin and annotation, of either kind, *and*
-       every figure-drawn boxed callout, without deleting any of them;
-       toggling it back to "Show All" restores them exactly as they were,
-       text included. Leftmost in the Annotation row -- the one
-       view-control tool, ahead of the mark/clear pairs it can hide without
-       clearing.
+       Double-click resets just the plot under the cursor.
    * - **Point Picking**
      - Click to pin the nearest data value. Arrow keys step along the series
        (nearest-neighbour for scatter, cell-by-cell for meshes, contours and
        images). Right-click deletes a marker; Escape clears every pin *and*
-       annotation at once. A marker's own dot scales down with the axes it
+       annotation at once (and deselects the active tool, back to no tool
+       active). A marker's own dot scales down with the axes it
        landed on, so it never dwarfs a tiny panel in a large grid the way a
        fixed size would -- and stays that same on-screen size at any
-       whole-figure Figure Navigator/Zoom level, rather than growing along
-       with the figure until it covers the very cell it is pointing at. Its
+       whole-figure zoom level (Pan/Zoom or Axis Zoom's Ctrl+wheel), rather
+       than growing along with the figure until it covers the very cell it
+       is pointing at. Its
        label box (offset from the dot by default, connected to it by a thin
        leader arrow) is itself draggable -- grab the box, not the dot,
        while Point Picking is active -- and a dragged position survives
        pan/zoom/arrow-key steps and a Save/Save As round trip.
+   * - **Hide Points**
+     - A standalone toggle, not a mode -- available regardless of which
+       tool is selected. Hides every Point Picking pin without deleting any
+       of them; toggling it back to "Show Points" restores them exactly as
+       they were, text included. Independent of Hide Annotations below --
+       an Annotation note stays visible either way.
    * - **Clear Points**
      - Removes every Point Picking pin at once, and only those -- an
-       Annotation note survives untouched. Sits right after Point Picking,
-       the tool it clears.
+       Annotation note survives untouched.
+   * - **Extract**
+     - Copy/download picked points, or return them to Python -- Point
+       Picking pins only, not Annotation notes; an Annotation note has
+       nothing to "extract" in the same sense a picked data value does.
    * - **Annotation**
      - Drop a user-written note anywhere on the figure, not locked to any
        datum -- including the margins or the gap between subplots. Its own
        box drags the same way a Point Picking pin's does, while Annotation
        is the active mode.
+   * - **Hide Annotations**
+     - The mirror of Hide Points: hides every Annotation note without
+       deleting any of them, *plus* every figure-drawn boxed callout
+       (``ax.text()``/``ax.annotate(bbox=...)``) -- a static callout reads
+       the same way on screen as a note. Toggling it back to "Show
+       Annotations" restores everything exactly as it was.
    * - **Clear Annotations**
      - The mirror of Clear Points: removes every Annotation note at once,
-       and only those -- a Point Picking pin survives untouched. Sits right
-       after Annotation, the tool it clears.
-   * - **Extract**
-     - Copy/download all markers + annotations, or return them to Python.
-   * - **▸** / **◂**
-     - Collapses both button rows (a screenshot, an unobstructed view)
-       without hiding this one handle, which stays put so the rows can
-       always be brought back -- no reload needed. Not remembered across a
-       reload/Save; it always starts expanded.
+       and only those -- a Point Picking pin survives untouched.
+   * - **Save**
+     - Tries to overwrite the file this page was opened from -- pan/zoom,
+       every pin/annotation, hidden legend series, Hide Points/Hide
+       Annotations, all included -- instead of downloading a new one. That
+       needs the File System Access API (Chromium, a secure context);
+       anywhere it's unavailable this falls back to the same download Save
+       As does.
+   * - **Save As**
+     - The same, but always downloads a new, equally self-contained HTML
+       file rather than trying to overwrite the original. Reopening it
+       resumes this exact session, not just what was originally plotted.
+
+``window.plotpressGetMarkers()`` (see below) returns every pin and
+annotation, unlike Extract -- it's the general programmatic query a custom
+tool or an embedding (e.g. :mod:`plotpress.qt`) reads from, not Extract's
+own narrower output.
 
 A box-drag zoom and Axis Span's pan both operate on a single axes' data
 limits, recomputing that axes' ticks live -- including on log scales.
-Ctrl+wheel (or a trackpad pinch) under Axis Zoom, and Figure Navigator's own
+Ctrl+wheel (or a trackpad pinch) under Axis Zoom, and Pan/Zoom's own
 plain wheel, are the one *image*-style zoom of the whole figure: neither ever
 changes any axes' data limits or ticks, only what part of the rendered figure
 is currently visible. A plain wheel with no tool selected is left to scroll
@@ -187,7 +212,7 @@ for a worked example, and the live figure in :doc:`../usage`.
 
 :meth:`~plotpress.axes.Axes.set_pickable` (default ``True``) excludes an axes
 from **Point Picking** -- a click there behaves as if it missed every axes.
-**Axis Span**, **Axis Zoom**, **Figure Navigator**, and **Annotation** are
+**Axis Span**, **Axis Zoom**, **Pan/Zoom**, and **Annotation** are
 unaffected, so a figure can restrict picking to a single panel while every
 other tool still works everywhere:
 
@@ -202,11 +227,13 @@ example, and the live figure in :doc:`../usage`.
 Extracting markers to Python
 ----------------------------
 
-The **Extract** button opens a panel to copy/download the current markers and
-annotations as **CSV or JSON**. Each record is a dict, e.g.::
+The **Extract** button (in the Point Picking menu) opens a panel to
+copy/download the current Point Picking markers -- not Annotation notes,
+which have nothing to "extract" in the same sense a picked data value does
+-- as **CSV or JSON**. Each record is a dict, e.g.::
 
     {"axes": 0, "axes_title": "axes 0", "kind": "mesh", "x": 0.95, "y": 1.05, "z": 0.397}
-    {"axes": 0, "axes_title": "axes 0", "kind": "annotation", "x": 3.5, "y": 0.36, "text": "peak"}
+    {"axes": 0, "axes_title": "axes 0", "kind": "points", "index": 3, "x": 3.5, "y": 0.36}
 
 For a blocking "pick session" that hands the markers straight back to the
 kernel, use the native window:
@@ -273,21 +300,20 @@ default ``True``):
    """
    fig.save("figure.html", interactive=True, extra_js=extra_js)
 
-``window.plotpressAddTool(opts)`` registers a real button in its own row,
-stacked below plotpress's own (a dashed top border marks it as a separate
-group, created only once a first custom tool actually exists) -- not
-appended into the built-in row itself, which would otherwise run longer
-with every tool added and blur which buttons are plotpress's own vs the
-page's. The collapse toggle (**▸**/**◂**) hides both rows together. Two
-shapes mirroring the built-in tools:
+``window.plotpressAddTool(opts)`` registers a real button in its own
+**Custom** menu, alongside the four built-in ones (created only once a first
+custom tool actually exists) -- not appended into a built-in menu itself,
+which would otherwise run longer with every tool added and blur which
+buttons are plotpress's own vs the page's. Two shapes mirroring the built-in
+tools:
 
 ``{label, onClick}``
     An always-available action, firing immediately on click -- like the
     built-in Extract/Save buttons. Never joins the selection group below.
 
 ``{label, mode, onClick, onEnter, onExit, cursor}``
-    A real *mode*, joining the same single-selection group as Figure
-    Navigator/Axis Span/Zoom/Point Picking/Annotation -- selecting it
+    A real *mode*, joining the same single-selection group as Pan/Zoom,
+    Axis Span/Zoom, Point Picking, and Annotation -- selecting it
     deselects whatever else was active, and vice versa. A click on the SVG
     that no built-in mode already claims calls
     ``onClick(event, userSpacePoint)``. ``window.plotpressToData(userSpacePoint)``

@@ -3,15 +3,19 @@
 Fully self-contained (no external requests) so it works under strict CSPs such
 as Jupyter and sandboxed webviews.
 
-A floating toolbar in the corner selects one **mode** at a time; nothing is
+A menu bar docked above the figure selects one **mode** at a time; nothing is
 interactive until a mode is chosen (single selection -- picking one cancels the
-others). Text on the figure is left unselectable for as long as any mode is
-active -- every mode's own drag (a pan, a rubber-band box, dragging a pin's
-own label box) can sweep across tick labels, titles, or another pin's text
-the same way Figure Navigator's whole-figure pan always could, so the
-selection guard isn't scoped to any one of them.
+others). A single click on a mode item selects it without closing its own
+menu (a checkable item, not a one-shot action); double-click the active one
+to deselect it back to no tool active -- a persistent mode indicator to the
+menu bar's own right always shows which, if any, is active, with no menu
+needing to be open. Text on the figure is left unselectable for as long as
+any mode is active -- every mode's own drag (a pan, a rubber-band box,
+dragging a pin's own label box) can sweep across tick labels, titles, or
+another pin's text the same way Pan/Zoom's whole-figure pan always
+could, so the selection guard isn't scoped to any one of them.
 
-* **Figure Navigator** (zoom-in cursor, internal mode ``magnify``) -- the
+* **Pan/Zoom** (zoom-in cursor, internal mode ``magnify``) -- the
   same whole-figure wheel zoom as Ctrl+wheel under Axis Zoom, but a *plain*
   wheel, no Ctrl needed -- for wherever holding Ctrl is awkward, or a
   browser/OS extension already claims it. Deliberately its own mode rather
@@ -23,8 +27,9 @@ selection guard isn't scoped to any one of them.
   figure's view, never an axes' own data range, isolating it completely
   from per-axes zoom/pan. Double-click resets that view (there is no
   per-axes zoom here to reset the way Axis Span/Zoom's double-click does).
-  Leftmost in the toolbar -- the one whole-figure-level navigation tool,
-  ahead of the per-axes Span/Zoom pair.
+  Sits standalone at the toolbar's far left, not behind a menu -- the one
+  whole-figure-level navigation tool, reached for often enough to be worth
+  skipping a menu's extra click (see below).
 * **Axis Span** (internal mode ``span``) -- drag to pan (grab cursor).
 * **Axis Zoom** (internal mode ``zoom``) -- two distinct gestures (crosshair
   cursor). Drag a rubber-band box to zoom *one axes* into it, in data space
@@ -45,11 +50,12 @@ selection guard isn't scoped to any one of them.
   a mode. In Axis Span/Zoom mode, double-clicking a single plot resets only
   that plot, the same as this does for all of them at once. Sits right
   after Axis Span/Zoom -- the pair of tools it undoes.
-* **Reset Figure** -- restores whole-figure magnification (Figure Navigator
+* **Home** -- restores whole-figure magnification (Pan/Zoom
   or Ctrl+wheel-under-Axis-Zoom) back to its natural size; leaves every
   axes' own pan/zoom and every pin/annotation untouched. A figure-level
   action, not a mode -- it doesn't select/deselect anything, just fires
-  once. Sits right after Reset All Axes -- neither Reset button clears
+  once. Sits standalone right after Pan/Zoom, the tool it undoes -- neither
+  Reset button (this one or Reset All Axes, in the Axes menu) clears
   pins/annotations -- a view reset repositions them (they already track
   pan/zoom live, the same machinery an Axis Span drag uses), it doesn't
   delete them; that's what Clear Points/Point Picking's own
@@ -60,10 +66,11 @@ selection guard isn't scoped to any one of them.
   the **Clear Points** button/Escape to remove all of them at once. A
   marker's own dot scales with the axes it lands on, so it never dwarfs a
   tiny panel in a large grid, and stays that same on-screen size at any
-  whole-figure Figure Navigator/Zoom level -- growing right along with the
-  rest of the figure would otherwise turn a readable dot into a blob
-  covering the very cell it's pointing at a few zoom ticks later, defeating
-  the point of zooming in to see it more clearly. Its label box sits
+  whole-figure zoom level (Pan/Zoom or Axis Zoom's Ctrl+wheel) -- growing
+  right along with the rest of the figure would otherwise turn a readable
+  dot into a blob covering the very cell it's pointing at a few zoom ticks
+  later, defeating the point of zooming in to see it more clearly. Its
+  label box sits
   offset from the dot by default; a thin leader line (arrowhead on the dot
   end) connects the two whenever the box isn't already touching the dot,
   and the box itself is draggable -- grab it (not the dot) and move it
@@ -71,6 +78,10 @@ selection guard isn't scoped to any one of them.
   moving the dot off the data point it represents.
   A dragged position sticks through every later pan/zoom/arrow-key step and
   a Save/Save As round trip, the same as everything else about the pin.
+* **Hide Points** -- hides every Point Picking pin without deleting any of
+  them; toggling it back to "Show Points" brings them back exactly as they
+  were. Independent of Hide Annotations below -- an Annotation note stays
+  visible while Hide Points is on, and vice versa.
 * **Clear Points** -- removes every Point Picking pin, and *only* those --
   an Annotation note survives a Clear Points click untouched. Sits right
   after Point Picking, the tool it clears. A one-shot action, not a mode.
@@ -86,48 +97,43 @@ selection guard isn't scoped to any one of them.
   mode, independent of a Point Picking pin's own dragging (see
   boxDraggableNow: each kind of pin only drags under the mode that would
   have created it).
+* **Hide Annotations** -- the mirror of Hide Points: hides every Annotation
+  note without deleting any of them, *plus* every boxed
+  ``ax.text()``/``ax.annotate(bbox=...)`` callout the figure itself drew (a
+  plain, unboxed label is not a callout in this sense and always stays
+  visible) -- a static callout reads the same way on screen as a note, and
+  is closer in spirit to one than to a picked data point. Toggling it back
+  to "Show Annotations" brings everything back exactly as it was, including
+  any text or selection state -- it only ever flips a CSS display rule,
+  never touches the underlying marker/text data.
 * **Clear Annotations** -- the mirror of Clear Points: removes every
   Annotation note, and *only* those -- a Point Picking pin survives
   untouched. Sits right after Annotation, the tool it clears. A one-shot
   action, not a mode. (Escape still clears everything at once, both kinds
-  -- the one place "clear all" still means literally all, matching its
-  pre-existing documented behavior below.)
+  -- the one place "clear all" still means literally all -- and, unlike
+  either Clear button, also deselects the active tool, back to no tool
+  active; see below.)
 
-The buttons themselves group into two rows by what they do, not the order
-features were added in -- **Navigation**: navigate the view, reset it, and
-persist it (Figure Navigator leftmost, then Axis Span/Zoom, both resets,
-then Save/Save As) on top -- **Annotation**: mark data, control what's
-visible, and get it out (Hide All leftmost, then Point Picking/Clear
-Points, the Annotation mode/Clear Annotations, then Extract) below.
-Save/Save As persist pan/zoom/pins/toggles -- the whole current *view* --
-which is squarely what "navigate the view... and persist it" already
-covers; a standalone third row for just the two of them was tried and
-dropped, since it cost a full extra label+row of vertical space for the
-sparsest row in the toolbar -- worse on both the minimum-space and
-intuitive fronts than folding them back into Navigation. A caller's own
-custom tools get a third row of their own, stacked below both -- never
-folded into either built-in row.
+Pan/Zoom and Home sit standalone at the bar's far left, not
+behind a menu -- the whole-figure-scoped tool reached for most, and the
+reset that undoes it, close enough at hand that a menu's extra click to get
+to them isn't worth paying every time. Everything else groups into four
+menus by what it does, not the order features were added in --
+**Axes**: Axis Span/Zoom, then Reset All Axes, the pair it undoes.
+**Point Picking**: the tool, Hide Points, Clear Points, and Extract --
+Extract lives here, not in its own menu or under Annotate, because it only
+ever returns Point Picking markers (see below). **Annotate**: the tool,
+Hide Annotations, then Clear Annotations. **File**: Save, Save As. A
+caller's own custom tools get a fifth **Custom** menu, created lazily on
+first ``plotpressAddTool()`` call -- never folded into a built-in one.
 
-**Hide All** is not a mode -- it's a standalone toggle, available
-regardless of the current mode, that hides every pin/annotation (both
-auto-generated Point Picking markers and user-written Annotation notes)
-*and* every boxed ``ax.text()``/``ax.annotate(bbox=...)`` callout the
-figure itself drew (a plain, unboxed label is not a callout in this sense
-and always stays visible), without deleting any of it -- unlike Clear
-Points/Clear Annotations, which do delete, and unlike either of those,
-Hide All has never been scoped to one kind or the other. Toggling it back
-to "Show All" brings everything back exactly as it was, including any text
-or selection state -- it only ever flips a CSS display rule, never touches
-the underlying marker/text data. Leftmost in the Annotation row -- the one
-view-control tool, ahead of the mark/clear pairs it can hide without
-clearing.
-
-**Extract** opens a panel to copy out picked/annotated points as CSV.
+**Extract** opens a panel to copy out picked points (not annotations -- see
+``doExtract()``) as CSV.
 
 **Save As** downloads the current page -- pan/zoom, every pin/annotation,
-hidden-legend-series toggles, and Hide All -- as a new, equally
-self-contained HTML file: reopening it resumes exactly where this session
-left off, not just what was originally plotted. **Save** does the same but
+hidden-legend-series toggles, and Hide Points/Hide Annotations -- as a new,
+equally self-contained HTML file: reopening it resumes exactly where this
+session left off, not just what was originally plotted. **Save** does the same but
 tries to overwrite the file this page was opened from instead of downloading
 a new one; that needs the File System Access API (Chromium, a secure
 context), so elsewhere it falls back to the same download Save As does.
@@ -181,10 +187,14 @@ _JS_SOURCE = r"""
   var view = vb.slice();
   var zoomScale = 1;
   // The SVG's own on-page CSS size at zoomScale 1 -- the baseline zoomTo()
-  // scales from. Read once, now: by the time this script runs (placed right
-  // after the SVG in the document), the browser has already laid it out, so
-  // this reflects its true natural size (fixed pixels in a standalone file;
-  // whatever its container currently resolves width:100% to, embedded).
+  // scales from, and what a pin's own 1/zoomScale compensation (see
+  // layoutPin) assumes applyZoomSize is scaling up from. Read once, now: by
+  // the time this script runs (placed right after the SVG in the
+  // document), the browser has already laid it out, so this reflects its
+  // true natural size (fixed pixels in a standalone file; whatever its
+  // container currently resolves width:100% to, embedded) -- inserting the
+  // menu bar later doesn't change it, since the bar is position:fixed and
+  // so never participates in document flow/layout at all.
   var naturalW = svg.getBoundingClientRect().width;
   var naturalH = svg.getBoundingClientRect().height;
   var wrap = null;              // container holding the svg (for docked sliders)
@@ -358,49 +368,104 @@ _JS_SOURCE = r"""
   var down = null, moved = false, panV = null, rubber = null, panAxes = null;
 
   // ---- toolbar -----------------------------------------------------------
+  // A docked menu bar (Axes / Point Picking / Annotate / File) -- docked in
+  // the sense that it's a real, single row spanning the figure's own
+  // width, not the sense that it takes up layout space of its own:
+  // position:fixed, pinned to the viewport's top-left corner, exactly like
+  // the flat toolbar this design replaces. That's deliberate, not an
+  // oversight -- an in-flow bar (this design's first attempt) scrolls away
+  // with the rest of the page the moment Pan/Zoom's whole-figure
+  // Magnify makes the figure bigger than the window and the user pans or
+  // scrolls to reach the rest of it, and position:sticky (the natural next
+  // attempt, "in flow until you'd scroll past it, then pinned") turned out
+  // not to reliably track a *dynamically* resized ancestor's bounds across
+  // browsers either -- so plotpress/figure.py's _toolbar_clearance is back
+  // to reserving real padding for it (standalone=False's body, and
+  // Report.save's <iframe> height guess), the same job it always did.
   var style = document.createElement('style');
   style.textContent =
-    '.plotpress-toolbar-wrap{position:fixed;top:10px;right:10px;display:flex;' +
-    'flex-direction:column;align-items:flex-end;gap:4px;' +
-    'font:12px system-ui,sans-serif;z-index:1000}' +
-    '.plotpress-toolbar-row{display:flex;gap:4px}' +
-    // navBar/markBar's own "navigate + persist" vs "mark data + get it out"
-    // split (see the TOOLS comment below) already exists structurally --
-    // this just makes it visible, a small label above each row rather than
-    // relying on the reader to infer the grouping from row position alone.
-    '.plotpress-toolbar-group{display:flex;flex-direction:column;gap:3px}' +
-    '.plotpress-toolbar-group-label{font:600 9px system-ui,sans-serif;' +
-    'letter-spacing:.06em;color:#888;text-transform:uppercase;padding-right:2px}' +
-    '.plotpress-toolbar{display:flex;gap:4px}' +
-    '.plotpress-toolbar-custom{border-top:1px dashed #b8b8b8;padding-top:4px}' +
-    // line-height is explicit (not the browser's "normal") specifically so
-    // the toggle below can share this exact value -- "normal" resolves
-    // relative to font-size, so a 13px toggle glyph next to 12px button
-    // text would land at a different line-height purely from that font-size
-    // gap even with identical padding, off by a few px despite every other
-    // rule matching. Sharing one explicit number removes that as a variable
-    // entirely -- height now depends only on padding/border, which the two
-    // rules already share.
-    '.plotpress-toolbar button,.plotpress-toolbar-toggle{padding:6px 11px;' +
-    'border:1px solid #b8b8b8;background:#fff;color:#222;border-radius:6px;' +
-    'cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.18);' +
-    'font:12px system-ui,sans-serif;line-height:16px}' +
-    // font-size:18px was visibly oversized next to the 12px button labels
-    // (fixed by the smaller font-size here) -- line-height is deliberately
-    // NOT overridden here, so it keeps the exact 16px shared with every
-    // other button above rather than reintroducing a height mismatch.
-    // Separately, topRow's default flex align-items:stretch grows the
-    // toggle to match navGroup's *full* height (label + button row) rather
-    // than its own natural size -- align-self:flex-end opts it out of that
-    // stretch *and* lines its bottom edge up with navGroup's own bottom
-    // edge, which is exactly where navBar's button row sits (navBar is
-    // navGroup's last child) -- flex-start would instead line the toggle up
-    // with the "Navigation" label above the buttons, which is what
-    // actually read as "the arrow sits above the other buttons."
-    '.plotpress-toolbar-toggle{font-size:13px;align-self:flex-end}' +
-    '.plotpress-toolbar button:hover,.plotpress-toolbar-toggle:hover{background:#f1f1f1}' +
-    '.plotpress-toolbar button.active{background:#2b8cff;color:#fff;' +
-    'border-color:#2b8cff}' +
+    // width:100% -- not a JS-computed pin to the figure's own width -- so
+    // the bar always spans the entire window, independent of how wide any
+    // one figure on the page happens to be (a position:fixed element's
+    // percentage width resolves against the viewport itself, the initial
+    // containing block, not against any narrower ancestor). The mode
+    // indicator's own margin-left:auto (see .plotpress-mode-indicator
+    // below) then rides the far right edge of that full-width bar.
+    // overflow: default (visible) is deliberate, not an oversight -- a
+    // dropdown (.plotpress-menu-dropdown below) is an absolutely
+    // positioned descendant that pops open *below* this row's own box, and
+    // setting overflow-x to anything but visible here (even leaving
+    // overflow-y itself unset) computes overflow-y to auto too, silently
+    // clipping every open dropdown out of view. white-space:nowrap on the
+    // label/button rules below still keeps every label from wrapping onto
+    // a second line even on a figure narrower than the bar's full content
+    // needs; on a genuinely narrow window the rightmost items (the mode
+    // indicator especially) can render past the visible edge with no way
+    // to scroll to them, a real but much rarer tradeoff than dropdowns
+    // that never show at all.
+    '.plotpress-menubar{display:flex;align-items:center;gap:2px;' +
+    'position:fixed;top:0;left:0;z-index:1500;width:100%;box-sizing:border-box;' +
+    'padding:5px 8px;background:#fafbfc;' +
+    'border-bottom:1px solid #d5d9e0;font:12px system-ui,sans-serif}' +
+    '.plotpress-menu{position:relative}' +
+    '.plotpress-menu-label{display:flex;align-items:center;gap:5px;' +
+    'padding:5px 10px;border:1px solid transparent;background:transparent;' +
+    'color:#222;border-radius:6px;cursor:pointer;white-space:nowrap;' +
+    'font:600 12px system-ui,sans-serif}' +
+    '.plotpress-menu-label:hover{background:#eef0f3}' +
+    '.plotpress-menu.open .plotpress-menu-label{background:#e8eeff;' +
+    'color:#2b5bd7}' +
+    '.plotpress-chev{font-size:9px;opacity:.6}' +
+    '.plotpress-menu-dropdown{position:absolute;top:calc(100% + 5px);' +
+    'left:0;min-width:170px;background:#fff;border:1px solid #b8b8b8;' +
+    'border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.16);padding:5px;' +
+    'display:none;flex-direction:column;gap:1px;z-index:1000}' +
+    '.plotpress-menu.open .plotpress-menu-dropdown{display:flex}' +
+    // .plotpress-toolbar now names a dropdown's own item list -- kept as
+    // the class every button-styling rule below keys off, and what
+    // tests/test_pick_interactive.py's _click_mode() selects buttons by,
+    // stable across the redesign on purpose.
+    // No display: here on purpose -- a dropdown carries both
+    // .plotpress-menu-dropdown (display:none by default, display:flex only
+    // while .open, see above) and .plotpress-toolbar (kept as the stable
+    // class tests/test_pick_interactive.py's _click_mode() selects buttons
+    // by); giving this rule its own display:flex would tie its specificity
+    // with .plotpress-menu-dropdown's, and being the later rule, silently
+    // win, keeping every dropdown visible regardless of .open.
+    '.plotpress-toolbar{flex-direction:column;gap:1px}' +
+    '.plotpress-toolbar button{display:flex;align-items:center;gap:8px;' +
+    'width:100%;text-align:left;padding:7px 9px;border:none;white-space:nowrap;' +
+    'background:transparent;color:#222;border-radius:5px;cursor:pointer;' +
+    'font:12px system-ui,sans-serif}' +
+    '.plotpress-toolbar button:hover{background:#f1f1f1}' +
+    '.plotpress-toolbar button.active{background:#2b8cff;color:#fff}' +
+    '.plotpress-toolbar button.toggled{background:#e8eeff;color:#2b5bd7}' +
+    // Pan/Zoom and Home sit directly on the bar, not behind a
+    // menu -- the whole-figure tool reached for constantly, and the reset
+    // that undoes it, close enough to be worth skipping a menu's extra
+    // click every time (see the standaloneGroup comment below). Still
+    // .plotpress-toolbar (the stable test-selector class, see above) so
+    // button/.active/.toggled styling and every existing click-by-label
+    // test helper keep working unchanged. Needs its own explicit
+    // display:flex, unlike a real dropdown -- .plotpress-toolbar itself
+    // carries none (see the comment on it above: a dropdown's display
+    // toggles via .plotpress-menu-dropdown/.open instead), but this group
+    // is never a .plotpress-menu-dropdown, so nothing else would ever give
+    // it one; flex-direction/width also overridden back to a normal
+    // horizontal bar group here, later in source than the column-flex
+    // .plotpress-toolbar rule above so it actually wins (same tied-
+    // specificity trap noted there).
+    '.plotpress-standalone-group{display:flex;flex-direction:row;gap:2px}' +
+    '.plotpress-standalone-group button{width:auto;font-weight:600}' +
+    '.plotpress-menubar-divider{width:1px;align-self:stretch;' +
+    'background:#d5d9e0;margin:0 4px}' +
+    '.plotpress-menu-divider{height:1px;background:#e4e6ea;margin:4px 2px}' +
+    '.plotpress-mode-indicator{display:flex;align-items:center;gap:6px;' +
+    'margin-left:auto;padding:4px 10px 4px 8px;background:#eef2ff;' +
+    'border-radius:999px;font:500 11px system-ui,sans-serif;color:#2b5bd7;' +
+    'white-space:nowrap}' +
+    '.plotpress-mode-dot{width:6px;height:6px;border-radius:50%;' +
+    'background:#2b6cff;flex:none}' +
     '.plotpress-sliders{position:fixed;bottom:12px;left:50%;' +
     'transform:translateX(-50%);display:flex;flex-direction:column;' +
     'gap:6px;z-index:1000}' +
@@ -420,7 +485,11 @@ _JS_SOURCE = r"""
     'border-radius:4px;padding:0 5px;font-weight:600;color:#2b5bd7}' +
     '.plotpress-pin.selected circle{fill:#2b8cff}' +   /* r itself: selectPin(), scaled per-pin */
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
-    '.plotpress-hide-annotations .plotpress-pin{display:none}' +
+    // Hide Points/Hide Annotations toggle independently -- one class per
+    // kind, keyed the same way Clear Points/Clear Annotations and
+    // isAnnotationPin() already split .plotpress-pin by .plotpress-note.
+    '.plotpress-hide-points .plotpress-pin:not(.plotpress-note){display:none}' +
+    '.plotpress-hide-annotations .plotpress-pin.plotpress-note{display:none}' +
     // "move" only on the box itself (not the dot, which stays a plain
     // click target -- see contextmenu/click above) and only while the
     // mode that would let a drag actually happen is active -- see
@@ -429,11 +498,10 @@ _JS_SOURCE = r"""
     '.plotpress-pin.plotpress-drag-ready text{cursor:move}' +
     // A boxed ax.text()/ax.annotate() call -- see svg._render_text's
     // plotpress-textbox group -- is a *static* callout the figure itself
-    // drew, not an interactive pin, but it reads the same way on screen, so
-    // Hide All takes it too.
+    // drew, not an interactive pin, but it reads the same way on screen and
+    // is closer in spirit to a user-written note than a picked data point,
+    // so Hide Annotations takes it too.
     '.plotpress-hide-annotations .plotpress-textbox{display:none}' +
-    '.plotpress-toolbar button.toggled{background:#e8eeff;border-color:#2b5bd7;' +
-    'color:#2b5bd7}' +
     '.plotpress-zoom line,.plotpress-zoom path{vector-effect:non-scaling-stroke}' +
     // Markers are the one exception: a marker's size represents a footprint
     // on the data (scatter's `s=`, plot's `markersize=`), so a per-axes
@@ -451,7 +519,7 @@ _JS_SOURCE = r"""
     // (see applyZoomSize) restores real, both-directions scrolling; the
     // default centered layout returns the moment zoomScale is back to 1.
     'body.plotpress-zoomed{display:block;overflow:auto}' +
-    '.plotpress-extract{position:fixed;top:56px;right:10px;width:360px;' +
+    '.plotpress-extract{position:fixed;top:44px;right:10px;width:360px;' +
     'max-height:72vh;overflow:auto;background:#fff;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);padding:10px;' +
     'z-index:2000;font:12px system-ui,sans-serif}' +
@@ -461,125 +529,208 @@ _JS_SOURCE = r"""
     'background:#fff;border-radius:5px;cursor:pointer}';
   document.head.appendChild(style);
 
-  var toolbarWrap = document.createElement('div');
-  toolbarWrap.className = 'plotpress-toolbar-wrap';
-  var topRow = document.createElement('div');
-  topRow.className = 'plotpress-toolbar-row';
-  var navBar = document.createElement('div');    // view: navigate + persist it
-  navBar.className = 'plotpress-toolbar plotpress-toolbar-nav';
-  var markBar = document.createElement('div');   // data: mark it + get it out
-  markBar.className = 'plotpress-toolbar plotpress-toolbar-mark';
-  // Two rows, each its own coherent group, not the order features were
-  // added in: Navigation -- navigate the view, reset it, and persist it
-  // (figure navigator leftmost, then axis span/zoom, both resets, then
-  // save/save as) -- on top; Annotation -- mark data, control what's
-  // visible, and get it out (Hide All leftmost, then point picking/clear
-  // points, the annotation mode/clear annotations, then extract) --
-  // below. Save/Save As persist pan/zoom/pins/toggles -- the whole current
-  // *view* -- which is squarely what "navigate the view... and persist it"
-  // already covers; a standalone third row for just the two of them was
-  // tried and dropped -- it cost a full extra label+row of vertical space
-  // for two buttons, the sparsest row in the toolbar, worse on both the
-  // "minimum space" and "intuitive" fronts than folding them back in here.
-  // Figure Navigator leads Navigation as the one whole-figure-level tool,
-  // ahead of the per-axes Span/Zoom pair. Both resets sit right after the
-  // pair of tools each one undoes -- Reset All Axes next to Axis Span/Zoom
-  // (the per-axes view it restores), Reset Figure next to that (the
-  // whole-figure magnification it restores) -- then Save/Save As trail the
-  // row, the last "do something to the view" step. Hide All leads
-  // Annotation the same way Figure Navigator leads Navigation -- the one
-  // view-control tool, ahead of the mark/clear pairs it can hide *without*
-  // clearing. Clear Points/Clear Annotations each sit right after the tool
-  // that creates what they clear, the same pairing principle the resets
-  // use -- rather than one "Clear Points" button silently clearing
-  // annotations too, which is what an earlier pass here did (a single
-  // .plotpress-pin selector doesn't distinguish the two, unlike the
-  // .plotpress-note class addFreeNote already tags annotations with).
-  // `row` picks navBar (1) vs markBar (2) below -- kept on each entry
-  // rather than as two separate arrays so the whole toolbar is still one
-  // list to read top to bottom.
+  var menubar = document.createElement('div');
+  menubar.className = 'plotpress-menubar';
+  var menuNodes = [];
+  function closeAllMenus() {
+    menuNodes.forEach(function (m) { m.classList.remove('open'); });
+  }
+  function buildMenu(label) {
+    var menu = document.createElement('div');
+    menu.className = 'plotpress-menu';
+    var labelBtn = document.createElement('button');
+    labelBtn.className = 'plotpress-menu-label';
+    labelBtn.appendChild(document.createTextNode(label + ' '));
+    var chev = document.createElement('span');
+    chev.className = 'plotpress-chev';
+    chev.textContent = '▾';
+    labelBtn.appendChild(chev);
+    labelBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var willOpen = !menu.classList.contains('open');
+      closeAllMenus();
+      if (willOpen) menu.classList.add('open');
+    });
+    var dropdown = document.createElement('div');
+    dropdown.className = 'plotpress-toolbar plotpress-menu-dropdown';
+    menu.appendChild(labelBtn);
+    menu.appendChild(dropdown);
+    menubar.appendChild(menu);
+    menuNodes.push(menu);
+    return dropdown;
+  }
+  // Closing on any click outside every menu -- not just the menubar --
+  // covers interacting with the SVG itself (picking a point, panning) the
+  // same way a real desktop app's menu would: doing something with an open
+  // dropdown still showing dismisses it. Escape closes one too (see the
+  // keydown handler far below) -- but only that, when one is open: Escape
+  // otherwise means "clear every pin/annotation" (clearAllPins), and a menu
+  // being open must not silently reroute a plain "close this menu" press
+  // into wiping every pin instead.
+  document.addEventListener('click', function () { closeAllMenus(); });
+
+  // Pan/Zoom and Home sit standalone at the far left (see
+  // standaloneGroup below), not behind their own "Figure" menu -- an
+  // earlier version of this design tucked them (and Hide All) into one,
+  // but a menu just to hold the one tool reached for most, plus the reset
+  // that undoes it, cost a click every single time for no real grouping
+  // benefit; Hide All itself later split into the per-kind Hide
+  // Points/Hide Annotations that now live in the Point Picking/Annotate
+  // menus below, alongside Clear Points/Clear Annotations. Four menus for
+  // everything else, split by scope: whole-figure-vs-per-axes vs. Point
+  // Picking pulled onto its own, since it's the next most-reached-for
+  // tool. `row` from the old two-row layout becomes `menu` below; the
+  // reasoning for each button's own position otherwise carries over
+  // unchanged from the two-row design this replaces -- Axis Span/Zoom lead
+  // Axes, Reset All Axes after them -- the pair it undoes. Point Picking,
+  // Hide Points, Clear Points, and Extract share a menu now: Extract only
+  // ever returns Point Picking markers (see doExtract() below), so it
+  // moved out of a standalone spot in the old Annotation row to sit with
+  // the tool it actually reads from -- Annotate has no export of its own.
+  // Save/Save As get their own File menu instead of trailing Figure the
+  // way they trailed Navigation before -- persisting pan/zoom/pins/toggles
+  // is squarely "do something with the view", the reasoning that kept them
+  // off a row of their own previously, but a third or fourth *menu* costs
+  // nothing a third *row* wouldn't have.
   var TOOLS = [
-    { mode: 'magnify', label: 'Figure Navigator', row: 1 },
-    { mode: 'span', label: 'Axis Span', row: 1 },
-    { mode: 'zoom', label: 'Axis Zoom', row: 1 },
-    { action: 'reset-axes', label: 'Reset All Axes', row: 1 },
-    { action: 'reset-figure', label: 'Reset Figure', row: 1 },
-    { action: 'save', label: 'Save', row: 1 },
-    { action: 'save-as', label: 'Save As', row: 1 },
-    { action: 'toggle-annotations', label: 'Hide All', row: 2 },
-    { mode: 'pick', label: 'Point Picking', row: 2 },
-    { action: 'clear-points', label: 'Clear Points', row: 2 },
-    { mode: 'note-free', label: 'Annotation', row: 2 },
-    { action: 'clear-annotations', label: 'Clear Annotations', row: 2 },
-    { action: 'extract', label: 'Extract', row: 2 },
+    { mode: 'magnify', label: 'Pan/Zoom', standalone: true },
+    { action: 'reset-figure', label: 'Home', standalone: true },
+    { mode: 'span', label: 'Axis Span', menu: 'Axes' },
+    { mode: 'zoom', label: 'Axis Zoom', menu: 'Axes' },
+    { action: 'reset-axes', label: 'Reset All Axes', menu: 'Axes', divider: true },
+    { mode: 'pick', label: 'Point Picking', menu: 'Point Picking' },
+    { action: 'toggle-points', label: 'Hide Points', menu: 'Point Picking', divider: true },
+    { action: 'clear-points', label: 'Clear Points', menu: 'Point Picking', divider: true },
+    { action: 'extract', label: 'Extract', menu: 'Point Picking', divider: true },
+    { mode: 'note-free', label: 'Annotation', menu: 'Annotate' },
+    { action: 'toggle-annotations', label: 'Hide Annotations', menu: 'Annotate', divider: true },
+    { action: 'clear-annotations', label: 'Clear Annotations', menu: 'Annotate', divider: true },
+    { action: 'save', label: 'Save', menu: 'File' },
+    { action: 'save-as', label: 'Save As', menu: 'File' },
   ];
+  var pointsHidden = false;
   var annotationsHidden = false;
-  // "Hide All" -- both Point Picking pins and Annotation notes alike (see
-  // the .plotpress-hide-annotations CSS rule above, which targets every
-  // .plotpress-pin with no .plotpress-note distinction), plus every
-  // figure-drawn boxed callout -- not scoped to "annotations" specifically
-  // despite the CSS class/variable names staying as-is internally (already
-  // this general before the rename; only the button's own label changes
-  // here, to stop implying a narrower scope than it's ever actually had).
-  function toggleAnnotations(b) {
+  // Hide Points/Hide Annotations toggle independently -- one class per kind
+  // (see the .plotpress-hide-points/.plotpress-hide-annotations CSS rules
+  // above), the same split Clear Points/Clear Annotations already use.
+  // Hide Annotations additionally takes every figure-drawn boxed callout --
+  // not scoped to "annotations" specifically despite the CSS class name,
+  // see the CSS comment above for why it landed here rather than under
+  // Hide Points.
+  function togglePointsHidden(b) {
+    pointsHidden = !pointsHidden;
+    svg.classList.toggle('plotpress-hide-points', pointsHidden);
+    b.textContent = pointsHidden ? 'Show Points' : 'Hide Points';
+    b.classList.toggle('toggled', pointsHidden);
+  }
+  function toggleAnnotationsHidden(b) {
     annotationsHidden = !annotationsHidden;
     svg.classList.toggle('plotpress-hide-annotations', annotationsHidden);
-    b.textContent = annotationsHidden ? 'Show All' : 'Hide All';
+    b.textContent = annotationsHidden ? 'Show Annotations' : 'Hide Annotations';
     b.classList.toggle('toggled', annotationsHidden);
   }
-  var BAR_FOR_ROW = { 1: navBar, 2: markBar };
+  // Pan/Zoom and Home sit directly on the bar, at the far
+  // left, rather than behind their own "Figure" menu -- reached for often
+  // enough (Pan/Zoom especially) that the extra click to open a
+  // menu first isn't worth paying every time, unlike everything else,
+  // which stays menu-grouped. Still .plotpress-toolbar (see the CSS
+  // comment above) so every button/.active/.toggled style and the existing
+  // click-by-label test helpers keep finding them the same way.
+  var standaloneGroup = document.createElement('div');
+  standaloneGroup.className = 'plotpress-toolbar plotpress-standalone-group';
+  menubar.appendChild(standaloneGroup);
+  var standaloneDivider = document.createElement('div');
+  standaloneDivider.className = 'plotpress-menubar-divider';
+  menubar.appendChild(standaloneDivider);
+
+  var DROPDOWN_FOR_MENU = {};
+  ['Axes', 'Point Picking', 'Annotate', 'File'].forEach(function (name) {
+    DROPDOWN_FOR_MENU[name] = buildMenu(name);
+  });
+
+  // A mode item is checkable, not a one-shot action: a single click selects
+  // it without closing its own menu, so picking a different tool from the
+  // same menu -- or double-clicking this one to clear it -- doesn't need
+  // reopening it first. A single click can't double as "click the active
+  // one again to turn it off" the way the old flat toolbar row's buttons
+  // could: in a menu, one click already means "choose this", so reusing it
+  // for "and now un-choose it" would be ambiguous. Double-click is
+  // unambiguous instead -- but naively wiring that as its own 'dblclick'
+  // listener (fired strictly after both 'click' events, per the DOM spec)
+  // deselects unconditionally: double-clicking a tool that was *not* yet
+  // active would still select-then-immediately-deselect it, since by the
+  // time 'dblclick' runs, this tool's own first click has already made it
+  // the active one. `e.detail` (the browser's own same-target click count)
+  // sidesteps that: captured only on a sequence's first click, so a second
+  // click can tell "was this already active before *this* gesture" apart
+  // from "just became active because of this gesture's own first click".
+  // `alwaysClose` is for the standalone group above -- it has no dropdown
+  // of its own to keep open, so selecting one of its tools should still
+  // close whatever *other* menu happens to be open, the same as any
+  // one-shot action does.
+  function attachModeButton(b, m, alwaysClose) {
+    var startedActive = false;
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();   // else the document-level listener (below)
+                             // sees the same click bubble up and closes
+                             // this menu right back -- a mode selection is
+                             // meant to stay open.
+      if (e.detail < 2) startedActive = (mode === m);
+      if (e.detail >= 2 && startedActive) { setMode(null); closeAllMenus(); return; }
+      setMode(m);
+      if (alwaysClose) closeAllMenus();
+    });
+    // Swallow the native dblclick too -- otherwise a fast double-click
+    // falls through to the browser's own default double-click text
+    // selection on whatever's nearby.
+    b.addEventListener('dblclick', function (e) { e.preventDefault(); });
+  }
   var buttons = TOOLS.map(function (t) {
+    var container = t.standalone ? standaloneGroup : DROPDOWN_FOR_MENU[t.menu];
+    if (t.divider) {
+      var div = document.createElement('div');
+      div.className = 'plotpress-menu-divider';
+      container.appendChild(div);
+    }
     var b = document.createElement('button');
     b.textContent = t.label;
-    if (t.mode) b.dataset.mode = t.mode;
-    b.addEventListener('click', function () {
-      if (t.action === 'extract') doExtract();
-      else if (t.action === 'toggle-annotations') toggleAnnotations(b);
-      else if (t.action === 'save') overwriteCurrentPage();
-      else if (t.action === 'save-as') saveAsNewPage();
-      else if (t.action === 'reset-figure') { zoomScale = 1; applyZoomSize(); }
-      else if (t.action === 'reset-axes') resetAxes();
-      else if (t.action === 'clear-points') clearPointPins();
-      else if (t.action === 'clear-annotations') clearAnnotationPins();
-      else setMode(t.mode);
-    });
-    BAR_FOR_ROW[t.row].appendChild(b);
+    if (t.mode) {
+      b.dataset.mode = t.mode;
+      attachModeButton(b, t.mode, t.standalone);
+    } else {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();   // else the document-level listener (below)
+                               // sees the same click bubble up and closes
+                               // this menu right back.
+        if (t.action === 'extract') doExtract();
+        else if (t.action === 'toggle-points') togglePointsHidden(b);
+        else if (t.action === 'toggle-annotations') toggleAnnotationsHidden(b);
+        else if (t.action === 'save') overwriteCurrentPage();
+        else if (t.action === 'save-as') saveAsNewPage();
+        else if (t.action === 'reset-figure') { zoomScale = 1; applyZoomSize(); }
+        else if (t.action === 'reset-axes') resetAxes();
+        else if (t.action === 'clear-points') clearPointPins();
+        else if (t.action === 'clear-annotations') clearAnnotationPins();
+        closeAllMenus();
+      });
+    }
+    container.appendChild(b);
     return b;
   });
-  // Wrapped in a labeled group each -- "Navigation" (navigate the view and
-  // persist it) above navBar, "Annotation" (mark data on a plot and get it
-  // back out) above markBar -- purely a visual label; the collapse toggle
-  // below still reaches navBar/markBar directly by reference, so it doesn't
-  // care that they now sit one level deeper.
-  var navGroup = document.createElement('div');
-  navGroup.className = 'plotpress-toolbar-group';
-  var navLabel = document.createElement('div');
-  navLabel.className = 'plotpress-toolbar-group-label';
-  navLabel.textContent = 'Navigation';
-  navGroup.appendChild(navLabel);
-  navGroup.appendChild(navBar);
-  topRow.appendChild(navGroup);
 
   // Public extension point for a caller's own extra_js= (see Figure.to_html):
-  // add a button to its own row, stacked below plotpress's own -- a dashed
-  // top border marks it as a separate group rather than folding it into
-  // the built-in row, which would otherwise (a) run the built-in row even
-  // longer as more custom tools are added, and (b) blur the line between
-  // "plotpress's own tools" and "this page's own", something worth keeping
-  // legible on sight -- especially for a custom toolbar an AI wrote against
-  // this API rather than a human hand-placing each button. Created lazily,
-  // on the first call: a page with no custom tools gets no empty second row
-  // to explain. Two shapes, mirroring TOOLS above --
-  // {label, onClick}: an always-available action, firing immediately on
-  // click, like Extract/Save. {label, mode, onClick, onEnter, onExit,
-  // cursor}: a real *mode*, joining the same single-selection group as
-  // Figure Navigator/Axis Span/Zoom/Point Picking/Annotation -- picking it
-  // deselects whatever else was active, and vice versa (see setMode's
-  // `mode = (mode === m) ? null : m` toggle, and the `buttons` array/
-  // dataset.mode CSS-'active' sync below, both of which already work for
-  // any button in `buttons` generically, custom or not). Selected, a click
-  // on the SVG that no built-in mode already claims (`note-free`/`pick` --
-  // see the top-level click listener's own custom-mode fallback) calls
+  // add a tool to its own menu, created lazily on first call -- a page with
+  // no custom tools gets no empty extra menu to explain. Two shapes,
+  // mirroring TOOLS above -- {label, onClick}: an always-available action,
+  // firing immediately on click, like Extract/Save. {label, mode, onClick,
+  // onEnter, onExit, cursor}: a real *mode*, joining the same
+  // single-selection group as Pan/Zoom, Axis Span/Zoom, Point
+  // Picking, or Annotation -- picking it deselects whatever else was active,
+  // and vice versa (see setMode below, and the `buttons` array/dataset.mode
+  // CSS-'active' sync inside it, both of which already work for any button
+  // in `buttons` generically, custom or not). Selected, a click on the SVG
+  // that no built-in mode already claims (`note-free`/`pick` -- see the
+  // top-level click listener's own custom-mode fallback) calls
   // onClick(event, toUser(event)) -- the same svg-event-to-user-space-point
   // helper Span/Zoom/pick already build on, so a custom tool gets a real
   // data-space point for free rather than raw client pixels. onEnter/onExit
@@ -592,76 +743,73 @@ _JS_SOURCE = r"""
   // custom tool whose own interaction depends on letting the user select
   // text will need to restore it manually from its own onEnter/onExit.
   var CUSTOM_MODES = {};
-  var customBar = null;   // created on first addTool() call, not up front
+  var customDropdown = null;   // created on first addTool() call, not up front
   function addTool(opts) {
     var b = document.createElement('button');
     b.textContent = opts.label;
     if (opts.mode) {
       b.dataset.mode = opts.mode;
       CUSTOM_MODES[opts.mode] = opts;
-      b.addEventListener('click', function () { setMode(opts.mode); });
+      attachModeButton(b, opts.mode);
     } else {
       b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
         if (opts.onClick) opts.onClick(ev);
+        closeAllMenus();
       });
     }
-    if (!customBar) {
-      customBar = document.createElement('div');
-      customBar.className = 'plotpress-toolbar plotpress-toolbar-custom';
-      toolbarWrap.appendChild(customBar);
+    if (!customDropdown) {
+      customDropdown = buildMenu('Custom');
+      // buildMenu() appends to menubar's end, which -- since the mode
+      // indicator is already there by the time any addTool() call can run
+      // -- would otherwise land the Custom menu after it instead of
+      // alongside the five built-in ones.
+      menubar.insertBefore(customDropdown.parentElement, modeIndicator);
     }
-    customBar.appendChild(b);
+    customDropdown.appendChild(b);
     buttons.push(b);
     return b;
   }
   window.plotpressAddTool = addTool;
 
-  // A separate, never-hidden handle: hiding the button row(s) themselves
-  // would otherwise take away the only way to bring them back. No state
-  // persists across a reload/Save -- collapsing the toolbar is a per-view
-  // convenience (decluttering a screenshot, say), not something worth
-  // resuming into. Covers markBar and customBar too, when a page has one:
-  // the same "declutter a screenshot" motivation applies to every row
-  // alike, not just the one the toggle happens to sit next to.
-  var toolbarToggle = document.createElement('button');
-  toolbarToggle.className = 'plotpress-toolbar-toggle';
-  toolbarToggle.title = 'Hide toolbar';
-  toolbarToggle.textContent = '▸';   // ▸: collapses the row away, toward the edge
-  toolbarToggle.addEventListener('click', function () {
-    var collapsed = navBar.style.display === 'none';
-    navBar.style.display = collapsed ? 'flex' : 'none';
-    markBar.style.display = collapsed ? 'flex' : 'none';
-    // The "Navigation"/"Annotation" labels have to collapse with their own
-    // row, not stay behind on their own -- a label with no buttons left
-    // under it defeats the declutter-a-screenshot point of collapsing in
-    // the first place (found by actually looking at the collapsed state,
-    // not just reading the toggle logic).
-    navLabel.style.display = collapsed ? '' : 'none';
-    markLabel.style.display = collapsed ? '' : 'none';
-    if (customBar) customBar.style.display = collapsed ? 'flex' : 'none';
-    toolbarToggle.textContent = collapsed ? '▸' : '◂';   // ◂: brings it back
-    toolbarToggle.title = collapsed ? 'Hide toolbar' : 'Show toolbar';
-  });
-  topRow.appendChild(toolbarToggle);
-  toolbarWrap.appendChild(topRow);
-  var markGroup = document.createElement('div');
-  markGroup.className = 'plotpress-toolbar-group';
-  var markLabel = document.createElement('div');
-  markLabel.className = 'plotpress-toolbar-group-label';
-  markLabel.textContent = 'Annotation';
-  markGroup.appendChild(markLabel);
-  markGroup.appendChild(markBar);
-  toolbarWrap.appendChild(markGroup);
-  document.body.appendChild(toolbarWrap);
+  var modeIndicator = document.createElement('span');
+  modeIndicator.className = 'plotpress-mode-indicator';
+  var modeDot = document.createElement('span');
+  modeDot.className = 'plotpress-mode-dot';
+  var modeText = document.createElement('span');
+  modeIndicator.appendChild(modeDot);
+  modeIndicator.appendChild(modeText);
+  menubar.appendChild(modeIndicator);
+
+  function modeLabel(m) {
+    if (!m) return 'No tool active';
+    for (var i = 0; i < TOOLS.length; i++) {
+      if (TOOLS[i].mode === m) return TOOLS[i].label;
+    }
+    return (CUSTOM_MODES[m] && CUSTOM_MODES[m].label) || m;
+  }
+
+  // Inserted as the very first thing in the body, same corner the old flat
+  // toolbar row always occupied -- harmless regardless of exactly where it
+  // sits in the DOM, since position:fixed ignores document flow/layout
+  // entirely and z-index (see the CSS above) settles any stacking order
+  // question on its own; first-child just keeps a reader's tab order
+  // matching what's visually first. Its width:100% (see the CSS above)
+  // needs no JS help spanning the window -- unlike the figure it sits
+  // above, which really is only ever as wide as naturalW/zoomScale say.
+  document.body.insertBefore(menubar, document.body.firstChild);
 
   function setMode(m) {
     // Cancel anything in progress and clear transient state.
     down = null; removeRubber();
     var prevMode = mode;
-    // Reset Figure/Reset Axes are one-shot actions dispatched directly by
-    // their own button handler (see `buttons` below), not modes -- this
-    // only ever sees a real mode name now.
-    mode = (mode === m) ? null : m;  // clicking the active tool turns it off
+    // Home and Reset All Axes are one-shot actions dispatched directly by
+    // their own button handler (see `buttons` above), not modes -- this
+    // only ever sees a real mode name now. Always sets the target mode
+    // directly, never toggles: a click on a menu item always selects it
+    // (see the buttons.map click handler above); double-click is the only
+    // way to deselect (see attachDeselect above), called with m=null.
+    mode = m;
     // A custom tool's own onEnter/onExit (see addTool/plotpressAddTool) --
     // fired after the mode itself has already changed, so either callback
     // can safely read the new `mode`/call setMode() again without racing
@@ -675,6 +823,7 @@ _JS_SOURCE = r"""
     buttons.forEach(function (b) {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
+    modeText.textContent = modeLabel(mode);
     var custom = mode && CUSTOM_MODES[mode];
     svg.style.cursor =
       mode === 'span' ? 'grab' :
@@ -879,7 +1028,7 @@ _JS_SOURCE = r"""
   // Point Picking only -- an axes with pickable=false (see
   // Axes.set_pickable) is treated as if the click missed every axes, so a
   // figure can restrict that tool to a single panel by disabling the rest.
-  // Axis Span, Axis Zoom, Figure Navigator, and Annotation go through
+  // Axis Span, Axis Zoom, Pan/Zoom, and Annotation go through
   // axesAt() directly and ignore this flag.
   function pickableAxesAt(p) {
     var a = axesAt(p);
@@ -1929,6 +2078,10 @@ _JS_SOURCE = r"""
     return rec;
   }
 
+  // Every pin, Point Picking and Annotation alike -- this is the general
+  // public query (window.plotpressGetMarkers, qt.py's LiveArtist marker
+  // sync, a custom tool's own onClick logging its progress), not Extract's.
+  // Extract itself is narrower -- see doExtract below.
   function getMarkers() {
     return Array.prototype.map.call(
       document.querySelectorAll('.plotpress-pin'), markerRecord);
@@ -2014,8 +2167,16 @@ _JS_SOURCE = r"""
     ta.focus(); ta.select();
   }
 
+  // Point Picking markers only, not Annotation notes -- Extract now lives
+  // solely under the Point Picking menu (see TOOLS above), so its own
+  // output scopes to match; an Annotation note has nothing to "extract" in
+  // the same sense a picked data value does. :not(.plotpress-note) is the
+  // one line doing that filtering -- getMarkers() above (and every other
+  // .plotpress-pin selector in this file that isn't already kind-specific,
+  // like drag-ready and clearAllPins) deliberately still covers both kinds.
   function doExtract() {
-    var records = getMarkers();
+    var records = Array.prototype.map.call(
+      document.querySelectorAll('.plotpress-pin:not(.plotpress-note)'), markerRecord);
     // Hand off to Python when running inside the native (pywebview) window.
     try {
       if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
@@ -2118,7 +2279,8 @@ _JS_SOURCE = r"""
     return {
       zoomScale: zoomScale, scrollX: window.scrollX, scrollY: window.scrollY,
       axes: axesView, pins: serializePins(),
-      annotationsHidden: annotationsHidden, hiddenLegendLabels: hiddenLabels,
+      pointsHidden: pointsHidden, annotationsHidden: annotationsHidden,
+      hiddenLegendLabels: hiddenLabels,
     };
   }
 
@@ -2136,11 +2298,17 @@ _JS_SOURCE = r"""
         refreshAxes(k);
       });
     }
-    if (state.annotationsHidden) {
-      var toggleBtn = buttons.filter(function (b) {
-        return b.textContent === 'Hide All' || b.textContent === 'Show All';
+    if (state.pointsHidden) {
+      var pointsBtn = buttons.filter(function (b) {
+        return b.textContent === 'Hide Points' || b.textContent === 'Show Points';
       })[0];
-      if (toggleBtn) toggleAnnotations(toggleBtn);
+      if (pointsBtn) togglePointsHidden(pointsBtn);
+    }
+    if (state.annotationsHidden) {
+      var annotBtn = buttons.filter(function (b) {
+        return b.textContent === 'Hide Annotations' || b.textContent === 'Show Annotations';
+      })[0];
+      if (annotBtn) toggleAnnotationsHidden(annotBtn);
     }
     (state.hiddenLegendLabels || []).forEach(function (label) {
       document.querySelectorAll('.plotpress-legend text').forEach(function (t) {
@@ -2592,7 +2760,27 @@ _JS_SOURCE = r"""
   }
 
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { clearAllPins(); return; }
+    if (e.key === 'Escape') {
+      // An open menu eats Escape first -- closing it, the way any dropdown
+      // would, rather than falling through to clearAllPins()/setMode(null)
+      // underneath: a user pressing Escape just to dismiss a menu they
+      // opened to look around must never silently lose every
+      // pin/annotation (or the tool they had selected) as a side effect of
+      // that.
+      if (menuNodes.some(function (m) { return m.classList.contains('open'); })) {
+        closeAllMenus();
+      } else {
+        // Also deselects the active tool (if any), not just clearAllPins()
+        // -- the only way back to "no tool active" for a keyboard-only
+        // user, who has no double-click to deselect with (see
+        // attachModeButton above: a keyboard-triggered click can't be told
+        // apart from a mouse single-click, so it always selects, never
+        // deselects).
+        clearAllPins();
+        setMode(null);
+      }
+      return;
+    }
     if (!selectedPin) return;
     var dir = e.key === 'ArrowRight' ? 'right' : e.key === 'ArrowLeft' ? 'left' :
               e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : null;

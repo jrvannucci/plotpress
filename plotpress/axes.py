@@ -1961,7 +1961,7 @@ class Axes:
         ``False`` makes this axes behave, for that tool only, as if a
         click there landed outside every axes -- so restricting picking to
         one panel of a figure is ``set_pickable(False)`` on the others. Axis
-        Span, Axis Zoom, Figure Navigator, and Annotation are unaffected;
+        Span, Axis Zoom, Pan/Zoom, and Annotation are unaffected;
         every axes is pickable by default.
         """
         self._pickable = bool(pickable)

@@ -1757,10 +1757,10 @@ def _render_text(t: Text, tr, st, body, index=None):
     cscale = index is not None and not t.axes_fraction
     if cscale:
         body.append(_cscale_open(index, x, y))
-    # A boxed label is a "text box" the toolbar's Hide All toggle
-    # (see _interactive.py's .plotpress-textbox rule) can hide alongside every
-    # pin/annotation -- a plain unboxed label has no comparable "hide the
-    # callout" reading, so it stays outside the group and always shows.
+    # A boxed label is a "text box" the toolbar's Hide Annotations toggle
+    # (see _interactive.py's .plotpress-textbox rule) can hide alongside
+    # every Annotation note -- a plain unboxed label has no comparable "hide
+    # the callout" reading, so it stays outside the group and always shows.
     if t.bbox is not None:
         body.append('<g class="plotpress-textbox">')
         box = _bbox_pad(text_box(x, y, t.text, t.size, t.ha, t.va, st,
@@ -1813,7 +1813,7 @@ def _render_annotation(an: Annotation, tr, st, body, index=None):
     if cscale:
         body.append(_cscale_open(index, tx, ty))
     # See _render_text: a boxed callout -- box and text together -- is what
-    # Hide All can toggle off.
+    # Hide Annotations can toggle off.
     if an.bbox is not None:
         body.append('<g class="plotpress-textbox">')
         body.append(_bbox_svg(box, an.bbox))

@@ -13,6 +13,42 @@ anywhere in the source.
 
 ### Added
 
+- **The interactive toolbar is now a single full-width menu bar**, replacing
+  the old floating two-row button cluster. **Pan/Zoom** and **Home** (the
+  renamed Figure Navigator/Reset Figure) sit standalone at the far left
+  (reached for often enough to skip a menu's extra click); everything else
+  groups into four menus by scope -- **Axes** (Axis Span, Axis Zoom, Reset
+  All Axes), **Point Picking** (the tool, Hide Points, Clear Points,
+  Extract), **Annotate** (the tool, Hide Annotations, Clear Annotations),
+  and **File** (Save, Save As) -- plus a persistent indicator naming the
+  current tool, pinned to the bar's far right. The old single "Hide All"
+  toggle is now two independent ones, Hide Points and Hide Annotations, each
+  scoped to its own menu. A menu item that selects a tool is checkable: a
+  single click selects it and leaves the menu open (so switching tools
+  doesn't need reopening it), double-click deselects -- so does Escape, from
+  anywhere, which also still clears every pin/annotation the way it always
+  has (a keyboard-only user has no double-click to deselect a tool with
+  otherwise). A caller's own `plotpressAddTool()` tools now land in a fifth
+  **Custom** menu instead of their own extra row. The collapse toggle
+  (`▸`/`◂`) is gone -- there's no longer a second row to hide. Still
+  `position:fixed`, pinned to the top of the window regardless of
+  scrolling, panning, or Pan/Zoom's own whole-figure zoom -- an in-flow and
+  a `position:sticky` variant were both tried during development and
+  dropped, the former because it scrolled away with an oversized figure,
+  the latter because it didn't reliably track a dynamically-resized
+  ancestor's bounds across browsers. `docs/user_guide/interactivity.rst`
+  and every screenshot/example are updated for the new layout.
+
+- **`Extract` now returns Point Picking pins only, not Annotation notes.**
+  Extract lives solely under the Point Picking menu now (see above), and an
+  Annotation note has nothing to "extract" in the same sense a picked data
+  value does -- so its CSV/JSON output, the native-window (`pywebview`)
+  handoff, and `Figure.show(wait_for_extract=True)`'s return value are all
+  narrower than before for a figure that has both kinds of marker.
+  `window.plotpressGetMarkers()` is unaffected -- it stays the general
+  "every pin and annotation" query that `plotpress.qt`'s live embedding and
+  a custom tool's own logging already relied on.
+
 - **A batch of previously-missing matplotlib kwargs**, found by the same
   API audit as the Fixed entry below: `boxplot(vert=, labels=,
   tick_labels=, showmeans=)`, `violinplot(vert=, showmeans=,
@@ -63,10 +99,10 @@ anywhere in the source.
   and `plot_06_reload_line_grid_as_xarray.py` (line-series grid).
 
 - **Text selection is now disabled while any toolbar mode is active**, not
-  just Figure Navigator -- every mode's own drag (Axis Span/Zoom across
+  just Pan/Zoom -- every mode's own drag (Axis Span/Zoom across
   tick labels and titles, Point Picking/Annotation dragging a pin's own
   label box across other pins' text) could highlight text underneath it
-  the same way Figure Navigator's whole-figure pan always could.
+  the same way Pan/Zoom's whole-figure pan always could.
 - **A Point Picking pin's (and an Annotation note's) label box is now
   draggable**, independent of the dot/anchor it belongs to: grab the box
   itself (not the dot) while the mode that created that kind of pin is
@@ -330,7 +366,7 @@ anywhere in the source.
     `axes_metadata()` already builds, once per interactive save -- both now
     accept a shared one instead of independently recomputing it.
   - New tests cover all of the above, plus the previously-untested
-    boundaries that Reset Figure/Reset Axes leave every pin/annotation
+    boundaries that Home and Reset All Axes leave every pin/annotation
     untouched (only Clear Points/Clear Annotations/Escape do) and that a
     pre-removal "Annotate Point" pin restores correctly from an older saved
     file; stale "Point Pick"/"Annotate Point"/"Annotate Free" references
@@ -1424,29 +1460,24 @@ anywhere in the source.
   whole-figure image zoom is. See `docs/usage.rst`'s Zoom bullet for two
   demo GIFs: one zooming into a cluster of a 30-panel `pcolormesh` grid,
   one on a plain single-axes line plot.
-- **The interactive toolbar's built-in tools were renamed and reorganized
-  into two labeled rows, Navigation and Annotation, and Reset/Clear each
-  split into two more precisely scoped actions.** Renamed for clarity:
-  Magnify -> **Figure Navigator**, Span -> **Axis Span**, Zoom -> **Axis
+- **The interactive toolbar's built-in tools were renamed, and Reset/Clear
+  each split into two more precisely scoped actions.** Renamed for clarity:
+  Magnify -> **Pan/Zoom**, Span -> **Axis Span**, Zoom -> **Axis
   Zoom**, Point Pick -> **Point Picking**, Annotate Free -> **Annotation**
   (Annotate Point removed -- Point Picking already covers snapping to a
-  datum, and Annotation covers everything else), Hide Annotations -> **Hide
-  All** (behavior unchanged; it already hid both marker kinds and every
-  boxed callout, the rename just stopped implying a narrower scope than it
-  ever had). Split: the single **Reset** button is now **Reset All Axes**
-  (per-axes pan/zoom only) and **Reset Figure** (whole-figure magnification
-  only) -- and a single **Clear Points** button that used to remove every
-  pin *and* annotation is now **Clear Points** (Point Picking pins only)
-  and **Clear Annotations** (Annotation notes only), each scoped by the
-  `.plotpress-note` class Annotation notes carry. Escape still clears
-  everything at once, unchanged. **Navigation** groups Figure Navigator,
-  Axis Span/Zoom, both resets, and Save/Save As (navigate the view, reset
-  it, persist it); **Annotation** groups Hide All, Point Picking/Clear
-  Points, Annotation/Clear Annotations, and Extract (mark data, control
-  what's visible, get it out) -- a dedicated third row for just Save/Save
-  As was tried and dropped for costing a full extra row of vertical space
-  on the toolbar's two sparsest buttons. See `docs/user_guide/interactivity.rst`
-  for the full current tool reference.
+  datum, and Annotation covers everything else). Split: the single
+  **Reset** button is now **Reset All Axes** (per-axes pan/zoom only) and
+  **Home** (whole-figure magnification only) -- a single **Clear Points**
+  button that used to remove every pin *and* annotation is now **Clear
+  Points** (Point Picking pins only) and **Clear Annotations** (Annotation
+  notes only), each scoped by the `.plotpress-note` class Annotation notes
+  carry -- and the original **Hide Annotations** toggle (which despite the
+  name already hid both marker kinds and every boxed callout) is now the
+  same **Hide Points**/**Hide Annotations** split, each properly scoped this
+  time. Escape clears everything at once and deselects the active tool.
+  See `docs/user_guide/interactivity.rst` for the toolbar's current layout
+  and the full tool reference -- superseded since this entry by a menu-bar
+  redesign, see above.
 - `Figure.group()`'s `pad` now also accepts a `(left, right, top, bottom)`
   sequence, not just a single number, for unequal clearance on each side of
   the box -- e.g. tight on the side facing a neighboring group, generous on

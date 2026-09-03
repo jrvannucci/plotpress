@@ -1137,12 +1137,14 @@ class Figure:
                 script += f"<script>{INTERACTIVE_JS}</script>"
         if extra_js:
             script += f"<script>{extra_js}</script>"
-        # position:fixed (the toolbar, and any docked slider strip) never
-        # takes real layout space itself, so nothing stops it from drawing
-        # over the SVG unless something else reserves that space. A full
-        # viewport tall of flex-centering slack makes that a non-issue for a
-        # standalone page; embedded, the SVG sits flush against the body's
-        # edges, so real padding takes over that job instead.
+        # The toolbar and a docked slider strip are both position:fixed --
+        # see _interactive.py's .plotpress-menubar/.plotpress-sliders -- so
+        # nothing stops either from drawing over the SVG unless something
+        # else reserves the room for them. A full viewport tall of
+        # flex-centering slack makes that a non-issue for a standalone page
+        # (the toolbar just floats over its own top-left corner, same as it
+        # always has); embedded, the SVG sits flush against the body's
+        # edges, so real top/bottom padding takes over that job instead.
         if standalone:
             body_style = ("body{margin:0;background:#f5f5f5;display:flex;"
                           "justify-content:center;align-items:center;min-height:100vh}")
@@ -1239,7 +1241,9 @@ class Figure:
         Returns the list of markers the user extracted in the window (each a
         dict of values: ``x``, ``y``, any extra dims, ``axes`` (index),
         ``axes_title`` (if that axes has one), ``kind``), or an empty list if
-        none were extracted.
+        none were extracted. Point Picking markers only -- Extract lives
+        under the Point Picking menu and no longer includes Annotation
+        notes, which have no export of their own.
 
         With ``wait_for_extract=True`` the call becomes an interactive point-
         picking session: the kernel blocks, the user drops markers and clicks
@@ -1626,39 +1630,36 @@ def _fits_float16(arr, precision):
 
 
 def _toolbar_clearance(interactive, n_sliders):
-    """(top, bottom) pixels to reserve so the fixed-position toolbar and any
-    docked slider strip don't draw over the figure itself.
+    """(top, bottom) pixels of vertical space the toolbar and any docked
+    slider strip need -- both are real reserved space for the same reason:
+    the menu bar (``.plotpress-menubar``) and a docked slider strip
+    (``.plotpress-sliders``) are both ``position:fixed`` overlays (the bar
+    pinned to the top of the viewport so Pan/Zoom's own whole-figure zoom
+    can never scroll it out of reach -- see the CSS comment on
+    ``.plotpress-menubar`` in ``_interactive.py``), so nothing else stops
+    either from drawing over the figure unless this reserves the room for
+    them. Used for a ``standalone=False`` document's own body padding
+    (:meth:`Figure.to_html`) and for sizing an ``<iframe>`` around one
+    (:meth:`Report.save`, and the docs build's own gallery/usage embeds in
+    ``docs/conf.py``), so a figure looks the same either way it ends up on
+    a page. A standalone page needs neither: a full viewport tall of
+    flex-centering slack already keeps both from overlapping the centered
+    figure.
 
-    Both are ``position:fixed`` (see ``_interactive.py``'s ``.plotpress-toolbar``/
-    ``.plotpress-sliders``), so neither ever takes real layout space on its
-    own -- something else has to set aside room for them, or they sit on top
-    of whatever's really there. Used both for a ``standalone=False``
-    document's own body padding (:meth:`Figure.to_html`) and for sizing an
-    ``<iframe>`` around one (:meth:`Report.save`, and the docs build's own
-    gallery/usage embeds in ``docs/conf.py``), so a figure looks the same
-    either way it ends up on a page.
+    41px is the bar's own single row, measured live in a browser -- padding
+    top/bottom, its 1px border-bottom, plus its button/label content's own
+    line height, no separate group labels or stacked rows the old two-row
+    toolbar needed. Does not budget for a caller's own ``plotpressAddTool()``
+    menu (``extra_js=`` on :meth:`Figure.to_html`) -- it lands in the *same*
+    row (a sixth menu, not an extra one), so it never changes the bar's own
+    height regardless of how many custom tools it adds.
 
-    112px clears the built-in toolbar's own two stacked rows -- Navigation
-    above, Annotation below, see ``.plotpress-toolbar-nav``/
-    ``.plotpress-toolbar-mark`` -- each a small uppercase group label
-    (``.plotpress-toolbar-group-label``) plus its own button row, at their
-    own measured ~94px combined height (two label+button-row groups plus
-    the 4px gap between them, see ``.plotpress-toolbar-wrap``), plus its
-    10px offset from the top, with a few px to spare. (A third row, just
-    for Save/Save As, was tried and dropped -- it cost a full extra
-    label+row of vertical space for the sparsest row in the toolbar; both
-    now sit at the end of Navigation instead, which is what let this go
-    back down from 140.) Does not budget for a caller's own
-    ``plotpressAddTool()`` row (``extra_js=`` on :meth:`Figure.to_html`) --
-    an opaque JS string from here, with no way to know ahead of time
-    whether it adds one; a page relying on this clearance
-    (``standalone=False``) with a custom row of its own may need extra top
-    padding added by hand. 60px per slider matches each docked strip's own
-    footprint (``.plotpress-slider``).
+    60px per slider matches each docked strip's own footprint
+    (``.plotpress-slider``).
     """
     if not interactive:
         return 0, 0
-    return 112, 60 * n_sliders
+    return 41, 60 * n_sliders
 
 
 def _encode_binary_arrays(obj, precision=6):

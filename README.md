@@ -104,28 +104,35 @@ Interactive HTML and pop-up output carry a self-contained vanilla-JS toolbar (no
 external requests, so it works under strict CSPs like Jupyter and sandboxed
 webviews). Nothing is active until you pick a tool:
 
-- **Figure Navigator** — plain-wheel whole-figure zoom/pan, for wherever
+Pan/Zoom and Home sit standalone on the toolbar's left; everything else is
+grouped into Axes, Point Picking, Annotate, and File menus:
+
+- **Pan/Zoom** — plain-wheel whole-figure zoom/pan, for wherever
   holding Ctrl (Axis Zoom's whole-figure gesture, below) is awkward.
+  **Home** restores its magnification back to natural size.
 - **Axis Span** — drag to pan a single plot's data window (log-aware).
 - **Axis Zoom** — rubber-band box to zoom *one* axes in **data space** (ticks
   recompute, markers keep a constant size); Ctrl+wheel (or a trackpad pinch)
-  zooms the *whole figure* instead, centered on the cursor.
-- **Reset All Axes** / **Reset Figure** — restore, respectively, every axes'
-  own pan/zoom or the whole figure's magnification back to its original view.
-  Neither clears pins/annotations — double-click a single plot under Axis
-  Span/Zoom to reset just that one.
+  zooms the *whole figure* instead, centered on the cursor. **Reset All
+  Axes** restores every axes' own pan/zoom back to its original view; neither
+  Reset button clears pins/annotations — double-click a single plot under
+  Axis Span/Zoom to reset just that one.
 - **Point Picking** — click to pin the nearest data point's value; arrow keys
   step along the series (nearest-neighbour for scatter, cell-by-cell for
   meshes/contours), reporting extra dims (`z`, `c`, …). Click a pin, or use
   **Clear Points**, to remove it. Its label box (connected to the marker by a
-  leader arrow) is draggable while Point Picking is active.
+  leader arrow) is draggable while Point Picking is active. **Hide
+  Points** toggles every pin's visibility without deleting them, and
+  **Extract** copies/downloads them all as CSV/JSON, or hands them back to
+  the kernel (`fig.show(wait_for_extract=True)`).
 - **Annotation** — drop a user-written note anywhere on the figure, not
   locked to any datum; **Clear Annotations** removes only these, leaving
-  Point Picking pins untouched (Escape clears both kinds at once). Its box
-  drags the same way, while Annotation is active.
-- **Hide All** toggles every pin/annotation's visibility without deleting
-  them. **Extract** copies/downloads all markers + annotations as CSV/JSON,
-  or hands them back to the kernel (`fig.show(wait_for_extract=True)`).
+  Point Picking pins untouched (Escape clears both kinds at once, and
+  deselects the active tool). Its box drags the same way, while Annotation
+  is active. **Hide Annotations** toggles every note's visibility (plus any
+  boxed callout the figure itself drew) without deleting them.
+- **Save**/**Save As** — persist pan/zoom, every pin/annotation, and every
+  toggle above to a new (or the same) self-contained HTML file.
 
 `fig.to_html()`/`fig.save(..., interactive=True)` accept `pick_precision`
 (decimal places embedded per value) and `pick_max_mesh_cells`/

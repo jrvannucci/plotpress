@@ -437,28 +437,29 @@ def test_toolbar_clearance_reserves_space_only_when_interactive():
 
     assert _toolbar_clearance(False, 0) == (0, 0)
     assert _toolbar_clearance(False, 3) == (0, 0)   # static report: no toolbar either
-    assert _toolbar_clearance(True, 0) == (112, 0)
-    assert _toolbar_clearance(True, 2) == (112, 120)
+    assert _toolbar_clearance(True, 0) == (41, 0)
+    assert _toolbar_clearance(True, 2) == (41, 120)
 
 
 def test_to_html_standalone_false_pads_body_for_toolbar_and_sliders():
-    """Regression: standalone=False's SVG sits flush against the body's own
-    edges (no flex-centering slack to silently absorb the fixed-position
-    toolbar/slider strip the way standalone=True's full-viewport centering
-    does) -- dropping the old (inaccurate) fixed-height guess this replaced
-    left the toolbar with no reserved space at all, free to draw over
-    whatever's in the figure's own top-right corner (a legend, a colorbar)."""
+    """The toolbar and a docked slider strip are both position:fixed
+    overlays (see _interactive.py's .plotpress-menubar/.plotpress-sliders),
+    so neither takes any layout space of its own -- standalone=False's SVG
+    sits flush against the body's own edges (no flex-centering slack to
+    silently absorb a fixed-position overlay the way standalone=True's
+    full-viewport centering does), so nothing else would reserve room for
+    either if this didn't."""
     import numpy as np
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
-    assert "padding:112px 0 0px" in fig.to_html(standalone=False)
+    assert "padding:41px 0 0px" in fig.to_html(standalone=False)
     assert "padding:0px 0 0px" in fig.to_html(standalone=False, interactive=False)
 
     x = np.linspace(0, 1, 5)
     fig2, ax2 = plotpress.subplots()
     ax2.plot_frames(x, np.array([x, x * 2]))
-    assert "padding:112px 0 60px" in fig2.to_html(standalone=False)
+    assert "padding:41px 0 60px" in fig2.to_html(standalone=False)
 
 
 def test_to_html_standalone_false_scales_svg_and_drops_centering():
@@ -509,8 +510,9 @@ def test_report_embeds_figures_at_full_width_not_a_fixed_pixel_size(tmp_path):
     assert 'width="' not in out.split("<iframe", 1)[1].split(">", 1)[0]
     assert "width:100%" in out          # .plotpress-report-entry iframe CSS
     assert "contentDocument" in out     # the resize script that fits height
-    # No sliders -- only the toolbar's own fixed 112px clearance, none below.
-    assert "padding:112px 0 0px" in _report_entry_doc(out)
+    # No sliders, but the fixed-position toolbar still needs its own
+    # reserved top padding.
+    assert "padding:41px 0 0px" in _report_entry_doc(out)
 
 
 def test_report_reserves_space_per_docked_slider_via_body_padding(tmp_path):
@@ -527,7 +529,7 @@ def test_report_reserves_space_per_docked_slider_via_body_padding(tmp_path):
     p = tmp_path / "slider_report.html"
     report.save(str(p))
     doc = _report_entry_doc(p.read_text(encoding="utf-8"))
-    assert "padding:112px 0 60px" in doc
+    assert "padding:41px 0 60px" in doc
 
     # A static (non-interactive) report has no toolbar or slider strip to
     # reserve space for, regardless of the figure's own slider data.

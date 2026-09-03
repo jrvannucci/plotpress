@@ -194,7 +194,7 @@ def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path)
         "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
     page.evaluate(
         """() => document.querySelectorAll('.plotpress-toolbar button')
-             .forEach(b => { if (b.textContent === 'Figure Navigator') b.click(); })""")
+             .forEach(b => { if (b.textContent === 'Pan/Zoom') b.click(); })""")
     page.evaluate(
         """([ux, uy]) => {
           const svg = document.getElementById('plotpress-svg');
@@ -1072,7 +1072,7 @@ def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Figure Navigator') b.click();
+            if (b.textContent === 'Pan/Zoom') b.click();
           });
           const before = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
@@ -1113,7 +1113,7 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Figure Navigator') b.click();
+            if (b.textContent === 'Pan/Zoom') b.click();
           });
           const r = svg.getBoundingClientRect();
           const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
@@ -1174,7 +1174,7 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Figure Navigator') b.click();
+            if (b.textContent === 'Pan/Zoom') b.click();
           });
           const home = svg.getBoundingClientRect().width;
           const r = svg.getBoundingClientRect();
@@ -1194,13 +1194,13 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
         "double-click under Magnify must reset the whole-figure view: %r" % out)
 
 
-def test_figure_navigator_mode_disables_text_selection_on_the_svg(page, tmp_path):
-    """A drag-to-pan under Figure Navigator sweeps across the figure's own
+def test_pan_zoom_mode_disables_text_selection_on_the_svg(page, tmp_path):
+    """A drag-to-pan under Pan/Zoom sweeps across the figure's own
     tick labels/titles just like a text-selection drag would; without
     disabling it, panning highlights that text instead of just moving the
     view. (Every other mode disables it too now, for the same reason --
     see test_text_selection_disabled_under_every_active_toolbar_mode --
-    this test is Figure Navigator's own toggle-on/toggle-off check.)"""
+    this test is Pan/Zoom's own select/deselect check.)"""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -1209,18 +1209,19 @@ def test_figure_navigator_mode_disables_text_selection_on_the_svg(page, tmp_path
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
-    def user_select_under(label):
-        return page.evaluate(
-            """(label) => {
-              document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-                if (b.textContent === label) b.click();
-              });
-              return getComputedStyle(document.getElementById('plotpress-svg')).userSelect;
-            }""", label)
+    def user_select():
+        return page.eval_on_selector(
+            "#plotpress-svg", "el => getComputedStyle(el).userSelect")
 
-    assert user_select_under("Figure Navigator") == "none"
-    # Switching back off Figure Navigator must restore normal selection behavior.
-    assert user_select_under("Figure Navigator") != "none"   # clicking the active tool turns it off
+    _click_toolbar(page, "Pan/Zoom")
+    assert user_select() == "none"
+    # A single click again on the already-active tool just reselects it (a
+    # checkable menu item, not a toggle) -- only a double-click deselects and
+    # restores normal selection behavior.
+    _click_toolbar(page, "Pan/Zoom")
+    assert user_select() == "none"
+    _dblclick_toolbar(page, "Pan/Zoom")
+    assert user_select() != "none"
 
 
 def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
@@ -1247,7 +1248,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Figure Navigator') b.click();
+            if (b.textContent === 'Pan/Zoom') b.click();
           });
           const before = {
             scrollWidth: document.documentElement.scrollWidth,
@@ -1271,7 +1272,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
             scrollX: window.scrollX, scrollY: window.scrollY,
           };
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Reset Figure') b.click();
+            if (b.textContent === 'Home') b.click();
           });
           const reset = {
             width: svg.getBoundingClientRect().width,
@@ -1469,9 +1470,9 @@ def _click_mode(page, mode_label, ux, uy, prompt_text=None):
         [mode_label, ux, uy])
 
 
-def test_reset_figure_and_reset_axes_do_not_clear_pins(page, tmp_path):
+def test_home_and_reset_all_axes_do_not_clear_pins(page, tmp_path):
     """The old single "Reset" button used to also clear every pin/annotation;
-    the split Reset Figure/Reset Axes deliberately does neither -- a view
+    the split Home/Reset All Axes deliberately does neither -- a view
     reset repositions a pin (it already tracks pan/zoom live), it doesn't
     delete it. Clear Points/Clear Annotations are the only things that do."""
     import plotpress
@@ -1489,14 +1490,14 @@ def test_reset_figure_and_reset_axes_do_not_clear_pins(page, tmp_path):
                           prompt_text="stays put")
     assert len(markers) == 2
 
-    # Zoom the whole figure (Figure Navigator) and one axes' data range
+    # Zoom the whole figure (Pan/Zoom) and one axes' data range
     # (Axis Zoom's rubber-band), so both Reset buttons have something real
     # to undo.
     page.evaluate(
         """() => {
           const svg = document.getElementById('plotpress-svg');
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-            if (b.textContent === 'Figure Navigator') b.click();
+            if (b.textContent === 'Pan/Zoom') b.click();
           });
           const r = svg.getBoundingClientRect();
           svg.dispatchEvent(new WheelEvent('wheel', {
@@ -1505,15 +1506,81 @@ def test_reset_figure_and_reset_axes_do_not_clear_pins(page, tmp_path):
         }""")
     _box_zoom(page, *px(fig, 0, 0.5, 2.0), *px(fig, 0, 2.5, 8.0))
 
-    _click_toolbar(page, "Reset Figure")
-    after_reset_figure = page.evaluate("() => window.plotpressGetMarkers()")
-    assert len(after_reset_figure) == 2, (
-        "Reset Figure must not clear pins/annotations: %r" % after_reset_figure)
+    _click_toolbar(page, "Home")
+    after_home = page.evaluate("() => window.plotpressGetMarkers()")
+    assert len(after_home) == 2, (
+        "Home must not clear pins/annotations: %r" % after_home)
 
     _click_toolbar(page, "Reset All Axes")
     after_reset_axes = page.evaluate("() => window.plotpressGetMarkers()")
     assert len(after_reset_axes) == 2, (
         "Reset All Axes must not clear pins/annotations: %r" % after_reset_axes)
+
+
+def test_escape_closes_an_open_menu_without_touching_pins_or_mode(page, tmp_path):
+    """Escape's first job is dismissing whatever menu is open -- a user
+    pressing it just to close a menu they opened to look around must never
+    lose a pin or their selected tool as a side effect (see the sibling
+    test below for what Escape does once no menu is open)."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "escape_closes_menu.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    assert len(markers) == 1
+
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-menu-label').forEach(b => {
+             if (b.textContent.startsWith('File')) b.click();
+           })""")
+    assert page.evaluate(
+        "() => Array.from(document.querySelectorAll('.plotpress-menu'))"
+        ".some(m => m.classList.contains('open'))")
+
+    page.keyboard.press("Escape")
+
+    assert not page.evaluate(
+        "() => Array.from(document.querySelectorAll('.plotpress-menu'))"
+        ".some(m => m.classList.contains('open'))"), "Escape must close the open menu"
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 1, (
+        "the pin must survive -- Escape closing a menu is not the same as clearing")
+    assert page.eval_on_selector(
+        ".plotpress-mode-indicator", "el => el.textContent") == "Point Picking", (
+        "the active tool must stay selected too")
+
+
+def test_escape_with_no_menu_open_clears_pins_and_deselects_the_tool(page, tmp_path):
+    """With no menu open, Escape reverts to its older job (clear every pin
+    and annotation at once) but now also deselects the active tool --
+    otherwise a keyboard-only user, who has no double-click to deselect a
+    tool with (see attachModeButton in _interactive.py), would have no way
+    back to "no tool active" except selecting a different tool."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "escape_deselects.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
+    assert len(markers) == 1
+    assert page.eval_on_selector(
+        ".plotpress-mode-indicator", "el => el.textContent") == "Point Picking"
+
+    page.keyboard.press("Escape")
+
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 0, (
+        "Escape must still clear every pin, unchanged")
+    assert page.eval_on_selector(
+        ".plotpress-mode-indicator", "el => el.textContent") == "No tool active", (
+        "Escape must also deselect the active tool")
 
 
 def test_clear_points_and_clear_annotations_are_independently_scoped(page, tmp_path):
@@ -1691,9 +1758,9 @@ def _drag_box(page, pin_selector, dx, dy):
 def test_text_selection_disabled_under_every_active_toolbar_mode(page, tmp_path):
     """Every mode's own drag (Span/Zoom across tick labels and titles,
     Point Picking/Annotation dragging a pin's box across other pins' text)
-    can sweep across text the same way Figure Navigator's whole-figure pan
+    can sweep across text the same way Pan/Zoom's whole-figure pan
     always could -- selection must be off whenever any mode is active, not
-    just Figure Navigator, and back on when no mode is active."""
+    just Pan/Zoom, and back on when no mode is active."""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -1702,10 +1769,10 @@ def test_text_selection_disabled_under_every_active_toolbar_mode(page, tmp_path)
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
-    for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotation", "Figure Navigator"):
+    for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotation", "Pan/Zoom"):
         _click_toolbar(page, label)
         active = page.eval_on_selector("#plotpress-svg", "el => el.style.userSelect")
-        _click_toolbar(page, label)   # toggle back off
+        _dblclick_toolbar(page, label)   # deselect it
         inactive = page.eval_on_selector("#plotpress-svg", "el => el.style.userSelect")
         assert active == "none", "%s must disable text selection while active: %r" % (label, active)
         assert inactive == "", "%s must restore selection once inactive: %r" % (label, inactive)
@@ -1990,9 +2057,9 @@ def test_dragged_box_offset_survives_arrow_key_stepping(page, tmp_path):
         "the step must still have actually moved the dot to the next point: %r" % markers)
 
 
-def test_pin_stays_constant_size_and_draggable_under_figure_navigator_zoom(page, tmp_path):
+def test_pin_stays_constant_size_and_draggable_under_pan_zoom(page, tmp_path):
     """A pin's group counter-scales (see updatePinTransform) so it renders
-    at the same on-screen size regardless of Figure Navigator's whole-figure
+    at the same on-screen size regardless of Pan/Zoom's whole-figure
     zoom -- the dot, its label box, and the leader arrow must all hold their
     on-screen (CSS pixel) size, and a box drag (startBoxDrag's screen-delta
     to local-coordinate conversion) must still track the mouse 1:1 at a
@@ -2019,9 +2086,9 @@ def test_pin_stays_constant_size_and_draggable_under_figure_navigator_zoom(page,
 
     before = measure()
 
-    # Zoom the whole figure via Figure Navigator several ticks -- a plain
+    # Zoom the whole figure via Pan/Zoom several ticks -- a plain
     # wheel, matching a real user gesture, not Ctrl+wheel (Axis Zoom's own).
-    _click_toolbar(page, "Figure Navigator")
+    _click_toolbar(page, "Pan/Zoom")
     svg_box = page.eval_on_selector(
         "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
         "return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
@@ -2036,10 +2103,10 @@ def test_pin_stays_constant_size_and_draggable_under_figure_navigator_zoom(page,
     after_zoom = measure()
     for key in before:
         assert after_zoom[key] == pytest.approx(before[key], abs=0.5), (
-            "%s must stay the same on-screen size under Figure Navigator zoom: "
+            "%s must stay the same on-screen size under Pan/Zoom zoom: "
             "%r -> %r" % (key, before, after_zoom))
 
-    # Figure Navigator and Point Picking are mutually exclusive (single-
+    # Pan/Zoom and Point Picking are mutually exclusive (single-
     # selection toolbar) -- zoom persists independently of which mode is
     # selected, so re-selecting Point Picking doesn't reset it, and the box
     # must still be draggable, tracking the mouse 1:1 in screen pixels.
@@ -2054,17 +2121,17 @@ def test_pin_stays_constant_size_and_draggable_under_figure_navigator_zoom(page,
     assert rect_box_after["x"] - rect_box["x"] == pytest.approx(70, abs=0.5)
     assert rect_box_after["y"] - rect_box["y"] == pytest.approx(45, abs=0.5)
 
-    # Reset Figure brings the zoom back down -- the dot and box must shrink
+    # Home brings the zoom back down -- the dot and box must shrink
     # back to their original on-screen size, not stay stuck at the zoomed-in
     # one. arrowLen is excluded here on purpose: it's the box's *distance*
     # from the dot, not a size, and the drag just above deliberately moved
     # the box farther away -- comparing it against the pre-drag baseline
-    # would fail for a reason that has nothing to do with Reset Figure.
-    _click_toolbar(page, "Reset Figure")
+    # would fail for a reason that has nothing to do with Home.
+    _click_toolbar(page, "Home")
     after_reset = measure()
     for key in ("dotD", "boxW", "boxH"):
         assert after_reset[key] == pytest.approx(before[key], abs=0.5), (
-            "%s must return to its original on-screen size after Reset Figure: "
+            "%s must return to its original on-screen size after Home: "
             "%r -> %r" % (key, before, after_reset))
 
 
@@ -2250,18 +2317,18 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
     assert m["px"] == pytest.approx(2, abs=1) and m["py"] == pytest.approx(2, abs=1)
 
 
-def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
-    """"Hide All" is a standalone toggle, not a mode -- it must hide
-    every pin (Point Picking markers and Annotation notes alike) without
-    deleting any of them, and bringing it back must restore them exactly,
-    including their text."""
+def test_hide_points_and_hide_annotations_toggle_independently(page, tmp_path):
+    """Hide Points and Hide Annotations are two standalone toggles, not
+    modes -- each hides only its own kind of pin without deleting any of
+    them, leaving the other kind untouched, and bringing either back must
+    restore it exactly, including its text."""
     import plotpress
     from pick_cases import px
 
     x, y = [0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0]
     fig, ax = plotpress.subplots()
     ax.plot(x, y)
-    path = tmp_path / "hide_annotations.html"
+    path = tmp_path / "hide_points_and_annotations.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
@@ -2271,13 +2338,12 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
     _click_mode(page, "Annotation", ux1, uy1, prompt_text="second point")
     assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 2
 
-    def toggle_and_read():
+    def toggle_and_read(label_on, label_off):
         return page.evaluate(
-            """() => {
+            """([labelOn, labelOff]) => {
               let btn = null;
               document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
-                if (b.textContent === 'Hide All' ||
-                    b.textContent === 'Show All') btn = b;
+                if (b.textContent === labelOn || b.textContent === labelOff) btn = b;
               });
               btn.click();
               const pins = document.querySelectorAll('.plotpress-pin');
@@ -2289,24 +2355,33 @@ def test_hide_annotations_toggle_hides_without_deleting(page, tmp_path):
                 hiddenCount: hiddenCount,
                 markers: window.plotpressGetMarkers(),
               };
-            }""")
+            }""", [label_on, label_off])
 
-    hidden = toggle_and_read()
-    assert hidden["label"] == "Show All"
+    hidden = toggle_and_read("Hide Points", "Show Points")
+    assert hidden["label"] == "Show Points"
     assert hidden["pinCount"] == 2, "toggling must not delete any pin"
-    assert hidden["hiddenCount"] == 2, "every pin must be visually hidden"
+    assert hidden["hiddenCount"] == 1, "only the Point Picking pin hides"
     assert len(hidden["markers"]) == 2, "marker data must survive while hidden"
 
-    shown = toggle_and_read()
-    assert shown["label"] == "Hide All"
+    shown = toggle_and_read("Hide Points", "Show Points")
+    assert shown["label"] == "Hide Points"
     assert shown["hiddenCount"] == 0, "toggling back must restore visibility"
     assert shown["markers"] == hidden["markers"], (
         "restored markers must carry the exact same data, including text")
 
+    hidden2 = toggle_and_read("Hide Annotations", "Show Annotations")
+    assert hidden2["label"] == "Show Annotations"
+    assert hidden2["pinCount"] == 2
+    assert hidden2["hiddenCount"] == 1, "only the Annotation note hides"
+
+    shown2 = toggle_and_read("Hide Annotations", "Show Annotations")
+    assert shown2["label"] == "Hide Annotations"
+    assert shown2["hiddenCount"] == 0
+
 
 def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
-    """Hide All must take a figure-drawn ax.text(bbox=...)/
-    ax.annotate(bbox=...) callout too, not just interactive pins -- it reads
+    """Hide Annotations must take a figure-drawn ax.text(bbox=...)/
+    ax.annotate(bbox=...) callout too, not just Annotation notes -- it reads
     as the same kind of "annotation" on screen. A plain unboxed label is not
     a callout and must stay visible throughout."""
     import plotpress
@@ -2342,12 +2417,12 @@ def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
     assert before["hiddenCount"] == 0
     assert before["plainVisible"]
 
-    _click_toolbar(page, "Hide All")
+    _click_toolbar(page, "Hide Annotations")
     hidden = read()
     assert hidden["hiddenCount"] == 2, "both boxed callouts must hide"
     assert hidden["plainVisible"], "an unboxed label is not a callout -- stays visible"
 
-    _click_toolbar(page, "Show All")
+    _click_toolbar(page, "Show Annotations")
     shown = read()
     assert shown["hiddenCount"] == 0, "toggling back must restore both"
 
@@ -2448,12 +2523,12 @@ def test_report_stretches_a_slider_figure_to_the_iframes_width(page, tmp_path):
     # _REPORT_STYLE's 1px iframe border) runs 2px wider -- both within a
     # couple px is "scaled to fill it", not coincidentally close.
     assert result["svgWidth"] == pytest.approx(result["iframeWidth"], abs=3)
-    # height = width * (4/6), plus the toolbar's fixed 112px clearance (two
-    # stacked, labeled button rows -- see _toolbar_clearance) and the one
-    # docked slider's 60px allowance -- both are real body padding inside
-    # the embedded document now (Figure.to_html, standalone=False), so
-    # scrollHeight (what the resize script measures) already includes them.
-    expected_h = result["svgWidth"] * 4 / 6 + 112 + 60
+    # height = width * (4/6), plus the fixed-position menu bar's own 41px
+    # reserved row and the one docked slider's 60px reserved allowance (see
+    # _toolbar_clearance) -- both are real body padding inside the embedded
+    # document now (Figure.to_html, standalone=False), so scrollHeight (what
+    # the resize script measures) already includes them.
+    expected_h = result["svgWidth"] * 4 / 6 + 41 + 60
     assert result["iframeHeight"] == pytest.approx(expected_h, abs=3)
 
 
@@ -2463,8 +2538,9 @@ def test_standalone_false_toolbar_does_not_overlap_the_svg(page, tmp_path):
     draws directly over whatever's in the figure's own top-right corner (a
     legend, here). standalone=False's SVG sits flush against the body's
     edges rather than getting centering slack to absorb this, so the body
-    padding Figure.to_html now adds for exactly this case has to actually be
-    there, not just present in the CSS text but overridden or miscomputed."""
+    padding Figure.to_html adds for exactly this case (see
+    _toolbar_clearance) has to actually be there, not just present in the
+    CSS text but overridden or miscomputed."""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -2476,17 +2552,13 @@ def test_standalone_false_toolbar_does_not_overlap_the_svg(page, tmp_path):
 
     result = page.evaluate(
         """() => {
-          // .plotpress-toolbar-wrap, not .plotpress-toolbar -- the toolbar
-          // is two stacked rows now (nav then mark), and only the wrap's
-          // own box covers both; the first row alone would under-measure
-          // the real bottom edge and miss overlap the second row causes.
-          const toolbar = document.querySelector('.plotpress-toolbar-wrap');
+          const bar = document.querySelector('.plotpress-menubar');
           const svg = document.getElementById('plotpress-svg');
-          const t = toolbar.getBoundingClientRect(), s = svg.getBoundingClientRect();
-          return {toolbarBottom: t.bottom, svgTop: s.top};
+          const b = bar.getBoundingClientRect(), s = svg.getBoundingClientRect();
+          return {barBottom: b.bottom, svgTop: s.top};
         }""")
-    assert result["toolbarBottom"] <= result["svgTop"], (
-        "the toolbar overlaps the top of the figure: %r" % result)
+    assert result["barBottom"] <= result["svgTop"], (
+        "the menu bar overlaps the top of the figure: %r" % result)
 
 
 def test_report_resize_does_not_collapse_a_not_yet_loaded_lazy_entry(page, tmp_path):
@@ -2536,10 +2608,35 @@ def _click_toolbar(page, label):
              .forEach(b => { if (b.textContent === label) b.click(); })""", label)
 
 
+def _dblclick_toolbar(page, label):
+    """Deselect a checkable mode item -- a single click on it always
+    (re)selects (see attachModeButton in _interactive.py), so turning it
+    back off needs a real double-click, not a second click. Dispatches the
+    full native sequence (click detail=1, click detail=2, dblclick) rather
+    than a bare 'dblclick' event: attachModeButton's own deselect check
+    lives in the 'click' handler, keyed on e.detail, precisely so that
+    double-clicking a tool that *wasn't* already active selects it instead
+    of immediately deselecting it again -- a bare synthetic 'dblclick' with
+    no preceding 'click' events skips that logic entirely and would never
+    exercise (or correctly test) the real behavior."""
+    page.evaluate(
+        """(label) => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === label) {
+               var r = b.getBoundingClientRect();
+               var base = {bubbles: true, cancelable: true,
+                           clientX: r.x + r.width / 2, clientY: r.y + r.height / 2};
+               ['mousedown', 'mouseup'].forEach(t => b.dispatchEvent(new MouseEvent(t, base)));
+               b.dispatchEvent(new MouseEvent('click', Object.assign({detail: 1}, base)));
+               ['mousedown', 'mouseup'].forEach(t => b.dispatchEvent(new MouseEvent(t, base)));
+               b.dispatchEvent(new MouseEvent('click', Object.assign({detail: 2}, base)));
+               b.dispatchEvent(new MouseEvent('dblclick', base));
+             } })""", label)
+
+
 def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_path):
     """The core round trip: pan/zoom, a Point Picking pin, an Annotation
     note locked near a datum, a free annotation, a hidden legend series, and
-    Hide All all have to come back exactly as they were when the
+    Hide Annotations all have to come back exactly as they were when the
     downloaded copy is reopened -- not just the data plot_data()/
     load_data() already covers, the live session's own state."""
     import plotpress
@@ -2569,9 +2666,7 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
 
     # Annotation in the margin, above the axes -- not locked to any datum.
     # Annotation is already the active mode from the pin just above -- no
-    # _click_toolbar() re-click here: clicking an already-active tool's own
-    # button toggles it *off* (single-selection group), which would leave
-    # this click landing with no mode selected at all.
+    # _click_toolbar() re-click needed, it's already selected.
     page.once("dialog", lambda d: d.accept("free note"))
     box = page.eval_on_selector(
         "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
@@ -2598,8 +2693,8 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
         "#plotpress-svg", "el => el.getBoundingClientRect().width")
     scroll_before = page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
 
-    # Hide All.
-    _click_toolbar(page, "Hide All")
+    # Hide Annotations.
+    _click_toolbar(page, "Hide Annotations")
 
     with page.expect_download() as dl_info:
         _click_toolbar(page, "Save As")
@@ -2633,9 +2728,10 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
 
     toggle_label = page.evaluate(
         """() => { const b = [...document.querySelectorAll('.plotpress-toolbar button')]
-                     .find(b => b.textContent === 'Hide All' || b.textContent === 'Show All');
+                     .find(b => b.textContent === 'Hide Annotations' ||
+                                b.textContent === 'Show Annotations');
                    return b ? b.textContent : null; }""")
-    assert toggle_label == "Show All"
+    assert toggle_label == "Show Annotations"
 
 
 def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
@@ -2697,54 +2793,14 @@ def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_pa
     assert dl_info.value.suggested_filename.endswith(".html")
 
 
-def test_toolbar_hides_and_recovers(page, tmp_path):
-    """The toolbar's two button rows (nav/mark -- see the grouping test
-    below) can both be collapsed together to declutter the view (a
-    screenshot, say) -- but the toggle that collapses them must itself
-    never be part of what gets hidden, or there would be no way back
-    without reloading the page."""
-    import plotpress
-
-    fig, ax = plotpress.subplots()
-    ax.plot([0, 1], [0, 1])
-    path = tmp_path / "toolbar_toggle.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
-    page.goto(path.as_uri())
-
-    nav_bar = page.locator(".plotpress-toolbar-nav")
-    mark_bar = page.locator(".plotpress-toolbar-mark")
-    toggle = page.locator(".plotpress-toolbar-toggle")
-    assert nav_bar.is_visible()
-    assert mark_bar.is_visible()
-    assert toggle.is_visible()
-    n_buttons = nav_bar.locator("button").count() + mark_bar.locator("button").count()
-    assert n_buttons > 1   # Span/Zoom/.../Extract, not just the toggle itself
-
-    toggle.click()
-    assert not nav_bar.is_visible()
-    assert not mark_bar.is_visible()
-    assert toggle.is_visible(), "the toggle must survive hiding the rows it controls"
-
-    toggle.click()
-    assert nav_bar.is_visible()
-    assert mark_bar.is_visible()
-    assert (nav_bar.locator("button").count()
-           + mark_bar.locator("button").count()) == n_buttons
-
-
-def test_builtin_toolbar_is_grouped_into_a_nav_row_and_a_mark_row(page, tmp_path):
-    """The built-in toolbar is two coherent groups, not one long row:
-    Navigation -- navigate the view, reset it, and persist it (Figure
-    Navigator/Axis Span/Axis Zoom/Reset All Axes/Reset Figure/Save/Save As)
-    on top; Annotation -- mark data, control what's visible, and get it out
-    (Hide All/Point Picking/Clear Points/Annotation/Clear Annotations/
-    Extract) below. Both resets sit in Navigation, each right after the
-    tool(s) it undoes, with Save/Save As trailing the row -- persisting the
-    page is the last "do something to the view" step. Clear Points/Clear
-    Annotations each sit right after the tool that creates what they clear.
-    (A standalone third row for just Save/Save As was tried and dropped --
-    a full extra row for the toolbar's two sparsest buttons cost more
-    vertical space than it was worth.)"""
+def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_pair(page, tmp_path):
+    """Pan/Zoom and Home sit standalone at the bar's far
+    left, not behind a menu. Everything else is four menus, by scope:
+    Axes (per-axes tools -- Axis Span/Zoom, then Reset All Axes), Point
+    Picking (the tool, Hide Points, Clear Points, and Extract -- Extract
+    lives here because it only ever returns Point Picking markers), Annotate
+    (the tool, Hide Annotations, then Clear Annotations), and File (Save,
+    Save As), left to right in that order."""
     import plotpress
 
     fig, ax = plotpress.subplots()
@@ -2753,16 +2809,22 @@ def test_builtin_toolbar_is_grouped_into_a_nav_row_and_a_mark_row(page, tmp_path
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
-    nav_labels = page.locator(".plotpress-toolbar-nav button").all_inner_texts()
-    mark_labels = page.locator(".plotpress-toolbar-mark button").all_inner_texts()
-    assert nav_labels == ["Figure Navigator", "Axis Span", "Axis Zoom",
-                          "Reset All Axes", "Reset Figure", "Save", "Save As"]
-    assert mark_labels == ["Hide All", "Point Picking", "Clear Points",
-                           "Annotation", "Clear Annotations", "Extract"]
+    standalone = page.evaluate(
+        "() => Array.from(document.querySelectorAll('.plotpress-standalone-group button'))"
+        ".map(b => b.textContent)")
+    assert standalone == ["Pan/Zoom", "Home"]
 
-    nav_top = page.locator(".plotpress-toolbar-nav").bounding_box()["y"]
-    mark_top = page.locator(".plotpress-toolbar-mark").bounding_box()["y"]
-    assert mark_top > nav_top, "the mark row must render below the nav row"
+    menus = page.evaluate(
+        """() => Array.from(document.querySelectorAll('.plotpress-menu')).map(m => ({
+             label: m.querySelector('.plotpress-menu-label').textContent.trim().replace(/\\s*\\S$/, '').trim(),
+             items: Array.from(m.querySelectorAll('.plotpress-menu-dropdown button')).map(b => b.textContent),
+           }))""")
+    by_label = {m["label"]: m["items"] for m in menus}
+    assert list(by_label) == ["Axes", "Point Picking", "Annotate", "File"]
+    assert by_label["Axes"] == ["Axis Span", "Axis Zoom", "Reset All Axes"]
+    assert by_label["Point Picking"] == ["Point Picking", "Hide Points", "Clear Points", "Extract"]
+    assert by_label["Annotate"] == ["Annotation", "Hide Annotations", "Clear Annotations"]
+    assert by_label["File"] == ["Save", "Save As"]
 
 
 def test_extra_js_add_tool_registers_a_button_in_the_real_toolbar(page, tmp_path):
@@ -2926,46 +2988,46 @@ def test_include_default_js_false_drops_the_toolbar_and_add_tool(page, tmp_path)
     assert page.evaluate("() => window.__axesCountFromMeta") == 1
 
 
-def test_extra_js_add_tool_lands_in_its_own_row_not_the_builtin_toolbar(page, tmp_path):
-    """Custom tools must not be appended into plotpress's own .plotpress-toolbar
-    row -- a caller adding several tools would otherwise keep lengthening
-    the built-in row and blur which buttons are plotpress's own vs the
-    page's. They get their own .plotpress-toolbar-custom row instead,
-    stacked below, and the collapse toggle hides both together."""
+def _menu_labels(page):
+    """Every top-level menu's own label text, in DOM order, chevron
+    stripped -- see buildMenu()'s ' <chevron>' suffix in _interactive.py."""
+    return page.evaluate(
+        """() => Array.from(document.querySelectorAll('.plotpress-menu-label'))
+             .map(b => b.textContent.trim().replace(/\\s*\\S$/, '').trim())""")
+
+
+def test_extra_js_add_tool_lands_in_its_own_menu_not_a_builtin_one(page, tmp_path):
+    """Custom tools must not be appended into any of plotpress's own four
+    built-in menus -- a caller adding several tools would otherwise keep
+    lengthening a built-in dropdown and blur which buttons are plotpress's
+    own vs the page's. They get their own fifth "Custom" menu instead,
+    created lazily and never folded into a built-in one."""
     import plotpress
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     extra_js = "window.plotpressAddTool({label: 'Custom', onClick: function () {}});"
-    path = tmp_path / "custom_row.html"
+    path = tmp_path / "custom_menu.html"
     path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
     page.goto(path.as_uri())
 
-    nav_bar = page.locator(".plotpress-toolbar-nav")
-    mark_bar = page.locator(".plotpress-toolbar-mark")
-    custom_bar = page.locator(".plotpress-toolbar-custom")
-    assert custom_bar.count() == 1
-    assert "Custom" not in nav_bar.inner_text()
-    assert "Custom" not in mark_bar.inner_text()
-    assert "Custom" in custom_bar.inner_text()
+    labels = _menu_labels(page)
+    assert labels == ["Axes", "Point Picking", "Annotate", "File", "Custom"]
 
-    page.locator(".plotpress-toolbar-toggle").click()
-    assert not nav_bar.is_visible()
-    assert not mark_bar.is_visible()
-    assert not custom_bar.is_visible(), "the toggle must hide the custom row too"
-
-    page.locator(".plotpress-toolbar-toggle").click()
-    assert nav_bar.is_visible()
-    assert mark_bar.is_visible()
-    assert custom_bar.is_visible()
+    for builtin in ("Axes", "Point Picking", "Annotate", "File"):
+        assert "Custom" not in page.evaluate(
+            """(label) => Array.from(document.querySelectorAll('.plotpress-menu'))
+                 .find(m => m.querySelector('.plotpress-menu-label').textContent.trim()
+                            .startsWith(label)).querySelector('.plotpress-menu-dropdown').textContent""",
+            builtin)
 
 
-def test_no_custom_row_created_when_no_custom_tools_are_added(page, tmp_path):
+def test_no_custom_menu_created_when_no_custom_tools_are_added(page, tmp_path):
     import plotpress
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
-    path = tmp_path / "no_custom_row.html"
+    path = tmp_path / "no_custom_menu.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
-    assert page.locator(".plotpress-toolbar-custom").count() == 0
+    assert _menu_labels(page) == ["Axes", "Point Picking", "Annotate", "File"]
