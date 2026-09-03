@@ -38,15 +38,20 @@ Strings and Jupyter
 ``fig.to_svg()``
     Return the SVG document as a string.
 
-``fig.to_html(interactive=True, wait_extract=False, pick_precision=6, pick_max_mesh_cells=60000, pick_max_points=20000, binary_pick_data=True)``
+``fig.to_html(interactive=True, wait_extract=False, pick_precision=6, pick_max_mesh_cells=250000, pick_max_points=20000, binary_pick_data=True)``
     Return a self-contained interactive HTML string. ``pick_precision`` sets
     the decimal places embedded per point-pick value; ``pick_max_mesh_cells``/
     ``pick_max_points`` cap how much of each mesh's/series' own data is
     embedded for picking, *per artist* -- so a figure with many mesh-bearing
     axes does not multiply the default cap by the axes count. A mesh over the
     cap is block-averaged down to it rather than dropped, so a click still
-    answers with a real, if coarser, value; a series over the point cap falls
-    back to a geometry-only x/y readout. ``binary_pick_data`` embeds long
+    answers with a real value -- but it's the *mean* of the original cells
+    folded into the coarser one it landed in, not the exact value at that
+    point, and that cell's own x/y coarsens the same way. A ``UserWarning``
+    names every axes this actually happens to, since the rendered mesh is
+    never downsampled and gives no visual hint that picking got coarser. A
+    series over the point cap falls back to a geometry-only x/y readout
+    instead. ``binary_pick_data`` embeds long
     numeric arrays as base64 float32 bytes instead of JSON number text --
     roughly half the size and, on the figures large enough for it to matter,
     faster to both build and decode than the plain-JSON payload it replaces

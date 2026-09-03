@@ -525,6 +525,16 @@ def _downsample_grid(z, max_cells):
     representative value) while still bounding the embedded HTML size,
     mirroring how huge line series are min/max-decimated before embedding
     rather than dropped (see primitives._decimate_minmax).
+
+    What this actually costs, precisely, since it's easy to read "still
+    answers with a real value" as "still answers with *the* value": a click
+    on a downsampled cell reads the **mean** of every original cell folded
+    into it, not the exact value at the point clicked, and that cell's own
+    x/y is the wider block's center, not the original grid's -- both real,
+    silent precision losses, not just a coarser click radius. The rendered
+    image (never downsampled -- only the pick payload is) gives no visual
+    hint that this happened; :func:`pick_data`/:func:`frame_data` warn about
+    it instead, once per affected mesh, whenever it actually does.
     """
     ny, nx = z.shape
     if ny * nx <= max_cells:
@@ -585,6 +595,12 @@ def _quadmesh_pick_entry(art, max_mesh_cells, precision):
         "name": "z",
         "curvilinear": bool(curvilinear),
     }
+    if (ny, nx) != (ny0, nx0):
+        # Internal-only -- frame_data() (the one caller) pops this back off
+        # before the entry becomes part of the embedded payload; it's how
+        # that caller learns downsampling happened without recomputing
+        # ny0/nx0 (and the curvilinear clamping above) itself.
+        entry["_downsampled_from"] = (ny0, nx0)
     if curvilinear:
         cx, cy = _curvilinear_centers(art.X, art.Y, ny0, nx0)
         if (ny, nx) != (ny0, nx0):
@@ -600,17 +616,25 @@ def _quadmesh_pick_entry(art, max_mesh_cells, precision):
     return entry
 
 
-def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
+def pick_data(fig, max_points=20000, max_mesh_cells=250000, precision=6):
     """Per-axes data payload for point picking (values incl. z and beyond).
 
     For point series (line/scatter) embeds x, y and any extra named dimensions
     (``pick_values`` such as ``c`` or ``z``). For meshes/contours embeds the z
     grid so a clicked cell reports its value -- block-averaged down to
-    ``max_mesh_cells`` for a grid over the cap, so even a huge mesh always
-    answers a pick with a real value instead of falling back to a bare x/y
-    readout. Point series over ``max_points`` are still omitted outright (that
-    fallback -- nearest-vertex geometry -- has no missing-value problem to
-    solve), so the HTML stays lean.
+    ``max_mesh_cells`` for a grid over the cap (see :func:`_downsample_grid`
+    for exactly what that costs: a click's z becomes the *mean* of the
+    original cells folded into whichever coarser one it landed in, not the
+    exact value at that point, and that cell's own x/y coarsens the same
+    way), so even a huge mesh always answers a pick with a real value
+    instead of falling back to a bare x/y readout. Emits one consolidated
+    ``UserWarning`` naming every axes this actually happened to (shape
+    before/after, and how to raise the cap) when it does -- the rendered
+    image itself never downsamples, so there is otherwise no visual sign
+    that a click's precision is coarser than what's drawn. Point series over
+    ``max_points`` are still omitted outright (that fallback --
+    nearest-vertex geometry -- has no missing-value problem to solve), so
+    the HTML stays lean.
 
     ``precision`` sets the decimal places the embedded arrays are rounded to.
     Lower values shrink the payload (the mesh z grids dominate it); 6 keeps
@@ -621,6 +645,12 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
     def _round_list(a):
         return _rl(a, precision)
 
+    # (axes index, axes title or None, original (ny, nx), downsampled
+    # (ny, nx)) for every mesh/contour that actually needed
+    # _downsample_grid -- collected instead of warning inline so a figure
+    # with several oversized meshes gets one summary, not one warning per
+    # mesh (see the warnings.warn call at the end of this function).
+    downsampled = []
     data = {}
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar or not ax._visible or ax._is_3d:
@@ -714,6 +744,8 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                 ny0, nx0 = art.Z.shape
                 z = _downsample_grid(art.Z, max_mesh_cells)
                 ny, nx = z.shape
+                if (ny, nx) != (ny0, nx0):
+                    downsampled.append((i, ax.get_title() or None, (ny0, nx0), (ny, nx)))
                 xmin, xmax = float(art.x.min()), float(art.x.max())
                 ymin, ymax = float(art.y.min()), float(art.y.max())
                 entry = {
@@ -813,6 +845,8 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                 # falling back to a bare x/y readout. See _downsample_grid.
                 z = _downsample_grid(z0, max_mesh_cells)
                 ny, nx = z.shape
+                if (ny, nx) != (ny0, nx0):
+                    downsampled.append((i, ax.get_title() or None, (ny0, nx0), (ny, nx)))
                 entry = {
                     "extent": [round(xmin, 6), round(xmax, 6),
                                round(ymin, 6), round(ymax, 6)],
@@ -858,7 +892,44 @@ def pick_data(fig, max_points=20000, max_mesh_cells=60000, precision=6):
                 })
         if series or meshes or pies:
             data[i] = {"series": series, "meshes": meshes, "pies": pies}
+    if downsampled:
+        _warn_downsampled(downsampled, max_mesh_cells)
     return data
+
+
+def _warn_downsampled(downsampled, max_mesh_cells):
+    """One consolidated UserWarning for every mesh/contour pick_data() (or
+    frame_data()) had to block-average down to max_mesh_cells -- a caller
+    with several oversized meshes gets one summary naming each of them, not
+    one warning per mesh.
+
+    Block-averaging (see _downsample_grid) means a click's z reads as the
+    *mean* of every original cell folded into whichever coarser cell it
+    landed in, not the exact value at the point clicked -- and that
+    coarser cell's own x/y is wider too, so nearby clicks can resolve to
+    the same pick, or skip past an original cell entirely, well before the
+    rendered image (still full resolution) visually suggests either.
+    Real, silent precision loss, not just a coarser click radius -- worth a
+    warning on every save it happens on, not just a line in a docstring
+    nobody reads until they already suspect something is off.
+    """
+    lines = []
+    for i, title, (ny0, nx0), (ny, nx) in downsampled:
+        label = f"axes {i}" + (f" ({title!r})" if title else "")
+        lines.append(f"  {label}: {ny0}x{nx0} ({ny0 * nx0:,} cells) "
+                      f"-> {ny}x{nx} ({ny * nx:,} cells)")
+    warnings.warn(
+        "Point Picking's embedded data is coarser than what's drawn for "
+        f"{len(downsampled)} mesh/contour "
+        f"{'panel' if len(downsampled) == 1 else 'panels'} over "
+        f"pick_max_mesh_cells={max_mesh_cells:,} -- each was block-averaged "
+        "down (a click reads the *mean* of the original cells folded into "
+        "the one it landed in, not the exact value at that point):\n"
+        + "\n".join(lines) +
+        "\nPass a higher pick_max_mesh_cells= to Figure.save()/to_html() "
+        "for full-resolution picking, at the cost of a larger embedded "
+        "payload.",
+        UserWarning, stacklevel=3)
 
 
 def _effective_rect(ax, px_left, px_top, px_w, px_h, xlim, ylim):
@@ -1284,11 +1355,19 @@ def _render_framequadmesh(art: FrameQuadMesh, tr, ai, k, body):
     )
 
 
-def frame_data(fig, max_mesh_cells=60000):
+def frame_data(fig, max_mesh_cells=250000):
     """Per-axes slider-frame data for JS to redraw on scrub: all frames' x/Y
     for a line, or every frame's rendered image (for JS to swap in) plus its
     z grid (for picking) for a mesh.
+
+    A mesh's z grid is block-averaged down to ``max_mesh_cells`` the same
+    way :func:`pick_data`'s does when it's over the cap -- see that
+    function's own docstring, and :func:`_downsample_grid`, for exactly
+    what a downsampled pick costs. Every frame shares one grid, so whether
+    downsampling happened is identical frame to frame; the ``UserWarning``
+    that names it fires once per animated mesh here, not once per frame.
     """
+    downsampled = []   # see the matching list in pick_data() above
     frames = {}
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar:
@@ -1331,6 +1410,13 @@ def frame_data(fig, max_mesh_cells=60000):
                     entry = _quadmesh_pick_entry(fm, max_mesh_cells, precision=6)
                     zs.append(entry.pop("z"))
                     if geom is None:
+                        # Every frame shares one grid, so downsampling (if
+                        # any) is identical frame to frame too -- check once,
+                        # on frame 0, rather than once per frame.
+                        orig_shape = entry.pop("_downsampled_from", None)
+                        if orig_shape is not None:
+                            downsampled.append(
+                                (i, ax.get_title() or None, orig_shape, tuple(entry["shape"])))
                         geom = entry
                 mesh_entry = {"id": f"s{i}_{k}", "unit": art.slider_unit,
                               "hrefs": hrefs, "z": zs}
@@ -1339,6 +1425,8 @@ def frame_data(fig, max_mesh_cells=60000):
                 entries.append(mesh_entry)
         if entries:
             frames[i] = entries
+    if downsampled:
+        _warn_downsampled(downsampled, max_mesh_cells)
     return frames
 
 

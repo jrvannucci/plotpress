@@ -1007,7 +1007,7 @@ class Figure:
         return figure_to_svg(self)
 
     def to_html(self, interactive: bool = True, wait_extract: bool = False,
-                pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+                pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
                 pick_max_points: int = 20000, binary_pick_data: bool = True,
                 standalone: bool = True, include_default_js: bool = True,
                 extra_js: str = None) -> str:
@@ -1030,9 +1030,19 @@ class Figure:
         mesh's/series' own data is embedded for picking, per artist -- so a
         figure with *many* mesh-bearing axes (a grid of pcolormeshes, say)
         does not multiply the default cap by the axes count. A mesh over the
-        cap is block-averaged down to it rather than dropped, so a click still
-        answers with a real, if coarser, value; a series over the point cap
-        falls back to a geometry-only x/y readout.
+        cap is block-averaged down to it rather than dropped -- a click still
+        answers with a real value, but it's the *mean* of every original cell
+        folded into whichever coarser one the click landed in, not the exact
+        value at that point, and that cell's own x/y is the wider block's
+        center, not the original grid's. The rendered mesh itself is never
+        downsampled (only the pick payload is), so nothing about the image
+        hints this happened -- a ``UserWarning`` naming every affected axes
+        does instead, whenever a mesh actually crosses the cap. Raise
+        ``pick_max_mesh_cells`` for full-resolution picking on a mesh this
+        large, at the cost of a bigger embedded payload. A series over the
+        point cap falls back to a geometry-only x/y readout instead (dropped,
+        not downsampled -- there's no missing-value problem an x/y-only click
+        needs solving the way a mesh's z does).
 
         ``binary_pick_data`` embeds long numeric arrays (mesh z grids, animated
         line frames) as base64 float32/float16 bytes instead of JSON number
@@ -1183,7 +1193,7 @@ class Figure:
     # figure in a notebook, embed to_html() in an <iframe> (see the docs).
 
     def save(self, path: str, interactive: bool = False, scale: int = 2,
-             pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+             pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
              pick_max_points: int = 20000, binary_pick_data: bool = True,
              fps: int = 10, slider_unit: str = "main", label_frames: bool = True,
              include_default_js: bool = True, extra_js: str = None):
@@ -1304,7 +1314,7 @@ class Figure:
                     pick_precision=pick_precision)
 
     def show_in_jupyter(self, width=None, height=None, interactive: bool = True,
-                        pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+                        pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
                         pick_max_points: int = 20000, binary_pick_data: bool = True,
                         include_default_js: bool = True, extra_js: str = None):
         """Display inline in a notebook cell with the full interactive toolbar.
@@ -2089,7 +2099,7 @@ class Report:
         return self
 
     def save(self, path: str, interactive: bool = True,
-             pick_precision: int = 6, pick_max_mesh_cells: int = 60000,
+             pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
              pick_max_points: int = 20000, binary_pick_data: bool = True) -> str:
         """Write every added figure, in order, to one self-contained HTML file.
 
@@ -2434,7 +2444,10 @@ def load_data(path: str, by_index: bool = False):
     precision/caps were in effect at save time (``pick_precision``,
     ``pick_max_points``, ``pick_max_mesh_cells``) -- they are not guaranteed
     bit-exact copies of the original data for a series/mesh that was rounded
-    or capped on the way out.
+    or capped on the way out. A mesh that crossed ``pick_max_mesh_cells`` at
+    save time comes back at that coarser, block-averaged resolution, not the
+    original grid's -- see :meth:`Figure.to_html`'s own docstring for
+    exactly what that averaging costs.
     """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()

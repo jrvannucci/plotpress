@@ -11,6 +11,34 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Changed
+
+- **`pick_max_mesh_cells`'s default is raised from 60,000 to 250,000**
+  (`Figure.to_html`/`save`/`show_in_jupyter`, `Report.save`) -- 60,000 was
+  low enough that an entirely ordinary mesh (a few hundred by a few hundred
+  cells -- 114,000 for one real example that prompted this) got silently
+  block-averaged down for picking well before its file size became a real
+  concern. 250,000 covers meshes like that at full resolution by default
+  (~700 KiB embedded, in that example) while still bounding a genuinely
+  huge one (a multi-million-cell mesh uncapped can reach double-digit MiB
+  of embedded pick JSON alone -- the exact "no browser will open this"
+  problem the raster mesh path exists to avoid, just for pick data instead
+  of SVG geometry).
+
+- **A mesh/contour over `pick_max_mesh_cells` now warns, once per figure
+  with every affected axes named, instead of silently degrading.** A
+  downsampled cell's z reads as the *mean* of the original cells folded
+  into it, not the exact value at the point clicked, and that cell's own
+  x/y coarsens the same way -- real, silent precision loss, not just a
+  coarser click radius, and with no visual hint of it since the rendered
+  image itself is never downsampled (only the pick payload is). The
+  `UserWarning` names each affected axes' index/title and its shape before
+  and after (`axes 0 ('deficit'): 300x380 (114,000 cells) -> 150x190
+  (28,500 cells)`), and says how to raise the cap. An animated
+  (`plot_frames`/`pcolormesh_frames`) mesh warns once per mesh, not once
+  per frame, even though every frame's own z needs downsampling
+  separately.
+
 ### Added
 
 - **`plotpress.select_panel(ds, title=...)`** (or `row=`/`col=`) pulls one

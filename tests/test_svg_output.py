@@ -2216,7 +2216,8 @@ def test_contour_over_mesh_cap_still_reports_a_value():
 
     fig, ax = plotpress.subplots()
     ax.contour(X, Y, Z)
-    pd = pick_data(fig, max_mesh_cells=60000)
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        pd = pick_data(fig, max_mesh_cells=60000)
     meshes = pd[0]["meshes"]
     assert len(meshes) == 1
     ny, nx = meshes[0]["shape"]
@@ -2264,11 +2265,13 @@ def test_to_html_exposes_pick_caps_for_mesh_heavy_figures():
     ax.pcolormesh(g, g, Z)
 
     full = fig.to_html(interactive=True)
-    capped = fig.to_html(interactive=True, pick_max_mesh_cells=1000)
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        capped = fig.to_html(interactive=True, pick_max_mesh_cells=1000)
     assert len(capped) < len(full)
 
     from plotpress.svg import pick_data
-    mesh = pick_data(fig, max_mesh_cells=1000)[0]["meshes"][0]
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        mesh = pick_data(fig, max_mesh_cells=1000)[0]["meshes"][0]
     ny, nx = mesh["shape"]
     assert ny * nx <= 1000
 
@@ -2719,7 +2722,8 @@ def test_pick_data_omits_oversized_series_but_downsamples_oversized_meshes():
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot(np.arange(30000.0), np.arange(30000.0))  # over max_points
     axes[1].pcolormesh(np.arange(300 * 300, dtype=float).reshape(300, 300))
-    pd = pick_data(fig, max_points=20000, max_mesh_cells=60000)
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        pd = pick_data(fig, max_points=20000, max_mesh_cells=60000)
     assert pd.get(0, {"series": []})["series"] == [] or 0 not in pd
 
     meshes = pd[1]["meshes"]
@@ -2727,6 +2731,63 @@ def test_pick_data_omits_oversized_series_but_downsamples_oversized_meshes():
     ny, nx = meshes[0]["shape"]
     assert ny * nx <= 60000                # downsampled to fit the cap
     assert len(meshes[0]["z"]) == ny * nx  # a real, usable value grid
+
+
+def test_mesh_downsample_warning_names_every_oversized_axes():
+    """One consolidated warning per pick_data() call, not one per mesh --
+    naming each affected axes' own index/title and its shape change, so a
+    figure with several oversized meshes gets a single, complete summary."""
+    from plotpress.svg import pick_data
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].pcolormesh(np.arange(300 * 300, dtype=float).reshape(300, 300))
+    axes[0].set_title("field a")
+    axes[1].pcolormesh(np.arange(200 * 200, dtype=float).reshape(200, 200))
+    # axes[1] left untitled -- the warning must still name it by index alone.
+
+    with pytest.warns(UserWarning, match=r"2 mesh/contour panels") as rec:
+        pd = pick_data(fig, max_mesh_cells=1000)
+    msg = str(rec[0].message)
+    assert "axes 0 ('field a'): 300x300" in msg
+    assert "axes 1: 200x200" in msg
+    assert "pick_max_mesh_cells=1,000" in msg
+    assert pd[0]["meshes"][0]["shape"][0] * pd[0]["meshes"][0]["shape"][1] <= 1000
+    assert pd[1]["meshes"][0]["shape"][0] * pd[1]["meshes"][0]["shape"][1] <= 1000
+
+
+def test_no_downsample_warning_under_the_cap():
+    from plotpress.svg import pick_data
+    import warnings as _warnings
+
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.arange(50 * 50, dtype=float).reshape(50, 50))
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")   # any warning fails this test
+        pick_data(fig, max_mesh_cells=250000)
+
+
+def test_animated_mesh_downsample_warns_once_not_per_frame():
+    """frame_data() runs _quadmesh_pick_entry once per frame (every frame's
+    own z needs downsampling), but the geometry -- and so whether
+    downsampling happened at all -- is identical frame to frame; the
+    warning must fire once per animated mesh, not once per frame."""
+    from plotpress.svg import frame_data
+
+    ny = nx = 300
+    C = np.stack([np.arange(ny * nx, dtype=float).reshape(ny, nx) + f for f in range(5)])
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh_frames(np.arange(nx + 1, dtype=float),
+                        np.arange(ny + 1, dtype=float), C)
+
+    with pytest.warns(UserWarning) as rec:
+        fd = frame_data(fig, max_mesh_cells=1000)
+    downsample_warnings = [r for r in rec if "coarser than what's drawn" in str(r.message)]
+    assert len(downsample_warnings) == 1, (
+        "must warn once per animated mesh, not once per frame: %r"
+        % [str(r.message) for r in downsample_warnings])
+    mesh_entry = fd[0][0]
+    assert mesh_entry["shape"][0] * mesh_entry["shape"][1] <= 1000
+    assert len(mesh_entry["z"]) == 5   # one z-grid per frame, still
 
 
 def _mesh_alpha(draw):

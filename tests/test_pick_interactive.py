@@ -297,11 +297,13 @@ def test_downsampled_mesh_pick_reads_correct_value(page, tmp_path):
     ax.pcolormesh(np.arange(nx + 1, dtype=float), np.arange(ny + 1, dtype=float), Z)
 
     CAP = 200
-    pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
     dny, dnx = pd["shape"]
     assert dny * dnx <= CAP < ny * nx   # sanity: this really downsamples
 
-    html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
     path = tmp_path / "downsampled_mesh.html"
     path.write_text(html, encoding="utf-8")
     page.goto(path.as_uri())
@@ -359,12 +361,14 @@ def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
     assert m.curvilinear
 
     CAP = 200
-    pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        pd = pick_data(fig, max_mesh_cells=CAP)[0]["meshes"][0]
     dny, dnx = pd["shape"]
     assert dny * dnx <= CAP < (n - 1) * (n - 1)   # sanity: this really downsamples
     assert "xc" in pd and "yc" in pd
 
-    html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+    with pytest.warns(UserWarning, match="coarser than what's drawn"):
+        html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
     path = tmp_path / "downsampled_curvilinear_mesh.html"
     path.write_text(html, encoding="utf-8")
     page.goto(path.as_uri())
