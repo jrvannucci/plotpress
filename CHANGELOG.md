@@ -25,6 +25,37 @@ anywhere in the source.
 
 ### Fixed
 
+- **A fourth break-it audit** (new territory: `imshow()`/`pcolormesh()`
+  shape validation, `contour()` degenerate input, `errorbar()` error
+  magnitudes, `Style.dpi`) found and fixed five more real bugs:
+
+  - **`imshow()` with a 1-D array** crashed with a bare `not enough values
+    to unpack` reading its own shape; **a `(h, w, 2)` array** (not RGB or
+    RGBA) passed that far but crashed much later, deep in the PNG encoder's
+    own reshape. Both now validated eagerly with a clear message.
+  - **`pcolormesh()` with a 1-D `C`** had the identical bare-unpack crash.
+    Now validated eagerly.
+  - **An all-NaN `contour()`** (nothing to contour -- already correctly
+    drew zero paths) leaked a raw `RuntimeWarning: invalid value
+    encountered in cast` with no connection to "there was no data" for
+    anyone reading it out of context. Now silent, same zero-path result.
+  - **`errorbar()`/`bar()` with a negative `yerr`/`xerr`** has no
+    geometric meaning -- it doesn't error, it flips the whisker *inward*,
+    shrinking `data_bounds()` to something narrower than the bare data and
+    pulling real data points outside the autoscaled ylim/xlim entirely,
+    silently. Now validated eagerly.
+  - **`fig.style.dpi <= 0`** reached the same width/height product
+    `Figure(figsize=...)`'s own non-positive check was added to prevent,
+    just through a different, freely-mutable door -- producing an
+    invalid, empty/negative-size SVG or crashing PNG export with a bare
+    Pillow error. Now validated in both backends' own entry points.
+
+  Verified via a fourth adversarial battery (~30 new cases across gridded
+  data, secondary axes, `tight_layout()`, `Style`, xarray integration),
+  the full non-browser + browser suite (1041 + 105 passed), and a
+  from-clean full docs rebuild -- zero regressions.
+  `tests/test_input_validation.py` gained 15 more tests (77 total).
+
 - **A third break-it audit** (new territory: real `load_data()`/
   `subplots_from_layout()` round trips, `Report`, polar axes, `Figure.
   group()`, `plot_frames()`, style independence, `adopt_axes()`) found and

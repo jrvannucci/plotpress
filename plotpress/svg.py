@@ -54,6 +54,13 @@ def _esc(text) -> str:
 def figure_to_svg(fig, interactive: bool = False) -> str:
     fig._settle_layout()
     dpi = fig.style.dpi
+    if not (dpi > 0):
+        # figsize itself is validated at Figure() construction, but dpi is
+        # a plain, freely-mutable Style attribute -- fig.style.dpi = 0 (or
+        # negative) reaches this same width/height product and produces the
+        # identical invalid, unrenderable SVG (width="0"/negative) that
+        # fix was written to prevent, just through a different door.
+        raise ValueError(f"Figure.style.dpi must be > 0, got {dpi!r}")
     W = fig.figsize[0] * dpi
     H = fig.figsize[1] * dpi
 

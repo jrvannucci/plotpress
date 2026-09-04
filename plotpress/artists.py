@@ -507,6 +507,13 @@ class QuadMesh(Artist):
     def __init__(self, X, Y, C, cmap="viridis", norm=None, vmin=None, vmax=None,
                  shading="flat", alpha=1.0, label=None, rasterized=None):
         self.C = np.asarray(C, dtype=float)
+        if self.C.ndim != 2:
+            # A 1-D C used to crash a completely unrelated line ("not
+            # enough values to unpack") reading its own shape in
+            # cell_edges(), instead of naming the actual problem.
+            raise ValueError(
+                f"pcolormesh(): C must be a 2-D array, got shape {self.C.shape}"
+            )
         self.X = None if X is None else np.asarray(X, dtype=float)
         self.Y = None if Y is None else np.asarray(Y, dtype=float)
         self.shading = shading
@@ -966,6 +973,16 @@ class Image(Artist):
                  extent=None, origin="upper", alpha=1.0, label=None,
                  interpolation="nearest"):
         self.A = np.asarray(A, float)
+        if self.A.ndim not in (2, 3) or (self.A.ndim == 3 and self.A.shape[2] not in (3, 4)):
+            # A 1-D array used to crash a completely unrelated line ("not
+            # enough values to unpack") reading its own shape; a (h, w, 2)
+            # array (not RGB or RGBA) passed that check but crashed much
+            # later, deep in the PNG encoder, reshaping the pixel buffer.
+            raise ValueError(
+                "imshow(): X must be a 2-D array (colormapped) or a 3-D "
+                f"array with a trailing RGB/RGBA dimension of 3 or 4, got "
+                f"shape {self.A.shape}"
+            )
         self.lut = get_cmap(cmap)
         self.norm = resolve_norm(norm, vmin, vmax)
         if self.A.ndim == 2:

@@ -122,6 +122,12 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
 
     fig._settle_layout()
     dpi = fig.style.dpi
+    if not (dpi > 0):
+        # See the matching check in svg.figure_to_svg -- dpi is a plain,
+        # freely-mutable Style attribute, and a non-positive value produces
+        # an empty or negative-size image Pillow itself rejects with much
+        # less clarity (a bare "cannot write empty image").
+        raise ValueError(f"Figure.style.dpi must be > 0, got {dpi!r}")
     W = int(round(fig.figsize[0] * dpi))
     H = int(round(fig.figsize[1] * dpi))
     S = max(1, int(scale))

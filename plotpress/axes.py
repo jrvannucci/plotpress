@@ -1017,6 +1017,14 @@ class Axes:
             k: v for k, v in (("x", x), ("y", y), ("yerr", yerr), ("xerr", xerr))
             if v is not None
         })
+        for name, err in (("yerr", yerr), ("xerr", xerr)):
+            if err is not None and np.any(np.asarray(err, dtype=float) < 0):
+                # A negative magnitude has no geometric meaning -- it
+                # doesn't error, it flips the whisker to point *inward*,
+                # shrinking data_bounds() to something narrower than the
+                # bare data itself and pulling real points outside the
+                # autoscaled ylim/xlim entirely, with no error or warning.
+                raise ValueError(f"errorbar(): {name} must be non-negative")
         eb = ErrorBar(
             x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
             marker=marker,
@@ -1462,8 +1470,14 @@ class Axes:
             zmax = float(Z.max() if vmax is None else vmax)
             norm = Normalize(zmin, zmax)
             lut = get_cmap(cmap)
-            idx = np.clip((norm(np.asarray(levels, float)) * 255).astype(int),
-                         0, 255)
+            # All-NaN Z (nothing to contour -- the renderer draws zero paths
+            # regardless of what colors ends up holding) makes zmin/zmax/
+            # levels themselves NaN; NaN has no valid int, so the cast below
+            # leaked a raw RuntimeWarning with no connection to "there was
+            # no data" for anyone reading it out of context.
+            with np.errstate(invalid="ignore"):
+                idx = np.clip((norm(np.asarray(levels, float)) * 255).astype(int),
+                             0, 255)
             colors = ["#%02x%02x%02x" % tuple(lut[i]) for i in idx]
         elif isinstance(colors, str):
             colors = [to_hex(colors)]

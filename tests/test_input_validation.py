@@ -443,3 +443,83 @@ def test_plot_frames_single_frame_still_works():
     Y = np.random.default_rng(0).random((1, 10))
     ax.plot_frames(x, Y)
     assert fig.to_svg()
+
+
+# ---------------------------------------------------------------------------
+# Round 4: imshow()/pcolormesh() wrong ndim, all-NaN contour warning leak.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("shape", [(4,), (5, 5, 2), (5, 5, 5)])
+def test_imshow_invalid_shape_raises(shape):
+    """A 1-D array used to crash 'not enough values to unpack' reading its
+    own shape; a (h, w, 2) array (not RGB/RGBA) passed that check but
+    crashed much later, deep in the PNG encoder's own reshape."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"imshow\(\)"):
+        ax.imshow(np.zeros(shape))
+
+
+@pytest.mark.parametrize("shape", [(5, 5, 3), (5, 5, 4), (6, 7)])
+def test_imshow_valid_shapes_still_work(shape):
+    fig, ax = plotpress.subplots()
+    ax.imshow(np.random.default_rng(0).random(shape))
+    assert fig.to_svg()
+
+
+def test_pcolormesh_1d_C_raises():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"pcolormesh\(\)"):
+        ax.pcolormesh(np.array([1, 2, 3, 4]))
+
+
+def test_contour_all_nan_does_not_leak_a_raw_runtime_warning(recwarn):
+    fig, ax = plotpress.subplots()
+    ax.contour(np.full((10, 10), np.nan))
+    fig.to_svg()
+    assert not any(
+        "invalid value encountered" in str(w.message) for w in recwarn.list
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round 4 continued: fig.style.dpi <= 0, errorbar()/bar() negative yerr/xerr.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("dpi", [0, -50])
+def test_non_positive_dpi_raises_on_svg_and_png(dpi, tmp_path):
+    """figsize is validated at Figure() construction, but dpi is a plain,
+    freely-mutable Style attribute that reaches the same width/height
+    product and used to produce the identical invalid SVG (width="0" or
+    negative) that fix was written to prevent."""
+    fig, ax = plotpress.subplots()
+    fig.style.dpi = dpi
+    ax.plot([1, 2], [1, 2])
+    with pytest.raises(ValueError, match="dpi"):
+        fig.to_svg()
+    with pytest.raises(ValueError, match="dpi"):
+        fig.save(str(tmp_path / "out.png"))
+
+
+def test_positive_dpi_still_works():
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2])
+    assert fig.to_svg()
+
+
+@pytest.mark.parametrize("call", [
+    lambda ax: ax.errorbar([1, 2, 3], [1, 2, 3], yerr=-0.5),
+    lambda ax: ax.errorbar([1, 2, 3], [1, 2, 3], xerr=-0.5),
+    lambda ax: ax.bar([1, 2, 3], [1, 2, 3], yerr=-0.2),
+], ids=["errorbar-yerr", "errorbar-xerr", "bar-yerr"])
+def test_negative_error_magnitude_raises(call):
+    """A negative yerr/xerr has no geometric meaning -- it doesn't error,
+    it flips the whisker inward, shrinking data_bounds() to something
+    narrower than the bare data and pulling real points outside the
+    autoscaled ylim/xlim entirely, with no error or warning."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="non-negative"):
+        call(ax)
+
+
+def test_positive_error_magnitude_still_expands_bounds():
+    fig, ax = plotpress.subplots()
+    eb = ax.errorbar([1, 2, 3], [1, 2, 3], yerr=0.5)
+    assert eb.data_bounds() == (1.0, 3.0, 0.5, 3.5)
