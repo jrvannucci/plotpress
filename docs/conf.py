@@ -111,6 +111,7 @@ _VEGA_ROOTS = (
     os.path.join(_DOCS_DIR, "applications"),
 )
 _VEGA_DIR = os.path.join(_DOCS_DIR, "_static", "vega")
+_VEGA_LITE_DIR = os.path.join(_DOCS_DIR, "_static", "vega_lite")
 
 
 def _wheel_zoom_frames(fig, cursor_frac, n_steps=16, zoom_factor=0.85,
@@ -232,7 +233,9 @@ def _interactive_embed(fig, image_path):
 
 
 def _wants_vega(src_file):
-    """True if this example lives under a gallery that gets a Vega-export link."""
+    """True if this example lives under a gallery that gets a Vega-export
+    link -- gates both the Vega and Vega-Lite pages (same roots, same
+    plot-type-coverage rationale; no separate _wants_vega_lite needed)."""
     ap = os.path.abspath(src_file)
     return any(ap.startswith(root + os.sep) for root in _VEGA_ROOTS)
 
@@ -369,6 +372,162 @@ def _vega_embed(fig, image_path, src_file):
         '   <p><a class="plotpress-open-full" href="{}" target="_blank" '
         'rel="noopener">View this figure&#8217;s Vega export &#8599;</a> &mdash; '
         "the raw JSON spec, rendered live by a real Vega engine.</p>".format(src),
+        "",
+    ])
+
+
+_VEGA_LITE_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title} &mdash; Vega-Lite export</title>
+<style>
+  body {{ margin: 0; padding: 24px 32px 48px; background: #fff; color: #1a1a1a;
+         font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+  h1 {{ font-size: 1.1rem; margin: 0 0 4px; }}
+  p.lede {{ color: #555; max-width: 68ch; margin: 0 0 20px; }}
+  .warn {{ background: #fff8e6; border: 1px solid #f0d78c; border-radius: 6px;
+           padding: 10px 14px; margin: 0 0 20px; max-width: 68ch; font-size: 0.92rem; }}
+  .warn p {{ margin: 0 0 4px; font-weight: 600; }}
+  .warn ul {{ margin: 0; padding-left: 1.2em; }}
+  h2 {{ font-size: 0.95rem; margin: 28px 0 8px; }}
+  .vis-block {{ margin: 0 0 12px; }}
+  .vis {{ border: 1px solid #ddd; border-radius: 6px; padding: 8px;
+         display: inline-block; max-width: 100%; overflow: auto; }}
+  .jsonbar {{ display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; }}
+  button {{ font: inherit; font-size: 0.85rem; padding: 4px 10px; border-radius: 4px;
+           border: 1px solid #ccc; background: #f6f6f6; cursor: pointer; }}
+  button:hover {{ background: #ececec; }}
+  pre {{ background: #f6f6f6; border: 1px solid #ddd; border-radius: 6px; padding: 12px 14px;
+        max-height: 480px; overflow: auto; font-size: 0.82rem; }}
+</style>
+</head>
+<body>
+<h1>{title}</h1>
+<p class="lede">The exact output of <code>fig.to_vega_lite()</code> for this figure, rendered
+below by a real Vega-Lite engine (<a href="https://vega.github.io/vega-lite/" target="_blank"
+rel="noopener">vega-lite</a> + <a href="https://github.com/vega/vega-embed" target="_blank"
+rel="noopener">vega-embed</a>) rather than plotpress's own SVG/PNG backend &mdash; a second,
+independent rendering of the same data, useful for spotting a <code>to_vega_lite()</code>
+coverage gap or geometry bug plotpress's own renderer wouldn't reveal. Vega-Lite is a
+stricter, more declarative target than <a href="../../auto_examples/../../api.html#plotpress.figure.Figure.to_vega">
+<code>to_vega()</code></a> -- see the caveats below for anything this figure's structure
+needed that Vega-Lite's grammar couldn't fully capture.</p>
+{warning_block}
+{vis_blocks}
+
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+<script>
+  const specs = {specs_json};
+  specs.forEach(function (entry) {{
+    vegaEmbed('#' + entry.id, entry.spec).catch(function (err) {{
+      document.getElementById(entry.id).innerHTML =
+        '<p style="color:#b00">Vega-Lite render failed: ' + err + '</p>';
+      console.error(err);
+    }});
+    document.getElementById(entry.id + '-json').textContent = JSON.stringify(entry.spec, null, 2);
+  }});
+  document.querySelectorAll('[data-copy-target]').forEach(function (btn) {{
+    btn.addEventListener('click', function () {{
+      var pre = document.getElementById(btn.dataset.copyTarget);
+      navigator.clipboard.writeText(pre.textContent).then(function () {{
+        var msg = btn.nextElementSibling;
+        msg.textContent = 'Copied.';
+        setTimeout(function () {{ msg.textContent = ''; }}, 1500);
+      }});
+    }});
+  }});
+</script>
+</body>
+</html>
+"""
+
+
+def _vega_lite_embed(fig, image_path, src_file):
+    """Write ``fig`` as a standalone Vega-Lite-render + JSON page; return an
+    RST raw block linking to it, or ``""`` if the figure has nothing a
+    Vega-Lite export can show. Mirrors :func:`_vega_embed` -- see its own
+    docstring for the shared reasoning (skip a content-free figure, capture
+    warnings onto the page itself, disambiguate the output filename by the
+    script's own path).
+
+    Unlike :meth:`~plotpress.figure.Figure.to_vega`, ``to_vega_lite()``
+    returns ``(result, caveats)`` -- possibly *several* specs (a combined
+    grid plus independent standalone ones for axes Vega-Lite's own
+    composition couldn't place) rather than one. Each gets its own
+    labeled ``<div>``/JSON panel on the page instead of assuming exactly one.
+    """
+    from plotpress.vega_lite import _STRUCTURAL_WARNING_PREFIX
+    from plotpress.vega_lite import _vega_lite_has_content as _has_content
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result, caveats = fig.to_vega_lite()
+    if not _has_content(result):
+        return ""
+    # `caveats` is already shown as its own list of bullets below -- skip
+    # the one aggregate UserWarning figure_to_vega_lite() also emits for
+    # the exact same content, or every entry would show up twice.
+    warned = [str(w.message) for w in caught
+             if not str(w.message).startswith(_STRUCTURAL_WARNING_PREFIX)]
+
+    os.makedirs(_VEGA_LITE_DIR, exist_ok=True)
+    rel = os.path.relpath(src_file, _DOCS_DIR)
+    prefix = os.path.splitext(rel)[0].replace(os.sep, "_").replace("/", "_")
+    name = prefix + "__" + os.path.splitext(os.path.basename(image_path))[0]
+    title = os.path.splitext(rel)[0].replace(os.sep, "/")
+
+    warning_block = ""
+    messages = caveats + warned
+    if messages:
+        items = "".join(f"<li>{html.escape(m)}</li>" for m in messages)
+        warning_block = (
+            '<div class="warn"><p>Not everything in this figure made it into '
+            "the export:</p><ul>" + items + "</ul></div>"
+        )
+
+    specs = []
+    if result["grid"] is not None:
+        specs.append(("Combined figure", result["grid"]))
+    for i, spec in enumerate(result["standalone"]):
+        label = ("Additional panel" if len(result["standalone"]) == 1
+                 else f"Additional panel {i + 1}") if result["grid"] is not None else \
+                ("This figure" if len(result["standalone"]) == 1 else f"Panel {i + 1}")
+        specs.append((label, spec))
+
+    vis_blocks, entries = [], []
+    for i, (label, spec) in enumerate(specs):
+        vis_id, json_id = f"vis{i}", f"vis{i}-json"
+        heading = f"<h2>{html.escape(label)}</h2>" if len(specs) > 1 else ""
+        vis_blocks.append(
+            f'<div class="vis-block">{heading}<div class="vis" id="{vis_id}"></div>'
+            f'<div class="jsonbar"><button type="button" data-copy-target="{json_id}">'
+            f'Copy JSON</button><span style="color:#2a7a2a; font-size:0.85rem;"></span></div>'
+            f'<pre id="{json_id}"></pre></div>'
+        )
+        entries.append({"id": vis_id, "spec": spec})
+
+    page = _VEGA_LITE_PAGE_TEMPLATE.format(
+        title=html.escape(title),
+        warning_block=warning_block,
+        vis_blocks="\n".join(vis_blocks),
+        # _json_payload, not plain json.dumps -- see _vega_embed's own
+        # comment on why (a literal "</script" in any text field would
+        # otherwise close this page's <script> block early).
+        specs_json=_json_payload(entries),
+    )
+    with open(os.path.join(_VEGA_LITE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
+        fh.write(page)
+
+    src = "../../_static/vega_lite/" + name + ".html"
+    return "\n".join([
+        ".. raw:: html",
+        "",
+        '   <p><a class="plotpress-open-full" href="{}" target="_blank" '
+        'rel="noopener">View this figure&#8217;s Vega-Lite export &#8599;</a> &mdash; '
+        "the raw JSON spec(s), rendered live by a real Vega-Lite engine.</p>".format(src),
         "",
     ])
 
@@ -587,8 +746,9 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     rather than re-encoding it, so both the gallery page's image and its
     thumbnail play the animation rather than freezing on frame 0. Examples in
     :data:`INTERACTIVE_SECTIONS` additionally get a live interactive copy
-    embedded below the image, and examples under :data:`_VEGA_ROOTS` get a
-    link to a standalone ``Figure.to_vega()`` render/JSON page.
+    embedded below the image, and examples under :data:`_VEGA_ROOTS` get
+    links to standalone ``Figure.to_vega()`` and ``Figure.to_vega_lite()``
+    render/JSON pages.
     """
     from sphinx_gallery.scrapers import figure_rst
 
@@ -615,6 +775,9 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
                 embeds.append(_interactive_embed(value, path))
             if vega:
                 link = _vega_embed(value, path, block_vars["src_file"])
+                if link:
+                    embeds.append(link)
+                link = _vega_lite_embed(value, path, block_vars["src_file"])
                 if link:
                     embeds.append(link)
 

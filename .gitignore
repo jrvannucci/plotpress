@@ -67,3 +67,4 @@ examples/*.pdf
 docs/_static/interactive/
 docs/_static/gifs/
 docs/_static/vega/
+docs/_static/vega_lite/

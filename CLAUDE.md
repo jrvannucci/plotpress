@@ -20,11 +20,11 @@ resolve by appealing to one of them:
                                         v
                           artist_to_prims (primitives.py)
                                         │  backend-agnostic pixel-space prims
-                    ┌───────────────────┼───────────────────┬───────────────┐
-                    v                   v                   v               v
-                svg.py              raster.py         _interactive.py    vega.py
-              (SVG string)       (PNG via Pillow,     (vanilla JS layered (Vega v5 JSON
-                                  PDF via svglib)       onto the SVG)      spec, not SVG)
+                    ┌───────────────────┼───────────────────┬───────────────┬────────────────┐
+                    v                   v                   v               v                v
+                svg.py              raster.py         _interactive.py    vega.py         vega_lite.py
+              (SVG string)       (PNG via Pillow,     (vanilla JS layered (Vega v5 JSON   (Vega-Lite v5
+                                  PDF via svglib)       onto the SVG)      spec, not SVG)   spec, stricter)
 
 `Figure.to_svg()` is the core entry point; `Figure.save(path, interactive=...)`
 dispatches on the file extension. A new plotting method usually means touching
@@ -42,6 +42,7 @@ need rather than the whole file.
 | `plotpress/svg.py` | 1291 | SVG serialization — one `_render_*` per artist kind, plus axis decoration |
 | `plotpress/_interactive.py` | 1181 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
 | `plotpress/artists.py` | 927 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
+| `plotpress/vega_lite.py` | 861 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
 | `plotpress/raster.py` | 820 | PNG backend via Pillow; PDF via svglib/reportlab |
 | `plotpress/vega.py` | 755 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
 | `plotpress/figure.py` | 729 | The root object: layout, `to_svg`, `save`, `show`, figure-level text and legend |

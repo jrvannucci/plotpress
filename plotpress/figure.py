@@ -1028,6 +1028,37 @@ class Figure:
         from .vega import figure_to_vega
         return figure_to_vega(self)
 
+    def to_vega_lite(self) -> tuple:
+        """A Vega-Lite v5 specification for this figure.
+
+        Unlike :meth:`to_svg`/:meth:`to_html`/:meth:`to_vega`, which all
+        return one plain value, this returns ``(result, caveats)`` --
+        a deliberate, documented departure from its siblings, not an
+        oversight. ``result`` is ``{"grid": <spec> | None, "standalone":
+        [<spec>, ...]}``: a combined spec for whatever axes compose
+        cleanly into Vega-Lite's ``hconcat``/``vconcat`` grid, plus a list
+        of independent specs for anything that doesn't (a single axes with
+        nothing to grid against, a free-form ``add_axes()``/``inset_axes()``
+        panel, a mismatched-shape multi-grid figure). ``caveats`` is a list
+        of human-readable strings describing every structural compromise
+        made building the result -- data for a caller deciding what to do
+        with a partially-composed figure, not just console noise; every
+        entry is also re-emitted as a ``UserWarning``, so a caller who
+        ignores the tuple still sees the same warning.
+
+        Vega-Lite's mark vocabulary is closed (no raw path-per-datum mark
+        the way Vega has) and its composition model is grid-like, not
+        arbitrary-pixel-positioned, so this is a stricter target than
+        :meth:`to_vega` in both what a single axes can draw and how several
+        axes can be arranged together -- see :mod:`plotpress.vega_lite`'s
+        own module docstring for the full fidelity-tier breakdown (what
+        maps natively, what needs a layered workaround, and what has no
+        Vega-Lite mapping at all and warns instead) and the exact
+        figure-composition algorithm.
+        """
+        from .vega_lite import figure_to_vega_lite
+        return figure_to_vega_lite(self)
+
     def _repr_svg_(self) -> str:
         # Static inline SVG is the Jupyter default; use to_html for interactive.
         return figure_to_svg(self)

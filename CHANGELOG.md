@@ -13,6 +13,100 @@ anywhere in the source.
 
 ### Added
 
+- **`Figure.to_vega_lite()`** returns a Vega-Lite v5 specification -- a
+  stricter, more declarative sibling to `Figure.to_vega()` (Vega-Lite
+  compiles down to Vega itself, with a closed mark vocabulary and no raw
+  path-per-datum mark, and a grid-like `hconcat`/`vconcat` composition
+  model instead of Vega's arbitrary-pixel-positioned `group` marks).
+  Unlike every other export method, it returns `(result, caveats)`, not a
+  bare value -- a deliberate, documented departure, not an oversight (see
+  `Figure.to_vega_lite()`'s own docstring for why).
+
+  Fidelity is a three-tier hybrid, spelled out in `plotpress.vega_lite`'s
+  module docstring: `Line2D`, `ScatterCollection`, `Bars`, `ErrorBar`
+  (Vega-Lite's own `errorbar` mark, with precomputed `yError`/`xError`
+  fields -- genuinely *simpler* than `to_vega()`'s hand-built whisker/cap
+  geometry), `Pie` (Vega-Lite's `arc` mark auto-stacks `theta`, no manual
+  per-wedge trig), a monotonic-x `FillBetween` (a real `area` mark), and
+  `QuadMesh`/`Image` (a real `image` mark, reusing the same rasterized
+  RGBA + data extent every other backend already computes) map onto
+  Vega-Lite's native vocabulary directly. Reference lines/spans, `Stem`,
+  dashed lines, plain text, and custom tick labels (via `axis.labelExpr`,
+  capped at ~12 ticks) work through a layered workaround within that same
+  vocabulary. Everything already unsupported in `to_vega()` (`BoxPlot`,
+  `Violin`, `Quiver`, `Contour`, `EventPlot`, `Barbs`, `Table`, legends)
+  has no mapping here either, plus `PolyCollection` (no closed-vocabulary
+  polygon-batch mark), a non-monotonic `FillBetween`, and annotation
+  *arrows* specifically (the label stays, Vega-Lite has no arrow-drawing
+  mark) -- each warns by name rather than silently dropping content.
+
+  The harder problem Vega itself never forced: plotpress allows arbitrary
+  grid spans, `add_axes()` free rects, `inset_axes()`, `twinx()`/`twiny()`,
+  secondary axes, and colorbar axes, none of which `hconcat`/`vconcat` can
+  position as freely as a Vega `group` mark's own explicit pixel position
+  can. `to_vega_lite()` partitions a figure's axes into what composes
+  cleanly into one nested `hconcat`/`vconcat` grid (`result["grid"]`), a
+  twin merged into its parent's own view via Vega-Lite's
+  `resolve.scale.<axis>: "independent"` (whichever axis it doesn't share
+  -- `y` for `twinx()`, `x` for `twiny()`), and everything else exported as
+  an independent standalone spec (`result["standalone"]`) rather than
+  forced into a layout Vega-Lite was never asked to represent. Every
+  structural compromise is collected into `caveats` (a dropped colorbar, a
+  grid-shape mismatch, a spanning axes placed once instead of duplicated)
+  -- data for a caller, not just console noise -- and re-emitted as one
+  aggregate `UserWarning` too, so a caller who ignores the tuple still
+  sees it.
+
+  Two audit passes (semantic fidelity vs. `svg.py` field by field, and
+  empirical crash/edge-case testing against real figures) found and fixed
+  real bugs before this shipped, several only visible by actually
+  rendering through `vega-lite`/`vega`/`vega-cli`, not from the JSON
+  alone:
+  - **A multi-cell grid span was inserted as the *same* dict object into
+    every cell it covered**, rendering duplicated side by side instead of
+    spanning -- now placed once, at its own top-left cell, sized with an
+    explicit pixel width/height.
+  - **A colorbar axes was silently dropped with zero caveat**, despite
+    every other excluded-axes kind warning by name -- it has no artists of
+    its own to export (`fig.colorbar()` draws it through a separate path,
+    not `ax.artists`) and Vega-Lite has no standalone gradient-legend
+    mark to stand in for it, so it now warns explicitly instead of just
+    vanishing.
+  - **`twiny()`'s independent-scale merge was backwards** -- every twin
+    got `resolve.scale.y: "independent"` regardless of which axis it
+    actually shared with its parent, correct for the common `twinx()`
+    case but exactly wrong for `twiny()` (shares `y`, wants `x`
+    independent).
+  - **A `pcolormesh`/`imshow` on an inverted axis rendered upside-down.**
+    Reversing Vega-Lite's scale repositions an `image` mark's bounding
+    box but does not re-flip the raster *inside* it the way a
+    point/line/bar mark's geometry, computed from the data at render
+    time, naturally would -- confirmed by rendering an inverted-axis mesh
+    and comparing pixel-for-pixel against plotpress's own output. Now
+    manually flipped to match, the same way `artist_to_prims`'s own
+    `(QuadMesh, Image)` branch already does for the other backends.
+  - `_bars_layer` crashed (`unhashable type: numpy.ndarray`) on a
+    per-bar RGBA color array; `_errorbar_layers` forced Vega-Lite's caps
+    on unconditionally, ignoring `capsize=0`; a `fill_between()` with
+    all-`NaN` data was mislabeled as "non-monotonic" (a `NaN` comparison
+    is always `False`, tripping the same check a real non-monotonic
+    series does) instead of "nothing to draw"; `Text`/`Annotation`
+    dropped vertical alignment and rotation entirely.
+
+  Verified against every script in `docs/examples` **and**
+  `docs/applications`: 296 figures export with zero failures and zero
+  malformed/blank output, 224 with one or more caveats or per-artist
+  warnings (a colorbar, a legend, or one of the named unsupported artist
+  types) cleanly named rather than silently dropped.
+
+  `docs/conf.py`'s gallery scraper links every example/application figure
+  with exportable content to a standalone page rendering its own
+  `to_vega_lite()` output live (via `vega-lite` + `vega-embed`), the raw
+  JSON, and any caveats -- mirroring the existing `to_vega()` page, with
+  one difference: since a figure can produce several specs (a combined
+  grid plus independent standalone ones), the page renders each in its
+  own labeled panel instead of assuming exactly one.
+
 - **`Figure.to_vega()`** returns a real Vega (not Vega-Lite) v5 JSON
   specification as a plain `dict` -- a third export surface alongside
   `to_svg()`/`to_html()`, for handing a figure to a Vega runtime instead of

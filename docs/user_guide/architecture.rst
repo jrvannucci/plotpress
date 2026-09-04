@@ -65,6 +65,7 @@ Module                        Responsibility
 ``fonts/``                    bundled width tables + the family registry (layout only)
 ``_interactive.py``           inlined vanilla JS: toolbar, zoom, pick, sliders
 ``vega.py``                   ``Figure.to_vega()``: a real Vega v5 JSON spec
+``vega_lite.py``              ``Figure.to_vega_lite()``: a Vega-Lite v5 spec
 ============================  ==================================================
 
 Compiling to other renderers
@@ -109,6 +110,18 @@ That diagram is honest only as far as it goes -- two real exceptions:
   not different syntax for the same one -- reusing the prims layer for those
   kinds would mean giving up that reactivity. See :mod:`plotpress.vega`'s own
   module docstring for the full trade-off.
+- **``vega_lite.py`` barely touches the shared prims layer at all.**
+  Vega-Lite's mark vocabulary is closed -- no raw path-per-datum mark the
+  way Vega has -- so ``artist_to_prims()``'s pixel-space prims have
+  nowhere to plug in for most artist kinds; almost every mark builder in
+  ``vega_lite.py`` is hand-written directly against ``artists.py``'s own
+  fields instead, a third independent translation of the same handful of
+  artist kinds (the one partial exception is its mesh/image mark, which
+  does reuse the same ``rgba()``/``extent()`` pair ``artist_to_prims()``'s
+  own ``(QuadMesh, Image)`` branch reads). See :mod:`plotpress.vega_lite`'s
+  own module docstring for its three fidelity tiers and the
+  figure-composition algorithm Vega-Lite's grid-only layout model forces
+  that neither ``vega.py`` nor any pixel-space backend needs.
 
 How a page actually loads
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
