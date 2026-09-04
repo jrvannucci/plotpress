@@ -460,6 +460,15 @@ class Axes:
         Y = np.asarray(Y, dtype=float)
         if Y.ndim != 2:
             raise ValueError("plot_frames() requires Y with shape (n_frames, n_points)")
+        if Y.shape[0] == 0:
+            # Rendering always draws "frame 0" (the slider's starting
+            # position) unconditionally -- with no frames at all that
+            # indexed into an empty axis at render time instead of here,
+            # a bare IndexError with no mention of plot_frames() at fault.
+            raise ValueError(
+                "plot_frames() requires at least one frame, got Y with "
+                f"shape {Y.shape}"
+            )
         art = FrameLine2D(
             x, Y,
             color=self._resolve_color(color),

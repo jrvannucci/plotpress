@@ -11,7 +11,50 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **The home page's "one figure, several outputs" diagram now uses real
+  box-drawing lines** (matching `CLAUDE.md`'s own render-pipeline diagram)
+  instead of plain `+`/`-`/`v` ASCII.
+- **A new "Reading a figure back out of HTML" diagram** on the home page,
+  covering the reverse direction the first diagram didn't: a saved
+  ``interactive=True`` HTML file's embedded JSON, through
+  `plotpress.load_data()` and `plotpress.subplots_from_layout()`, to a
+  rebuilt `Figure` ready for the caller to replot recovered data into.
+  Links to the full API docs and the `data_roundtrip` example gallery.
+
 ### Fixed
+
+- **A third break-it audit** (new territory: real `load_data()`/
+  `subplots_from_layout()` round trips, `Report`, polar axes, `Figure.
+  group()`, `plot_frames()`, style independence, `adopt_axes()`) found and
+  fixed three more real bugs, two of them affecting completely ordinary
+  matplotlib usage, not edge cases:
+
+  - **A plain RGB(A) tuple color** (`color=(1.0, 0.0, 0.0)`) reached the
+    SVG backend as a literal, invalid `stroke="(1.0, 0.0, 0.0)"` (silently
+    invisible -- a browser treats an unrecognized value as unset) and
+    crashed PNG export outright with `'tuple' object has no attribute
+    'lstrip'`. `to_hex()` now recognizes a flat, purely-numeric 3/4-element
+    sequence as an RGB(A) color and converts it, matching matplotlib's own
+    convention (floats in `[0, 1]` or already `0-255`).
+  - **`bar()`'s one-color-per-bar array** (`color=[[r, g, b, a], ...]`)
+    reached every renderer's own `fill=`/`stroke=` as a raw, unresolved
+    Python list per bar -- `fill="[1.0, 0, 0, 1]"` in SVG, the same class
+    of bug as the tuple one above, just one level of nesting deeper.
+    `artists._as_colors()` now resolves each bar's own color through
+    `to_hex()` once, the same "resolve here, once" fix already applied to
+    `Axes._resolve_color()` earlier in this audit.
+  - **`plot_frames()` with zero frames** (`Y` shaped `(0, n_points)`)
+    crashed at *render* time with a bare `IndexError` -- rendering always
+    draws "frame 0" unconditionally, which doesn't exist when there are no
+    frames at all. Now validated eagerly.
+
+  Verified via a third adversarial battery (~30 new cases: real HTML round
+  trips including `Report`/polar/`twinx`/`sharex`/groups, not just
+  isolated method calls), the full non-browser + browser suite (1026 + 105
+  passed), and a from-clean full docs rebuild -- zero regressions.
+  `tests/test_input_validation.py` gained 11 more tests (62 total).
 
 - **A second, more aggressive break-it audit** (new territory: legends,
   annotations, gridded-data methods, `table()`/`bar_label()`, `quiver()`/

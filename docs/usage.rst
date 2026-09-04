@@ -183,6 +183,8 @@ colorbar -- combined into a single scrollable report.
 
 .. include:: _static/interactive/usage_report.rst.inc
 
+.. _reading-html-data:
+
 Reading data back out of a saved HTML
 ---------------------------------------
 

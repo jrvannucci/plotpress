@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from .colors import apply_colormap, get_cmap, resolve_norm
+from .colors import apply_colormap, get_cmap, resolve_norm, to_hex
 
 # The four dash patterns every backend's own _DASH table (svg.py, raster.py)
 # actually knows how to draw, keyed by matplotlib's short form -- the long
@@ -732,10 +732,21 @@ class FrameQuadMesh(Artist):
 
 
 def _as_colors(color, n):
-    """Normalize a color arg to a per-item list of length n."""
+    """Normalize a color arg to a per-item list of length n, each entry
+    resolved to a final ``#rrggbb`` (or a raw RGBA passthrough -- see
+    :func:`~plotpress.colors.to_hex`).
+
+    The one-color-per-bar form (``bar(color=[[r, g, b, a], ...])``, one row
+    per bar) reached every renderer's own ``fill="{bars.colors[i]}"`` as a
+    raw, un-resolved Python list -- ``fill="[1.0, 0, 0, 1]"`` in the SVG
+    backend, invalid and silently invisible, the same class of bug
+    :func:`~plotpress.colors.to_hex` itself was fixed for. Resolving here,
+    once, covers every backend that reads ``bars.colors[i]`` already
+    expecting a plain color value.
+    """
     if isinstance(color, (list, tuple, np.ndarray)) and len(color) == n \
             and not isinstance(color, str):
-        return list(color)
+        return [to_hex(c) for c in color]
     return [color] * n
 
 

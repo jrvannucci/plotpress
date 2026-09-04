@@ -349,3 +349,97 @@ def test_imshow_reversed_finite_extent_still_works():
     ax.imshow(np.random.default_rng(0).random((5, 5)), extent=(10, 0, 10, 0))
     assert ax.get_xlim() == (10, 0)
     assert fig.to_svg()
+
+
+# ---------------------------------------------------------------------------
+# Round 3: RGB(A) tuple colors, per-bar RGBA arrays, plot_frames() with no
+# frames.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("rgb,expected", [
+    ((1.0, 0.0, 0.0), "#ff0000"),
+    ((0.0, 1.0, 0.0, 0.5), "#00ff00"),
+    ((255, 128, 0), "#ff8000"),
+])
+def test_to_hex_resolves_rgb_tuples(rgb, expected):
+    assert to_hex(rgb) == expected
+
+
+def test_plot_with_rgb_tuple_color_renders_correctly():
+    """(1.0, 0.0, 0.0) -- completely ordinary matplotlib usage -- used to
+    reach the SVG backend as a literal stroke="(1.0, 0.0, 0.0)" (invalid,
+    silently invisible) and crash PNG export outright with 'tuple' object
+    has no attribute 'lstrip'."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3], color=(1.0, 0.0, 0.0))
+    svg = fig.to_svg()
+    assert 'stroke="#ff0000"' in svg
+
+
+def test_plot_with_rgb_tuple_color_png_export_does_not_crash(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3], color=(1.0, 0.0, 0.0))
+    fig.save(str(tmp_path / "out.png"))  # must not raise
+
+
+def test_bar_per_bar_rgba_array_resolves_in_svg():
+    """bar(color=[[r,g,b,a], ...]) -- one row per bar -- used to reach
+    svg.py's fill="{bars.colors[i]}" as a raw, unresolved Python list:
+    fill="[1.0, 0, 0, 1]", invalid and silently invisible."""
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1, 2], [1, 2, 3],
+          color=[[1.0, 0, 0, 1], [0, 1.0, 0, 1], [0, 0, 1.0, 1]])
+    svg = fig.to_svg()
+    assert 'fill="#ff0000"' in svg
+    assert 'fill="#00ff00"' in svg
+    assert 'fill="#0000ff"' in svg
+
+
+def test_bar_per_bar_color_typo_raises():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="Unknown color"):
+        ax.bar([0, 1, 2], [1, 2, 3], color=["red", "gren", "blue"])
+
+
+def test_bar_per_bar_string_colors_still_work():
+    """Not a bug -- confirm the existing (already-working) per-bar named-
+    color list still resolves the same way after to_hex()/_as_colors()
+    both changed."""
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1, 2], [1, 2, 3], color=["red", "green", "blue"])
+    svg = fig.to_svg()
+    assert 'fill="#ff0000"' in svg
+    assert 'fill="#008000"' in svg
+    assert 'fill="#0000ff"' in svg
+
+
+def test_eventplot_color_list_mistake_no_longer_produces_invalid_svg():
+    """eventplot() has one shared color, not a per-row list -- passing one
+    anyway used to reach the SVG backend as a literal Python list repr,
+    fill="['red', 'blue']". Not rejected (eventplot has no per-row-color
+    contract to validate against), but no longer silently invalid either --
+    the nested-array path in to_hex() only converts a genuinely flat,
+    numeric 3/4-tuple, so this is unchanged from before to_hex() grew RGB
+    support: still passed through, still the caller's problem, not a new
+    regression."""
+    fig, ax = plotpress.subplots()
+    ax.eventplot([[1, 2, 3], [4, 5]], color=["red", "blue"])
+    assert fig.to_svg()  # must not raise
+
+
+def test_plot_frames_empty_raises():
+    """Rendering always draws 'frame 0' unconditionally -- with zero frames
+    that indexed into an empty axis at render time with a bare IndexError,
+    not here, at the call that actually caused it."""
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 1, 10)
+    Y = np.zeros((0, 10))
+    with pytest.raises(ValueError, match="plot_frames"):
+        ax.plot_frames(x, Y)
+
+
+def test_plot_frames_single_frame_still_works():
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 1, 10)
+    Y = np.random.default_rng(0).random((1, 10))
+    ax.plot_frames(x, Y)
+    assert fig.to_svg()

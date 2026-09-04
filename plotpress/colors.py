@@ -291,19 +291,37 @@ _PAINT_KEYWORDS = frozenset(("none", "transparent"))
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
-def to_hex(color: str) -> str:
-    """Resolve a color name to ``#rrggbb``; pass hex (and the ``"none"``/
-    ``"transparent"`` paint keywords) through unchanged.
+def to_hex(color) -> str:
+    """Resolve a color name -- or a matplotlib-style RGB(A) tuple -- to
+    ``#rrggbb``; pass hex (and the ``"none"``/``"transparent"`` paint
+    keywords) through unchanged.
 
-    Raises ``ValueError`` for anything else unrecognized -- a misspelled
-    name (``"crimon"``) or malformed hex (``"#zzzzzz"``). Letting either
-    through unresolved, as this used to, meant it reached the SVG backend as
-    a bare, invalid ``stroke``/``fill`` value (a browser silently treats
-    that as unset, so the artist just doesn't render -- no error anywhere)
-    or the raster backend's hex parser, which fails with a bare
-    ``int(..., 16)`` error that never mentions the color was the problem.
+    A flat, purely-numeric 3- or 4-element sequence (``(1.0, 0.0, 0.0)``,
+    ``(255, 128, 0)``) is treated as a single RGB(A) color and converted --
+    this used to pass straight through unresolved, reaching the SVG backend
+    as a literal, invalid ``stroke="(1.0, 0.0, 0.0)"`` (silently invisible:
+    a browser treats an unrecognized value as unset) or the raster
+    backend's hex parser, which failed with ``'tuple' object has no
+    attribute 'lstrip'``, never mentioning color was the problem. Anything
+    else non-string -- notably a *nested* per-item array/list, the shape
+    ``bar(color=[[r,g,b,a], ...])``'s one-color-per-bar path uses -- is left
+    exactly alone: resolving each of *those* colors individually is that
+    caller's own job (see ``artists._as_colors``), not this function's.
+
+    Raises ``ValueError`` only for a string that resolves to neither a
+    known name nor valid hex -- a misspelled name (``"crimon"``) or
+    malformed hex (``"#zzzzzz"``).
     """
+    if color is None:
+        return color
     if not isinstance(color, str):
+        arr = np.asarray(color)
+        if arr.ndim == 1 and arr.size in (3, 4) and arr.dtype.kind in "iuf":
+            rgb = arr[:3].astype(float)
+            if rgb.max() <= 1.0:
+                rgb = rgb * 255
+            r, g, b = (int(round(v)) for v in rgb)
+            return f"#{r:02x}{g:02x}{b:02x}"
         return color
     if color.lower() in _PAINT_KEYWORDS:
         return color

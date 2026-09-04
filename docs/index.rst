@@ -27,22 +27,15 @@ One figure, several outputs
 The same ``Figure`` built once from the matplotlib-shaped API renders to
 every format below -- no separate figure per output, no plugin to install::
 
-                       plotpress API
-              (Figure, Axes -- matplotlib-shaped,
-               no globals, no compiled extension)
-                            |
-                            v
-                      one Figure object
-                            |
-     +----------+----------+----------+----------+----------+
-     v          v          v          v          v          v
-   .svg       .png       .pdf       .html        Vega       Vega-Lite
-  (vector,  (raster,   (vector,   (self-        v5 JSON     v5 JSON
-   the core   Pillow)   svglib +   contained,   spec        spec, a
-   format)              reportlab) SVG + JS,    (real       stricter,
-                                    no server    pixel-      more
-                                    round trip)  space       declarative
-                                                  marks)      grammar
+                                   one Figure object
+                                           │
+       ┌───────────────┬───────────────┬───────┴───────┬───────────────┐
+       v               v               v               v               v
+     .svg            .png            .pdf            .html           Vega          Vega-Lite
+   (vector,        (raster,        (vector,        (SVG + JS       (v5 JSON,      (v5 JSON, a
+   the core         Pillow)        svglib +       inlined --      real pixel-   stricter, more
+    format)                       reportlab)       no server     space marks)     declarative
+                                                  round trip)                      grammar)
 
 ``fig.save(path, ...)`` dispatches on the file extension for the first
 four; ``fig.to_vega()`` / ``fig.to_vega_lite()`` return a JSON
@@ -52,6 +45,46 @@ an existing Vega-based dashboard or notebook instead of embedding
 plotpress's own SVG/JS. See :doc:`user_guide/architecture` for exactly how
 much of the rendering pipeline each of these six actually shares, and where
 a format gets its own dedicated path instead.
+
+Reading a figure back out of HTML
+------------------------------------
+
+The interactive HTML above isn't a one-way trip: it embeds the plotted data
+and the figure's own layout as JSON alongside the SVG, so a later process --
+with none of the Python objects that built it still around -- can read a
+figure back out and rebuild it::
+
+               a saved .html (Figure.save(path, interactive=True))
+                     embeds <script id="plotpress-pick"> and
+                        id="plotpress-layout"> per figure
+                                        │
+                                        v
+                            plotpress.load_data(path)
+                        parses that embedded JSON back out
+                                         │
+                          ┌──────────────┴──────────────┐
+                          v                             v
+                      "layout"                       "axes"
+                  (grid shape, each            (recovered series/
+               axes' own decorations,        mesh/pie data per axes,
+                 groups, sup-title)              keyed by title)
+                          │
+                          v
+                      plotpress.subplots_from_layout(layout)
+                      rebuilds the grid and every axes' own
+                    decorations -- not the plotted data itself
+                                        │
+                                        v
+                    a new, already-labeled Figure -- ready for
+                    the caller to replot the recovered "axes"
+                                  data back into
+
+A freeform :meth:`~plotpress.figure.Figure.add_axes` rect, an inset, or a
+colorbar axes has no grid cell to rebuild from -- its index is listed in
+``layout["omitted_axes"]`` instead of silently vanishing. See
+:ref:`reading-html-data` for the full API and
+:doc:`/auto_examples/data_roundtrip/index` for worked examples, including
+one that reloads a mesh straight into an ``xarray.DataArray``.
 
 What it is for
 --------------
