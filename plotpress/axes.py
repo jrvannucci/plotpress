@@ -2643,6 +2643,29 @@ class Axes:
             return self._yticks
         return log_ticks(ymin, ymax) if self._yscale == "log" else nice_ticks(ymin, ymax)
 
+    def print_summary(self) -> None:
+        """Print a plain-English orientation to this one axes -- where it
+        sits (a grid cell, a span, a twin/secondary/inset/colorbar), its
+        scales/limits/labels, what's plotted on it, and whether it would
+        export cleanly to :meth:`~plotpress.figure.Figure.to_vega`/
+        :meth:`~plotpress.figure.Figure.to_vega_lite`. The per-axes half
+        of :meth:`~plotpress.figure.Figure.print_layout_summary`; nothing
+        is returned, matching that method's own "ask it, don't parse it"
+        intent.
+
+        Named ``print_*`` (not e.g. ``summary``) so it tab-completes
+        alongside every other summary method this library adds -- see
+        :meth:`~plotpress.figure.Figure.print_layout_summary` for the
+        whole-figure one.
+        """
+        from .figure import _axes_summary_lines, _vega_compat_report
+
+        idx = self.figure.axes.index(self)
+        gaps = _vega_compat_report(self.figure).get(idx, {"vega": [], "vega_lite": []})
+        print(f"Axes {idx}:")
+        for line in _axes_summary_lines(self, gaps):
+            print(line)
+
     @staticmethod
     def _group_bounds(axes_list, ix):
         """Data (lo, hi) for dimension ``ix`` (0=x, 2=y) across a set of axes."""

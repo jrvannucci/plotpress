@@ -1077,6 +1077,41 @@ class Figure:
         from .vega_lite import figure_to_vega_lite
         return figure_to_vega_lite(self, mesh_data=mesh_data)
 
+    def print_layout_summary(self) -> None:
+        """Print a plain-English orientation to this figure's layout --
+        how many axes, how they're arranged (a grid, spans, twins,
+        insets, colorbars, free-form panels), what's plotted on each one,
+        and whether each would export cleanly to :meth:`to_vega`/
+        :meth:`to_vega_lite`. Meant for a REPL/notebook, when a figure
+        came from somewhere else (a saved layout, an imported HTML file,
+        code you didn't write) and the fastest way to understand it is to
+        just ask it -- not for programmatic use (nothing here is returned;
+        see :meth:`~plotpress.axes.Axes.print_summary` for one axes at a
+        time, or read ``fig.axes``/``ax.artists`` directly for that).
+
+        Named ``print_*`` (not e.g. ``layout_summary``) so it tab-completes
+        alongside every other summary method this library adds -- see
+        :meth:`~plotpress.axes.Axes.print_summary` for the per-axes one.
+        """
+        visible = [ax for ax in self.axes if ax._visible]
+        print(f"Figure: {len(self.axes)} axes ({len(visible)} visible), "
+              f"figsize={self.figsize}")
+        if self._groups:
+            names = ", ".join(repr(g["title"]) for g in self._groups)
+            print(f"  Figure.group() boxes: {names}")
+        gaps = _vega_compat_report(self)
+        fig_level = gaps.get(None)
+        if fig_level and (fig_level["vega"] or fig_level["vega_lite"]):
+            print("  figure-level export notes:")
+            for msg in fig_level["vega"]:
+                print(f"    - [vega] {msg}")
+            for msg in fig_level["vega_lite"]:
+                print(f"    - [vega-lite] {msg}")
+        for i, ax in enumerate(self.axes):
+            print(f"\nAxes {i}:")
+            for line in _axes_summary_lines(ax, gaps.get(i, {"vega": [], "vega_lite": []})):
+                print(line)
+
     def _repr_svg_(self) -> str:
         # Static inline SVG is the Jupyter default; use to_html for interactive.
         return figure_to_svg(self)
@@ -1631,6 +1666,128 @@ def _layout_colorbar(cax):
         left, bottom, w, h = a._rect
         a._rect = (gl + (left - gl) * scale, bottom, w * scale, h)
     cax._rect = (gl + keep + span_w * pad, gb, bar_w, gt - gb)
+
+
+def _vega_compat_report(fig):
+    """``{axes_index_or_None: {"vega": [str, ...], "vega_lite": [str, ...]}}``
+    -- built by actually calling ``fig.to_vega()``/``fig.to_vega_lite()``
+    and reading their real warnings/caveats, not a separately-maintained
+    list of "supported artist types" that could drift out of sync with
+    what those two exporters actually do. ``None`` collects a gap that
+    isn't attributable to one specific axes (a whole-figure legend, a
+    grid-shape mismatch spanning several axes). Shared by
+    :meth:`Figure.print_layout_summary` and :meth:`~plotpress.axes.Axes.print_summary`
+    so both report the exact same thing for the same figure.
+    """
+    import re
+
+    from .vega_lite import _STRUCTURAL_WARNING_PREFIX
+
+    report = {}
+
+    def add(msg, target):
+        idxs = [int(m) for m in re.findall(r"axes (\d+)", msg)] or [None]
+        for i in idxs:
+            report.setdefault(i, {"vega": [], "vega_lite": []})[target].append(msg)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            fig.to_vega()
+        except Exception:
+            pass
+    for w in caught:
+        add(str(w.message), "vega")
+
+    with warnings.catch_warnings(record=True) as caught2:
+        warnings.simplefilter("always")
+        try:
+            _, caveats = fig.to_vega_lite()
+        except Exception:
+            caveats = []
+    # `caveats` already carries every structural gap once, deduplicated;
+    # the aggregate warning built from `" ".join(caveats)` would otherwise
+    # duplicate every one of them as a second, harder-to-parse blob (the
+    # same problem docs/conf.py's own scraper already had to filter out).
+    for msg in caveats:
+        add(msg, "vega_lite")
+    for w in caught2:
+        msg = str(w.message)
+        if not msg.startswith(_STRUCTURAL_WARNING_PREFIX):
+            add(msg, "vega_lite")
+    return report
+
+
+def _axes_position_desc(ax):
+    """One line describing where ``ax`` sits: a plain grid cell, a
+    multi-cell span, or one of the ways an axes can be entangled with
+    another (twin, secondary, inset, colorbar, free-form ``add_axes()``)
+    -- the same classification :func:`plotpress.vega_lite._is_cleanly_composable`
+    and its neighbors use to decide how a figure composes into Vega-Lite,
+    reused here as plain English rather than re-derived.
+    """
+    axlist = ax.figure.axes
+    if ax._is_colorbar:
+        parents = [p for p in (ax._cbar_parents or []) if p in axlist]
+        if not parents:
+            return "colorbar"
+        names = ", ".join(f"axes {axlist.index(p)}" for p in parents)
+        return f"colorbar for {names}"
+    if ax._twin_of is not None:
+        kind = "twinx()" if ax._twin_shared == "x" else "twiny()"
+        return f"{kind} overlay of axes {axlist.index(ax._twin_of)}"
+    if ax._secondary_of is not None:
+        return f"secondary axis of axes {axlist.index(ax._secondary_of)}"
+    if ax._inset_parent is not None:
+        return f"inset of axes {axlist.index(ax._inset_parent)}"
+    ss = ax._subplotspec
+    if ss is None:
+        return "free-form add_axes() rect"
+    if ss.row0 == ss.row1 and ss.col0 == ss.col1:
+        return f"row {ss.row0}, col {ss.col0} of a {ss.nrows}x{ss.ncols} grid"
+    return (f"spans rows {ss.row0}-{ss.row1}, cols {ss.col0}-{ss.col1} "
+            f"of a {ss.nrows}x{ss.ncols} grid")
+
+
+def _axes_summary_lines(ax, gaps=None):
+    """The lines :meth:`Figure.print_layout_summary` prints per axes and
+    :meth:`~plotpress.axes.Axes.print_summary` prints for just one --
+    shared so the two commands can never describe the same axes
+    differently. ``gaps`` is one entry of :func:`_vega_compat_report`'s
+    return value (``{"vega": [...], "vega_lite": [...]}``), or ``None`` to
+    skip the export-compatibility lines entirely (a plain description,
+    no exporters run).
+    """
+    from collections import Counter
+
+    counts = Counter(type(a).__name__ for a in ax.artists)
+    artists_desc = ", ".join(f"{n} {name}" for name, n in counts.items()) or "none"
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    lines = [
+        f"  position:  {_axes_position_desc(ax)}",
+        f"  visible:   {ax._visible}",
+        f"  x:  {ax._xscale}, [{xlim[0]:.4g}, {xlim[1]:.4g}]"
+        + (" (inverted)" if ax._xinverted else ""),
+        f"  y:  {ax._yscale}, [{ylim[0]:.4g}, {ylim[1]:.4g}]"
+        + (" (inverted)" if ax._yinverted else ""),
+        f"  artists:   {artists_desc}",
+    ]
+    if ax._title:
+        lines.append(f"  title:     {ax._title!r}")
+    if ax._xlabel or ax._ylabel:
+        lines.append(f"  labels:    xlabel={ax._xlabel!r} ylabel={ax._ylabel!r}")
+    if getattr(ax, "_is_polar", False):
+        lines.append("  polar:     yes")
+    if gaps is not None:
+        v = "OK" if not gaps["vega"] else f"{len(gaps['vega'])} gap(s)"
+        vl = "OK" if not gaps["vega_lite"] else f"{len(gaps['vega_lite'])} gap(s)"
+        lines.append(f"  to_vega():      {v}")
+        lines.append(f"  to_vega_lite(): {vl}")
+        for msg in gaps["vega"]:
+            lines.append(f"    - [vega] {msg}")
+        for msg in gaps["vega_lite"]:
+            lines.append(f"    - [vega-lite] {msg}")
+    return lines
 
 
 def _sanitize_nan(obj):

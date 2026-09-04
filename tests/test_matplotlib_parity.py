@@ -79,6 +79,11 @@ def test_method_names_are_a_subset_of_matplotlib():
         # with no per-axes on/off switch or attachable metadata -- these
         # control plotpress's own interactive-HTML point picking instead.
         "set_pickable", "get_pickable", "set_pick_context", "get_pick_context",
+        # A plain-English orientation to one axes (position, scales,
+        # artists, Vega/Vega-Lite export compatibility) -- matplotlib has
+        # no equivalent; see Figure.print_layout_summary for the
+        # whole-figure version.
+        "print_summary",
     }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")

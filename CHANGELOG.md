@@ -13,6 +13,30 @@ anywhere in the source.
 
 ### Added
 
+- **`Figure.print_layout_summary()` / `Axes.print_summary()`** print a
+  plain-English orientation to a figure/axes -- how many axes there are,
+  how each is arranged (a grid cell, a multi-cell span, a `twinx()`/
+  `twiny()` overlay, a secondary axis, an inset, a colorbar, or a
+  free-form `add_axes()` rect), what's plotted on it, its scales/limits/
+  labels, and whether it would export cleanly to `to_vega()`/
+  `to_vega_lite()` -- naming exactly which artist or structural gap would
+  warn, not just "yes/no". Meant for the fastest way to understand a
+  figure you didn't build yourself (a saved layout, an imported HTML
+  file) -- both print to stdout and return nothing, not for programmatic
+  use.
+
+  The export-compatibility lines are never a separately-maintained "what's
+  supported" list that could drift from the real exporters: both methods
+  actually call `fig.to_vega()`/`fig.to_vega_lite()` (capturing their real
+  warnings/caveats) and report exactly what came back, attributed back to
+  the axes each one named. `Figure.print_layout_summary()` and
+  `Axes.print_summary()` share the same per-axes description code, so the
+  two can never describe the same axes differently.
+
+  Named `print_*`, not e.g. `layout_summary()`/`summary()`, so they
+  tab-complete together -- and alongside whatever summary methods this
+  library adds next.
+
 - **`Figure.to_vega(mesh_data=True)` / `Figure.to_vega_lite(mesh_data=True)`**
   opt a `pcolormesh`/mesh-backed `imshow` into real per-cell `rect` marks
   with a genuine `field`+`scale` color encoding, instead of the default
