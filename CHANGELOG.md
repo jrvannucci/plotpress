@@ -13,6 +13,18 @@ anywhere in the source.
 
 ### Fixed
 
+- **CI's `Tests (py3.9)`/`(py3.10)`/`(py3.11)` jobs were failing on every
+  push** -- `plotpress/svg.py`'s multiline-text renderer had a nested
+  f-string with a backslash inside another f-string's `{...}` expression
+  part, which PEP 701 only legalized in Python 3.12. Every 3.9-3.11 job
+  raised `SyntaxError: f-string expression part cannot include a
+  backslash` on import and failed outright, while 3.12-3.14 (this
+  project's own dev environment) never saw it. Rewritten to build the
+  nested `dy="..."` fragment as a plain variable first, with identical
+  output. `tests/test_python_compat.py` (new) pins the source pattern
+  that caused this so it can't silently regress again, and confirms the
+  fixed renderer's output is unchanged.
+
 - **A break-it audit across the whole library** found and fixed seven cases
   where an input a real user would plausibly pass either crashed with a
   confusing internal traceback, rendered silently wrong with no warning at

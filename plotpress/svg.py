@@ -1705,10 +1705,14 @@ def _text_svg(x, y, text, color, size, ha, va, rotation=0.0, outline=None, alpha
     # (matplotlib's default multialignment, which follows ha).
     line_height = size * _LINE_HEIGHT_FRAC
     y0 = y - _multiline_shift(va, len(lines), line_height)
-    tspans = "".join(
-        f'<tspan x="{_fmt(x)}"{"" if i == 0 else f" dy=\"{_fmt(line_height)}\""}>'
-        f'{_esc(ln)}</tspan>'
-        for i, ln in enumerate(lines))
+    def _tspan(i, ln):
+        # A backslash inside an f-string's {} expression needs 3.12+ (PEP
+        # 701); this project supports 3.9+, so the nested dy="..." literal
+        # is built as a plain variable first rather than escaped inline.
+        dy = "" if i == 0 else f' dy="{_fmt(line_height)}"'
+        return f'<tspan x="{_fmt(x)}"{dy}>{_esc(ln)}</tspan>'
+
+    tspans = "".join(_tspan(i, ln) for i, ln in enumerate(lines))
     return (f'<text x="{_fmt(x)}" y="{_fmt(y0)}" text-anchor="{anchor}" '
             f'dominant-baseline="{baseline}" font-size="{size}" '
             f'fill="{color}"{halo}{op}{weight}{style}{rot}>{tspans}</text>')
