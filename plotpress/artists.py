@@ -1061,6 +1061,17 @@ def resolve_font_style(fontweight, fontstyle):
     return bold, italic
 
 
+def _check_positive_fontsize(size, who):
+    """A negative ``fontsize`` used to reach the SVG backend as a literal,
+    invalid ``font-size="-12"`` attribute -- not a crash, just quietly
+    unrenderable text with no error anywhere. ``0`` is left alone: it's
+    valid CSS (zero-size, invisible text), not a malformed value the way a
+    negative size is."""
+    if size is not None and size < 0:
+        raise ValueError(f"{who}(): fontsize must be >= 0, got {size!r}")
+    return size
+
+
 class Text(Artist):
     """A text label anchored at data coordinates (``ax.text``)."""
 
@@ -1071,7 +1082,7 @@ class Text(Artist):
         self.y = float(y)
         self.text = text
         self.color = color
-        self.size = size
+        self.size = _check_positive_fontsize(size, "text")
         self.ha = ha
         self.va = va
         self.rotation = float(rotation)
@@ -1098,7 +1109,7 @@ class Annotation(Artist):
         self.xy = (float(xy[0]), float(xy[1]))
         self.xytext = (float(xytext[0]), float(xytext[1])) if xytext else self.xy
         self.color = color
-        self.size = size
+        self.size = _check_positive_fontsize(size, "annotate")
         self.ha = ha
         self.va = va
         self.arrowprops = arrowprops  # dict (e.g. {"color": ..., "alpha": ...}) or None

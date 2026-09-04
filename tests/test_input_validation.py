@@ -209,3 +209,143 @@ def test_pie_all_zero_still_falls_back_to_equal_slices():
     art = ax.artists[0]
     assert np.allclose(art.fracs, 1.0 / 3.0)
     assert fig.to_svg()
+
+
+# ---------------------------------------------------------------------------
+# Round 2: bar_label()/table() mismatched counts, quiver()/barbs() mismatched
+# shapes, and non-string/falsy legend labels.
+# ---------------------------------------------------------------------------
+def test_bar_label_mismatched_count_raises():
+    """Used to crash with a bare IndexError three frames into text
+    placement, instead of naming the actual problem: too few labels."""
+    fig, ax = plotpress.subplots()
+    bars = ax.bar([1, 2, 3], [1, 2, 3])
+    with pytest.raises(ValueError, match=r"bar_label\(\)"):
+        ax.bar_label(bars, labels=["only one"])
+
+
+def test_table_mismatched_row_labels_raises():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"table\(\).*rowLabels"):
+        ax.table(cellText=[["a", "b"], ["c", "d"]], rowLabels=["r1"])
+
+
+def test_table_mismatched_col_labels_raises():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"table\(\).*colLabels"):
+        ax.table(cellText=[["a", "b"]], colLabels=["c1", "c2", "c3"])
+
+
+def test_table_ragged_rows_raise():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"table\(\)"):
+        ax.table(cellText=[["a", "b"], ["c"]])
+
+
+@pytest.mark.parametrize("call", [
+    lambda ax, x, y: ax.quiver(x, y, np.ones((4, 4)), np.ones((4, 4))),
+    lambda ax, x, y: ax.barbs(x, y, np.ones((4, 4)), np.ones((4, 4))),
+], ids=["quiver", "barbs"])
+def test_quiver_barbs_mismatched_shapes_raise(call):
+    """Used to reach a bare NumPy broadcast error deep in Quiver.tips() at
+    render time, with no mention of which call or arguments were at fault."""
+    fig, ax = plotpress.subplots()
+    x, y = np.meshgrid(np.arange(5), np.arange(5))
+    with pytest.raises(ValueError):
+        call(ax, x, y)
+
+
+def test_legend_non_string_label_renders_instead_of_crashing():
+    """label=42 (a common loop-variable accident) used to crash deep in the
+    font-metrics text-width walk with TypeError: 'int' object is not
+    iterable -- matplotlib itself accepts and stringifies non-string
+    labels, so plotpress must too, in both the SVG and PNG legend."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2], label=42)
+    ax.legend()
+    svg = fig.to_svg()
+    assert "42" in svg
+
+
+def test_legend_non_string_label_renders_in_png_too(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2], label=42)
+    ax.legend()
+    fig.save(str(tmp_path / "out.png"))  # must not raise
+
+
+def test_legend_label_zero_is_shown_not_treated_as_no_label():
+    """label=0/0.0/False is a legitimate label matplotlib shows as "0" --
+    truthiness incorrectly excluded it from the legend entirely."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2], label=0)
+    ax.legend()
+    svg = fig.to_svg()
+    assert ">0<" in svg
+
+
+def test_legend_string_labels_unaffected():
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2], label="series a")
+    ax.legend()
+    assert "series a" in fig.to_svg()
+
+
+# ---------------------------------------------------------------------------
+# Round 2 continued: negative fontsize, colorbar(fraction<=0), non-finite
+# imshow extent.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("call", [
+    lambda ax: ax.text(0.5, 0.5, "hi", fontsize=-12),
+    lambda ax: ax.annotate("hi", xy=(0.5, 0.5), fontsize=-5),
+], ids=["text", "annotate"])
+def test_negative_fontsize_raises(call):
+    """A negative fontsize used to reach the SVG backend as a literal,
+    invalid font-size="-12" attribute -- no crash, just unrenderable text
+    with no error anywhere."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="fontsize"):
+        call(ax)
+
+
+def test_zero_fontsize_still_allowed():
+    """Not a bug -- 0 is valid CSS (invisible text), unlike a negative size."""
+    fig, ax = plotpress.subplots()
+    ax.text(0.5, 0.5, "hi", fontsize=0)
+    assert fig.to_svg()
+
+
+def test_colorbar_non_positive_fraction_raises():
+    """fraction<=0 used to produce a colorbar axes with a negative pixel
+    width -- an invalid layout, not a crash, so nothing caught it."""
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.random.default_rng(0).random((5, 5)))
+    with pytest.raises(ValueError, match="fraction"):
+        fig.colorbar(mesh, ax=ax, fraction=-0.5)
+    with pytest.raises(ValueError, match="fraction"):
+        fig.colorbar(mesh, ax=ax, fraction=0)
+
+
+def test_colorbar_default_fraction_still_works():
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.random.default_rng(0).random((5, 5)))
+    fig.colorbar(mesh, ax=ax)
+    assert fig.to_svg()
+
+
+def test_imshow_non_finite_extent_raises():
+    """A NaN extent bound used to be silently dropped by autoscale's
+    finite-only filter, falling back to a default range that quietly
+    doesn't match what extent= actually specified -- no error, no warning."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="extent"):
+        ax.imshow(np.random.default_rng(0).random((5, 5)), extent=(0, np.nan, 0, 10))
+
+
+def test_imshow_reversed_finite_extent_still_works():
+    """Not a bug -- a reversed-but-finite extent is a legitimate way to
+    flip an image's axis direction."""
+    fig, ax = plotpress.subplots()
+    ax.imshow(np.random.default_rng(0).random((5, 5)), extent=(10, 0, 10, 0))
+    assert ax.get_xlim() == (10, 0)
+    assert fig.to_svg()

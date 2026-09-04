@@ -686,6 +686,11 @@ class Axes:
         Returns the list of :class:`~plotpress.artists.Text` labels added,
         one per bar, in the same order as ``bars.pos``.
         """
+        if labels is not None and len(labels) != len(bars.pos):
+            raise ValueError(
+                f"bar_label(): labels has {len(labels)} entries but bars "
+                f"has {len(bars.pos)} -- one label is needed per bar"
+            )
         vertical = bars.orientation == "vertical"
         (xmin, xmax), (ymin, ymax) = self.get_xlim(), self.get_ylim()
         texts = []
@@ -1034,6 +1039,15 @@ class Axes:
         without an explicit ``aspect=`` (see :meth:`matshow`, which does
         the same here).
         """
+        if extent is not None and not np.all(np.isfinite(extent)):
+            # A non-finite extent bound gets silently dropped by autoscale's
+            # own finite-only filter (data_bounds() -> _group_bounds()),
+            # which then falls back to its generic "nothing to autoscale"
+            # default -- an image whose x/y range quietly doesn't match the
+            # extent= the caller actually gave, with no error anywhere.
+            raise ValueError(
+                f"imshow(): extent must be finite, got {tuple(extent)!r}"
+            )
         im = Image(X, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, extent=extent,
                    origin=origin, alpha=alpha, label=label,
                    interpolation=interpolation)
@@ -1306,6 +1320,7 @@ class Axes:
         """Field of arrows. ``scale`` maps (U, V) to data units (auto if None)."""
         X = np.asarray(X, float); Y = np.asarray(Y, float)
         U = np.asarray(U, float); V = np.asarray(V, float)
+        _check_broadcastable("quiver", X=X, Y=Y, U=U, V=V)
         if scale is None:
             if U.size == 0:
                 scale = 1.0    # nothing to draw either way; any finite value works
@@ -1403,6 +1418,7 @@ class Axes:
         matplotlib. ``U``/``V`` therefore only set direction here, not shaft
         length; there is no ``scale=`` to tune.
         """
+        _check_broadcastable("barbs", X=X, Y=Y, U=U, V=V)
         b = Barbs(X, Y, U, V, length, color=self._resolve_color(color),
                  label=label, alpha=alpha)
         b.zorder = zorder
@@ -1880,6 +1896,18 @@ class Axes:
         divide the box evenly; there is no per-column ``colWidths=`` sizing
         by content yet.
         """
+        if cellText and any(len(row) != len(cellText[0]) for row in cellText):
+            raise ValueError("table(): every row in cellText must have the same number of columns")
+        if rowLabels is not None and len(rowLabels) != len(cellText):
+            raise ValueError(
+                f"table(): rowLabels has {len(rowLabels)} entries but "
+                f"cellText has {len(cellText)} rows"
+            )
+        if colLabels is not None and len(colLabels) != (len(cellText[0]) if cellText else 0):
+            raise ValueError(
+                f"table(): colLabels has {len(colLabels)} entries but "
+                f"cellText has {len(cellText[0]) if cellText else 0} columns"
+            )
         n_rows = len(cellText) + (1 if colLabels is not None else 0)
         n_cols = (len(cellText[0]) if cellText else 0) + (1 if rowLabels is not None else 0)
         if bbox is None:

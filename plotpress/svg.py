@@ -2370,7 +2370,10 @@ def legend_entries(sources):
     for ax in sources:
         for a in ax.artists:
             label = getattr(a, "label", None)
-            if label and label not in seen:
+            # Truthiness would silently drop label=0/0.0/False -- a legitimate
+            # label matplotlib itself shows as "0", not an opt-out the way
+            # None/"" is.
+            if label is not None and label != "" and label not in seen:
                 seen.add(label)
                 out.append(a)
     return out
@@ -2386,7 +2389,7 @@ def _legend_layout(ax, st):
     source = (ax._legend_handles if ax._legend_handles is not None
              else ax.artists)
     return legend_box(
-        [a for a in source if getattr(a, "label", None)],
+        [a for a in source if getattr(a, "label", None) not in (None, "")],
         st, ax._legend_ncol, ax._legend_title, fontsize=ax._legend_fontsize,
         framealpha=ax._legend_framealpha)
 
@@ -2401,7 +2404,10 @@ def legend_box(entries, st, ncol, title, fontsize=None, framealpha=0.85):
     pad = 6
     ncol = min(max(1, int(ncol)), len(entries))
     nrows = (len(entries) + ncol - 1) // ncol
-    text_w = max(st.text_width(a.label, fs) for a in entries)
+    # label is whatever the caller passed to label= -- often a string, but
+    # matplotlib accepts anything and str()s it for display, and a bare
+    # loop-variable int/float is a common accident this must not crash on.
+    text_w = max(st.text_width(str(a.label), fs) for a in entries)
     col_w = sample_w + text_w + pad * 2
     title_h = line_h if title else 0
     box_w = col_w * ncol + pad
@@ -2541,7 +2547,7 @@ def draw_legend(lay, st, bx, by, body):
             )
         body.append(
             f'<text x="{_fmt(sx + sample_w + pad)}" y="{_fmt(row_y + fs * 0.35)}" '
-            f'font-size="{fs}" fill="{st.text_color}">{_esc(a.label)}</text>'
+            f'font-size="{fs}" fill="{st.text_color}">{_esc(str(a.label))}</text>'
         )
     body.append("</g>")
 

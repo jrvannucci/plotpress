@@ -998,6 +998,13 @@ class Figure:
                 "-- what pcolormesh()/imshow()/hexbin()/scatter(c=...) "
                 f"returns -- got {mappable!r}"
             )
+        if not (fraction > 0):
+            raise ValueError(
+                f"colorbar(): fraction must be > 0 (the share of the "
+                f"parent axes' width the bar steals), got {fraction!r} -- "
+                "zero/negative produces a colorbar axes with negative "
+                "width, an invalid layout."
+            )
         cax = self.add_axes((0.0, 0.0, 1.0, 1.0))   # rect set by _layout_colorbar
         cax._is_colorbar = True
         cax._cbar_source = mappable

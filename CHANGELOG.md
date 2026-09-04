@@ -13,6 +13,49 @@ anywhere in the source.
 
 ### Fixed
 
+- **A second, more aggressive break-it audit** (new territory: legends,
+  annotations, gridded-data methods, `table()`/`bar_label()`, `quiver()`/
+  `barbs()`, colorbar geometry, text sizing) found and fixed seven more
+  cases of the same pattern -- plausible input crashing with a confusing
+  internal traceback, or degrading silently with no warning:
+
+  - **`bar_label(labels=...)` with the wrong count** crashed with a bare
+    `IndexError` three frames into text placement. Now raises immediately,
+    naming the actual mismatch.
+  - **`table()` with mismatched `rowLabels`/`colLabels`/ragged rows**
+    crashed with a bare `IndexError` at *render* time, not at the `table()`
+    call that caused it. Now validated eagerly.
+  - **`quiver()`/`barbs()` with `U`/`V` shaped differently from `X`/`Y`**
+    reached a bare NumPy broadcast error inside `Quiver.tips()` at render
+    time. Now validated eagerly, same as the paired-array fix from the
+    first audit.
+  - **A non-string legend label** (`label=42` -- a common loop-variable
+    accident) crashed with `TypeError: 'int' object is not iterable` deep
+    in the font-metrics text-width walk, in both the SVG *and* PNG legend
+    (two separate, independently-broken code paths). Both now stringify
+    the label, matching matplotlib. Along the way: `label=0`/`0.0`/`False`
+    was being silently excluded from the legend entirely (a truthiness
+    check, not a `None`/`""` check) even though it's a legitimate label
+    matplotlib shows as `"0"` -- fixed in both backends.
+  - **A negative `fontsize`** on `text()`/`annotate()` reached the SVG
+    backend as a literal, invalid `font-size="-12"` attribute -- not a
+    crash, just silently unrenderable text. Now raises.
+  - **`colorbar(fraction<=0)`** produced a colorbar axes with a *negative*
+    pixel width -- an invalid layout, not a crash, so nothing caught it.
+    Now validated eagerly.
+  - **`imshow(extent=...)` with a non-finite bound** (e.g. a `NaN` from an
+    upstream calculation) was silently dropped by autoscale's finite-only
+    filter, falling back to a default range that quietly didn't match the
+    `extent=` actually given -- no error, no warning anywhere. Now raises.
+
+  Verified via a second adversarial battery (~45 new cases across legends,
+  annotations, gridded-data methods, spectral methods, `subplots_from_
+  layout()` round trips, sharing, and unverified survivors from the first
+  audit), the full non-browser + browser suite (1015 + 105 passed), and a
+  from-clean full docs rebuild -- zero regressions. `tests/test_input_
+  validation.py` gained 17 more tests (51 total) pinning these plus the
+  first audit's seven.
+
 - **CI's `Tests (py3.9)`/`(py3.10)`/`(py3.11)` jobs were failing on every
   push** -- `plotpress/svg.py`'s multiline-text renderer had a nested
   f-string with a backslash inside another f-string's `{...}` expression

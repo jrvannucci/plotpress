@@ -1095,7 +1095,10 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     # fixed size, in both backends, the same class of bug as the marker
     # color list, errorbar xerr, and polygon outline width fixes before it.
     source = ax._legend_handles if ax._legend_handles is not None else ax.artists
-    entries = [a for a in source if getattr(a, "label", None)]
+    # not in (None, "") rather than truthiness: label=0/0.0/False is a
+    # legitimate label (matplotlib shows it as "0"), not an opt-out the way
+    # None/"" is -- matches svg.py's own legend_entries()/_legend_layout().
+    entries = [a for a in source if getattr(a, "label", None) not in (None, "")]
     if not entries:
         return
     fs = (ax._legend_fontsize if ax._legend_fontsize is not None else st.tick_label_size) * S
@@ -1106,7 +1109,10 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     pad = 6 * S
     ncol = min(max(1, ax._legend_ncol), len(entries))
     nrows = (len(entries) + ncol - 1) // ncol
-    tw = max(draw.textlength(a.label, font=font) for a in entries)
+    # PIL's own draw.textlength()/draw.text() need an actual str -- unlike
+    # svg.py's _esc(), which stringifies internally -- so a bare int/float
+    # label (a common loop-variable accident) must be coerced here.
+    tw = max(draw.textlength(str(a.label), font=font) for a in entries)
     col_w = sample + tw + pad * 2
     title = ax._legend_title
     title_h = line_h if title else 0
@@ -1203,7 +1209,7 @@ def _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
                 _dashed(draw, seg, color, width, tuple(d * S for d in dash))
             else:
                 draw.line([sx, ry, sx + sample, ry], fill=color, width=width)
-        draw.text((sx + sample + pad, ry), a.label, fill=_rgb(st.text_color),
+        draw.text((sx + sample + pad, ry), str(a.label), fill=_rgb(st.text_color),
                   font=font, anchor="lm")
 
 
