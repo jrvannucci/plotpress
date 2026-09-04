@@ -27,6 +27,10 @@ ax.plot(x, y, color="#1f77b4", linewidth=1.4)
 # A plain label with no bbox, for comparison -- floats with no visual anchor.
 ax.text(8.5, 0.55, "no bbox", fontsize=9, color="#666666")
 
+# alpha= on the text itself (not the bbox's own alpha, set separately below)
+# -- fades the glyphs so a label can sit over data without fully hiding it.
+ax.text(8.5, -0.6, "faded label", fontsize=11, alpha=0.4)
+
 # The default bbox: a plain white box, enough to lift a label off the line.
 ax.text(1.0, -0.55, "default bbox={}", bbox={})
 

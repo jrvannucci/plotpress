@@ -998,7 +998,7 @@ class Figure:
     def to_svg(self) -> str:
         return figure_to_svg(self)
 
-    def to_vega(self) -> dict:
+    def to_vega(self, mesh_data: bool = False) -> dict:
         """A real Vega (not Vega-Lite) v5 JSON specification, as a plain
         ``dict`` -- ``json.dumps(fig.to_vega(), indent=2)`` for the string,
         or hand the dict itself to a Vega runtime that already accepts a
@@ -1024,11 +1024,21 @@ class Figure:
         of the figure) and what never carries over regardless (plotpress's
         own interactive toolbar; Vega has its own separate interaction
         model instead, reachable by wiring up ``signals`` on the result).
+
+        ``mesh_data=True`` opts a ``pcolormesh``/mesh-backed ``imshow``
+        into real per-cell ``rect`` marks with a genuine field+scale color
+        encoding, instead of the default rasterized ``image`` mark --
+        reactive and queryable, but only for meshes small/simple enough to
+        stay unambiguous (a rectilinear grid, a plain linear color norm, a
+        colormap with a matching named Vega scheme, at most ~2000 cells --
+        the same threshold ``pcolormesh(rasterized=None)``'s own auto-mode
+        already uses). A mesh that doesn't qualify still gets the image
+        mark, with a ``UserWarning`` naming why.
         """
         from .vega import figure_to_vega
-        return figure_to_vega(self)
+        return figure_to_vega(self, mesh_data=mesh_data)
 
-    def to_vega_lite(self) -> tuple:
+    def to_vega_lite(self, mesh_data: bool = False) -> tuple:
         """A Vega-Lite v5 specification for this figure.
 
         Unlike :meth:`to_svg`/:meth:`to_html`/:meth:`to_vega`, which all
@@ -1055,9 +1065,17 @@ class Figure:
         maps natively, what needs a layered workaround, and what has no
         Vega-Lite mapping at all and warns instead) and the exact
         figure-composition algorithm.
+
+        ``mesh_data=True`` opts a ``pcolormesh``/mesh-backed ``imshow``
+        into real per-cell ``rect`` marks with a genuine field+scale color
+        encoding, instead of the default rasterized ``image`` mark -- the
+        same opt-in, same eligibility rules (a rectilinear grid, a plain
+        linear color norm, a colormap with a matching named Vega scheme,
+        at most ~2000 cells), and same warn-and-fall-back-to-image
+        behavior otherwise, as :meth:`to_vega`'s own ``mesh_data``.
         """
         from .vega_lite import figure_to_vega_lite
-        return figure_to_vega_lite(self)
+        return figure_to_vega_lite(self, mesh_data=mesh_data)
 
     def _repr_svg_(self) -> str:
         # Static inline SVG is the Jupyter default; use to_html for interactive.

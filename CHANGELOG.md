@@ -13,6 +13,67 @@ anywhere in the source.
 
 ### Added
 
+- **`Figure.to_vega(mesh_data=True)` / `Figure.to_vega_lite(mesh_data=True)`**
+  opt a `pcolormesh`/mesh-backed `imshow` into real per-cell `rect` marks
+  with a genuine `field`+`scale` color encoding, instead of the default
+  rasterized `image` mark -- reactive to a downstream color-scale change,
+  and queryable by anything reading the spec, not just a picture of the
+  result. The default stays `False` (the rasterized path) -- this is a
+  scoped, opt-in feature, not a change to either export's own default
+  behavior.
+
+  Only offered for meshes small/simple enough to stay cheap and
+  unambiguous: a rectilinear (non-curvilinear) grid, a plain linear color
+  `Normalize` (not `LogNorm`/`PowerNorm`/`SymLogNorm`), a colormap with an
+  exact-name match in Vega's own built-in scheme catalog (`viridis`,
+  `plasma`, `inferno`, `magma`, `cividis`, `turbo`, and the single-hue
+  `Blues`/`Greens`/`Oranges`/`Reds`/`Purples`/`gray` families -- silently
+  guessing a "close enough" scheme for anything else risked a
+  wrong-colored mesh, worse than not offering the path at all), and at
+  most `_VECTOR_CELL_LIMIT` (~2000) cells -- the exact same threshold
+  `pcolormesh(rasterized=None)`'s own auto-mode already uses for "how
+  many discrete cells is reasonable to draw individually," reused rather
+  than a new number invented for this. A mesh that doesn't qualify still
+  gets the image mark, with a `UserWarning` naming exactly why
+  (`"...falling back to a rasterized image mark for it instead"`).
+
+  A new `docs/examples/gridded_data/plot_12_small_mesh_reactive_data.py`
+  (a small 10x8 grid, comfortably under the cell limit) demonstrates it;
+  the docs gallery scraper now passes `mesh_data=True` for every
+  example's Vega/Vega-Lite export page, so any *other* small-enough mesh
+  already in the gallery shows the real per-cell path too, for free.
+
+  A dedicated audit (a real-engine PNG-vs-raw-data comparison across every
+  eligible mesh in the gallery, plus targeted edge-case testing) found and
+  fixed four real bugs before this shipped:
+  - **`cmap="gray"`/`"gray_r"` rendered color-inverted.** Vega's built-in
+    `"greys"` scheme follows ColorBrewer's light=low/dark=high convention
+    -- the same direction `viridis`/`plasma`/`Blues`/`Greens`/etc. already
+    use, which is why the generic `_r`-suffix handling is correct for all
+    of them. plotpress's own `"gray"` colormap follows matplotlib's
+    literal-luminance convention instead (black=low, white=high) -- the
+    *opposite* direction -- so it needs `reverse=True` (and `"gray_r"`
+    needs `reverse=False`), backwards from every other entry. Found by
+    sampling actual rendered pixel colors against plotpress's own LUT.
+  - **A numpy `vmin`/`vmax` broke JSON serialization** (`vmin=data.min()`
+    is an entirely ordinary pattern) -- the one place on this path that
+    skipped the `float()` cast every other value already gets.
+  - **An all-NaN mesh silently disappeared** -- eligible per the
+    capability check (which never looked at whether there was any finite
+    data), then produced zero rows and zero marks with no fallback and no
+    warning, contradicting this feature's own "never silently wrong,
+    always fall back with a warning" contract. Now excluded explicitly,
+    falling back to the rasterized path like every other disqualified case.
+  - **A log-scaled axis could produce `NaN` pixel coordinates.** Unlike
+    every other mark, a raw per-cell `rect`'s x/y defers to the same
+    shared scale every other mark on the axes uses, computed by the
+    Vega/Vega-Lite runtime itself at render time -- not pre-clamped in
+    pixel space via `transform.py` the way the rasterized path (and every
+    other backend) already is. A cell edge at exactly 0 (an ordinary
+    edge-based grid starting at the origin) fed into a log-typed scale
+    evaluates to `NaN` there, confirmed against the real `vega` runtime.
+    Now excluded explicitly rather than silently producing broken cells.
+
 - **`Figure.to_vega_lite()`** returns a Vega-Lite v5 specification -- a
   stricter, more declarative sibling to `Figure.to_vega()` (Vega-Lite
   compiles down to Vega itself, with a closed mark vocabulary and no raw
@@ -57,11 +118,12 @@ anywhere in the source.
   aggregate `UserWarning` too, so a caller who ignores the tuple still
   sees it.
 
-  Two audit passes (semantic fidelity vs. `svg.py` field by field, and
-  empirical crash/edge-case testing against real figures) found and fixed
-  real bugs before this shipped, several only visible by actually
-  rendering through `vega-lite`/`vega`/`vega-cli`, not from the JSON
-  alone:
+  Three audit passes (semantic fidelity vs. `svg.py` field by field,
+  empirical crash/edge-case testing against real figures, and a
+  systematic comparison against `to_vega()`'s own output across the
+  gallery) found and fixed real bugs before this shipped, several only
+  visible by actually rendering through `vega-lite`/`vega`/`vega-cli`,
+  not from the JSON alone:
   - **A multi-cell grid span was inserted as the *same* dict object into
     every cell it covered**, rendering duplicated side by side instead of
     spanning -- now placed once, at its own top-left cell, sized with an
@@ -92,12 +154,67 @@ anywhere in the source.
     is always `False`, tripping the same check a real non-monotonic
     series does) instead of "nothing to draw"; `Text`/`Annotation`
     dropped vertical alignment and rotation entirely.
+  - **A `pcolormesh`/`imshow` image rendered as a small square with blank
+    space around it**, whenever the mesh's own row/col resolution wasn't
+    already square -- Vega-Lite's `image` mark defaults to *preserving*
+    the raster's own native pixel aspect ratio inside its box instead of
+    stretching to fill it, unlike every other backend. Now `aspect: false`
+    explicitly. Found by comparing this export's rendering directly
+    against plotpress's own output for the same figure.
+  - **Pie wedges rendered in the wrong angular order** (sorted by color,
+    not data order) whenever the slice colors weren't already
+    ascending-hex -- Vega-Lite's default stack order for a nominal color
+    field sorts by that field rather than keeping row/input order. Wedge
+    *sizes* were correct; which wedge sat where wasn't. Fixed with an
+    explicit `order` channel pinning it back to data order.
+  - **`linestyle="none"` with a marker still drew a solid connecting
+    line** -- the mark stayed a `line` type with `point: true` regardless
+    of the dash setting, since `linestyle="none"` has nothing for
+    `strokeDash` to suppress. Now switches to a `point`-only mark, no
+    line at all, matching plotpress's own "markers only" rendering.
+
+  A fourth pass -- a systematic comparison against `to_vega()`'s own
+  output across the gallery -- found two more:
+  - **A non-monotonic-x line rendered as a zigzag**, connecting points in
+    x-sorted order instead of data order (e.g. a parametric line like
+    `ax.plot(sin(t), t)`) -- the same missing-`order` bug class as the pie
+    fix above, applied to `line` marks too.
+  - **`set_aspect("equal")`/`set_box_aspect()` figures rendered squashed
+    or stretched** -- every view was sized from the raw, unadjusted axes
+    cell, never the aspect-locked box `plotpress.vega`'s own
+    `_axes_to_group` already shrinks to (centered within the cell). Found
+    via a curvilinear, `aspect="equal"` mesh that should render as a
+    circle and instead came out an ellipse -- affects *every*
+    aspect-locked figure exported through `to_vega_lite()`, not just
+    meshes.
+
+  That same pass also found real coverage gaps and closed them, rather
+  than just documenting them: `LineCollection` (`hlines()`/`vlines()`,
+  violin inner quartile/whisker lines, `acorr()`/`xcorr()`) and `Rug`
+  (seaborn-style rug plots) now export as real `rule` marks; `Polygon`
+  (`fill()`, and critically `fill_betweenx()` -- the direct sibling of the
+  already-supported `fill_between()`) now exports as a real `area` mark
+  whenever it has the two-boundary-strip shape both calls actually build,
+  falling back to a named warning only for a genuinely arbitrary closed
+  shape (a filled circle, a hexbin cell) that has no Vega-Lite
+  closed-vocabulary equivalent. All three previously fell through the
+  generic "no Vega-Lite mapping yet" branch with a *fixed* warning message
+  that named neither of them -- indistinguishable from a truly silent
+  drop. Pie wedge **labels and `autopct` percentages**, documented as
+  supported since this module's first version but never actually built,
+  now render too -- as real per-wedge text layers positioned against an
+  explicit arc center/radius (rather than trusting Vega-Lite's own
+  undocumented auto-sizing, which the label math has to already know), and
+  fixed a second bug surfaced while building them: a Vega-Lite layer with
+  only literal `{"value": ...}` encodings and no `data` of its own has
+  zero rows to instantiate its mark from and draws nothing, silently.
 
   Verified against every script in `docs/examples` **and**
-  `docs/applications`: 296 figures export with zero failures and zero
-  malformed/blank output, 224 with one or more caveats or per-artist
-  warnings (a colorbar, a legend, or one of the named unsupported artist
-  types) cleanly named rather than silently dropped.
+  `docs/applications`: 298 figures export with zero failures and zero
+  malformed/blank output, 221 scripts with one or more caveats or
+  per-artist warnings (a colorbar, a legend, an arbitrary polygon, or one
+  of the named unsupported artist types) cleanly named rather than
+  silently dropped.
 
   `docs/conf.py`'s gallery scraper links every example/application figure
   with exportable content to a standalone page rendering its own
@@ -228,16 +345,28 @@ anywhere in the source.
     (`svg.py`'s `figure_legend_layout()`/`draw_legend()`) this module
     doesn't have yet -- but now warns, naming which axes (or the figure)
     has one, instead of vanishing quietly.
+  - **A figure's primary content vanished entirely behind a `twinx()`/
+    `twiny()`/secondary-axis overlay.** Every axes group painted its own
+    opaque background fill unconditionally, but a twin/secondary axes
+    occupies the *exact same* pixel rect as its parent (`twinx()`/`twiny()`/
+    `secondary_xaxis()`/`secondary_yaxis()` all copy it verbatim) and is
+    drawn *after* the parent in `fig.axes` order -- so its own blank
+    background painted directly over the parent's already-drawn curve/bars.
+    `svg.py` already skips this rect for exactly that reason ("twins/
+    secondaries overlay their parent, so neither draws one"); this group
+    now does too. Found by comparing this exporter's own output against
+    `to_vega_lite()`'s (which merges a twin into its parent's view as an
+    extra layer instead, and so never had this problem) on the same figure.
 
   Verified against every script in the `docs/examples` **and**
-  `docs/applications` galleries this way: 295 figures across 284 scripts
+  `docs/applications` galleries this way: 298 figures across 286 scripts
   export and render correctly (axis chrome, pie wedges and labels, marker/bar
-  edges, dashes, error-bar caps, and annotation arrows all included), zero
-  producing a blank or malformed render. 123 scripts warn about something --
-  96 for a legend `to_vega()` doesn't export yet (the single most common
-  gap, now that everything else in this list is fixed) and 45 for one of the
-  named unsupported artist types -- the rest of each such figure still
-  exports and renders correctly regardless.
+  edges, dashes, error-bar caps, annotation arrows, and every twin/secondary
+  axes's own content all included), zero producing a blank or malformed
+  render. 123 scripts warn about something -- a legend `to_vega()` doesn't
+  export yet (the single most common gap, now that everything else in this
+  list is fixed) or one of the named unsupported artist types -- the rest
+  of each such figure still exports and renders correctly regardless.
 
   `Figure.group()`'s own labeled boxes are exported too, as a `rect`+`text`
   mark pair per group spanning the pixel rect of its member axes (plus any

@@ -61,9 +61,10 @@ import warnings
 import numpy as np
 
 from .artists import (
-    Bars, ErrorBar, Line2D, Pie, ScatterCollection, Stem, Text, Annotation,
+    Bars, ErrorBar, Line2D, Pie, QuadMesh, ScatterCollection, Stem, Text,
+    Annotation, _VECTOR_CELL_LIMIT,
 )
-from .colors import to_hex
+from .colors import Normalize, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import ImagePrim as PImage
@@ -82,7 +83,7 @@ from .transform import LinearTransform
 _SCHEMA = "https://vega.github.io/schema/vega/v5.json"
 
 
-def figure_to_vega(fig) -> dict:
+def figure_to_vega(fig, mesh_data: bool = False) -> dict:
     """Build a Vega v5 spec (a plain ``dict`` -- ``json.dumps(...)`` it, or
     hand it straight to a Vega runtime that already accepts a Python object,
     e.g. IPython's ``vega`` MIME renderer) for ``fig``.
@@ -93,6 +94,14 @@ def figure_to_vega(fig) -> dict:
     for what is and isn't drawn faithfully, and what "faithfully" means here
     (frozen pixel geometry for most marks, real scale-driven encoding for
     line/scatter/bar).
+
+    ``mesh_data=True`` opts a ``pcolormesh``/mesh-backed ``imshow`` into
+    real per-cell ``rect`` marks with a genuine field+scale color encoding,
+    instead of the default rasterized ``image`` mark -- reactive and
+    queryable, but only offered for meshes small/simple enough to stay
+    cheap and unambiguous (see :func:`_mesh_data_reason`); everything else
+    still gets the image mark, with a ``UserWarning`` naming why when
+    ``mesh_data=True`` was requested but couldn't be honored for that mesh.
     """
     dpi = fig.style.dpi
     W = fig.figsize[0] * dpi
@@ -108,7 +117,7 @@ def figure_to_vega(fig) -> dict:
     for i, ax in enumerate(fig.axes):
         if ax._is_colorbar or not ax._visible:
             continue
-        groups.append(_axes_to_group(ax, i, W, H, size_scale, fig.style))
+        groups.append(_axes_to_group(ax, i, W, H, size_scale, fig.style, mesh_data))
         if ax._show_legend:
             legend_axes.append(i)
     # Figure-level chrome and Figure.group()'s labeled boxes are both
@@ -195,7 +204,7 @@ def _axis_def(orient, scale_name, label, grid, custom_ticks, custom_labels, scal
     return axis
 
 
-def _axes_to_group(ax, i, W, H, size_scale, st):
+def _axes_to_group(ax, i, W, H, size_scale, st, mesh_data=False):
     alloc = _pixel_rect(ax, W, H)
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
     px_left, px_top, px_w, px_h = _effective_rect(ax, *alloc, (xmin, xmax), (ymin, ymax))
@@ -207,19 +216,6 @@ def _axes_to_group(ax, i, W, H, size_scale, st):
     tr_local = LinearTransform(xlim_t, ylim_t, (0.0, 0.0, px_w, px_h),
                                xscale=ax._xscale, yscale=ax._yscale)
     x_name, y_name = f"x{i}", f"y{i}"
-
-    # Vega paints marks in list order, same as SVG paints elements in
-    # document order -- draw by zorder (ties broken by insertion order),
-    # exactly svg.py's own draw_order, or an artist added later but drawn
-    # "underneath" (ax.fill_between(..., zorder=1) after a zorder=3 line)
-    # would incorrectly paint over what it's meant to sit behind. `k` stays
-    # each artist's ORIGINAL index (not its draw position) since primitives
-    # builds series_id as f"s{ai}_{k}" -- the same id convention every other
-    # backend uses.
-    marks = []
-    draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
-    for k, art in draw_order:
-        marks.extend(_artist_to_vega_marks(art, tr_local, i, k, x_name, y_name, size_scale, st))
 
     px_w, px_h = max(px_w, 0.0), max(px_h, 0.0)
     scales = [
@@ -235,6 +231,22 @@ def _axes_to_group(ax, i, W, H, size_scale, st):
          "domain": [ymin, ymax],
          "range": [0, px_h] if ax._yinverted else [px_h, 0], "zero": False},
     ]
+    # Vega paints marks in list order, same as SVG paints elements in
+    # document order -- draw by zorder (ties broken by insertion order),
+    # exactly svg.py's own draw_order, or an artist added later but drawn
+    # "underneath" (ax.fill_between(..., zorder=1) after a zorder=3 line)
+    # would incorrectly paint over what it's meant to sit behind. `k` stays
+    # each artist's ORIGINAL index (not its draw position) since primitives
+    # builds series_id as f"s{ai}_{k}" -- the same id convention every other
+    # backend uses. `scales` is built above (not after, the way it reads
+    # more naturally) specifically so a mesh_data=True QuadMesh can append
+    # its own color scale into it here, the same mutate-in-place convention
+    # _axis_def already uses for a custom tick-label scale.
+    marks = []
+    draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
+    for k, art in draw_order:
+        marks.extend(_artist_to_vega_marks(art, tr_local, i, k, x_name, y_name,
+                                           size_scale, st, mesh_data, scales, ax))
     # ax.pie() calls set_axis_off() (axes.py) precisely because a pie has no
     # x/y axis to show -- svg.py gates ticks/grid on this same flag
     # (svg.py:1001/1005). Omitting it entirely wrapped every pie (and any
@@ -256,13 +268,23 @@ def _axes_to_group(ax, i, W, H, size_scale, st):
         # `fill` paints the axes' own background (ax.get_facecolor()) --
         # a group's fill always renders under both its axes and its marks,
         # matching where svg.py paints this same rect (svg.py:987-991,
-        # before ticks/grid/data are drawn at all).
+        # before ticks/grid/data are drawn at all). A twin/secondary axes
+        # occupies the EXACT SAME pixel rect as its parent (twinx()/twiny()/
+        # secondary_xaxis()/secondary_yaxis() all copy it verbatim) and is
+        # drawn AFTER its parent in fig.axes order, so its own opaque
+        # background would paint directly over the parent's already-drawn
+        # content -- svg.py skips this rect entirely for exactly that
+        # reason ("twins/secondaries overlay their parent, so neither draws
+        # one", svg.py:985-987); this group must too, or a figure's
+        # primary curve/bars vanish behind the twin's own blank background,
+        # confirmed by actually rendering a twinx() figure through vg2png.
         "encode": {"enter": {
             "x": {"value": round(float(px_left), 2)},
             "y": {"value": round(float(px_top), 2)},
             "width": {"value": round(float(px_w), 2)},
             "height": {"value": round(float(px_h), 2)},
-            "fill": {"value": _color(ax.get_facecolor(), "#ffffff")},
+            **({} if (ax._twin_of is not None or ax._secondary_of is not None)
+               else {"fill": {"value": _color(ax.get_facecolor(), "#ffffff")}}),
         }},
         "scales": scales,
         "axes": axes_defs,
@@ -289,7 +311,8 @@ def _axes_to_group(ax, i, W, H, size_scale, st):
 
 # ---- artist -> Vega marks ---------------------------------------------
 
-def _artist_to_vega_marks(art, tr, ai, k, x_name, y_name, size_scale, st):
+def _artist_to_vega_marks(art, tr, ai, k, x_name, y_name, size_scale, st,
+                          mesh_data=False, scales=None, ax=None):
     # Real field/scale encoding for the common, high-value cases -- these
     # are the ones most worth staying reactive to a downstream domain
     # change, not just visually correct at export time. A Line2D with its
@@ -309,6 +332,18 @@ def _artist_to_vega_marks(art, tr, ai, k, x_name, y_name, size_scale, st):
         return _pie_marks(art, tr)
     if isinstance(art, (Text, Annotation)):
         return _text_marks(art, tr, st)
+    if isinstance(art, QuadMesh):
+        reason = _mesh_data_reason(art, mesh_data, ax)
+        if reason is None:
+            return _mesh_data_marks(art, x_name, y_name, scales)
+        if mesh_data:
+            warnings.warn(
+                f"figure_to_vega(): axes {ai} requested mesh_data=True, but "
+                f"this mesh has {reason} -- falling back to a rasterized "
+                "image mark for it instead.",
+                UserWarning, stacklevel=4,
+            )
+        # fall through to the generic artist_to_prims()/image-mark path below
 
     # Everything artist_to_prims() already shares with svg.py/raster.py --
     # frozen pixel geometry, see the module docstring for why. size_scale
@@ -371,6 +406,152 @@ def _color(c, fallback="#1f77b4"):
     rgb = (rgb * 255).round() if rgb.dtype.kind == "f" and rgb.max() <= 1.0 else rgb
     r, g, b = (int(v) for v in rgb)
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# ---- opt-in raw per-cell mesh data (small meshes only) --------------------
+#
+# A QuadMesh (pcolormesh/imshow) normally exports as a single rasterized
+# `image` mark (see _prim_to_vega below, and vega_lite.py's _mesh_layer) --
+# a picture of the data, not the data itself: nothing downstream can read a
+# cell's real value, and the colors are frozen at whatever domain/scheme
+# existed at export time. `to_vega(mesh_data=True)`/`to_vega_lite(mesh_data=
+# True)` opt into real per-cell `rect` marks with a genuine field+scale
+# color encoding instead -- reactive, and queryable -- for meshes small
+# enough that this stays cheap. Above that size (or for anything this can't
+# faithfully represent as named per-cell rows: a curvilinear grid, a non-
+# linear color norm, an unrecognized colormap, or a plain Image rather than
+# a scalar QuadMesh) it silently isn't offered -- callers fall back to the
+# rasterized path with a caveat/warning naming why, never a wrong-colored
+# or misshapen mesh. `_VECTOR_CELL_LIMIT` (~2000) is the same threshold
+# axes.py's own pcolormesh(rasterized=None) auto-mode already uses for
+# "how many discrete cells is reasonable to draw individually" -- the exact
+# same tradeoff, reused rather than re-invented.
+_MESH_DATA_CELL_LIMIT = _VECTOR_CELL_LIMIT
+
+# plotpress colormap name (lowercased, `_r` suffix stripped separately) ->
+# Vega/Vega-Lite's own built-in continuous scheme name. Only colormaps
+# confirmed to share an exact scheme name are listed -- silently guessing a
+# "close enough" scheme for anything else risks a mesh that LOOKS like
+# real data but is colored wrong, which is worse than just not offering
+# this path for that colormap.
+_MESH_SCHEME_MAP = {
+    "viridis": "viridis", "plasma": "plasma", "inferno": "inferno",
+    "magma": "magma", "cividis": "cividis", "turbo": "turbo",
+    "blues": "blues", "greens": "greens", "oranges": "oranges",
+    "reds": "reds", "purples": "purples", "gray": "greys", "grey": "greys",
+}
+
+
+def _mesh_scheme(cmap):
+    """``(scheme_name, reverse)`` for a plotpress colormap name/LUT, or
+    ``(None, False)`` if it isn't one of the small set of colormaps known to
+    share an exact Vega/Vega-Lite scheme name.
+    """
+    if not isinstance(cmap, str):
+        return None, False   # a raw LUT array, not a name -- no scheme to map to
+    name, reverse = cmap, False
+    if name.endswith("_r"):
+        name, reverse = name[:-2], True
+    # Vega's built-in "greys" scheme follows ColorBrewer's convention
+    # (light = low, dark = high) -- the SAME direction viridis/plasma/.../
+    # Blues/Greens/Oranges/Reds/Purples already use, which is why the
+    # generic `_r`-suffix handling above is correct for all of them. But
+    # plotpress's own "gray" colormap follows matplotlib's literal-
+    # luminance convention (black = low, white = high) -- the OPPOSITE
+    # direction -- so "gray" needs reverse=True and "gray_r" needs
+    # reverse=False, backwards from every other entry in this table.
+    # Confirmed by sampling actual rendered pixel colors: cmap="gray_r" on
+    # binary data rendered value=0 cells near-black instead of white.
+    if name.lower() in ("gray", "grey"):
+        reverse = not reverse
+    return _MESH_SCHEME_MAP.get(name.lower()), reverse
+
+
+def _mesh_data_reason(art, mesh_data, ax=None):
+    """Why raw per-cell data can't be used for ``art`` (a QuadMesh/Image),
+    or ``None`` if it can. Checked in the same order a caller would want
+    explained: "did I even ask for this" first, then genuine capability
+    gaps.
+    """
+    if not mesh_data:
+        return "mesh_data=False (the default)"
+    if not isinstance(art, QuadMesh):
+        return "Image (raw pixel data has no per-cell colormap to encode)"
+    if art.curvilinear:
+        return "a curvilinear (non-rectilinear) grid, which needs per-cell polygons, not axis-aligned rects"
+    if art.n_cells is not None and art.n_cells > _MESH_DATA_CELL_LIMIT:
+        return f"{art.n_cells} cells, over the {_MESH_DATA_CELL_LIMIT}-cell mesh_data limit"
+    if type(art.norm) is not Normalize:
+        return f"a {type(art.norm).__name__} color norm (only a plain linear Normalize is supported)"
+    if _mesh_scheme(art.cmap_name)[0] is None:
+        return f"colormap {art.cmap_name!r} (not in the small set of colormaps with a matching Vega scheme)"
+    # Unlike every other mark, a raw per-cell rect defers its x/y transform
+    # to the SAME shared scale every other mark on the axes uses, computed
+    # at render time by the Vega/Vega-Lite runtime itself -- not
+    # pre-clamped in pixel space via transform.py the way the rasterized
+    # image path (and every other backend) already is. A cell edge of
+    # exactly 0 (an ordinary edge-based grid starting at the origin) fed
+    # into a log-typed scale evaluates to NaN there, silently breaking
+    # that cell -- confirmed by actually running the spec through the real
+    # `vega` JS runtime. Excluding a log-scaled axis outright is simpler
+    # and safer than trying to pre-clamp per-edge the way transform.py
+    # does, and this path is meant to stay a narrow, unambiguous opt-in.
+    if (ax is not None and (ax._xscale == "log" or ax._yscale == "log")):
+        return "a log-scaled axis (a cell edge at or below zero would evaluate to NaN in a log scale)"
+    if not np.isfinite(art.C).any():
+        return "no finite cell values (nothing to draw)"
+    return None
+
+
+def _mesh_cell_rows(mesh):
+    """One ``{x0, x1, y0, y1, value}`` row per finite cell of a rectilinear
+    ``QuadMesh`` -- shared by :func:`figure_to_vega` and
+    :func:`plotpress.vega_lite.figure_to_vega_lite`'s raw-data mesh path.
+    """
+    xe, ye = mesh.cell_edges()
+    ny, nx = mesh.C.shape
+    rows = []
+    for i in range(ny):
+        for j in range(nx):
+            v = mesh.C[i, j]
+            if not np.isfinite(v):
+                continue
+            rows.append({"x0": float(xe[j]), "x1": float(xe[j + 1]),
+                        "y0": float(ye[i]), "y1": float(ye[i + 1]),
+                        "value": float(v)})
+    return rows
+
+
+def _mesh_data_marks(art, x_name, y_name, scales):
+    """Real per-cell ``rect`` marks with a field+scale color encoding for a
+    QuadMesh eligible for ``mesh_data=True`` (see :func:`_mesh_data_reason`)
+    -- reuses :func:`_mesh_cell_rows` for the per-cell rows and appends a
+    matching named-scheme color scale into ``scales`` in place, the same
+    mutate-in-place convention :func:`_axis_def` already uses for a custom
+    tick-label scale.
+    """
+    rows = _mesh_cell_rows(art)
+    if not rows:
+        return []
+    data_name = f"data_{id(art):x}"
+    scheme, reverse = _mesh_scheme(art.cmap_name)
+    color_scale = f"{data_name}_color"
+    scales.append({
+        "name": color_scale, "type": "linear",
+        "domain": [float(art.norm.vmin), float(art.norm.vmax)],
+        "range": {"scheme": scheme}, "reverse": reverse, "zero": False,
+    })
+    mark = {
+        "type": "rect",
+        "from": {"data": data_name},
+        "encode": {"enter": {
+            "x": {"scale": x_name, "field": "x0"}, "x2": {"scale": x_name, "field": "x1"},
+            "y": {"scale": y_name, "field": "y0"}, "y2": {"scale": y_name, "field": "y1"},
+            "fill": {"scale": color_scale, "field": "value"},
+            "fillOpacity": {"value": float(art.alpha)},
+        }},
+    }
+    return [{"__data__": (data_name, rows)}, mark]
 
 
 def _line_marks(art, x_name, y_name):

@@ -330,7 +330,13 @@ def _vega_embed(fig, image_path, src_file):
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        spec = fig.to_vega()
+        # mesh_data=True -- opt-in at the library level (Figure.to_vega()'s
+        # own default stays False), but every gallery page demonstrating a
+        # small-enough mesh should actually show the reactive per-cell
+        # path, not silently fall back to the picture-of-data default. A
+        # mesh over the cell limit just falls back to the image mark the
+        # same as it always did, so this is free for every other example.
+        spec = fig.to_vega(mesh_data=True)
     if not _vega_has_content(spec):
         return ""
     warned = [w.message for w in caught]
@@ -464,7 +470,10 @@ def _vega_lite_embed(fig, image_path, src_file):
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        result, caveats = fig.to_vega_lite()
+        # mesh_data=True -- same reasoning as _vega_embed's own call: opt-in
+        # at the library level, but every gallery page should demonstrate
+        # the reactive per-cell path for a mesh small enough to qualify.
+        result, caveats = fig.to_vega_lite(mesh_data=True)
     if not _has_content(result):
         return ""
     # `caveats` is already shown as its own list of bullets below -- skip

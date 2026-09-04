@@ -146,7 +146,15 @@ def test_pie_uses_native_arc_with_autostacked_theta():
     assert layer["mark"]["type"] == "arc"
     assert layer["encoding"]["theta"]["field"] == "value"
     assert layer["encoding"]["theta"]["stack"] is True
-    assert "x" not in layer["encoding"] and "y" not in layer["encoding"]
+    # x/y/radius ARE present (as literal {"value": ...} channels, not
+    # data-driven) -- an explicit center/radius, not left to Vega-Lite's
+    # own undocumented auto-centering/auto-sizing, since the wedge label/
+    # autopct text layers are positioned from this exact same center/
+    # radius computed in Python and would drift out of alignment with the
+    # wedges if the arc used a different one.
+    assert layer["encoding"]["x"]["value"] > 0
+    assert layer["encoding"]["y"]["value"] > 0
+    assert layer["encoding"]["radius"]["value"] > 0
     assert sum(v["value"] for v in layer["data"]["values"]) == pytest.approx(1.0)
 
 
@@ -380,6 +388,257 @@ def test_text_rotation_and_va_are_applied():
     text_layer = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "text")
     assert text_layer["mark"]["angle"] == -90
     assert text_layer["mark"]["baseline"] == "top"
+
+
+def test_mesh_image_does_not_preserve_native_aspect_ratio():
+    """Regression: Vega-Lite's image mark defaults to aspect: true,
+    preserving the raster's own native pixel aspect ratio (e.g. a 24x24
+    mesh) inside its x/x2/y/y2 box instead of stretching to fill it --
+    confirmed by actually rendering: a square-resolution mesh in a
+    wider-than-tall axes panel came out as a small square image with
+    blank space filling the rest of the box."""
+    fig, ax = plotpress.subplots(figsize=(8, 4))
+    ax.pcolormesh([0, 1, 2], [0, 1], [[1, 2]])
+    result, _ = fig.to_vega_lite()
+    img = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "image")
+    assert img["mark"]["aspect"] is False
+
+
+def test_mesh_data_true_embeds_real_per_cell_rects_for_a_small_mesh():
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3], [0, 1, 2], [[0, 1, 2], [3, 4, 5]], cmap="viridis")
+    result, caveats = fig.to_vega_lite(mesh_data=True)
+    layers = result["grid"]["layer"]
+    rects = [l for l in layers if l["mark"]["type"] == "rect"]
+    assert len(rects) == 1
+    assert len(rects[0]["data"]["values"]) == 6   # one row per cell, 2x3 grid
+    color = rects[0]["encoding"]["color"]
+    assert color["scale"]["scheme"] == "viridis"
+    assert color["scale"]["domain"] == [0.0, 5.0]
+    assert caveats == []
+
+
+def test_mesh_data_gray_colormap_direction_is_not_inverted():
+    """Regression: see the matching test in test_vega_output.py -- Vega's
+    "greys" scheme is light=low/dark=high; plotpress's own "gray" is the
+    opposite (matplotlib's black=low convention), so it needs
+    reverse=True (and "gray_r" needs reverse=False), backwards from the
+    generic `_r`-suffix handling every other colormap uses."""
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3], [0, 1, 2], [[0, 1, 2], [3, 4, 5]], cmap="gray")
+    result, _ = fig.to_vega_lite(mesh_data=True)
+    rect = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "rect")
+    assert rect["encoding"]["color"]["scale"]["scheme"] == "greys"
+    assert rect["encoding"]["color"]["scale"]["reverse"] is True
+
+
+def test_mesh_data_true_falls_back_to_image_above_the_cell_limit():
+    fig, ax = plotpress.subplots()
+    x, y = list(range(61)), list(range(61))
+    ax.pcolormesh(x, y, [[0.0] * 60 for _ in range(60)], cmap="viridis")   # 3600 cells
+    with pytest.warns(UserWarning, match="mesh_data=True.*falling back"):
+        result, _ = fig.to_vega_lite(mesh_data=True)
+    types = [l["mark"]["type"] for l in result["grid"]["layer"]]
+    assert "rect" not in types
+    assert "image" in types
+
+
+def test_mesh_data_defaults_to_false_unchanged_behavior():
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3], [0, 1, 2, 3],
+                 [[0, 1, 2], [3, 4, 5], [6, 7, 8]])
+    result, _ = fig.to_vega_lite()   # no mesh_data kwarg at all
+    types = [l["mark"]["type"] for l in result["grid"]["layer"]]
+    assert types == ["image"]
+
+
+def test_mesh_data_true_with_numpy_vmin_vmax_is_json_serializable():
+    """Regression: art.norm.vmin/vmax were embedded raw (no float() cast),
+    so a numpy vmin/vmax (an ordinary pattern -- vmin=data.min()) broke
+    json.dumps() with a non-serializable numpy scalar."""
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3], [0, 1, 2], [[0, 1, 2], [3, 4, 5]],
+                 cmap="viridis", vmin=1.0, vmax=5)
+    result, _ = fig.to_vega_lite(mesh_data=True)
+    import json
+    json.dumps(result)   # must not raise
+
+
+def test_mesh_data_true_all_nan_mesh_falls_back_with_a_warning():
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3, 4, 5], [0, 1, 2, 3, 4, 5],
+                 [[float("nan")] * 5 for _ in range(5)], cmap="viridis")
+    with pytest.warns(UserWarning, match="mesh_data=True.*no finite cell values"):
+        result, _ = fig.to_vega_lite(mesh_data=True)
+    types = [l["mark"]["type"] for l in result["grid"]["layer"]]
+    assert types == ["image"]
+
+
+def test_mesh_data_true_log_scale_falls_back_with_a_warning():
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh([0, 1, 2, 3], [0, 1, 2], [[0, 1, 2], [3, 4, 5]], cmap="viridis")
+    ax.set_yscale("log")
+    with pytest.warns(UserWarning, match="mesh_data=True.*log-scaled"):
+        result, _ = fig.to_vega_lite(mesh_data=True)
+    types = [l["mark"]["type"] for l in result["grid"]["layer"]]
+    assert types == ["image"]
+
+
+def test_hlines_vlines_export_as_rule_marks():
+    """Regression: LineCollection (hlines()/vlines(), violin inner lines,
+    acorr()/xcorr()) fell through the generic 'no Vega-Lite mapping yet'
+    branch with a misleading fixed message -- it has a clean rule-mark
+    mapping, the same pattern _refline_layer already uses for one row,
+    just N of them."""
+    fig, ax = plotpress.subplots()
+    ax.hlines([0.2, 0.5], 0, 1, linestyle="--")
+    result, caveats = fig.to_vega_lite()
+    rules = [l for l in result["grid"]["layer"] if l["mark"]["type"] == "rule"]
+    assert len(rules) == 1
+    assert len(rules[0]["data"]["values"]) == 2
+    assert caveats == []
+
+
+def test_fill_betweenx_exports_as_a_real_area_mark():
+    """Regression: Polygon (fill(), and critically fill_betweenx() -- the
+    direct sibling of the already-supported fill_between()) fell through
+    the generic unsupported-artist branch entirely."""
+    fig, ax = plotpress.subplots()
+    ax.fill_betweenx([0, 1, 2, 3], [0, 1, 0, 1], [2, 3, 2, 3])
+    result, caveats = fig.to_vega_lite()
+    areas = [l for l in result["grid"]["layer"] if l["mark"]["type"] == "area"]
+    assert len(areas) == 1
+    enc = areas[0]["encoding"]
+    assert enc["y"]["field"] == "y" and enc["x"]["field"] == "x0"
+    assert caveats == []
+
+
+def test_arbitrary_fill_polygon_warns_instead_of_silently_dropping():
+    """A genuinely arbitrary closed polygon (not a two-boundary strip
+    fill_between()/fill_betweenx() themselves build) has no Vega-Lite
+    closed-vocabulary mark -- must warn by name, not silently vanish."""
+    fig, ax = plotpress.subplots()
+    ax.fill([0, 1, 0.5], [0, 0, 1])   # a plain triangle, not a strip
+    result, caveats = fig.to_vega_lite()
+    assert any("has no Vega-Lite mapping" in c for c in caveats)
+
+
+def test_rugplot_exports_as_rule_marks():
+    fig, ax = plotpress.subplots()
+    ax.rugplot([1, 2, 2.5, 3])
+    result, caveats = fig.to_vega_lite()
+    rules = [l for l in result["grid"]["layer"] if l["mark"]["type"] == "rule"]
+    assert len(rules) == 1
+    assert len(rules[0]["data"]["values"]) == 4
+    assert caveats == []
+
+
+def test_pie_labels_and_autopct_actually_render():
+    """Regression: the module docstring claims pie wedge labels/autopct
+    are supported (Tier 2), but _pie_layers only ever built the arc mark
+    -- no text layer read art.labels/art.autopct at all. Fixed, then hit a
+    second bug: a layer with only literal {"value": ...} encodings and no
+    "data" of its own has zero rows to instantiate the mark from and
+    silently draws nothing, confirmed with an isolated text-over-arc
+    repro -- each label/pct layer needs an explicit one-row placeholder
+    dataset purely to exist."""
+    fig, ax = plotpress.subplots(figsize=(5.0, 5.0))
+    ax.pie([35, 25, 20, 20], labels=["A", "B", "C", "D"], autopct="%.0f%%")
+    result, caveats = fig.to_vega_lite()
+    assert caveats == []
+    layers = result["grid"]["layer"]
+    text_layers = [l for l in layers if l["mark"]["type"] == "text"]
+    assert len(text_layers) == 8   # 4 labels + 4 autopct percentages
+    for layer in text_layers:
+        assert layer["data"]["values"] == [{}]   # the placeholder-row fix
+        assert "value" in layer["encoding"]["x"]
+        assert "value" in layer["encoding"]["y"]
+        assert "value" in layer["encoding"]["text"]
+    texts = {l["encoding"]["text"]["value"] for l in text_layers}
+    assert texts == {"A", "B", "C", "D", "35%", "25%", "20%"}   # two 20% slices
+
+
+def test_pie_arc_has_an_explicit_center_and_radius():
+    """The arc mark's own center/radius must be explicit (not left to
+    Vega-Lite's undocumented auto-centering/auto-sizing), since the label
+    positions are computed from that same center/radius in Python and
+    would drift out of alignment with the wedges otherwise."""
+    fig, ax = plotpress.subplots()
+    ax.pie([1, 1])
+    result, _ = fig.to_vega_lite()
+    arc = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "arc")
+    enc = arc["encoding"]
+    assert "x" in enc and "value" in enc["x"]
+    assert "y" in enc and "value" in enc["y"]
+    assert "radius" in enc and "value" in enc["radius"]
+
+
+def test_pie_wedge_order_matches_data_not_color_sort():
+    """Regression: Vega-Lite's default stack order for a nominal color
+    field sorts BY that field (ascending hex string), not row/input order
+    -- confirmed by actually rendering: wedge sizes were right but which
+    wedge sat where was scrambled to color order whenever the colors
+    weren't already ascending-hex."""
+    fig, ax = plotpress.subplots()
+    ax.pie([35, 25, 20, 20])
+    result, _ = fig.to_vega_lite()
+    arc = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "arc")
+    assert arc["encoding"]["order"] == {"field": "idx", "type": "ordinal"}
+    values = arc["data"]["values"]
+    assert [v["idx"] for v in values] == list(range(len(values)))
+
+
+def test_set_aspect_shrinks_the_view_the_same_as_to_vega():
+    """Regression: _axes_to_vl_spec sized every view from the raw,
+    unadjusted _pixel_rect, never _effective_rect -- the same aspect-lock
+    shrink plotpress.vega's own _axes_to_group already applies for
+    set_aspect("equal")/set_box_aspect(). Skipping it left an aspect-locked
+    axes' Vega-Lite view sized to its full, unadjusted grid cell, stretching
+    everything drawn on it -- confirmed by rendering a curvilinear,
+    aspect="equal" mesh through vega-lite and comparing against plotpress's
+    own (correctly circular) output, where the mismatch showed up as a
+    squashed ellipse instead of a circle."""
+    fig, ax = plotpress.subplots(figsize=(6.0, 4.0))
+    ax.plot([0, 1], [0, 1])
+    ax.set_aspect("equal")
+    result, _ = fig.to_vega_lite()
+    from plotpress.svg import _effective_rect, _pixel_rect
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    alloc = _pixel_rect(ax, W, H)
+    xlim, ylim = ax._resolved_limits()
+    _, _, expected_w, expected_h = _effective_rect(ax, *alloc, xlim, ylim)
+    assert result["grid"]["width"] == pytest.approx(expected_w, abs=0.5)
+    assert result["grid"]["height"] == pytest.approx(expected_h, abs=0.5)
+    # The adjusted box must be smaller than the raw, unadjusted cell for
+    # this figure (a wide 6x4in figure holding a 1:1 data-unit square) --
+    # otherwise this test would trivially pass even without the fix.
+    assert expected_w < alloc[2]
+
+
+def test_marker_only_line_has_no_connecting_line():
+    """Regression: linestyle="none" with a marker set still produced a
+    `line` mark with `point: true`, which draws a solid connecting line
+    regardless of dash settings -- confirmed by actually rendering: a
+    marker-only plot came out with a spurious line joining every point."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], marker="o", linestyle="none")
+    result, _ = fig.to_vega_lite()
+    types = [l["mark"]["type"] for l in result["grid"]["layer"]]
+    assert types == ["point"]
+
+
+def test_non_monotonic_x_line_has_a_row_order_encoding():
+    """Regression: Vega-Lite's default line-mark point order sorts by the
+    x field, not data/row order -- fine for the common monotonic-x case,
+    but a parametric line (e.g. plot(sin(t), t)) rendered as a zigzag
+    connecting points in x-sorted order instead of tracing the actual
+    curve, confirmed by actually rendering one."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, -1.0, 0.5], [0.0, 1.0, 2.0, 3.0])   # non-monotonic x
+    result, _ = fig.to_vega_lite()
+    line = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "line")
+    assert line["encoding"]["order"] == {"field": "idx", "type": "ordinal"}
+    assert [v["idx"] for v in line["data"]["values"]] == [0, 1, 2, 3]
 
 
 def test_json_serializable_end_to_end():

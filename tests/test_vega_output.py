@@ -10,6 +10,7 @@ docs/examples and docs/applications galleries instead (278 figures across
 240 scripts exported and rendered correctly via vg2png, zero blank or
 malformed; see the accompanying CHANGELOG entry).
 """
+import json
 import math
 
 import numpy as np
@@ -224,6 +225,141 @@ def test_mesh_becomes_an_image_mark_with_a_real_data_uri():
     assert len(images) == 1
     url = images[0]["encode"]["enter"]["url"]["value"]
     assert url.startswith("data:image/png;base64,")
+
+
+def test_mesh_data_true_embeds_real_per_cell_rects_for_a_small_mesh():
+    fig, ax = plotpress.subplots()
+    x, y = np.linspace(0, 3, 4), np.linspace(0, 2, 3)
+    ax.pcolormesh(x, y, np.arange(6, dtype=float).reshape(2, 3), cmap="viridis")
+    spec = fig.to_vega(mesh_data=True)
+    group = spec["marks"][0]
+    rects = _marks_of_type(group, "rect")
+    assert len(rects) == 1
+    color_scale_name = rects[0]["encode"]["enter"]["fill"]["scale"]
+    color_scale = next(s for s in group["scales"] if s["name"] == color_scale_name)
+    assert color_scale["range"] == {"scheme": "viridis"}
+    assert color_scale["domain"] == [0.0, 5.0]
+    data_name = rects[0]["from"]["data"]
+    rows = next(d for d in spec["data"] if d["name"] == data_name)["values"]
+    assert len(rows) == 6   # one per cell, 2x3 grid
+
+
+def test_mesh_data_gray_colormap_direction_is_not_inverted():
+    """Regression: Vega's built-in "greys" scheme follows ColorBrewer's
+    light=low/dark=high convention -- the same direction viridis/plasma/
+    Blues/Greens/etc. already use, which is why the generic `_r`-suffix
+    handling is correct for all of them. plotpress's own "gray" colormap
+    follows matplotlib's literal-luminance convention instead (black=low,
+    white=high) -- the OPPOSITE direction -- so "gray" needs reverse=True
+    and "gray_r" needs reverse=False, backwards from every other entry.
+    Confirmed by sampling actual rendered pixel colors: cmap="gray_r" on
+    binary data rendered value=0 cells near-black instead of white."""
+    fig, ax = plotpress.subplots()
+    x, y = np.linspace(0, 3, 4), np.linspace(0, 2, 3)
+    ax.pcolormesh(x, y, np.arange(6, dtype=float).reshape(2, 3), cmap="gray")
+    spec = fig.to_vega(mesh_data=True)
+    scale = next(s for s in spec["marks"][0]["scales"] if "color" in s["name"])
+    assert scale["range"] == {"scheme": "greys"}
+    assert scale["reverse"] is True
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.pcolormesh(x, y, np.arange(6, dtype=float).reshape(2, 3), cmap="gray_r")
+    spec2 = fig2.to_vega(mesh_data=True)
+    scale2 = next(s for s in spec2["marks"][0]["scales"] if "color" in s["name"])
+    assert scale2["reverse"] is False
+
+
+def test_mesh_data_true_falls_back_to_image_above_the_cell_limit():
+    fig, ax = plotpress.subplots()
+    x, y = np.linspace(0, 60, 61), np.linspace(0, 60, 61)
+    ax.pcolormesh(x, y, np.zeros((60, 60)), cmap="viridis")   # 3600 cells
+    with pytest.warns(UserWarning, match="mesh_data=True.*falling back"):
+        spec = fig.to_vega(mesh_data=True)
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "rect")) == 0
+    assert len(_marks_of_type(group, "image")) == 1
+
+
+def test_mesh_data_defaults_to_false_unchanged_behavior():
+    fig, ax = plotpress.subplots()
+    ax.pcolormesh(np.arange(4, dtype=float), np.arange(4, dtype=float),
+                  np.arange(9, dtype=float).reshape(3, 3))
+    spec = fig.to_vega()   # no mesh_data kwarg at all
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "image")) == 1
+    assert len(_marks_of_type(group, "rect")) == 0
+
+
+def test_mesh_data_true_with_numpy_vmin_vmax_is_json_serializable():
+    """Regression: art.norm.vmin/vmax were embedded raw (no float() cast,
+    unlike every other value on this path), so a user-supplied numpy
+    vmin/vmax (an ordinary pattern -- vmin=data.min()) broke
+    json.dumps() with a non-serializable numpy scalar."""
+    fig, ax = plotpress.subplots()
+    x, y = np.linspace(0, 3, 4), np.linspace(0, 2, 3)
+    ax.pcolormesh(x, y, np.arange(6, dtype=float).reshape(2, 3), cmap="viridis",
+                  vmin=np.float64(1.0), vmax=np.int64(5))
+    spec = fig.to_vega(mesh_data=True)
+    json.dumps(spec)   # must not raise
+
+
+def test_mesh_data_true_all_nan_mesh_falls_back_with_a_warning():
+    """Regression: an all-NaN mesh was ELIGIBLE per _mesh_data_reason (it
+    never checked for any finite data), but then produced zero rows and
+    zero marks -- silently, no warning, no fallback -- contradicting the
+    feature's own "never silently wrong, always fall back with a warning"
+    contract."""
+    fig, ax = plotpress.subplots()
+    x, y = np.linspace(0, 5, 6), np.linspace(0, 5, 6)
+    ax.pcolormesh(x, y, np.full((5, 5), np.nan), cmap="viridis")
+    with pytest.warns(UserWarning, match="mesh_data=True.*no finite cell values"):
+        spec = fig.to_vega(mesh_data=True)
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "image")) == 1
+    assert len(_marks_of_type(group, "rect")) == 0
+
+
+def test_mesh_data_true_log_scale_falls_back_with_a_warning():
+    """Regression: a rect mark's x/y defers to the SAME shared scale
+    every other mark uses, computed at render time -- unlike the
+    rasterized path, plotpress never pre-clamps it. A cell edge at
+    exactly 0 fed into a log-typed scale evaluates to NaN there (verified
+    against the real vega JS runtime), silently breaking that cell with
+    no warning."""
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 3, 4)
+    y = np.array([0.0, 1.0, 2.0])
+    ax.pcolormesh(x, y, np.arange(6, dtype=float).reshape(2, 3), cmap="viridis")
+    ax.set_yscale("log")
+    with pytest.warns(UserWarning, match="mesh_data=True.*log-scaled"):
+        spec = fig.to_vega(mesh_data=True)
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "image")) == 1
+    assert len(_marks_of_type(group, "rect")) == 0
+
+
+def test_twin_axes_content_is_not_hidden_behind_its_own_background():
+    """Regression: every axes group unconditionally painted an opaque
+    background fill, but a twin/secondary axes occupies the EXACT SAME
+    pixel rect as its parent (twinx()/twiny() copy it verbatim) and is
+    drawn AFTER the parent in fig.axes order -- so its own opaque
+    background painted directly over the parent's already-drawn content,
+    confirmed by actually rendering a twinx() figure through vg2png (the
+    primary curve was completely invisible). svg.py already skips this
+    rect for exactly this reason; to_vega() must too."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [1, 2, 3])
+    ax2 = ax.twinx()
+    ax2.plot([0, 1, 2], [100, 50, 80], color="red")
+    spec = fig.to_vega()
+    groups = [m for m in spec["marks"] if m["type"] == "group"]
+    assert len(groups) == 2
+    parent_group, twin_group = groups
+    assert "fill" in parent_group["encode"]["enter"]
+    assert "fill" not in twin_group["encode"]["enter"]
+    # Both curves must still be present and drawn.
+    assert len(_marks_of_type(parent_group, "line")) == 1
+    assert len(_marks_of_type(twin_group, "line")) == 1
 
 
 def test_multiple_axes_become_separate_correctly_positioned_groups():

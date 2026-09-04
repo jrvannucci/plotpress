@@ -14,22 +14,26 @@ resolve by appealing to one of them:
 
 ## Render pipeline
 
-    Figure ──owns──> Axes ──holds──> artists (artists.py)
-                                        │
-                          transform.py  │  data space -> pixel space
-                                        v
-                          artist_to_prims (primitives.py)
-                                        │  backend-agnostic pixel-space prims
-                    ┌───────────────────┼───────────────────┬───────────────┬────────────────┐
-                    v                   v                   v               v                v
-                svg.py              raster.py         _interactive.py    vega.py         vega_lite.py
-              (SVG string)       (PNG via Pillow,     (vanilla JS layered (Vega v5 JSON   (Vega-Lite v5
-                                  PDF via svglib)       onto the SVG)      spec, not SVG)   spec, stricter)
+    Figure ──owns──> Axes ──holds──> artists (artists.py) ─────────────────┐
+                                        │                                    │  data-space fields
+                          transform.py  │  data space -> pixel space        │  read directly, own
+                                        v                                    │  scale/encoding
+                          artist_to_prims (primitives.py)                    v
+                                        │  backend-agnostic pixel-space   vega_lite.py
+                                        │  prims                         (Vega-Lite v5 spec,
+                    ┌───────────────────┼───────────────────┬───────────┐   stricter grammar,
+                    v                   v                   v           v   barely touches the
+                svg.py              raster.py         _interactive.py  vega.py  prims layer at all)
+              (SVG string)       (PNG via Pillow,     (vanilla JS      (Vega v5 JSON
+                                  PDF via svglib)       layered onto    spec, not SVG,
+                                                         the SVG)       reuses primitives.py)
 
 `Figure.to_svg()` is the core entry point; `Figure.save(path, interactive=...)`
 dispatches on the file extension. A new plotting method usually means touching
 `axes.py` (the public method), `artists.py` (the scene object),
-`primitives.py` (the prim conversion), and then each backend that must draw it.
+`primitives.py` (the prim conversion), and then each backend that must draw it
+-- except `vega_lite.py`, which builds its marks straight from `artists.py`'s
+own data-space fields (see `docs/user_guide/architecture.rst` for why).
 
 ## Module map
 
@@ -42,7 +46,7 @@ need rather than the whole file.
 | `plotpress/svg.py` | 1291 | SVG serialization — one `_render_*` per artist kind, plus axis decoration |
 | `plotpress/_interactive.py` | 1181 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
 | `plotpress/artists.py` | 927 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
-| `plotpress/vega_lite.py` | 861 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
+| `plotpress/vega_lite.py` | 904 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
 | `plotpress/raster.py` | 820 | PNG backend via Pillow; PDF via svglib/reportlab |
 | `plotpress/vega.py` | 755 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
 | `plotpress/figure.py` | 729 | The root object: layout, `to_svg`, `save`, `show`, figure-level text and legend |

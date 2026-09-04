@@ -22,22 +22,35 @@ onto Vega-Lite's own ``encoding.<channel>.scale``/``.axis``.
 
 **Tier 2 -- a layered workaround within Vega-Lite's own vocabulary,** more
 code, more fragile: reference lines/spans (``VLine``/``HLine``/``AxLine``/
-``Span``) via a tiny inline literal dataset, since Vega-Lite has no
-scale-independent constant shorthand the way Vega's ``{"value": ...}`` is;
-``Stem`` (three layers: stems, baseline, tips); dashed lines (a plain
-``strokeDash`` mark property); simple ``Text``/``Annotation`` with no
-``bbox``/arrow; custom tick *labels* via ``axis.labelExpr`` (capped at ~12
-ticks -- fragile past that); pie wedge labels/``autopct`` (frozen per-wedge
-positions, same trig walk :mod:`plotpress.vega`'s ``_pie_marks`` uses).
+``Span``) and ``LineCollection`` (``hlines()``/``vlines()``, violin inner
+quartile/whisker lines, ``acorr()``/``xcorr()``) via a tiny inline literal
+dataset, since Vega-Lite has no scale-independent constant shorthand the way
+Vega's ``{"value": ...}`` is; ``Rug`` the same way, plus a literal *pixel*
+value (not a data scale) for its fixed-fraction tick length; ``Stem`` (three
+layers: stems, baseline, tips); dashed lines (a plain ``strokeDash`` mark
+property); simple ``Text``/``Annotation`` with no ``bbox``/arrow; custom tick
+*labels* via ``axis.labelExpr`` (capped at ~12 ticks -- fragile past that);
+pie wedge labels/``autopct`` (frozen per-wedge positions via a real Vega-Lite
+``area`` mark, and an explicit arc center/radius the labels are positioned
+against, rather than trusting Vega-Lite's own undocumented auto-sizing --
+same trig walk :mod:`plotpress.vega`'s ``_pie_marks`` uses); ``Polygon``
+(``fill()``, and critically ``fill_betweenx()`` -- built the same
+forward-one-boundary-back-the-other way as ``fill_between()`` internally,
+see ``axes.py``) as a real ``area`` mark, but *only* when the polygon
+actually has that two-boundary-strip shape -- detected structurally, not
+by which call built it.
 
 **Tier 3 -- no reasonable mapping, warns and skips** (the same
 "degrade a part, not the whole" policy :func:`plotpress.vega.figure_to_vega`
 already follows): everything already unsupported there (``BoxPlot``,
 ``Violin``, ``Quiver``, ``Contour``, ``EventPlot``, ``Barbs``, ``Table``,
 legends), plus ``PolyCollection`` (no closed-vocabulary polygon-batch mark),
-a non-monotonic ``FillBetween``, annotation *arrows* specifically (kept as
-text, the arrow itself has no Vega-Lite mark), and ``Figure.group()`` boxes
-(no cross-panel drawing surface in Vega-Lite's per-view composition at all).
+a non-monotonic ``FillBetween``, a ``Polygon`` that isn't a two-boundary
+strip (an arbitrary closed ``fill()`` shape -- a filled circle, a hexbin
+cell -- has no Vega-Lite closed-vocabulary mark either), annotation
+*arrows* specifically (kept as text, the arrow itself has no Vega-Lite
+mark), and ``Figure.group()`` boxes (no cross-panel drawing surface in
+Vega-Lite's per-view composition at all).
 
 **The figure-level composition problem** is the one Vega itself never
 forced: plotpress allows arbitrary grid spans, ``add_axes()`` free rects,
@@ -60,12 +73,16 @@ import warnings
 import numpy as np
 
 from .artists import (
-    AxLine, Bars, ErrorBar, FillBetween, HLine, Image, Line2D, Pie, QuadMesh,
-    ScatterCollection, Span, Stem, Text, Annotation, VLine,
+    AxLine, Bars, ErrorBar, FillBetween, HLine, Image, Line2D, LineCollection,
+    Pie, Polygon, QuadMesh, Rug, ScatterCollection, Span, Stem, Text,
+    Annotation, VLine,
 )
 from .png import png_data_uri
-from .svg import _pixel_rect
-from .vega import _color, _dash_array, _symbol_size
+from .svg import _effective_rect, _pixel_rect
+from .vega import (
+    _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
+    _symbol_size,
+)
 
 _SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
 
@@ -89,7 +106,7 @@ _STRUCTURAL_WARNING_PREFIX = (
 )
 
 
-def figure_to_vega_lite(fig) -> tuple[dict, list[str]]:
+def figure_to_vega_lite(fig, mesh_data: bool = False) -> tuple[dict, list[str]]:
     """Build a Vega-Lite v5 spec for ``fig``.
 
     Returns ``(result, caveats)`` -- **not** a bare ``dict`` the way
@@ -156,7 +173,7 @@ def figure_to_vega_lite(fig) -> tuple[dict, list[str]]:
     if composable:
         shapes = {(ax._subplotspec.nrows, ax._subplotspec.ncols) for _, ax in composable}
         if len(shapes) == 1:
-            grid_spec, span_caveats = _build_grid(composable, fig, size_scale)
+            grid_spec, span_caveats = _build_grid(composable, fig, size_scale, mesh_data)
             caveats.extend(span_caveats)
         else:
             caveats.append(
@@ -167,7 +184,7 @@ def figure_to_vega_lite(fig) -> tuple[dict, list[str]]:
                 "of one combined grid."
             )
             for _, ax in composable:
-                spec, axcav = _axes_to_vl_spec(ax, size_scale)
+                spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data)
                 caveats.extend(axcav)
                 if spec is not None:
                     standalone.append(spec)
@@ -178,14 +195,14 @@ def figure_to_vega_lite(fig) -> tuple[dict, list[str]]:
     twins = [(i, ax) for i, ax in entangled_axes if ax._twin_of is not None]
     other_entangled = [(i, ax) for i, ax in entangled_axes if ax._twin_of is None]
     for i, ax in twins:
-        merged = _merge_twin(ax, grid_spec, standalone, size_scale)
+        merged = _merge_twin(ax, grid_spec, standalone, size_scale, mesh_data)
         if not merged:
             caveats.append(
                 f"axes {i} is a twinx()/twiny() overlay whose parent axes "
                 "wasn't found in the composed output (an unusual layout) -- "
                 "exported as its own independent spec instead of merged."
             )
-            spec, axcav = _axes_to_vl_spec(ax, size_scale)
+            spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data)
             caveats.extend(axcav)
             if spec is not None:
                 standalone.append(spec)
@@ -211,7 +228,7 @@ def figure_to_vega_lite(fig) -> tuple[dict, list[str]]:
             "has no way to position it relative to the other axes, so it "
             "was exported as its own independent spec."
         )
-        spec, axcav = _axes_to_vl_spec(ax, size_scale)
+        spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data)
         caveats.extend(axcav)
         if spec is not None:
             standalone.append(spec)
@@ -248,7 +265,7 @@ def _is_cleanly_composable(ax) -> bool:
             and ax._inset_parent is None and not ax._is_colorbar)
 
 
-def _build_grid(composable, fig, size_scale):
+def _build_grid(composable, fig, size_scale, mesh_data=False):
     """One combined spec: an outer ``vconcat`` of rows, each an inner
     ``hconcat`` of that row's cells -- ``composable`` all share one grid
     shape (checked by the caller). A multi-cell span gets an explicit
@@ -263,7 +280,7 @@ def _build_grid(composable, fig, size_scale):
     caveats = []
     for i, ax in composable:
         ss = ax._subplotspec
-        spec, axcav = _axes_to_vl_spec(ax, size_scale)
+        spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data)
         caveats.extend(axcav)
         if spec is None:
             continue
@@ -298,7 +315,7 @@ def _build_grid(composable, fig, size_scale):
     return grid, caveats
 
 
-def _merge_twin(ax, grid_spec, standalone, size_scale):
+def _merge_twin(ax, grid_spec, standalone, size_scale, mesh_data=False):
     """Merge a twin axes' marks into its parent's own spec as an extra
     ``layer``, with an independent scale on whichever axis the twin does
     NOT share with its parent (real, documented Vega-Lite grammar for
@@ -310,7 +327,7 @@ def _merge_twin(ax, grid_spec, standalone, size_scale):
     target = _find_spec_for_axes(parent, grid_spec) or _find_spec_for_axes(parent, standalone)
     if target is None:
         return False
-    layers, caveats = _artist_layers(ax, size_scale)
+    layers, caveats = _artist_layers(ax, size_scale, mesh_data)
     if not layers:
         return True
     # Every spec _axes_to_vl_spec builds already has a top-level "layer"
@@ -353,17 +370,28 @@ def _find_spec_for_axes(ax, container):
 
 # ---- one axes -> one Vega-Lite spec ------------------------------------
 
-def _axes_to_vl_spec(ax, size_scale):
+def _axes_to_vl_spec(ax, size_scale, mesh_data=False):
     """One axes' own content as a single-view (or layered) Vega-Lite spec,
     or ``(None, caveats)`` if nothing on it was exportable (mirrors
     :func:`plotpress.vega._vega_has_content`'s role for the Vega sibling).
     """
-    layers, caveats = _artist_layers(ax, size_scale)
+    layers, caveats = _artist_layers(ax, size_scale, mesh_data)
     if not layers:
         return None, caveats
     fig = ax.figure
     W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
-    _, _, w, h = _pixel_rect(ax, W, H)
+    # _effective_rect, not the raw _pixel_rect -- set_aspect("equal")/
+    # set_box_aspect() shrink the actually-used plotting box (centered
+    # within the allocated cell), the same adjustment plotpress.vega's own
+    # _axes_to_group already applies. Skipping it here left every
+    # aspect-locked axes' view sized to its full *unadjusted* cell instead,
+    # squashing/stretching everything drawn on it relative to what
+    # set_aspect asked for -- confirmed by comparing a curvilinear,
+    # aspect="equal" mesh's rendering against plotpress's own output,
+    # where the mismatch showed up as the mesh's pattern appearing shifted
+    # relative to its axis ticks, not just resized.
+    xlim, ylim = ax._resolved_limits()
+    _, _, w, h = _effective_rect(ax, *_pixel_rect(ax, W, H), xlim, ylim)
     spec = {
         "name": f"axes{id(ax):x}",
         "width": round(float(w), 2), "height": round(float(h), 2),
@@ -425,14 +453,14 @@ def _xy_axis(ax):
     return x_enc, y_enc, caveats
 
 
-def _artist_layers(ax, size_scale):
+def _artist_layers(ax, size_scale, mesh_data=False):
     layers, caveats = [], []
     draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
     for k, art in draw_order:
         if isinstance(art, ScatterCollection):
             l, c = _scatter_layer(art, ax, size_scale)
         elif isinstance(art, Line2D):
-            l, c = _line_layer(art, ax)
+            l, c = _line_layer(art, ax, size_scale)
         elif isinstance(art, Bars):
             l, c = _bars_layer(art, ax)
         elif isinstance(art, ErrorBar):
@@ -440,17 +468,23 @@ def _artist_layers(ax, size_scale):
         elif isinstance(art, Stem):
             l, c = _stem_layers(art, ax)
         elif isinstance(art, Pie):
-            l, c = _pie_layers(art)
+            l, c = _pie_layers(art, ax)
         elif isinstance(art, (VLine, HLine, AxLine)):
             l, c = _refline_layer(art, ax)
         elif isinstance(art, Span):
             l, c = _span_layer(art, ax)
         elif isinstance(art, FillBetween):
             l, c = _fillbetween_layer(art, ax)
+        elif isinstance(art, LineCollection):
+            l, c = _line_collection_layer(art, ax)
+        elif isinstance(art, Polygon):
+            l, c = _polygon_layer(art, ax)
+        elif isinstance(art, Rug):
+            l, c = _rug_layer(art, ax)
         elif isinstance(art, (Text, Annotation)):
             l, c = _text_layer(art, ax)
         elif isinstance(art, (QuadMesh, Image)):
-            l, c = _mesh_layer(art, ax)
+            l, c = _mesh_layer(art, ax, mesh_data)
         else:
             warnings.warn(
                 f"figure_to_vega_lite(): axes {_axes_index(ax)} has a "
@@ -479,21 +513,37 @@ def _axes_index(ax):
 
 # ---- Tier 1: native mark, direct field mapping -------------------------
 
-def _line_layer(art, ax):
+def _line_layer(art, ax, size_scale):
     if art.linestyle == "none" and art.marker is None:
         return [], []
     x, y = np.asarray(art.x, float), np.asarray(art.y, float)
     finite = np.isfinite(x) & np.isfinite(y)
     if not finite.any():
         return [], []
+    x_enc, y_enc, caveats = _xy_axis(ax)
+    # linestyle="none" with a marker (matplotlib's "markers only" idiom,
+    # e.g. plot(x, y, marker="o", linestyle="none")) needs a `point`-only
+    # mark, not a `line` mark with a `point: true` sub-mark -- the latter
+    # still draws a solid connecting line regardless of dash settings
+    # (_dash_array("none") has nothing to suppress it with), confirmed by
+    # actually rendering: a marker-only plot came out with a spurious
+    # solid line joining every point.
+    if art.linestyle == "none":
+        values = [{"x": float(xv), "y": float(yv)} for xv, yv in zip(x[finite], y[finite])]
+        diam = float(art.markersize or 6.0) * size_scale
+        mark = {"type": "point", "filled": True,
+                "color": _color(art.markerfacecolor or art.color),
+                "size": _symbol_size(diam), "opacity": float(art.alpha)}
+        layer = {"data": {"values": values}, "mark": mark,
+                 "encoding": {"x": dict(x_enc, field="x"), "y": dict(y_enc, field="y")}}
+        return [layer], caveats
     # A non-finite point becomes a null field value, not a dropped row --
     # Vega-Lite's own default "invalid data" handling for line/area marks
     # (config.mark.invalid, default "break-paths-filter-domains") breaks
     # the path at a null exactly the way plotpress.vega's `defined` channel
     # does for raw Vega, so no manual gap-splitting is needed here.
-    values = [{"x": float(xv) if fv else None, "y": float(yv) if fv else None}
-             for xv, yv, fv in zip(x, y, finite)]
-    x_enc, y_enc, caveats = _xy_axis(ax)
+    values = [{"idx": i, "x": float(xv) if fv else None, "y": float(yv) if fv else None}
+             for i, (xv, yv, fv) in enumerate(zip(x, y, finite))]
     mark = {"type": "line", "color": _color(art.color),
             "strokeWidth": float(art.linewidth), "opacity": float(art.alpha)}
     dash = _dash_array(art.linestyle)
@@ -502,7 +552,18 @@ def _line_layer(art, ax):
     if art.marker is not None:
         mark["point"] = True
     layer = {"data": {"values": values}, "mark": mark,
-             "encoding": {"x": dict(x_enc, field="x"), "y": dict(y_enc, field="y")}}
+             "encoding": {
+                 "x": dict(x_enc, field="x"), "y": dict(y_enc, field="y"),
+                 # Vega-Lite's default line-mark point order sorts by the x
+                 # field -- fine for the overwhelmingly common monotonic-x
+                 # case, but a parametric/non-monotonic-x line (e.g.
+                 # ax.plot(sin(t), t)) came out as a zigzag connecting
+                 # points in x-sorted order instead of data order, confirmed
+                 # by actually rendering one. `order` pins it back, the same
+                 # fix already applied to _pie_layers for the analogous
+                 # stack-order default.
+                 "order": {"field": "idx", "type": "ordinal"},
+             }}
     return [layer], caveats
 
 
@@ -626,7 +687,7 @@ def _errorbar_layers(art, ax, size_scale):
     return layers, caveats
 
 
-def _pie_layers(art):
+def _pie_layers(art, ax):
     # Pie draws in fixed axes-pixel space, independent of any x/y data
     # scale (see plotpress.vega's own _pie_marks) -- Vega-Lite's `arc` mark
     # is the same story: it has no x/y quantitative encoding at all, just
@@ -637,15 +698,104 @@ def _pie_layers(art):
     # scale mixed with ones that have one; Vega-Lite handles that by simply
     # not resolving x/y for the arc layer, which is correct here since the
     # arc genuinely has no data-space position to share.
-    values = [{"value": float(v), "color": _color(c)} for v, c in zip(art.fracs, art.colors)]
-    return [{
+    values = [{"idx": i, "value": float(v), "color": _color(c)}
+             for i, (v, c) in enumerate(zip(art.fracs, art.colors))]
+    # Explicit center/radius (plotpress.vega's own _pie_marks formula,
+    # mirroring svg.py's _render_pie) rather than leaving Vega-Lite's own
+    # arc mark to auto-center/auto-size itself -- needed so the label/pct
+    # text below can be placed at a center and radius it actually knows,
+    # not one it would have to guess at from Vega-Lite's undocumented
+    # default arc sizing.
+    fig = ax.figure
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    xlim, ylim = ax._resolved_limits()
+    _, _, px_w, px_h = _effective_rect(ax, *_pixel_rect(ax, W, H), xlim, ylim)
+    cx, cy = px_w / 2.0, px_h / 2.0
+    R = 0.42 * min(px_w, px_h) * art.radius
+    layers = [{
         "data": {"values": values},
-        "mark": {"type": "arc", "opacity": float(art.alpha), "stroke": "#ffffff", "strokeWidth": 1.5},
+        "mark": {"type": "arc", "opacity": float(art.alpha), "stroke": "#ffffff",
+                "strokeWidth": 1.5},
         "encoding": {
             "theta": {"field": "value", "type": "quantitative", "stack": True},
             "color": {"field": "color", "type": "nominal", "scale": None, "legend": None},
+            # Vega-Lite's default stack order for a nominal color field
+            # sorts BY that field (here, ascending hex string) rather than
+            # keeping row/input order -- confirmed by actually rendering:
+            # wedge angular sizes came out right but which wedge sat where
+            # was scrambled to color order, not data order, whenever the
+            # colors weren't already ascending-hex. `order` pins it back
+            # to plotpress's own wedge order (clockwise from 12 o'clock,
+            # same as svg.py's _render_pie).
+            "order": {"field": "idx", "type": "ordinal"},
+            # x/y/radius are literal channel VALUES (not mark-level
+            # properties -- Vega-Lite has no such shorthand), matching the
+            # arc's own explicit cx/cy/R so labels below line up with the
+            # actual wedges rather than guessing at Vega-Lite's own
+            # undocumented auto-centering/auto-sizing.
+            "x": {"value": round(float(cx), 2)}, "y": {"value": round(float(cy), 2)},
+            "radius": {"value": round(float(R), 2)},
         },
-    }], []
+    }]
+    # Wedge label / autopct%% text: Vega-Lite's `arc` mark has no built-in
+    # per-wedge label placement (unlike `theta`'s auto-stacking), so the
+    # same wedge-midpoint trig walk plotpress.vega's own _pie_marks and
+    # svg.py's _render_pie both do is repeated here, in Python, to get a
+    # literal pixel x/y per label -- frozen positions via {"value": px}
+    # (bypassing any data scale entirely, the same literal-pixel idiom
+    # _rug_layer's tick length uses), matching the arc's own explicit
+    # cx/cy/R above so labels land on their actual wedges regardless of
+    # what Vega-Lite's own auto-sizing would have produced.
+    if art.labels is not None or art.autopct is not None:
+        ang = math.radians(art.startangle)
+        label_rows, pct_rows = [], []
+        for frac in art.fracs:
+            sweep = frac * 2 * math.pi
+            a0, a1 = ang, ang - sweep
+            am = (a0 + a1) / 2.0
+            ang = a1
+            label_rows.append({
+                "x": cx + 1.15 * R * math.cos(am), "y": cy - 1.15 * R * math.sin(am),
+                "align": "left" if math.cos(am) >= 0 else "right",
+            })
+            pct_rows.append({"x": cx + 0.6 * R * math.cos(am), "y": cy - 0.6 * R * math.sin(am)})
+        if art.labels is not None:
+            for row, lbl in zip(label_rows, art.labels):
+                layers.append({
+                    # A layer with only literal {"value": ...} encodings and
+                    # no "data" of its own has zero rows to instantiate the
+                    # mark from -- and draws NOTHING, silently -- confirmed
+                    # empirically (an isolated text-over-arc repro rendered
+                    # blank until a trivial one-row dataset was added). Every
+                    # other layer in this file gets its row(s) implicitly
+                    # from a real per-point/per-cell dataset; this is the
+                    # one case with no real data at all, so it needs an
+                    # explicit placeholder row purely to exist.
+                    "data": {"values": [{}]},
+                    "mark": {"type": "text", "align": row["align"],
+                            "baseline": "middle", "fontSize": 10},
+                    "encoding": {
+                        "x": {"value": round(float(row["x"]), 2)},
+                        "y": {"value": round(float(row["y"]), 2)},
+                        "text": {"value": str(lbl)},
+                    },
+                })
+        if art.autopct is not None:
+            for row, frac in zip(pct_rows, art.fracs):
+                pct = art.pct_text(frac)
+                if pct is None:
+                    continue
+                layers.append({
+                    "data": {"values": [{}]},   # see the label loop above
+                    "mark": {"type": "text", "align": "center",
+                            "baseline": "middle", "fontSize": 10},
+                    "encoding": {
+                        "x": {"value": round(float(row["x"]), 2)},
+                        "y": {"value": round(float(row["y"]), 2)},
+                        "text": {"value": pct},
+                    },
+                })
+    return layers, []
 
 
 def _stem_layers(art, ax):
@@ -707,6 +857,127 @@ def _refline_layer(art, ax):
     return [{"data": {"values": [row]}, "mark": mark, "encoding": enc}], caveats
 
 
+def _line_collection_layer(art, ax):
+    """``LineCollection`` (``hlines()``/``vlines()``, violin inner
+    quartile/whisker lines, ``acorr()``/``xcorr()``) as a single ``rule``
+    mark over a literal per-segment dataset -- the same pattern
+    :func:`_refline_layer`/:func:`_span_layer` already use for one row,
+    just N of them (``art.segments`` is already an ``(N, 4)`` array of
+    ``x0, y0, x1, y1`` rows, one shared color/width/dash for the batch).
+    """
+    if art.linestyle == "none" or art.segments.size == 0:
+        return [], []
+    finite = np.isfinite(art.segments).all(axis=1)
+    if not finite.any():
+        return [], []
+    x_enc, y_enc, caveats = _xy_axis(ax)
+    values = [{"x0": float(s[0]), "y0": float(s[1]), "x1": float(s[2]), "y1": float(s[3])}
+             for s in art.segments[finite]]
+    mark = {"type": "rule", "color": _color(art.color), "strokeWidth": float(art.linewidth),
+            "opacity": float(art.alpha)}
+    dash = _dash_array(art.linestyle)
+    if dash:
+        mark["strokeDash"] = dash
+    enc = {"x": dict(x_enc, field="x0"), "x2": {"field": "x1"},
+          "y": dict(y_enc, field="y0"), "y2": {"field": "y1"}}
+    return [{"data": {"values": values}, "mark": mark, "encoding": enc}], caveats
+
+
+def _rug_layer(art, ax):
+    """``Rug`` (seaborn-style tick marks at each observation) as a ``rule``
+    mark, one tick per point -- the tick's SPATIAL position rides the
+    shared data scale like every other mark, but its short length is a
+    fixed *pixel* fraction of the axes (``art.height``), independent of
+    the data range (see ``artists.Rug``'s own docstring) -- expressed the
+    same way ``primitives.py``'s own Rug branch does it (anchored in pixel
+    space), via a literal, unscaled ``{"value": px}`` on the channel that
+    carries the tick's length instead of the data scale.
+    """
+    if art.x.size == 0:
+        return [], []
+    finite = np.isfinite(art.x)
+    if not finite.any():
+        return [], []
+    fig = ax.figure
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    xlim, ylim = ax._resolved_limits()
+    _, _, px_w, px_h = _effective_rect(ax, *_pixel_rect(ax, W, H), xlim, ylim)
+    x_enc, y_enc, caveats = _xy_axis(ax)
+    color = _color(art.color, "#333333")
+    mark = {"type": "rule", "color": color, "strokeWidth": float(art.linewidth),
+            "opacity": float(art.alpha)}
+    values = [{"pos": float(v)} for v in art.x[finite]]
+    if art.side == "left":
+        enc = {"y": dict(y_enc, field="pos"),
+              "x": {"value": 0}, "x2": {"value": art.height * px_w}}
+    else:
+        enc = {"x": dict(x_enc, field="pos"),
+              "y": {"value": px_h}, "y2": {"value": px_h - art.height * px_h}}
+    return [{"data": {"values": values}, "mark": mark, "encoding": enc}], caveats
+
+
+def _polygon_layer(art, ax):
+    """``Polygon`` (``fill()``, and critically ``fill_betweenx()`` -- the
+    direct sibling of the already-supported ``fill_between()``, built the
+    same way internally: see ``axes.py``'s ``fill_betweenx``) as a real
+    Vega-Lite ``area`` mark, when the polygon boundary is actually the
+    "monotonic two-boundary strip" shape both ``fill_between``-style calls
+    produce (go forward along one boundary, then back along the other) --
+    a general closed polygon (a filled circle, a hexbin cell, an arbitrary
+    ``fill()`` shape) has no such structure and no Vega-Lite closed-vocabulary
+    mark to fall back to, so it warns instead, the same "degrade a part, not
+    silently misrepresent it" policy :func:`_fillbetween_layer` already
+    applies to a non-monotonic `fill_between`.
+    """
+    caveat = (
+        "a fill()/fill_betweenx() polygon that isn't a simple two-boundary "
+        "strip (go forward along one edge, back along the other -- what "
+        "fill_between()/fill_betweenx() themselves always build) has no "
+        "Vega-Lite mapping -- skipped."
+    )
+    x, y = art.x, art.y
+    n = x.size
+    if n < 4 or n % 2 != 0:
+        return [], [caveat]
+    half = n // 2
+    # fill_between()/fill_betweenx() both close the ring as
+    # [forward boundary, reversed(other boundary)] -- detect that shape on
+    # EITHER axis (y constant-per-half-pair for a vertical strip like
+    # fill_between, x constant-per-half-pair for a horizontal one like
+    # fill_betweenx) rather than assuming which one built it.
+    if np.allclose(y[:half], y[half:][::-1], equal_nan=True):
+        # Horizontal strip (fill_betweenx-shaped): y is the shared axis,
+        # x0/x1 are the two boundaries.
+        yv, x0, x1 = y[:half], x[:half], x[half:][::-1]
+        finite = np.isfinite(yv) & np.isfinite(x0) & np.isfinite(x1)
+        if not finite.any():
+            return [], []
+        x_enc, y_enc, caveats = _xy_axis(ax)
+        values = [{"y": float(yy), "x0": float(a), "x1": float(b)}
+                 for yy, a, b in zip(yv[finite], x0[finite], x1[finite])]
+        enc = {"y": dict(y_enc, field="y"),
+              "x": dict(x_enc, field="x0"), "x2": {"field": "x1"}}
+    elif np.allclose(x[:half], x[half:][::-1], equal_nan=True):
+        # Vertical strip (fill_between-shaped): x is the shared axis,
+        # y0/y1 are the two boundaries.
+        xv, y0, y1 = x[:half], y[:half], y[half:][::-1]
+        finite = np.isfinite(xv) & np.isfinite(y0) & np.isfinite(y1)
+        if not finite.any():
+            return [], []
+        x_enc, y_enc, caveats = _xy_axis(ax)
+        values = [{"x": float(xx), "y0": float(a), "y1": float(b)}
+                 for xx, a, b in zip(xv[finite], y0[finite], y1[finite])]
+        enc = {"x": dict(x_enc, field="x"),
+              "y": dict(y_enc, field="y0"), "y2": {"field": "y1"}}
+    else:
+        return [], [caveat]
+    mark = {"type": "area", "color": _color(art.color), "opacity": float(art.alpha)}
+    if art.edgecolor:
+        mark["stroke"] = _color(art.edgecolor)
+        mark["strokeWidth"] = float(art.linewidth)
+    return [{"data": {"values": values}, "mark": mark, "encoding": enc}], caveats
+
+
 def _span_layer(art, ax):
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
     xmin, xmax, ymin, ymax = float(xmin), float(xmax), float(ymin), float(ymax)
@@ -754,7 +1025,40 @@ def _fillbetween_layer(art, ax):
     return [layer], caveats
 
 
-def _mesh_layer(art, ax):
+def _mesh_data_layer(art, ax):
+    """Real per-cell ``rect`` marks with a field+scale color encoding for a
+    QuadMesh eligible for ``mesh_data=True`` (see
+    :func:`plotpress.vega._mesh_data_reason`) -- the Vega-Lite twin of
+    :func:`plotpress.vega._mesh_data_marks`, reusing the same
+    :func:`~plotpress.vega._mesh_cell_rows`/:func:`~plotpress.vega._mesh_scheme`
+    helpers rather than re-deriving per-cell geometry or scheme-mapping
+    logic a second time.
+    """
+    rows = _mesh_cell_rows(art)
+    if not rows:
+        return [], []
+    x_enc, y_enc, caveats = _xy_axis(ax)
+    scheme, reverse = _mesh_scheme(art.cmap_name)
+    color_enc = {
+        "field": "value", "type": "quantitative",
+        "scale": {"scheme": scheme,
+                 "domain": [float(art.norm.vmin), float(art.norm.vmax)],
+                 "reverse": reverse},
+        "legend": None,
+    }
+    layer = {
+        "data": {"values": rows},
+        "mark": {"type": "rect", "opacity": float(art.alpha)},
+        "encoding": {
+            "x": dict(x_enc, field="x0"), "x2": {"field": "x1"},
+            "y": dict(y_enc, field="y0"), "y2": {"field": "y1"},
+            "color": color_enc,
+        },
+    }
+    return [layer], caveats
+
+
+def _mesh_layer(art, ax, mesh_data=False):
     """``QuadMesh``/``Image`` (``pcolormesh``/``imshow``) as a Vega-Lite
     ``image`` mark -- the one mark in VL's vocabulary built for exactly
     this (a URL + a data-space extent), so this reuses the same rasterized
@@ -773,7 +1077,24 @@ def _mesh_layer(art, ax):
     inverted-y-axis mesh through vega-lite/vega: without the manual flip
     below, the raster came out upside-down relative to plotpress's own
     render, even though the box itself was correctly repositioned.
+
+    ``mesh_data=True`` opts into :func:`_mesh_data_layer`'s real per-cell
+    ``rect`` marks instead, for meshes small/simple enough to stay
+    unambiguous -- everything else (including a plain ``Image``, which has
+    no per-cell colormap to encode) still gets this rasterized path, with
+    a ``UserWarning`` naming why when ``mesh_data=True`` was requested but
+    couldn't be honored.
     """
+    reason = _mesh_data_reason(art, mesh_data, ax)
+    if reason is None:
+        return _mesh_data_layer(art, ax)
+    if mesh_data:
+        warnings.warn(
+            f"figure_to_vega_lite(): axes {_axes_index(ax)} requested "
+            f"mesh_data=True, but this mesh has {reason} -- falling back "
+            "to a rasterized image mark for it instead.",
+            UserWarning, stacklevel=4,
+        )
     xmin, xmax, ymin, ymax = art.extent()
     if not all(np.isfinite(v) for v in (xmin, xmax, ymin, ymax)):
         return [], []
@@ -788,7 +1109,16 @@ def _mesh_layer(art, ax):
     row = {"x": float(xmin), "x2": float(xmax), "y": float(ymin), "y2": float(ymax), "url": url}
     layer = {
         "data": {"values": [row]},
-        "mark": {"type": "image", "smooth": getattr(art, "interpolation", "nearest") != "nearest"},
+        # aspect: False -- Vega-Lite's image mark defaults to *preserving*
+        # the raster's own native pixel aspect ratio (here, the mesh's
+        # row/col resolution) inside the x/x2/y/y2 box instead of
+        # stretching to fill it exactly, which every other backend does.
+        # Confirmed by actually rendering: without this, a non-square mesh
+        # (e.g. a wide axes panel with square data limits) came out as a
+        # small square image left-aligned in its box, with blank space
+        # filling the rest -- not visible from the JSON structure alone.
+        "mark": {"type": "image", "aspect": False,
+                "smooth": getattr(art, "interpolation", "nearest") != "nearest"},
         "encoding": {
             "x": dict(x_enc, field="x"), "x2": {"field": "x2"},
             "y": dict(y_enc, field="y"), "y2": {"field": "y2"},

@@ -543,6 +543,12 @@ class QuadMesh(Artist):
                 self.X, self.Y = np.meshgrid(self.X, self.Y)
         self.curvilinear = (self.X is not None and self.Y is not None
                             and self.X.ndim == 2 and self.Y.ndim == 2)
+        # get_cmap() resolves straight to a LUT array -- the name itself is
+        # kept too (raw LUT arrays passed directly just get None here) since
+        # plotpress.vega's opt-in raw-mesh-data export needs the *name* to
+        # look up a matching Vega/Vega-Lite named color scheme; the LUT
+        # array alone can't be reverse-mapped back to one reliably.
+        self.cmap_name = cmap if isinstance(cmap, str) else None
         self.lut = get_cmap(cmap)
         self.norm = resolve_norm(norm, vmin, vmax)
         self.norm.autoscale_none(self.C)
