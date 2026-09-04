@@ -1456,10 +1456,12 @@ class Axes:
         """
         if len(args) == 1:
             Z = np.asarray(args[0], float)
+            _check_2d(Z, "contour")
             x = np.arange(Z.shape[1], dtype=float)
             y = np.arange(Z.shape[0], dtype=float)
         elif len(args) == 3:
             Z = np.asarray(args[2], float)
+            _check_2d(Z, "contour")
             x, y = _rectilinear_grid(args[0], args[1], "contour")
         else:
             raise TypeError("contour() takes Z or x, y, Z")
@@ -1498,10 +1500,12 @@ class Axes:
         """
         if len(args) == 1:
             Z = np.asarray(args[0], float)
+            _check_2d(Z, "contourf")
             x = np.arange(Z.shape[1], dtype=float)
             y = np.arange(Z.shape[0], dtype=float)
         elif len(args) == 3:
             Z = np.asarray(args[2], float)
+            _check_2d(Z, "contourf")
             # contourf only needs the extent, so 2-D input never crashed here --
             # it silently drew a curvilinear field into its bounding box. Share
             # contour's check so both reject what neither can actually render.
@@ -1577,6 +1581,11 @@ class Axes:
         so ``norm=LogNorm()`` is often the difference between a readable density
         map and two blobs.
         """
+        if gridsize <= 0:
+            # A non-positive gridsize doesn't error -- it just can't tile
+            # anything, so real data silently bins into zero hexagons and
+            # renders a blank axes with no hint why.
+            raise ValueError(f"hexbin(): gridsize must be > 0, got {gridsize!r}")
         x = np.asarray(x, float)
         y = np.asarray(y, float)
         verts, counts = _hexbin(x, y, gridsize, mincnt)
@@ -3029,6 +3038,15 @@ def _check_broadcastable(who, **arrays):
     except ValueError:
         desc = ", ".join(f"{k}: {v}" for k, v in shapes.items())
         raise ValueError(f"{who}(): incompatible shapes -- {desc}") from None
+
+
+def _check_2d(Z, who):
+    """A 1-D (or 3-D+) Z used to crash marching squares' own ``ny, nx =
+    Z.shape`` with a bare ``IndexError: tuple index out of range`` --
+    the same "unpack the shape, hope it's the right length" pattern
+    imshow()/pcolormesh() were fixed for, one level up the call stack."""
+    if Z.ndim != 2:
+        raise ValueError(f"{who}(): Z must be a 2-D array, got shape {Z.shape}")
 
 
 def _broadcast_like(who, name, value, target, target_name):

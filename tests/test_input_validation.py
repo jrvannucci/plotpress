@@ -523,3 +523,50 @@ def test_positive_error_magnitude_still_expands_bounds():
     fig, ax = plotpress.subplots()
     eb = ax.errorbar([1, 2, 3], [1, 2, 3], yerr=0.5)
     assert eb.data_bounds() == (1.0, 3.0, 0.5, 3.5)
+
+
+# ---------------------------------------------------------------------------
+# Round 5: contour()/contourf() 1-D Z, hexbin() non-positive gridsize.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("method", ["contour", "contourf"])
+def test_contour_1d_z_raises(method):
+    """A 1-D Z used to crash marching squares' own ny, nx = Z.shape with a
+    bare IndexError: tuple index out of range."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"Z must be a 2-D array"):
+        getattr(ax, method)(np.array([1, 2, 3, 4]))
+
+
+@pytest.mark.parametrize("method", ["contour", "contourf"])
+def test_contour_2d_z_still_works(method):
+    fig, ax = plotpress.subplots()
+    Z = np.random.default_rng(0).random((10, 10))
+    getattr(ax, method)(Z)
+    assert fig.to_svg()
+
+
+def test_contour_xyz_form_1d_z_raises():
+    fig, ax = plotpress.subplots()
+    x = np.linspace(0, 1, 4)
+    with pytest.raises(ValueError, match=r"Z must be a 2-D array"):
+        ax.contour(x, x, np.array([1, 2, 3, 4]))
+
+
+@pytest.mark.parametrize("gridsize", [0, -5])
+def test_hexbin_non_positive_gridsize_raises(gridsize):
+    """gridsize<=0 doesn't error -- it can't tile anything, so real data
+    silently bins into zero hexagons and renders a blank axes with no hint
+    why."""
+    fig, ax = plotpress.subplots()
+    x = np.random.default_rng(0).random(50)
+    y = np.random.default_rng(1).random(50)
+    with pytest.raises(ValueError, match="gridsize"):
+        ax.hexbin(x, y, gridsize=gridsize)
+
+
+def test_hexbin_positive_gridsize_still_works():
+    fig, ax = plotpress.subplots()
+    x = np.random.default_rng(0).random(50)
+    y = np.random.default_rng(1).random(50)
+    ax.hexbin(x, y, gridsize=20)
+    assert fig.to_svg()

@@ -25,6 +25,31 @@ anywhere in the source.
 
 ### Fixed
 
+- **A fifth break-it audit** (real interactive-HTML browser testing --
+  pan/zoom, point picking on lines and meshes, legend toggling, rubber-band
+  axis zoom, sliders -- all confirmed correct, plus a source-level sweep
+  for the same unvalidated-shape pattern already fixed twice) found two
+  more real bugs:
+
+  - **`contour()`/`contourf()` with a 1-D `Z`** crashed marching squares'
+    own `ny, nx = Z.shape` with a bare `IndexError: tuple index out of
+    range` -- the same "unpack the shape, hope it's the right length"
+    pattern `imshow()`/`pcolormesh()` were fixed for in the fourth audit,
+    one level further down the call stack. Now validated eagerly.
+  - **`hexbin(gridsize<=0)`** doesn't error -- it can't tile anything, so
+    real data silently bins into zero hexagons and renders a blank axes
+    with no hint why. Now validated eagerly.
+
+  Verified via real interactive-HTML testing in an actual browser (not
+  just static rendering) -- point picking, pan/zoom/magnify, rubber-band
+  axis zoom and reset, legend click-to-toggle, and the frame slider's
+  play/pause/step all confirmed working correctly, including a graceful,
+  already-well-designed degradation (a one-time console warning, not a
+  crash) for `window.prompt()`-based annotation inside a `Report`'s
+  sandboxed iframe -- plus the full non-browser + browser suite (1049 +
+  105 passed) and a from-clean full docs rebuild. `tests/test_input_
+  validation.py` gained 8 more tests (85 total).
+
 - **A fourth break-it audit** (new territory: `imshow()`/`pcolormesh()`
   shape validation, `contour()` degenerate input, `errorbar()` error
   magnitudes, `Style.dpi`) found and fixed five more real bugs:
