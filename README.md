@@ -21,6 +21,15 @@ fig.save("out.html", interactive=True)    # interactive toolbar: zoom / pick / a
 fig.show()                                # native pop-up window
 ```
 
+![Point picking a value, then zooming toward the cursor -- plotpress's interactive HTML output](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_demo.gif)
+
+`out.html` above is a real, self-contained page — no server, no external JS. The
+GIF is a recorded stand-in (PyPI/GitHub READMEs can't run the page's own
+script); open one yourself and it's fully live. Every figure in the
+[real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html)
+is embedded exactly this way, toolbar included — click through and try the
+real thing.
+
 ## What it is for
 
 plotpress is **not a matplotlib replacement**, and it does not try to match
