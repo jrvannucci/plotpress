@@ -20,11 +20,11 @@ resolve by appealing to one of them:
                                         v
                           artist_to_prims (primitives.py)
                                         │  backend-agnostic pixel-space prims
-                        ┌───────────────┼───────────────┐
-                        v               v               v
-                    svg.py          raster.py     _interactive.py
-                  (SVG string)   (PNG via Pillow,   (vanilla JS layered
-                                  PDF via svglib)    onto the SVG)
+                    ┌───────────────────┼───────────────────┬───────────────┐
+                    v                   v                   v               v
+                svg.py              raster.py         _interactive.py    vega.py
+              (SVG string)       (PNG via Pillow,     (vanilla JS layered (Vega v5 JSON
+                                  PDF via svglib)       onto the SVG)      spec, not SVG)
 
 `Figure.to_svg()` is the core entry point; `Figure.save(path, interactive=...)`
 dispatches on the file extension. A new plotting method usually means touching
@@ -43,6 +43,7 @@ need rather than the whole file.
 | `plotpress/_interactive.py` | 1181 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
 | `plotpress/artists.py` | 927 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
 | `plotpress/raster.py` | 820 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `plotpress/vega.py` | 755 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
 | `plotpress/figure.py` | 729 | The root object: layout, `to_svg`, `save`, `show`, figure-level text and legend |
 | `plotpress/colors.py` | 290 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `plotpress/primitives.py` | 286 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |

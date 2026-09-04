@@ -1,7 +1,9 @@
 """Sphinx configuration for the plotpress documentation (Read the Docs)."""
 
+import html
 import os
 import sys
+import warnings
 
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -9,7 +11,7 @@ import plotpress  # noqa: E402
 # Shared with Figure.to_html/Report.save so a gallery/usage embed's iframe is
 # sized by the exact same toolbar/slider clearance math the embedded document
 # itself uses, rather than a second, easily-drifting guess -- see there.
-from plotpress.figure import _toolbar_clearance  # noqa: E402
+from plotpress.figure import _json_payload, _toolbar_clearance  # noqa: E402
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
@@ -93,6 +95,22 @@ _LARGE_AXES_THRESHOLD = 6
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
 _GIF_DIR = os.path.join(_DOCS_DIR, "_static", "gifs")
+
+# Every plot-type reference example and every real-application figure gets a
+# link to its own Figure.to_vega() export, rendered live by a real Vega
+# engine (not plotpress's own renderer) -- a second, independent rendering
+# of the same figure is exactly what surfaces a to_vega() coverage gap or a
+# geometry bug that inspecting the JSON structure alone would miss (see the
+# y-axis-inversion and axis-chrome-clipping bugs in plotpress/vega.py's own
+# CHANGELOG entry, both caught this way). ``scale``/``live_streaming`` are
+# left out: ``scale``'s point is file size/build time at large data, not
+# plot-type coverage, and ``live_streaming``'s point is the live-acquisition
+# pattern, not any one static frame.
+_VEGA_ROOTS = (
+    os.path.join(_DOCS_DIR, "examples"),
+    os.path.join(_DOCS_DIR, "applications"),
+)
+_VEGA_DIR = os.path.join(_DOCS_DIR, "_static", "vega")
 
 
 def _wheel_zoom_frames(fig, cursor_frac, n_steps=16, zoom_factor=0.85,
@@ -209,6 +227,148 @@ def _interactive_embed(fig, image_path):
         '             loading="lazy" style="max-width:100%; border:1px solid #ddd;"',
         '             title="Interactive figure"></iframe>',
         "   </div>",
+        "",
+    ])
+
+
+def _wants_vega(src_file):
+    """True if this example lives under a gallery that gets a Vega-export link."""
+    ap = os.path.abspath(src_file)
+    return any(ap.startswith(root + os.sep) for root in _VEGA_ROOTS)
+
+
+_VEGA_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title} &mdash; Vega export</title>
+<style>
+  body {{ margin: 0; padding: 24px 32px 48px; background: #fff; color: #1a1a1a;
+         font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+  h1 {{ font-size: 1.1rem; margin: 0 0 4px; }}
+  p.lede {{ color: #555; max-width: 68ch; margin: 0 0 20px; }}
+  .warn {{ background: #fff8e6; border: 1px solid #f0d78c; border-radius: 6px;
+           padding: 10px 14px; margin: 0 0 20px; max-width: 68ch; font-size: 0.92rem; }}
+  .warn p {{ margin: 0 0 4px; font-weight: 600; }}
+  .warn ul {{ margin: 0; padding-left: 1.2em; }}
+  #vis {{ border: 1px solid #ddd; border-radius: 6px; padding: 8px;
+         display: inline-block; max-width: 100%; overflow: auto; }}
+  h2 {{ font-size: 0.95rem; margin: 28px 0 8px; }}
+  .jsonbar {{ display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }}
+  button {{ font: inherit; font-size: 0.85rem; padding: 4px 10px; border-radius: 4px;
+           border: 1px solid #ccc; background: #f6f6f6; cursor: pointer; }}
+  button:hover {{ background: #ececec; }}
+  pre {{ background: #f6f6f6; border: 1px solid #ddd; border-radius: 6px; padding: 12px 14px;
+        max-height: 480px; overflow: auto; font-size: 0.82rem; }}
+</style>
+</head>
+<body>
+<h1>{title}</h1>
+<p class="lede">The exact output of <code>fig.to_vega()</code> for this figure, rendered
+below by a real Vega engine (<a href="https://vega.github.io/vega/" target="_blank"
+rel="noopener">vega</a> + <a href="https://github.com/vega/vega-embed" target="_blank"
+rel="noopener">vega-embed</a>) rather than plotpress's own SVG/PNG backend &mdash; a second,
+independent rendering of the same data, useful for spotting a <code>to_vega()</code>
+coverage gap or geometry bug plotpress's own renderer wouldn't reveal.</p>
+{warning_block}
+<div id="vis"></div>
+
+<h2>Vega JSON</h2>
+<div class="jsonbar"><button id="copy-btn" type="button">Copy JSON</button>
+<span id="copy-msg" style="color:#2a7a2a; font-size:0.85rem;"></span></div>
+<pre id="spec-json"></pre>
+
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+<script>
+  const spec = {spec_json};
+  vegaEmbed('#vis', spec, {{mode: 'vega'}}).catch(function (err) {{
+    document.getElementById('vis').innerHTML =
+      '<p style="color:#b00">Vega render failed: ' + err + '</p>';
+    console.error(err);
+  }});
+  document.getElementById('spec-json').textContent = JSON.stringify(spec, null, 2);
+  document.getElementById('copy-btn').addEventListener('click', function () {{
+    navigator.clipboard.writeText(JSON.stringify(spec, null, 2)).then(function () {{
+      var msg = document.getElementById('copy-msg');
+      msg.textContent = 'Copied.';
+      setTimeout(function () {{ msg.textContent = ''; }}, 1500);
+    }});
+  }});
+</script>
+</body>
+</html>
+"""
+
+
+def _vega_embed(fig, image_path, src_file):
+    """Write ``fig`` as a standalone Vega-render + JSON page; return an RST
+    raw block linking to it, or ``""`` if the figure has nothing a Vega
+    export can show.
+
+    A figure built entirely from artist kinds ``to_vega()`` doesn't map yet
+    (a lone ``boxplot()``/``violinplot()``/etc. example, say) still produces
+    a spec -- axis chrome and a title, no data marks -- which isn't worth a
+    reader's click. ``_vega_has_content`` (in ``plotpress.vega``) tells
+    those apart from a figure with at least one real mark. Any
+    ``UserWarning`` ``to_vega()`` raises for an unsupported artist is
+    captured and shown on the page itself, not just printed during the
+    docs build -- the whole point of this page is surfacing coverage gaps.
+
+    ``image_path``'s own basename (``sphx_glr_<script>_NNN.png``) isn't
+    globally unique on its own -- sphinx-gallery scopes it to the script's
+    *own* file name, and ``examples/`` in particular reuses generic names
+    (``plot_01_...``) across many unrelated sections. Prefixing with the
+    script's path relative to ``docs/`` (``src_file``) is what
+    :data:`_interactive_embed`'s narrower, applications-only scope has
+    gotten away without needing.
+    """
+    from plotpress.vega import _vega_has_content
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spec = fig.to_vega()
+    if not _vega_has_content(spec):
+        return ""
+    warned = [w.message for w in caught]
+
+    os.makedirs(_VEGA_DIR, exist_ok=True)
+    rel = os.path.relpath(src_file, _DOCS_DIR)
+    prefix = os.path.splitext(rel)[0].replace(os.sep, "_").replace("/", "_")
+    name = prefix + "__" + os.path.splitext(os.path.basename(image_path))[0]
+    # The script's own relative path (e.g. "examples/pairwise/plot_01_scatter")
+    # reads far better as a page title than the full disambiguated filename.
+    title = os.path.splitext(rel)[0].replace(os.sep, "/")
+    warning_block = ""
+    if warned:
+        items = "".join(f"<li>{html.escape(str(w))}</li>" for w in warned)
+        warning_block = (
+            '<div class="warn"><p>Not everything in this figure made it into '
+            "the export:</p><ul>" + items + "</ul></div>"
+        )
+    page = _VEGA_PAGE_TEMPLATE.format(
+        title=html.escape(title),
+        warning_block=warning_block,
+        # _json_payload (not plain json.dumps) -- a title/label/annotation
+        # containing the literal text "</script" would otherwise close this
+        # page's <script> block early, exactly the failure that helper's
+        # own docstring exists to prevent; used everywhere else this
+        # codebase embeds JSON in an inline <script> (see figure.py).
+        spec_json=_json_payload(spec),
+    )
+    with open(os.path.join(_VEGA_DIR, name + ".html"), "w", encoding="utf-8") as fh:
+        fh.write(page)
+
+    # Example pages are built at auto_applications/<section>/ (or
+    # auto_examples/<section>/), two levels below the HTML root _static
+    # sits in -- same relative depth _interactive_embed()'s src uses.
+    src = "../../_static/vega/" + name + ".html"
+    return "\n".join([
+        ".. raw:: html",
+        "",
+        '   <p><a class="plotpress-open-full" href="{}" target="_blank" '
+        'rel="noopener">View this figure&#8217;s Vega export &#8599;</a> &mdash; '
+        "the raw JSON spec, rendered live by a real Vega engine.</p>".format(src),
         "",
     ])
 
@@ -427,13 +587,15 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     rather than re-encoding it, so both the gallery page's image and its
     thumbnail play the animation rather than freezing on frame 0. Examples in
     :data:`INTERACTIVE_SECTIONS` additionally get a live interactive copy
-    embedded below the image.
+    embedded below the image, and examples under :data:`_VEGA_ROOTS` get a
+    link to a standalone ``Figure.to_vega()`` render/JSON page.
     """
     from sphinx_gallery.scrapers import figure_rst
 
     it = block_vars["image_path_iterator"]
     seen = block_vars.setdefault("_plotpress_seen", set())
     interactive = _wants_interactive(block_vars["src_file"])
+    vega = _wants_vega(block_vars["src_file"])
     paths, embeds = [], []
     for value in list(block_vars["example_globals"].values()):
         if isinstance(value, plotpress.Figure) and id(value) not in seen:
@@ -451,6 +613,10 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             paths.append(path)
             if interactive:
                 embeds.append(_interactive_embed(value, path))
+            if vega:
+                link = _vega_embed(value, path, block_vars["src_file"])
+                if link:
+                    embeds.append(link)
 
     # A handful of examples (progressive/live-acquisition demos, one
     # independent Figure per frame) need a colour scale or axis extent that

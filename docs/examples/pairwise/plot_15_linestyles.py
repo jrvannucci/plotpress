@@ -28,6 +28,13 @@ ax.plot(x, np.sin(x) + 1.0 - 0.15, linestyle="dotted", label="'dotted' (same pat
 ax.plot(x, np.sin(x) + 0.0, linestyle="-.", label="'-.'")
 ax.plot(x, np.sin(x) + 0.0 - 0.15, linestyle="dashdot", label="'dashdot' (same pattern)")
 
+# The docstring's claim that errorbar() honors linestyle= too, shown rather
+# than just stated -- its connecting line takes the same dash patterns as
+# plot()'s, independent of the whisker/cap styling.
+xe = np.linspace(0, 10, 8)
+ax.errorbar(xe, np.sin(xe) - 1.0, yerr=0.15, linestyle="--", capsize=3,
+           label="errorbar(linestyle='--')")
+
 ax.set_title("Line styles -- short form and long-form alias draw identically")
 ax.set_xlabel("x"); ax.set_ylabel("y")
 ax.legend(loc="upper right", fontsize=8)

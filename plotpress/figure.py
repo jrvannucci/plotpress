@@ -998,6 +998,36 @@ class Figure:
     def to_svg(self) -> str:
         return figure_to_svg(self)
 
+    def to_vega(self) -> dict:
+        """A real Vega (not Vega-Lite) v5 JSON specification, as a plain
+        ``dict`` -- ``json.dumps(fig.to_vega(), indent=2)`` for the string,
+        or hand the dict itself to a Vega runtime that already accepts a
+        Python object.
+
+        Unlike ``to_svg()``/``to_html()``, the result needs a separate Vega
+        renderer to actually draw (``vega-embed`` in a browser, the
+        ``vg2svg``/``vg2png`` CLI tools, an Observable notebook, IPython's
+        own ``vega`` MIME renderer, ...) -- it is a real, standalone,
+        portable specification, not a rendered artifact, so no plotpress or
+        Python is needed at render time. One axes becomes one Vega
+        ``group`` mark with its own local scales/axes/marks, positioned at
+        that axes' own resolved pixel rect. Line/scatter/bar charts use
+        genuine ``field``/``scale``-encoded marks; everything else reuses
+        the same pixel-space primitives ``to_svg()`` itself draws from
+        (:mod:`plotpress.primitives`), so it is visually exact but frozen at
+        this export's own size/limits -- not reactive to a Vega zoom/pan
+        signal or a runtime domain change the way the line/scatter/bar
+        marks are. See :mod:`plotpress.vega`'s own module docstring for the
+        full design rationale, including what's skipped (box plots,
+        violins, quiver, contour, event plots, wind barbs, tables -- each
+        emits a ``UserWarning`` naming it and continues exporting the rest
+        of the figure) and what never carries over regardless (plotpress's
+        own interactive toolbar; Vega has its own separate interaction
+        model instead, reachable by wiring up ``signals`` on the result).
+        """
+        from .vega import figure_to_vega
+        return figure_to_vega(self)
+
     def _repr_svg_(self) -> str:
         # Static inline SVG is the Jupyter default; use to_html for interactive.
         return figure_to_svg(self)

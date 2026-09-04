@@ -11,6 +11,159 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **`Figure.to_vega()`** returns a real Vega (not Vega-Lite) v5 JSON
+  specification as a plain `dict` -- a third export surface alongside
+  `to_svg()`/`to_html()`, for handing a figure to a Vega runtime instead of
+  embedding plotpress's own rendering. Each axes becomes its own Vega
+  `group` mark with local scales/axes, so plotpress's arbitrary subplot
+  grids map onto Vega's own grouping rather than one flattened scene.
+
+  Fidelity is a deliberate hybrid, spelled out in both the method's and
+  `plotpress.vega`'s own docstrings rather than left implicit: `Line2D`
+  (unmarked), `ScatterCollection`, `Bars`, `ErrorBar`, and `Stem` get real
+  `field`+`scale`-encoded marks (reactive to a downstream change to the Vega
+  scale domain). `Pie` and `Text`/`Annotation` get their own dedicated mark
+  builders too, but stay frozen-pixel like everything below -- a pie draws
+  in fixed axes-pixel space regardless of the data scale by design (it has
+  none to be reactive to), and text is positioned at its resolved pixel
+  location, matching what `to_svg()` itself does for both. Everything else
+  reachable through the shared `artist_to_prims()` pixel-space layer (fills,
+  spans, collections, rugs, quadmesh/image, ...) is likewise frozen
+  pixel-space marks -- visually faithful to what plotpress itself computed,
+  but not reactive. `BoxPlot`, `Violin`, `Quiver`, `Contour`, `EventPlot`,
+  `Table`, `Barbs`, and animated `Frame*` artists have no Vega mapping yet;
+  an axes using one warns once, naming the artist type, and skips just that
+  artist rather than failing the whole export.
+
+  Several real bugs only showed up by actually rendering a spec through a
+  real Vega engine (`vega-cli`'s `vg2png`, and separately a browser via
+  `vega-embed`) -- most are not visible from inspecting the JSON structure
+  alone, since Vega silently drops or ignores what it can't place rather
+  than erroring:
+  - The y-axis scale is built with an ascending `domain` and an explicit,
+    possibly-reversed `range` array (never a manually-descending domain) --
+    Vega linear scales don't reliably honor a hand-reversed domain, which
+    silently re-inverted the axis during development.
+  - Each axes' outer Vega group is left unclipped; only a nested inner
+    group holding the data marks is clipped. Clipping the outer group (the
+    first version) cut away axis ticks/labels/titles and this axes' own
+    title -- all Vega child marks drawn outside the plot rectangle by
+    design, the same way `svg.py`'s tick/label `<g>` sits outside its
+    separate clip-pathed zoom `<g>`. A plain single-axes figure with a
+    title and axis labels rendered as a bare, unlabeled line before this
+    fix -- about as central a case as this feature has.
+  - **Pie charts rendered as nothing at all.** Vega's `pie` transform
+    belongs on a *data* entry, not on the mark itself (marks have no
+    `transform` property and silently ignore one there); the original
+    version also left `startAngle` hardcoded to `0`, never set `endAngle`,
+    and never gave the arc a radius or a real center. Every wedge was a
+    zero-angle, zero-radius arc sitting at the group's local `(0, 0)`
+    corner. Now built as a proper data transform, with center/radius
+    computed the same way `svg.py`'s own `_render_pie` does.
+  - **Marker and error-bar point sizes were missing the same points-to-pixels
+    `dpi/72` conversion every other backend applies** (`svg.py`/`raster.py`
+    always pass `size_scale=dpi/72.0` into `artist_to_prims()`) -- at the
+    library's default `dpi=100`, markers exported roughly 28% smaller than
+    the same figure's own SVG/PNG output. Compounding that, Vega's `symbol`
+    `size` channel is pixel *area* (`radius = sqrt(size/pi)`), not diameter
+    squared -- every circular marker was independently ~13% oversized in
+    diameter (~27% in area) on top of the missing dpi scaling.
+  - **A figure's exported Vega JSON was embedded straight into an inline
+    `<script>` block via plain `json.dumps`**, skipping the
+    `</script>`-escaping `Figure.to_html()`'s own payload already goes
+    through (`_json_payload()`, in `plotpress/figure.py`) -- a title, axis
+    label, or annotation containing the literal text `</script` would have
+    truncated the generated Vega page's script block early.
+  - **Bar and scatter marker edges (`edgecolor`/`linewidths`) were silently
+    dropped** -- `svg.py` and `primitives.py`'s own `ScatterCollection`
+    conversion both draw an outline when one is set; the dedicated
+    `_bars_marks`/`_scatter_marks` encoders didn't.
+  - A `fontsize=0` on a `Text`/`Annotation` (e.g. a deliberately hidden
+    label) was silently promoted to `11` by an `or 11` fallback that
+    couldn't tell "explicitly zero" from "not set".
+
+  A further pass, checking every mark builder against `svg.py`'s renderer
+  for the same artist field by field rather than only rendering and eyeballing
+  the result, found and fixed several more real fidelity gaps -- again mostly
+  invisible from the JSON alone, since Vega omits what it can't place rather
+  than complaining:
+  - **Draw order ignored `zorder`.** Artists were emitted in list order, not
+    `svg.py`'s own `sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))`
+    -- `ax.fill_between(..., zorder=1)` called after a `zorder=3` line
+    painted over it instead of sitting behind it.
+  - **Dashed lines (`linestyle="--"`/`":"`/`"-."`) always rendered solid.**
+    None of `_line_marks` or the prim-reuse path's `Line`/`Segments`/`Path`
+    marks read `linestyle` at all -- including `axhline`/`axvline`, whose
+    default linestyle is dashed.
+  - **A line with `NaN` values bridged the gap with a straight line instead
+    of breaking there** (`ax.plot(x, y)` after `y[50:60] = np.nan`, the
+    standard "missing data" idiom) -- `_line_marks` dropped every non-finite
+    point outright rather than using Vega's own `defined` mark channel to
+    split the line the way `svg.py`'s `_line_path_d` already does.
+  - **`errorbar()`'s connecting line and its caps were both missing** --
+    only the bare whiskers exported; `capsize`/`capthick` had no visible
+    effect, and the line joining the points (drawn whenever
+    `linestyle` isn't `"none"`) was absent entirely.
+  - **`stem()`'s baseline -- the horizontal reference line the stems sit
+    on -- was never drawn**, so `ax.stem(x, y, baseline=2)`'s whole point
+    (what the stems are measured *from*) didn't show. The tip marker also
+    used Vega's default size instead of the figure style's own marker size.
+  - **Pie wedge labels and `autopct` percentages were dropped entirely** --
+    `ax.pie(values, labels=[...], autopct="%.1f%%")` exported as an
+    unlabeled disc.
+  - **`ax.axis("off")` (and `ax.pie()`, which calls it internally) still
+    got a full tick/grid frame** with auto-generated 0.0-1.0 labels no
+    `to_svg()` output ever shows -- the "axes" array was built
+    unconditionally, ignoring `_axis_off`. Custom tick positions/labels
+    (`set_xticks`/`set_xticklabels`) and a non-default axes facecolor
+    (`set_facecolor`) were similarly ignored in favor of Vega's own
+    auto-generated ticks and a transparent background.
+  - **`Text`/`Annotation` dropped vertical alignment, rotation, bold/italic,
+    partial alpha, the `bbox=` background box, and -- for `annotate()` --
+    the arrow entirely.** A label was always drawn horizontal, middle-
+    baseline, fully opaque, with no box and no leader line to whatever it
+    was meant to point at, regardless of what was actually passed.
+  - **A figure's `suptitle()`/`supxlabel()`/`supylabel()`/`text()` and any
+    legend (axes or figure-level) were silently absent, with no warning** --
+    unlike every unsupported *axes-level* artist, which does warn. Now
+    `suptitle`/`supxlabel`/`supylabel`/`text()` export as real marks (the
+    same top-level, figure-pixel-space treatment as `Figure.group()`'s own
+    boxes); a legend still isn't exported -- it needs real layout
+    (`svg.py`'s `figure_legend_layout()`/`draw_legend()`) this module
+    doesn't have yet -- but now warns, naming which axes (or the figure)
+    has one, instead of vanishing quietly.
+
+  Verified against every script in the `docs/examples` **and**
+  `docs/applications` galleries this way: 295 figures across 284 scripts
+  export and render correctly (axis chrome, pie wedges and labels, marker/bar
+  edges, dashes, error-bar caps, and annotation arrows all included), zero
+  producing a blank or malformed render. 123 scripts warn about something --
+  96 for a legend `to_vega()` doesn't export yet (the single most common
+  gap, now that everything else in this list is fixed) and 45 for one of the
+  named unsupported artist types -- the rest of each such figure still
+  exports and renders correctly regardless.
+
+  `Figure.group()`'s own labeled boxes are exported too, as a `rect`+`text`
+  mark pair per group spanning the pixel rect of its member axes (plus any
+  colorbar that belongs entirely to them) -- the same geometry `svg.py`'s
+  `_render_groups` computes, reused directly rather than re-derived.
+
+  Every plot-type reference example and real-application figure with
+  supported content now links to a standalone page rendering its own
+  `to_vega()` export live, via a real Vega engine in the browser, alongside
+  the raw JSON spec -- `docs/conf.py`'s gallery scraper writes one self-
+  contained HTML page per figure and links it from the generated example
+  page, skipping figures with nothing a Vega export can show (an
+  unsupported-artist-only figure, e.g. a lone `boxplot()`). `scale`/
+  `live_streaming` are left out -- their point is file size/build time and
+  the live-acquisition pattern, not plot-type coverage.
+
+  The interactive toolbar (pan/zoom/pick) doesn't carry over -- a Vega
+  runtime has its own interaction model, not plotpress's `_interactive.py`
+  payload.
+
 ### Removed
 
 - **3-D plotting is gone.** `plotpress/axes3d.py`/`Axes3D`, `projection="3d"`,

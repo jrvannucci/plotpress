@@ -64,7 +64,71 @@ Module                        Responsibility
 ``raster.py``                 Pillow PNG backend; svglib/reportlab PDF
 ``fonts/``                    bundled width tables + the family registry (layout only)
 ``_interactive.py``           inlined vanilla JS: toolbar, zoom, pick, sliders
+``vega.py``                   ``Figure.to_vega()``: a real Vega v5 JSON spec
 ============================  ==================================================
+
+Compiling to other renderers
+-----------------------------
+
+plotpress already has one real, shared intermediate representation --
+:func:`~plotpress.primitives.artist_to_prims`, converting an ``artists.py``
+scene object into backend-agnostic pixel-space prims (``Path``, ``Markers``,
+``Rect``, ``Segments``, ``PolygonBatch``, ``ImagePrim``). ``svg.py``,
+``raster.py``, and *most* of ``vega.py`` all compile from that one shared
+representation, not from three independent reimplementations of the same
+geometry::
+
+     Axes.artists (artists.py: Line2D, Bars, Pie, Text, ...)
+                          │
+              transform.py│  data space -> pixel space
+                          v
+              artist_to_prims()  (primitives.py)
+              the one shared, backend-agnostic
+              pixel-space representation
+        ┌───────────────────┼───────────────────┐
+        v                   v                   v
+    svg.py              raster.py            vega.py
+  (SVG string)       (PNG via Pillow,     (Vega v5 JSON,
+                       PDF via svglib)      most mark kinds)
+
+That diagram is honest only as far as it goes -- two real exceptions:
+
+- **``_interactive.py`` is not a fourth compiler off the shared prims.** It is
+  vanilla JS layered onto ``svg.py``'s own *output* -- pan/zoom/point-pick
+  read and mutate the rendered SVG DOM in the browser, not a shared IR. There
+  is no interactive-JS "compiler"; there is one hand-written JS payload bolted
+  onto one specific SVG shape.
+- **``vega.py`` has a second, un-shared path.** ``Line2D`` (unmarked),
+  ``ScatterCollection``, ``Bars``, ``ErrorBar``, ``Stem``, ``Pie``, and
+  ``Text``/``Annotation`` get their own dedicated builders in ``vega.py``,
+  written directly against ``artists.py``'s fields rather than through
+  ``artist_to_prims()`` -- real duplication with ``svg.py``'s renderers for
+  the same artist kinds, not IR reuse. This isn't an oversight left
+  unfixed: a Vega ``field``/``scale``-encoded mark (reactive to a runtime
+  domain change) and a frozen pixel path are different *shapes* of output,
+  not different syntax for the same one -- reusing the prims layer for those
+  kinds would mean giving up that reactivity. See :mod:`plotpress.vega`'s own
+  module docstring for the full trade-off.
+
+How a page actually loads
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Two real paths exist today, and they load very differently::
+
+    Figure.to_html(interactive=True)
+      Figure.to_svg() + _interactive.py's JS
+        --> one self-contained .html file (SVG and JS both inlined)
+      Browser opens the file
+        --> renders immediately; no other request, no separate render step
+
+    Figure.to_vega() + a Vega-embed page (e.g. docs/conf.py's own
+    generated Vega-export pages, or any Vega-runtime host)
+      Figure.to_vega() --> a JSON spec (no picture, just data)
+        --> embedded in a page next to <script src=".../vega-embed...">
+      Browser opens the page
+        --> downloads vega-embed's JS --> vegaEmbed() parses the JSON and
+            draws the chart at LOAD TIME, in the browser -- nothing about
+            the figure is pre-rendered by plotpress at all
 
 Performance
 -----------
