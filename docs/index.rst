@@ -21,6 +21,38 @@ self-contained interactive HTML** through a **matplotlib-shaped API** -- with
    fig.save("out.png")                    # raster PNG
    fig.save("out.html", interactive=True) # interactive toolbar
 
+One figure, several outputs
+----------------------------
+
+The same ``Figure`` built once from the matplotlib-shaped API renders to
+every format below -- no separate figure per output, no plugin to install::
+
+                       plotpress API
+              (Figure, Axes -- matplotlib-shaped,
+               no globals, no compiled extension)
+                            |
+                            v
+                      one Figure object
+                            |
+     +----------+----------+----------+----------+----------+
+     v          v          v          v          v          v
+   .svg       .png       .pdf       .html        Vega       Vega-Lite
+  (vector,  (raster,   (vector,   (self-        v5 JSON     v5 JSON
+   the core   Pillow)   svglib +   contained,   spec        spec, a
+   format)              reportlab) SVG + JS,    (real       stricter,
+                                    no server    pixel-      more
+                                    round trip)  space       declarative
+                                                  marks)      grammar
+
+``fig.save(path, ...)`` dispatches on the file extension for the first
+four; ``fig.to_vega()`` / ``fig.to_vega_lite()`` return a JSON
+specification as a plain ``dict`` for a separate Vega/Vega-Lite runtime to
+render, rather than a rendered artifact -- useful for handing a figure to
+an existing Vega-based dashboard or notebook instead of embedding
+plotpress's own SVG/JS. See :doc:`user_guide/architecture` for exactly how
+much of the rendering pipeline each of these six actually shares, and where
+a format gets its own dedicated path instead.
+
 What it is for
 --------------
 
