@@ -25,6 +25,15 @@ anywhere in the source.
 
 ### Fixed
 
+- **A sixth break-it audit** found one more real bug: **`set_xticks(ticks,
+  labels)`/`set_yticks(...)` with mismatched counts** didn't error the way
+  matplotlib itself does for the identical case -- it silently left the
+  extra tick(s) blank (or dropped the extra label(s)), a mistake a reader
+  has to notice on their own rather than one that ever surfaces as an
+  error. Now validated eagerly; `boxplot(tick_labels=...)` (which routes
+  through `set_xticks()` internally) is covered by the same fix.
+  `tests/test_input_validation.py` gained 4 more tests (89 total).
+
 - **A fifth break-it audit** (real interactive-HTML browser testing --
   pan/zoom, point picking on lines and meshes, legend toggling, rubber-band
   axis zoom, sliders -- all confirmed correct, plus a source-level sweep

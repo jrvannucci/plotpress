@@ -570,3 +570,33 @@ def test_hexbin_positive_gridsize_still_works():
     y = np.random.default_rng(1).random(50)
     ax.hexbin(x, y, gridsize=20)
     assert fig.to_svg()
+
+
+# ---------------------------------------------------------------------------
+# Round 6: set_xticks()/set_yticks() tick/label count mismatch.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("method", ["set_xticks", "set_yticks"])
+def test_set_ticks_mismatched_label_count_raises(method):
+    """matplotlib itself raises for this; plotpress used to silently leave
+    the extra tick(s) blank instead -- a mistake the reader has to notice
+    on their own rather than one that ever surfaces as an error."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    with pytest.raises(ValueError, match=r"labels"):
+        getattr(ax, method)([0, 1, 2], ["a", "b"])
+
+
+def test_set_xticks_matching_label_count_still_works():
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    ax.set_xticks([0, 1, 2], ["a", "b", "c"])
+    assert ax._xticklabels == ["a", "b", "c"]
+    assert fig.to_svg()
+
+
+def test_boxplot_tick_labels_mismatch_raises():
+    """boxplot(tick_labels=...) routes through set_xticks() internally --
+    confirms the fix covers this call site too, not just a direct call."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=r"labels"):
+        ax.boxplot([[1, 2, 3], [4, 5, 6], [7, 8, 9]], tick_labels=["only one"])

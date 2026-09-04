@@ -2364,6 +2364,15 @@ class Axes:
             return
         self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
         if labels is not None:
+            if len(labels) != len(ticks):
+                # Matplotlib itself raises for this exact mismatch; silently
+                # leaving the extra ticks blank (or dropping extra labels)
+                # instead just moves the same mistake from an error message
+                # to an unlabeled tick a reader has to notice on their own.
+                raise ValueError(
+                    f"set_xticks(): {len(ticks)} ticks but {len(labels)} "
+                    "labels -- pass one label per tick"
+                )
             self.set_xticklabels(labels)
 
     def set_yticks(self, ticks, labels=None, minor=False):
@@ -2377,6 +2386,11 @@ class Axes:
             return
         self._yticks = None if ticks is None else np.asarray(ticks, dtype=float)
         if labels is not None:
+            if len(labels) != len(ticks):
+                raise ValueError(
+                    f"set_yticks(): {len(ticks)} ticks but {len(labels)} "
+                    "labels -- pass one label per tick"
+                )
             self.set_yticklabels(labels)
 
     def set_xticklabels(self, labels):
