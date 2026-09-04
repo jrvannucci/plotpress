@@ -8,6 +8,7 @@ the source compact while staying visually faithful.
 from __future__ import annotations
 
 import copy
+import re
 
 import numpy as np
 
@@ -218,9 +219,14 @@ def available_colormaps():
     return base + [n + "_r" for n in base]
 
 
-# Common named colors (CSS/X11 subset + matplotlib single-letter aliases), so
-# both the SVG and raster/PDF backends accept names like "red" or "k", not just
-# hex. SVG understands the long names natively; the raster backend needs this.
+# Common named colors (the full CSS4/matplotlib named-color set, plus
+# matplotlib's single-letter aliases), so both the SVG and raster/PDF
+# backends accept any name a matplotlib user would reach for -- "crimson",
+# "cornflowerblue" -- not just the handful of X11 basics. SVG understands
+# CSS names natively, which used to mask this: a name outside a small table
+# still rendered fine in the SVG backend (the browser resolved it), while
+# the raster backend's own hex parser crashed on the exact same name with a
+# confusing ``int(..., 16)`` error pointing nowhere near the real cause.
 NAMED_COLORS = {
     "red": "#ff0000", "green": "#008000", "blue": "#0000ff",
     "black": "#000000", "white": "#ffffff", "gray": "#808080",
@@ -232,16 +238,88 @@ NAMED_COLORS = {
     # matplotlib single-letter base colors
     "b": "#0000ff", "g": "#008000", "r": "#ff0000", "c": "#00bfbf",
     "m": "#bf00bf", "y": "#bfbf00", "k": "#000000", "w": "#ffffff",
+    # The rest of the CSS4 named-color set (matplotlib.colors.CSS4_COLORS).
+    "aliceblue": "#F0F8FF", "antiquewhite": "#FAEBD7", "aqua": "#00FFFF",
+    "aquamarine": "#7FFFD4", "azure": "#F0FFFF", "beige": "#F5F5DC", "bisque": "#FFE4C4",
+    "blanchedalmond": "#FFEBCD", "blueviolet": "#8A2BE2", "burlywood": "#DEB887",
+    "cadetblue": "#5F9EA0", "chartreuse": "#7FFF00", "chocolate": "#D2691E",
+    "coral": "#FF7F50", "cornflowerblue": "#6495ED", "cornsilk": "#FFF8DC",
+    "crimson": "#DC143C", "darkblue": "#00008B", "darkcyan": "#008B8B",
+    "darkgoldenrod": "#B8860B", "darkgray": "#A9A9A9", "darkgreen": "#006400",
+    "darkgrey": "#A9A9A9", "darkkhaki": "#BDB76B", "darkmagenta": "#8B008B",
+    "darkolivegreen": "#556B2F", "darkorange": "#FF8C00", "darkorchid": "#9932CC",
+    "darkred": "#8B0000", "darksalmon": "#E9967A", "darkseagreen": "#8FBC8F",
+    "darkslateblue": "#483D8B", "darkslategray": "#2F4F4F", "darkslategrey": "#2F4F4F",
+    "darkturquoise": "#00CED1", "darkviolet": "#9400D3", "deeppink": "#FF1493",
+    "deepskyblue": "#00BFFF", "dimgray": "#696969", "dimgrey": "#696969",
+    "dodgerblue": "#1E90FF", "firebrick": "#B22222", "floralwhite": "#FFFAF0",
+    "forestgreen": "#228B22", "fuchsia": "#FF00FF", "gainsboro": "#DCDCDC",
+    "ghostwhite": "#F8F8FF", "goldenrod": "#DAA520", "greenyellow": "#ADFF2F",
+    "honeydew": "#F0FFF0", "hotpink": "#FF69B4", "indianred": "#CD5C5C", "indigo": "#4B0082",
+    "ivory": "#FFFFF0", "khaki": "#F0E68C", "lavender": "#E6E6FA",
+    "lavenderblush": "#FFF0F5", "lawngreen": "#7CFC00", "lemonchiffon": "#FFFACD",
+    "lightblue": "#ADD8E6", "lightcoral": "#F08080", "lightcyan": "#E0FFFF",
+    "lightgoldenrodyellow": "#FAFAD2", "lightgray": "#D3D3D3", "lightgreen": "#90EE90",
+    "lightgrey": "#D3D3D3", "lightpink": "#FFB6C1", "lightsalmon": "#FFA07A",
+    "lightseagreen": "#20B2AA", "lightskyblue": "#87CEFA", "lightslategray": "#778899",
+    "lightslategrey": "#778899", "lightsteelblue": "#B0C4DE", "lightyellow": "#FFFFE0",
+    "limegreen": "#32CD32", "linen": "#FAF0E6", "mediumaquamarine": "#66CDAA",
+    "mediumblue": "#0000CD", "mediumorchid": "#BA55D3", "mediumpurple": "#9370DB",
+    "mediumseagreen": "#3CB371", "mediumslateblue": "#7B68EE",
+    "mediumspringgreen": "#00FA9A", "mediumturquoise": "#48D1CC",
+    "mediumvioletred": "#C71585", "midnightblue": "#191970", "mintcream": "#F5FFFA",
+    "mistyrose": "#FFE4E1", "moccasin": "#FFE4B5", "navajowhite": "#FFDEAD",
+    "oldlace": "#FDF5E6", "olivedrab": "#6B8E23", "orangered": "#FF4500",
+    "orchid": "#DA70D6", "palegoldenrod": "#EEE8AA", "palegreen": "#98FB98",
+    "paleturquoise": "#AFEEEE", "palevioletred": "#DB7093", "papayawhip": "#FFEFD5",
+    "peachpuff": "#FFDAB9", "peru": "#CD853F", "plum": "#DDA0DD", "powderblue": "#B0E0E6",
+    "rebeccapurple": "#663399", "rosybrown": "#BC8F8F", "royalblue": "#4169E1",
+    "saddlebrown": "#8B4513", "salmon": "#FA8072", "sandybrown": "#F4A460",
+    "seagreen": "#2E8B57", "seashell": "#FFF5EE", "sienna": "#A0522D", "skyblue": "#87CEEB",
+    "slateblue": "#6A5ACD", "slategray": "#708090", "slategrey": "#708090",
+    "snow": "#FFFAFA", "springgreen": "#00FF7F", "steelblue": "#4682B4", "tan": "#D2B48C",
+    "thistle": "#D8BFD8", "tomato": "#FF6347", "turquoise": "#40E0D0", "violet": "#EE82EE",
+    "wheat": "#F5DEB3", "whitesmoke": "#F5F5F5", "yellowgreen": "#9ACD32",
 }
+
+#: SVG/CSS paint keywords that are deliberately *not* colors -- passed
+#: through as-is rather than resolved. ``_BBOX_DEFAULTS["edgecolor"]`` and
+#: several call sites use ``"none"`` as "draw nothing"; ``"transparent"`` is
+#: the equivalent CSS keyword a caller might reach for instead.
+_PAINT_KEYWORDS = frozenset(("none", "transparent"))
+
+_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
 def to_hex(color: str) -> str:
-    """Resolve a color name to ``#rrggbb``; pass hex through unchanged."""
+    """Resolve a color name to ``#rrggbb``; pass hex (and the ``"none"``/
+    ``"transparent"`` paint keywords) through unchanged.
+
+    Raises ``ValueError`` for anything else unrecognized -- a misspelled
+    name (``"crimon"``) or malformed hex (``"#zzzzzz"``). Letting either
+    through unresolved, as this used to, meant it reached the SVG backend as
+    a bare, invalid ``stroke``/``fill`` value (a browser silently treats
+    that as unset, so the artist just doesn't render -- no error anywhere)
+    or the raster backend's hex parser, which fails with a bare
+    ``int(..., 16)`` error that never mentions the color was the problem.
+    """
     if not isinstance(color, str):
         return color
-    if color.startswith("#"):
+    if color.lower() in _PAINT_KEYWORDS:
         return color
-    return NAMED_COLORS.get(color.lower(), color)
+    if color.startswith("#"):
+        if not _HEX_RE.match(color):
+            raise ValueError(
+                f"Invalid hex color {color!r} -- expected '#rgb' or '#rrggbb'."
+            )
+        return color
+    resolved = NAMED_COLORS.get(color.lower())
+    if resolved is None:
+        raise ValueError(
+            f"Unknown color {color!r}. Use a '#rrggbb'/'#rgb' hex code, an "
+            "RGB(A) tuple, or a named CSS color (e.g. 'crimson', 'steelblue')."
+        )
+    return resolved
 
 
 class Normalize:

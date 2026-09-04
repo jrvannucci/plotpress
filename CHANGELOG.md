@@ -11,6 +11,68 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A break-it audit across the whole library** found and fixed seven cases
+  where an input a real user would plausibly pass either crashed with a
+  confusing internal traceback, rendered silently wrong with no warning at
+  all, or produced literally invalid SVG/PNG output:
+
+  - **Unrecognized color names.** `to_hex()` only knew ~24 basic named
+    colors; anything else -- including completely ordinary CSS/matplotlib
+    names like `"cornflowerblue"` that were never in that small table --
+    passed straight through unresolved. The SVG backend often got lucky
+    (a browser natively understands CSS names), but the raster backend's
+    hex parser crashed with a bare `int(..., 16)` error mentioning nothing
+    about color, and a genuine typo (`"crimon"`) reached the SVG backend
+    as an invalid `stroke=`/`fill=` attribute -- silently invisible, no
+    error anywhere. `NAMED_COLORS` now carries the full CSS4 named-color
+    set (matching `matplotlib.colors.CSS4_COLORS`), and `to_hex()` raises
+    a clear `ValueError` for anything still unresolvable (a misspelling or
+    malformed hex) instead of passing it through. `"none"`/`"transparent"`
+    still pass through unresolved -- real SVG/CSS paint keywords already
+    used elsewhere in this codebase, not colors to validate.
+  - **Mismatched-length paired arrays** (`plot`, `scatter`, `bar`, `barh`,
+    `fill_between`, `fill_betweenx`, `hlines`, `vlines`, `errorbar`) used
+    to reach a bare NumPy broadcast/concatenate error deep inside
+    `transform.py`/`artists.py` with no mention of which plotting call
+    produced it. `stem()` was worse: it silently `zip()`-truncated to the
+    shorter array with no error or warning at all. All now validate
+    eagerly and name the method and the actual shapes.
+  - **`Figure.colorbar(mappable, ...)` with an invalid `mappable`** (e.g.
+    `None`) crashed with `AttributeError: 'NoneType' object has no
+    attribute 'norm'` three calls deep. Now raises a clear `TypeError` up
+    front.
+  - **`print_layout_summary()`/`print_summary()` mis-reported axis
+    direction** for an axis inverted via `set_xlim(hi, lo)` (a completely
+    ordinary way to invert an axis, and matplotlib's own idiom) rather
+    than `invert_xaxis()` -- the figure genuinely rendered inverted (see
+    `transform.py`'s pixel math), but the summary checked only the
+    `invert_xaxis()` flag and said nothing, misdescribing the exact kind
+    of figure this feature exists to describe accurately. Now computes
+    the actually-rendered direction the same way `svg.py`'s own renderer
+    does.
+  - **A log-scaled axis with no positive data rendered a completely empty
+    panel with zero warning** -- `_pad()` has no sane range to return for
+    an axis whose real data is entirely non-positive, so it silently
+    clamped to an arbitrary small positive window containing none of the
+    actual data. Now warns, matching matplotlib's own message.
+  - **`Figure(figsize=...)` accepted a non-positive width/height**,
+    producing a literally invalid SVG (`width="0"` or a negative width
+    attribute) with no validation anywhere. Now raises immediately.
+  - **`pie()` accepted a negative wedge value**, producing a genuinely
+    negative wedge fraction (a wedge sweeping the wrong way) instead of
+    the `ValueError` matplotlib itself raises for the same input.
+
+  Verified via a dedicated adversarial test battery across ~70 edge cases
+  (empty/single-point/all-NaN data, degenerate limits, zero/negative
+  figsize, mismatched shapes, unknown colors/colormaps, twin/inset/
+  colorbar edge cases), a full non-browser + browser test suite pass, and
+  a from-clean `python -m sphinx -b html -W --keep-going` rebuild
+  re-executing all 420 files across every gallery -- zero regressions,
+  zero new warnings. `tests/test_input_validation.py` (new, 34 tests)
+  pins all seven fixes as regressions.
+
 ### Added
 
 - **`Figure.print_layout_summary()` / `Axes.print_summary()`** print a

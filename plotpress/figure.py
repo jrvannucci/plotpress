@@ -155,6 +155,13 @@ def _axes_class(projection):
 
 class Figure:
     def __init__(self, figsize=(6.4, 4.8), style: Style = None, facecolor=None):
+        w, h = figsize
+        if not (w > 0 and h > 0):
+            raise ValueError(
+                f"Figure(): figsize must be (width, height) with both > 0, "
+                f"got {tuple(figsize)!r} -- a non-positive size produces an "
+                "invalid, invisible SVG/PNG with no error anywhere downstream."
+            )
         self.figsize = tuple(figsize)
         # The size the *user* asked for, as opposed to ``self.figsize`` --
         # which tight_layout() may grow beyond this to fit group_spacing()'s
@@ -985,6 +992,12 @@ class Figure:
         Order relative to :meth:`tight_layout` does not matter -- the steal is
         recorded and re-applied whenever the grid is reflowed.
         """
+        if mappable is None or not hasattr(mappable, "norm"):
+            raise TypeError(
+                "colorbar(): mappable must be an artist with a color norm "
+                "-- what pcolormesh()/imshow()/hexbin()/scatter(c=...) "
+                f"returns -- got {mappable!r}"
+            )
         cax = self.add_axes((0.0, 0.0, 1.0, 1.0))   # rect set by _layout_colorbar
         cax._is_colorbar = True
         cax._cbar_source = mappable
@@ -1763,13 +1776,21 @@ def _axes_summary_lines(ax, gaps=None):
     counts = Counter(type(a).__name__ for a in ax.artists)
     artists_desc = ", ".join(f"{n} {name}" for name, n in counts.items()) or "none"
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    # The axis actually renders reversed whenever an odd number of "flip"
+    # sources apply: a raw hi-then-lo set_xlim()/set_ylim() call (matplotlib's
+    # own common idiom for inverting without invert_xaxis()) XOR the explicit
+    # _xinverted/_yinverted flag -- see svg.py's _render_axes, which combines
+    # them the same way. Reporting the flag alone missed the set_xlim(hi, lo)
+    # case entirely: the figure rendered inverted but the summary said nothing.
+    x_inverted = (xlim[0] > xlim[1]) != ax._xinverted
+    y_inverted = (ylim[0] > ylim[1]) != ax._yinverted
     lines = [
         f"  position:  {_axes_position_desc(ax)}",
         f"  visible:   {ax._visible}",
         f"  x:  {ax._xscale}, [{xlim[0]:.4g}, {xlim[1]:.4g}]"
-        + (" (inverted)" if ax._xinverted else ""),
+        + (" (inverted)" if x_inverted else ""),
         f"  y:  {ax._yscale}, [{ylim[0]:.4g}, {ylim[1]:.4g}]"
-        + (" (inverted)" if ax._yinverted else ""),
+        + (" (inverted)" if y_inverted else ""),
         f"  artists:   {artists_desc}",
     ]
     if ax._title:

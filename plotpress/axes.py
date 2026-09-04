@@ -361,6 +361,7 @@ class Axes:
         elif len(args) in (2, 3):
             x = np.asarray(args[0], dtype=float)
             y = np.asarray(args[1], dtype=float)
+            _check_broadcastable("plot", x=x, y=y)
             if len(args) == 3:
                 fmt = args[2]
                 if not isinstance(fmt, str):
@@ -419,6 +420,7 @@ class Axes:
         ``marker`` is accepted for matplotlib compatibility but warns.
         """
         _warn_marker_shape(marker, "scatter")
+        _check_broadcastable("scatter", x=x, y=y)
         if norm is None and (vmin is not None or vmax is not None):
             norm = Normalize(vmin, vmax)
         coll = ScatterCollection(
@@ -624,6 +626,7 @@ class Axes:
         would. ``ecolor`` (default black, independent of the bars' own
         ``color``) matches matplotlib's own bar-error-bar default.
         """
+        _check_broadcastable("bar", x=x, height=height, width=width, bottom=bottom)
         if align == "edge":
             x = np.asarray(x, float) + np.asarray(width, float) / 2.0
         elif align != "center":
@@ -647,6 +650,7 @@ class Axes:
         """Horizontal bar chart. ``align``/``xerr``/``yerr``/``capsize``/
         ``ecolor`` match :meth:`bar`, centered at each bar's own right edge
         (``left + width``)."""
+        _check_broadcastable("barh", y=y, width=width, height=height, left=left)
         if align == "edge":
             y = np.asarray(y, float) + np.asarray(height, float) / 2.0
         elif align != "center":
@@ -835,8 +839,8 @@ class Axes:
         instead of a single artist when given.
         """
         x = np.asarray(x, float)
-        y1b = np.broadcast_to(np.asarray(y1, float), x.shape)
-        y2b = np.broadcast_to(np.asarray(y2, float), x.shape)
+        y1b = _broadcast_like("fill_between", "y1", y1, x, "x")
+        y2b = _broadcast_like("fill_between", "y2", y2, x, "x")
         resolved = self._resolve_color(color)
         if where is None:
             fb = FillBetween(x, y1b, y2b, color=resolved, alpha=alpha,
@@ -874,8 +878,8 @@ class Axes:
         artists, one per run, instead of a single one when given.
         """
         y = np.asarray(y, float)
-        x1 = np.broadcast_to(np.asarray(x1, float), y.shape)
-        x2 = np.broadcast_to(np.asarray(x2, float), y.shape)
+        x1 = _broadcast_like("fill_betweenx", "x1", x1, y, "y")
+        x2 = _broadcast_like("fill_betweenx", "x2", x2, y, "y")
         resolved = self._resolve_color(color)
 
         def _one(yy, xx1, xx2, lbl):
@@ -917,8 +921,8 @@ class Axes:
                label=None, alpha=1.0, zorder=0):
         """Draw horizontal line segments at each ``y`` from ``xmin`` to ``xmax``."""
         y = np.atleast_1d(np.asarray(y, float))
-        xmin = np.broadcast_to(np.asarray(xmin, float), y.shape)
-        xmax = np.broadcast_to(np.asarray(xmax, float), y.shape)
+        xmin = _broadcast_like("hlines", "xmin", xmin, y, "y")
+        xmax = _broadcast_like("hlines", "xmax", xmax, y, "y")
         segs = np.column_stack([xmin, y, xmax, y])
         lc = LineCollection(
             segs, color=self._resolve_color(color),
@@ -932,8 +936,8 @@ class Axes:
                label=None, alpha=1.0, zorder=0):
         """Draw vertical line segments at each ``x`` from ``ymin`` to ``ymax``."""
         x = np.atleast_1d(np.asarray(x, float))
-        ymin = np.broadcast_to(np.asarray(ymin, float), x.shape)
-        ymax = np.broadcast_to(np.asarray(ymax, float), x.shape)
+        ymin = _broadcast_like("vlines", "ymin", ymin, x, "x")
+        ymax = _broadcast_like("vlines", "ymax", ymax, x, "x")
         segs = np.column_stack([x, ymin, x, ymax])
         lc = LineCollection(
             segs, color=self._resolve_color(color),
@@ -949,6 +953,8 @@ class Axes:
         if y is None:
             y = np.asarray(x, float)
             x = np.arange(y.size, dtype=float)
+        else:
+            _check_broadcastable("stem", x=x, y=y)
         lc = self._resolve_color(linecolor)
         s = Stem(x, y, baseline, linecolor=lc,
                  markercolor=self._resolve_color(markercolor) if markercolor else lc,
@@ -993,6 +999,10 @@ class Axes:
             linestyle = "-"
 
         _warn_marker_shape(marker, "errorbar")
+        _check_broadcastable("errorbar", **{
+            k: v for k, v in (("x", x), ("y", y), ("yerr", yerr), ("xerr", xerr))
+            if v is not None
+        })
         eb = ErrorBar(
             x, y, yerr=yerr, xerr=xerr, color=self._resolve_color(color),
             marker=marker,
@@ -1051,6 +1061,11 @@ class Axes:
     def pie(self, x, labels=None, colors=None, startangle=90.0, radius=1.0,
             autopct=None, alpha=1.0, zorder=0):
         """Pie chart. Hides the axis and fixes an equal-aspect square view."""
+        if np.any(np.asarray(x, dtype=float) < 0):
+            raise ValueError(
+                "pie(): wedge sizes must be non-negative -- a negative "
+                f"value produces a negative wedge fraction, got {list(x)!r}"
+            )
         n = len(x)
         if colors is None:
             cyc = self.style.color_cycle
@@ -2711,6 +2726,21 @@ class Axes:
 
         axmin, axmax, mesh_x = self._group_bounds(xgroup, 0)
         aymin, aymax, mesh_y = self._group_bounds(ygroup, 2)
+        # _pad() silently clamps a non-positive high end to an arbitrary
+        # small positive window on a log axis (there's no other sane range
+        # to return) -- real data none of which is positive then autoscales
+        # to a window that contains none of it, and the axes renders
+        # completely empty with nothing on it to explain why.
+        if self._xscale == "log" and axmax <= 0:
+            warnings.warn(
+                "Data has no positive values, and therefore cannot be "
+                "log-scaled on the x-axis -- this axes will render empty.",
+                UserWarning, stacklevel=3)
+        if self._yscale == "log" and aymax <= 0:
+            warnings.warn(
+                "Data has no positive values, and therefore cannot be "
+                "log-scaled on the y-axis -- this axes will render empty.",
+                UserWarning, stacklevel=3)
         px = _pad(axmin, axmax, self._xscale, tight=mesh_x, frac=self._xmargin)
         py = _pad(aymin, aymax, self._yscale, tight=mesh_y, frac=self._ymargin)
         # A one-sided limit takes the autoscaled value for the end left open.
@@ -2928,6 +2958,40 @@ def _warn_marker_shape(marker, who):
             "markers only, so this will appear as a dot. Distinguish the series "
             "by color, size or a label instead.",
             UserWarning, stacklevel=3)
+
+
+def _check_broadcastable(who, **arrays):
+    """Raise a clear ``ValueError`` naming ``who`` if these arrays can't be
+    broadcast together, instead of letting a mismatched pair reach some
+    later NumPy op deep in ``artists.py``/``transform.py`` and raise a bare
+    shape-mismatch error that never says which plotting call produced it
+    (or, worse, a method whose renderer ``zip()``s two arrays and silently
+    truncates to the shorter one instead of raising at all).
+
+    Uses :func:`numpy.broadcast_shapes` rather than a strict equal-length
+    check, since e.g. ``hlines(y, xmin, xmax)`` legitimately broadcasts a
+    scalar ``xmin``/``xmax`` across every ``y``.
+    """
+    shapes = {k: np.shape(v) for k, v in arrays.items()}
+    try:
+        np.broadcast_shapes(*shapes.values())
+    except ValueError:
+        desc = ", ".join(f"{k}: {v}" for k, v in shapes.items())
+        raise ValueError(f"{who}(): incompatible shapes -- {desc}") from None
+
+
+def _broadcast_like(who, name, value, target, target_name):
+    """``np.broadcast_to(value, target.shape)``, but naming ``who``/``name``
+    in the error instead of a bare NumPy shape-mismatch pointing at neither
+    the plotting call nor which of its arguments was the wrong shape."""
+    arr = np.asarray(value, float)
+    try:
+        return np.broadcast_to(arr, target.shape)
+    except ValueError:
+        raise ValueError(
+            f"{who}(): {name} has shape {arr.shape}, which doesn't "
+            f"broadcast against {target_name}'s shape {target.shape}"
+        ) from None
 
 
 def _warn_vector_mesh_size(mesh, who):
