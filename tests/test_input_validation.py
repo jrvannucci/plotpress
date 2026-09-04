@@ -600,3 +600,41 @@ def test_boxplot_tick_labels_mismatch_raises():
     fig, ax = plotpress.subplots()
     with pytest.raises(ValueError, match=r"labels"):
         ax.boxplot([[1, 2, 3], [4, 5, 6], [7, 8, 9]], tick_labels=["only one"])
+
+
+# ---------------------------------------------------------------------------
+# Round 7: cohere()/spectral-method empty-input warning leaks.
+# ---------------------------------------------------------------------------
+def test_cohere_empty_input_does_not_leak_a_raw_warning(recwarn):
+    """cohere([], []) doesn't crash -- 0/0 is a mathematically undefined
+    but legitimate result of NFFT-segmenting an empty signal -- but used to
+    leak a raw 'invalid value encountered in divide' RuntimeWarning."""
+    fig, ax = plotpress.subplots()
+    ax.cohere([], [])
+    fig.to_svg()
+    assert not any("invalid value" in str(w.message) for w in recwarn.list)
+
+
+def test_cohere_normal_input_still_works():
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    Cxy, freqs, line = ax.cohere(rng.random(200), rng.random(200))
+    assert fig.to_svg()
+
+
+@pytest.mark.parametrize("method", ["magnitude_spectrum", "angle_spectrum", "phase_spectrum"])
+def test_single_spectrum_empty_input_raises_without_leaking_a_warning(method, recwarn):
+    """x.mean() on an empty array used to leak a raw 'Mean of empty slice'
+    RuntimeWarning before np.fft eventually raised its own clear error a
+    few lines later -- same final outcome (a clear ValueError), no longer
+    preceded by unrelated noise."""
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must not be empty"):
+        getattr(ax, method)([])
+    assert not any("empty slice" in str(w.message) for w in recwarn.list)
+
+
+def test_magnitude_spectrum_single_point_still_works():
+    fig, ax = plotpress.subplots()
+    ax.magnitude_spectrum([1.0])
+    assert fig.to_svg()

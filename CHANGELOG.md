@@ -25,6 +25,25 @@ anywhere in the source.
 
 ### Fixed
 
+- **A seventh break-it audit** (spectral-method degenerate input) found two
+  more raw-warning leaks, both ending in a correct result but with
+  distracting internal-implementation noise in front of it:
+
+  - **`cohere([], [])`** doesn't crash -- an empty/all-zero signal
+    (NFFT-segmenting zero-pads rather than rejecting it) makes coherence
+    mathematically `0/0`, undefined but not wrong -- yet leaked a raw
+    `RuntimeWarning: invalid value encountered in divide`. Now silent,
+    same NaN result.
+  - **`magnitude_spectrum([])`/`angle_spectrum([])`/`phase_spectrum([])`**
+    already correctly raised a clear error (from NumPy's own FFT
+    validation), but only after `x.mean()` on the empty array first leaked
+    a raw `RuntimeWarning: Mean of empty slice`. Now raises the same clear
+    error immediately, with no warning in front of it.
+
+  Verified via the full non-browser + browser suite (1059 + 105 passed)
+  and a from-clean full docs rebuild -- zero regressions.
+  `tests/test_input_validation.py` gained 6 more tests (95 total).
+
 - **A sixth break-it audit** found one more real bug: **`set_xticks(ticks,
   labels)`/`set_yticks(...)` with mismatched counts** didn't error the way
   matplotlib itself does for the identical case -- it silently left the

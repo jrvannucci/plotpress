@@ -73,7 +73,13 @@ def cohere(x, y, NFFT, Fs, noverlap, window, detrend):
     Pxx = _onesided_double(np.abs(Zx) ** 2 * scale, NFFT).mean(axis=0)
     Pyy = _onesided_double(np.abs(Zy) ** 2 * scale, NFFT).mean(axis=0)
     Pxy = _onesided_double(Zx * np.conj(Zy) * scale, NFFT).mean(axis=0)
-    Cxy = np.abs(Pxy) ** 2 / (Pxx * Pyy)
+    # An empty/all-zero x and y (zero-padded by _as_segments rather than
+    # rejected -- a real segment length is still needed either way) makes
+    # Pxx == Pyy == 0 everywhere: 0/0, mathematically undefined coherence,
+    # not a bug -- silence the resulting "invalid value" noise rather than
+    # rejecting a case NFFT-segmenting already treats as legitimate.
+    with np.errstate(invalid="ignore"):
+        Cxy = np.abs(Pxy) ** 2 / (Pxx * Pyy)
     return Cxy, freqs
 
 
@@ -92,6 +98,12 @@ def specgram(x, NFFT, Fs, noverlap, window, detrend):
 def _single_spectrum(x, Fs, window, detrend):
     """Windowed rFFT of the whole signal (no segmenting)."""
     x = np.asarray(x, float).ravel()
+    if x.size == 0:
+        # x.mean() on an empty array below leaks a raw "Mean of empty
+        # slice" RuntimeWarning before np.fft eventually raises its own
+        # clear error a few lines further on -- raise that same "nothing
+        # to do" error here instead, without the noise in front of it.
+        raise ValueError("magnitude_spectrum()/angle_spectrum()/phase_spectrum(): x must not be empty")
     if detrend:
         x = x - x.mean()
     n = x.size
