@@ -27,10 +27,10 @@ One figure, several outputs
 The same ``Figure`` built once from the matplotlib-shaped API renders to
 every format below -- no separate figure per output, no plugin to install::
 
-                                   one Figure object
-                                           │
-       ┌───────────────┬───────────────┬───────┴───────┬───────────────┐
-       v               v               v               v               v
+                                       one Figure object
+                                               │
+       ┌───────────────┬───────────────┬───────┴───────┬───────────────┬───────────────┐
+       ▼               ▼               ▼               ▼               ▼               ▼
      .svg            .png            .pdf            .html           Vega          Vega-Lite
    (vector,        (raster,        (vector,        (SVG + JS       (v5 JSON,      (v5 JSON, a
    the core         Pillow)        svglib +       inlined --      real pixel-   stricter, more
@@ -54,37 +54,47 @@ and the figure's own layout as JSON alongside the SVG, so a later process --
 with none of the Python objects that built it still around -- can read a
 figure back out and rebuild it::
 
-               a saved .html (Figure.save(path, interactive=True))
-                     embeds <script id="plotpress-pick"> and
-                        id="plotpress-layout"> per figure
-                                        │
-                                        v
-                            plotpress.load_data(path)
-                        parses that embedded JSON back out
-                                         │
-                          ┌──────────────┴──────────────┐
-                          v                             v
-                      "layout"                       "axes"
-                  (grid shape, each            (recovered series/
-               axes' own decorations,        mesh/pie data per axes,
-                 groups, sup-title)              keyed by title)
-                          │
-                          v
-                      plotpress.subplots_from_layout(layout)
-                      rebuilds the grid and every axes' own
-                    decorations -- not the plotted data itself
-                                        │
-                                        v
-                    a new, already-labeled Figure -- ready for
-                    the caller to replot the recovered "axes"
-                                  data back into
+             a saved .html (Figure.save(path, interactive=True))
+                   embeds <script id="plotpress-pick"> and
+                      id="plotpress-layout"> per figure
+                                      │
+                                      ▼
+                          plotpress.load_data(path)
+                      parses that embedded JSON back out
+                                       │
+                        ┌──────────────┴──────────────┐
+                        ▼                             ▼
+                    "layout"                       "axes"
+                (grid shape, each            (recovered series/
+             axes' own decorations,        mesh/pie data per axes,
+               groups, sup-title)              keyed by title)
+
+                        │
+                        ▼
+                    plotpress.subplots_from_layout(layout)
+                    rebuilds the grid and every axes' own
+                  decorations -- not the plotted data itself
+                                      │
+                                      ▼
+                  a new, already-labeled Figure -- ready for
+                  the caller to replot the recovered "axes"
+                                data back into
 
 A freeform :meth:`~plotpress.figure.Figure.add_axes` rect, an inset, or a
 colorbar axes has no grid cell to rebuild from -- its index is listed in
 ``layout["omitted_axes"]`` instead of silently vanishing. See
 :ref:`reading-html-data` for the full API and
-:doc:`/auto_examples/data_roundtrip/index` for worked examples, including
-one that reloads a mesh straight into an ``xarray.DataArray``.
+:doc:`/auto_examples/data_roundtrip/index` for worked examples.
+
+For the common case of a *uniform* grid -- every axes its own single
+``pcolormesh`` or line series, all the same shape --
+:func:`~plotpress.load_data_xarray` skips the title-keyed dict above
+entirely and reads the same file straight into one ``xarray.Dataset``
+indexed by row/column instead, with the recovered ``layout`` still
+available under ``ds.attrs["layout"]`` for
+:func:`~plotpress.subplots_from_layout`. See
+:doc:`/auto_examples/data_roundtrip/index` for both paths worked through
+end to end.
 
 What it is for
 --------------

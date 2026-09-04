@@ -71,3 +71,23 @@
         max-width: none;
     }
 }
+
+/* The home page's two ASCII-art diagrams (box-drawing lines + arrowheads)
+ * mix plain ASCII with Unicode Box Drawing/Geometric Shapes characters on
+ * long lines. The theme's default stack (SFMono-Regular, Menlo, Monaco,
+ * Consolas, ...) is a real monospace font on every platform, but a handful
+ * of viewers still see the two character sets drift out of column alignment
+ * a few characters apart on a long line -- some font's Box Drawing/Geometric
+ * Shapes glyphs are metriced a hair off from its Latin ones, even though
+ * both report the same advance width. Cascadia Mono/Code (ships with
+ * Windows Terminal and VS Code, so common on the platform this was actually
+ * reported from) and DejaVu Sans Mono (the Linux default) both keep every
+ * character in this file at a truly identical width; putting them first
+ * only changes anything for a viewer who already has one installed, so this
+ * is strictly additive over the previous stack. */
+.rst-content pre,
+.rst-content .highlight pre {
+    font-family: "Cascadia Mono", "Cascadia Code", "DejaVu Sans Mono", Consolas,
+                 SFMono-Regular, Menlo, Monaco, "Liberation Mono", "Courier New",
+                 Courier, monospace;
+}
