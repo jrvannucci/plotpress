@@ -2918,6 +2918,36 @@ def test_figure_legend_absent_without_the_call():
     assert "plotpress-legend" not in fig.to_svg()
 
 
+def test_axes_legend_box_size_matches_svgs_shared_layout():
+    """raster.py's per-axes legend used to independently remeasure every
+    label with Pillow's own draw.textlength() instead of reusing svg.py's
+    shared legend_box() (bundled-metrics text_width()) -- the two backends
+    could size the same labels' legend box differently. Both now come from
+    one shared _legend_layout(ax, st) call, so this checks that call
+    against what the SVG backend actually drew, not just that PNG export
+    doesn't crash."""
+    from plotpress.svg import _legend_layout
+
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot([1, 2, 3], [1, 4, 9], label="quadratic series")
+    ax.plot([1, 2, 3], [1, 2, 3], label="linear")
+    ax.legend(loc="upper left")
+
+    svg = fig.to_svg()
+    m = re.search(
+        r'<rect x="[\d.]+" y="[\d.]+" width="([\d.]+)" height="([\d.]+)"[^>]*fill-opacity',
+        svg,
+    )
+    assert m is not None
+    svg_w, svg_h = float(m.group(1)), float(m.group(2))
+
+    lay = _legend_layout(ax, ax.style)
+    # SVG rounds to ~2 decimal places when formatting the attribute (_fmt());
+    # a small absolute tolerance accounts for that, not for real drift.
+    assert lay["box_w"] == pytest.approx(svg_w, abs=0.01)
+    assert lay["box_h"] == pytest.approx(svg_h, abs=0.01)
+
+
 # -- Figure.group() ----------------------------------------------------------
 
 def _grid_2x2():

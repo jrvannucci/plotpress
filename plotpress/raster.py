@@ -1092,38 +1092,26 @@ def _vtext(draw, text, x, y, fill, font):
 
 
 def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
-    # Regression: this recomputed entries/fontsize independently of
-    # svg.py's _legend_layout() instead of reusing it, so legend(handles=,
-    # fontsize=) rendered correctly in SVG but was silently ignored here --
-    # every entry always came straight from ax.artists at the style's own
-    # fixed size, in both backends, the same class of bug as the marker
-    # color list, errorbar xerr, and polygon outline width fixes before it.
-    source = ax._legend_handles if ax._legend_handles is not None else ax.artists
-    # not in (None, "") rather than truthiness: label=0/0.0/False is a
-    # legitimate label (matplotlib shows it as "0"), not an opt-out the way
-    # None/"" is -- matches svg.py's own legend_entries()/_legend_layout().
-    entries = [a for a in source if getattr(a, "label", None) not in (None, "")]
-    if not entries:
+    """The PNG counterpart of svg._render_axes' own per-axes legend.
+
+    Geometry comes from the *shared* layout in svg.py (legend_box(), via
+    _legend_layout()) rather than from Pillow's own measurements -- this
+    used to independently remeasure every entry with Pillow's
+    draw.textlength() instead of the bundled-metrics text_width() every
+    other geometry calculation in the library uses, which could size a
+    PNG's legend box differently from the same figure's SVG for the
+    identical labels. figure_legend (below) already reuses svg.py's shared
+    layout this same way; this brings the per-axes legend in line with it.
+    """
+    from .svg import _legend_layout
+
+    lay = _legend_layout(ax, st)
+    if lay is None:
         return
-    fs = (ax._legend_fontsize if ax._legend_fontsize is not None else st.tick_label_size) * S
+    fs = lay["fs"] * S
     font = _font(fs, st.font_family)
     title_font = _font(fs, st.font_family, bold=True)   # SVG draws the title bold
-    line_h = fs + 6 * S
-    sample = 22 * S
-    pad = 6 * S
-    ncol = min(max(1, ax._legend_ncol), len(entries))
-    nrows = (len(entries) + ncol - 1) // ncol
-    # PIL's own draw.textlength()/draw.text() need an actual str -- unlike
-    # svg.py's _esc(), which stringifies internally -- so a bare int/float
-    # label (a common loop-variable accident) must be coerced here.
-    tw = max(draw.textlength(str(a.label), font=font) for a in entries)
-    col_w = sample + tw + pad * 2
-    title = ax._legend_title
-    title_h = line_h if title else 0
-    box_w = col_w * ncol + pad
-    if title:
-        box_w = max(box_w, draw.textlength(title, font=title_font) + pad * 2)
-    box_h = line_h * nrows + pad + title_h
+    box_w, box_h = lay["box_w"] * S, lay["box_h"] * S
 
     fx, fy = _LEGEND_ANCHORS.get(ax._legend_loc, (1.0, 0.0))
     if ax._legend_bbox_to_anchor is not None:
@@ -1136,9 +1124,10 @@ def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):
     else:
         bx = L + 6 * S + fx * max(0.0, Wp - box_w - 12 * S)
         by = T + 6 * S + fy * max(0.0, Hp - box_h - 12 * S)
-    _raster_draw_legend(entries, st, S, draw, bx, by, box_w, box_h, ncol, col_w,
-                        line_h, sample, pad, title, title_h, font, title_font,
-                        ax._legend_framealpha)
+    _raster_draw_legend(
+        lay["entries"], st, S, draw, bx, by, box_w, box_h, lay["ncol"],
+        lay["col_w"] * S, lay["line_h"] * S, lay["sample_w"] * S, lay["pad"] * S,
+        lay["title"], lay["title_h"] * S, font, title_font, lay["framealpha"])
 
 
 def _raster_figure_legend(fig, st, W, H, S, draw):
