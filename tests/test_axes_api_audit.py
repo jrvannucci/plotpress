@@ -422,3 +422,118 @@ def test_barbs_renders_without_error_in_all_backends():
     from plotpress.raster import figure_to_image, save_pdf
     figure_to_image(fig)
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
+
+
+# -- zorder now accepted everywhere a sibling method already took it --------
+# A tech-debt audit found these methods missing zorder for no principled
+# reason, while ~30 sibling plotting methods already had it -- a maintainer
+# layering, say, a KDE curve under a histogram had to reach into the
+# returned artist and set .zorder by hand. Each check below drives the
+# method, then asserts the resulting artist actually carries the zorder it
+# was given (not just that the kwarg is accepted without error).
+def test_step_stairs_accept_zorder():
+    fig, ax = plotpress.subplots()
+    assert ax.step([1, 2, 3], [1, 2, 3], zorder=7).zorder == 7
+    assert ax.stairs([1, 2, 3], zorder=7).zorder == 7
+
+
+def test_matshow_spy_accept_zorder_label_cmap():
+    from plotpress.colors import get_cmap
+
+    fig, ax = plotpress.subplots()
+    im = ax.matshow([[1, 2], [3, 4]], zorder=7, label="m")
+    assert im.zorder == 7 and im.label == "m"
+    # spy() used to hardcode cmap="gray_r" with no way to override it.
+    im2 = ax.spy([[0, 1], [1, 0]], zorder=7, label="s", cmap="viridis")
+    assert im2.zorder == 7 and im2.label == "s"
+    assert np.array_equal(im2.lut, get_cmap("viridis"))
+    assert not np.array_equal(im2.lut, get_cmap("gray_r"))
+
+
+def test_hist2d_stackplot_accept_zorder():
+    fig, ax = plotpress.subplots()
+    _, im = ax.hist2d([1, 2, 3], [1, 2, 3], bins=3, zorder=7)
+    assert im.zorder == 7
+    layers = ax.stackplot([1, 2, 3], [1, 2, 3], [1, 1, 1], zorder=7)
+    assert all(layer.zorder == 7 for layer in layers)
+
+
+def test_kdeplot_ecdfplot_accept_zorder():
+    fig, ax = plotpress.subplots()
+    assert ax.kdeplot([1, 2, 2, 3, 3, 3], zorder=7).zorder == 7
+    assert ax.ecdfplot([1, 2, 2, 3, 3, 3], zorder=7).zorder == 7
+
+
+@pytest.mark.parametrize("method", [
+    "psd", "csd", "cohere", "magnitude_spectrum", "angle_spectrum", "phase_spectrum",
+])
+def test_spectral_line_methods_accept_zorder(method):
+    fig, ax = plotpress.subplots()
+    x = np.sin(np.linspace(0, 8 * np.pi, 256))
+    call = getattr(ax, method)
+    args = (x, x) if method in ("csd", "cohere") else (x,)
+    *_, line = call(*args, zorder=7)
+    assert line.zorder == 7
+
+
+def test_specgram_accepts_zorder():
+    fig, ax = plotpress.subplots()
+    x = np.sin(np.linspace(0, 8 * np.pi, 512))
+    *_, im = ax.specgram(x, zorder=7)
+    assert im.zorder == 7
+
+
+def test_xcorr_acorr_accept_zorder():
+    fig, ax = plotpress.subplots()
+    x = np.sin(np.linspace(0, 8 * np.pi, 64))
+    *_, lines, markers = ax.xcorr(x, x, zorder=7)
+    assert lines.zorder == 7 and markers.zorder == 7
+    *_, lines2, markers2 = ax.acorr(x, zorder=7)
+    assert lines2.zorder == 7 and markers2.zorder == 7
+
+
+# -- stem()'s color= convention ----------------------------------------------
+def test_stem_color_sets_both_line_and_marker():
+    """Every other line/marker method takes a plain color= for its primary
+    color; stem() used to require linecolor=/markercolor= with no color= at
+    all -- a matplotlib-ported call using color= raised TypeError."""
+    fig, ax = plotpress.subplots()
+    s = ax.stem([1, 2, 3], [1, 2, 3], color="#ff0000")
+    assert s.linecolor == "#ff0000"
+    assert s.markercolor == "#ff0000"
+
+
+def test_stem_linecolor_markercolor_still_override_color():
+    fig, ax = plotpress.subplots()
+    s = ax.stem([1, 2, 3], [1, 2, 3], color="#ff0000", markercolor="#00ff00")
+    assert s.linecolor == "#ff0000"       # falls back to color
+    assert s.markercolor == "#00ff00"     # explicit override wins
+
+
+def test_stem_with_no_color_at_all_still_uses_one_cycle_color():
+    """linecolor/markercolor must resolve to the *same* auto-cycle color
+    when neither is given -- calling the color resolver twice here would
+    silently advance the cycle and give the line and marker different
+    colors."""
+    fig, ax = plotpress.subplots()
+    s = ax.stem([1, 2, 3], [1, 2, 3])
+    assert s.linecolor == s.markercolor
+
+
+# -- hist()'s edge linewidth -------------------------------------------------
+def test_hist_linewidth_overrides_the_bar_and_step_defaults():
+    """hist() used to hardcode 0.6 (bar) / 1.5 (step) with no way to reach
+    them, unlike sibling bar()'s own linewidth=."""
+    fig, ax = plotpress.subplots()
+    _, _, bars = ax.hist([1, 1, 2, 3], bins=3, linewidth=2.5)
+    assert bars.linewidth == 2.5
+    _, _, outline = ax.hist([1, 1, 2, 3], bins=3, histtype="step", linewidth=2.5)
+    assert outline.linewidth == 2.5
+
+
+def test_hist_linewidth_default_unchanged():
+    fig, ax = plotpress.subplots()
+    _, _, bars = ax.hist([1, 1, 2, 3], bins=3)
+    assert bars.linewidth == 0.6
+    _, _, outline = ax.hist([1, 1, 2, 3], bins=3, histtype="step")
+    assert outline.linewidth == 1.5

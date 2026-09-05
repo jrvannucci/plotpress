@@ -723,10 +723,16 @@ class Axes:
         return texts
 
     def hist(self, x, bins=10, range=None, color=None, edgecolor="#ffffff",
-             label=None, alpha=1.0, density=False, zorder=0, histtype="bar",
-             cumulative=False, weights=None, stacked=False,
+             linewidth=None, label=None, alpha=1.0, density=False, zorder=0,
+             histtype="bar", cumulative=False, weights=None, stacked=False,
              orientation="vertical"):
         """Histogram. Returns ``(counts, edges, bars)``.
+
+        ``linewidth`` overrides the edge width, which otherwise defaults to
+        ``0.6`` for ``histtype="bar"`` (a divider between adjacent bars) or
+        ``1.5`` for ``"step"``/``"stepfilled"`` (the outline itself is the
+        only mark) -- matching sibling :meth:`bar`'s own ``linewidth=``,
+        which this method had no way to reach before.
 
         ``orientation="horizontal"`` bins along the y-axis instead (bars
         extend rightward from the y-axis; a ``"step"``/``"stepfilled"``
@@ -791,7 +797,8 @@ class Axes:
             for counts, c, lbl in zip(all_counts, resolved_colors, labels_in):
                 base = running.copy() if stacked else 0.0
                 b = Bars(centers, counts, widths, base, orientation,
-                         color=c, edgecolor=to_hex(edgecolor), linewidth=0.6,
+                         color=c, edgecolor=to_hex(edgecolor),
+                         linewidth=0.6 if linewidth is None else linewidth,
                          label=lbl, alpha=alpha)
                 b.zorder = zorder
                 self.artists.append(b)
@@ -810,7 +817,8 @@ class Axes:
                 across = np.concatenate([[base[0]], np.repeat(top, 2), [base[-1]]])
                 xs, ys = (along, across) if orientation == "vertical" else (across, along)
                 p = Polygon(xs, ys, color=(c if fill else None), alpha=alpha,
-                           edgecolor=(to_hex(edgecolor) if fill else c), linewidth=1.5,
+                           edgecolor=(to_hex(edgecolor) if fill else c),
+                           linewidth=1.5 if linewidth is None else linewidth,
                            label=lbl)
                 p.zorder = zorder
                 self.artists.append(p)
@@ -823,7 +831,7 @@ class Axes:
         return counts_out, edges, bars_out
 
     def step(self, x, y, where="pre", color=None, linewidth=None, label=None,
-             alpha=1.0):
+             alpha=1.0, zorder=0):
         """Step (staircase) plot."""
         x = np.asarray(x, float)
         y = np.asarray(y, float)
@@ -835,7 +843,8 @@ class Axes:
         else:  # 'pre'
             xs, ys = np.repeat(x, 2)[:-1], np.repeat(y, 2)[1:]
         return self.plot(xs, ys, color=self._resolve_color(color),
-                         linewidth=linewidth, label=label, alpha=alpha)
+                         linewidth=linewidth, label=label, alpha=alpha,
+                         zorder=zorder)
 
     def fill_between(self, x, y1, y2=0.0, where=None, color=None, alpha=0.4,
                      label=None, edgecolor=None, linewidth=0.0, zorder=0):
@@ -961,18 +970,25 @@ class Axes:
         self.artists.append(lc)
         return lc
 
-    def stem(self, x, y=None, baseline=0.0, linecolor=None, markercolor=None,
-             label=None, zorder=0):
-        """Stem plot."""
+    def stem(self, x, y=None, baseline=0.0, color=None, linecolor=None,
+             markercolor=None, label=None, zorder=0):
+        """Stem plot.
+
+        ``color`` sets both the stems and the marker at once, matching every
+        other line/marker method's own ``color=`` convention; ``linecolor``/
+        ``markercolor`` override it independently where a stem plot's two
+        colorable parts need to differ (the same "a shared default, plus a
+        more specific override" shape :meth:`errorbar`'s ``ecolor`` has).
+        """
         if y is None:
             y = np.asarray(x, float)
             x = np.arange(y.size, dtype=float)
         else:
             _check_broadcastable("stem", x=x, y=y)
-        lc = self._resolve_color(linecolor)
-        s = Stem(x, y, baseline, linecolor=lc,
-                 markercolor=self._resolve_color(markercolor) if markercolor else lc,
-                 label=label)
+        lc = self._resolve_color(linecolor if linecolor is not None else color)
+        mc = (self._resolve_color(markercolor) if markercolor is not None
+              else self._resolve_color(color) if color is not None else lc)
+        s = Stem(x, y, baseline, linecolor=lc, markercolor=mc, label=label)
         s.zorder = zorder
         self.artists.append(s)
         return s
@@ -1074,18 +1090,19 @@ class Axes:
             self.set_aspect(aspect)
         return im
 
-    def matshow(self, A, cmap="viridis", norm=None, vmin=None, vmax=None, alpha=1.0):
+    def matshow(self, A, cmap="viridis", norm=None, vmin=None, vmax=None,
+                alpha=1.0, label=None, zorder=0):
         """Display a matrix as an image (origin at top, square cells)."""
         im = self.imshow(A, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
-                         origin="upper", alpha=alpha)
+                         origin="upper", alpha=alpha, label=label, zorder=zorder)
         self.set_aspect("equal")
         return im
 
-    def spy(self, A, alpha=1.0):
+    def spy(self, A, cmap="gray_r", alpha=1.0, label=None, zorder=0):
         """Show the sparsity pattern of ``A`` -- nonzero entries drawn dark."""
         nz = (np.asarray(A, float) != 0).astype(float)
-        im = self.imshow(nz, cmap="gray_r", origin="upper", vmin=0, vmax=1,
-                         alpha=alpha)
+        im = self.imshow(nz, cmap=cmap, origin="upper", vmin=0, vmax=1,
+                         alpha=alpha, label=label, zorder=zorder)
         self.set_aspect("equal")
         return im
 
@@ -1265,7 +1282,7 @@ class Axes:
                        alpha=0.7)
 
     def kdeplot(self, data, color=None, linewidth=None, fill=False, alpha=0.3,
-                points=200, cut=3.0, label=None):
+                points=200, cut=3.0, label=None, zorder=0):
         """Kernel-density estimate of a 1-D sample.
 
         ``cut`` extends the evaluation grid past the data extremes by that many
@@ -1276,23 +1293,25 @@ class Axes:
         color = self._resolve_color(color)
         if d.size == 0:      # nothing to estimate; draw nothing, like plot([])
             return self.plot([], [], color=color, linewidth=linewidth,
-                             label=label)
+                             label=label, zorder=zorder)
         pad = cut * _kde_bandwidth(d)
         grid = np.linspace(d.min() - pad, d.max() + pad, points)
         dens = _gaussian_kde(d, grid)
         if fill:
-            self.fill_between(grid, dens, 0.0, color=color, alpha=alpha)
+            self.fill_between(grid, dens, 0.0, color=color, alpha=alpha,
+                              zorder=zorder)
         return self.plot(grid, dens, color=color, linewidth=linewidth,
-                         label=label)
+                         label=label, zorder=zorder)
 
     def ecdfplot(self, data, color=None, linewidth=None, complementary=False,
-                 label=None, alpha=1.0):
+                 label=None, alpha=1.0, zorder=0):
         """Empirical cumulative distribution of a 1-D sample."""
         d = np.asarray(data, float)
         d = np.sort(d[np.isfinite(d)])
         if d.size == 0:
             return self.plot([], [], color=self._resolve_color(color),
-                             linewidth=linewidth, label=label, alpha=alpha)
+                             linewidth=linewidth, label=label, alpha=alpha,
+                             zorder=zorder)
         y = np.arange(1, d.size + 1) / d.size
         if complementary:
             y = 1.0 - y
@@ -1300,7 +1319,7 @@ class Axes:
         x = np.concatenate([d[:1], d])
         y = np.concatenate([[1.0 if complementary else 0.0], y])
         return self.step(x, y, where="post", color=color, linewidth=linewidth,
-                         label=label, alpha=alpha)
+                         label=label, alpha=alpha, zorder=zorder)
 
     def rugplot(self, x, height=0.03, side="bottom", color=None, linewidth=1.0,
                 label=None, alpha=1.0, zorder=0):
@@ -1602,7 +1621,7 @@ class Axes:
         return pc
 
     def hist2d(self, x, y, bins=20, range=None, cmap="viridis", norm=None,
-               vmin=None, vmax=None, alpha=1.0):
+               vmin=None, vmax=None, alpha=1.0, zorder=0):
         """2-D histogram rendered as an image. Returns ``(counts, image)``.
 
         Takes the same ``norm``/``vmin``/``vmax`` as :meth:`hexbin`, and for the
@@ -1612,11 +1631,11 @@ class Axes:
                                         bins=bins, range=range)
         # counts is (nx, ny) indexed [xbin, ybin]; image rows are y, cols x.
         im = self.imshow(counts.T, cmap=cmap, origin="lower", norm=norm,
-                         vmin=vmin, vmax=vmax, alpha=alpha,
+                         vmin=vmin, vmax=vmax, alpha=alpha, zorder=zorder,
                          extent=(xe[0], xe[-1], ye[0], ye[-1]))
         return counts, im
 
-    def stackplot(self, x, *ys, colors=None, alpha=0.8, labels=None):
+    def stackplot(self, x, *ys, colors=None, alpha=0.8, labels=None, zorder=0):
         """Stacked area plot."""
         x = np.asarray(x, float)
         layers = [np.asarray(y, float) for y in ys]
@@ -1628,7 +1647,7 @@ class Axes:
             color = (colors[i] if colors is not None else cyc[i % len(cyc)])
             lbl = labels[i] if labels is not None else None
             out.append(self.fill_between(x, base, top, color=color, alpha=alpha,
-                                         label=lbl))
+                                         label=lbl, zorder=zorder))
             base = top
         return out
 
@@ -1638,40 +1657,43 @@ class Axes:
     # primitive. ``window`` defaults to a Hann window; pass a callable
     # ``n -> weights`` or a length-``NFFT`` array to override.
     def psd(self, x, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
-            color=None, linewidth=None, label=None, alpha=1.0):
+            color=None, linewidth=None, label=None, alpha=1.0, zorder=0):
         """Power spectral density (Welch). Returns ``(Pxx, freqs, line)``."""
         win = np.hanning if window is None else window
         Pxx, freqs = _spectral.psd(x, NFFT, Fs, noverlap, win, detrend)
         line = self.plot(freqs, 10.0 * np.log10(Pxx), color=color,
-                         linewidth=linewidth, label=label, alpha=alpha)
+                         linewidth=linewidth, label=label, alpha=alpha,
+                         zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Power Spectral Density (dB/Hz)")
         return Pxx, freqs, line
 
     def csd(self, x, y, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
-            color=None, linewidth=None, label=None, alpha=1.0):
+            color=None, linewidth=None, label=None, alpha=1.0, zorder=0):
         """Cross spectral density magnitude. Returns ``(Pxy, freqs, line)``."""
         win = np.hanning if window is None else window
         Pxy, freqs = _spectral.csd(x, y, NFFT, Fs, noverlap, win, detrend)
         line = self.plot(freqs, 10.0 * np.log10(np.abs(Pxy)), color=color,
-                         linewidth=linewidth, label=label, alpha=alpha)
+                         linewidth=linewidth, label=label, alpha=alpha,
+                         zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Cross Spectral Density (dB/Hz)")
         return Pxy, freqs, line
 
     def cohere(self, x, y, NFFT=256, Fs=2, noverlap=0, detrend=True, window=None,
-               color=None, linewidth=None, label=None, alpha=1.0):
+               color=None, linewidth=None, label=None, alpha=1.0, zorder=0):
         """Magnitude-squared coherence. Returns ``(Cxy, freqs, line)``."""
         win = np.hanning if window is None else window
         Cxy, freqs = _spectral.cohere(x, y, NFFT, Fs, noverlap, win, detrend)
         line = self.plot(freqs, Cxy, color=color, linewidth=linewidth,
-                         label=label, alpha=alpha)
+                         label=label, alpha=alpha, zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Coherence")
         return Cxy, freqs, line
 
     def magnitude_spectrum(self, x, Fs=2, detrend=True, window=None, scale=None,
-                           color=None, linewidth=None, label=None, alpha=1.0):
+                           color=None, linewidth=None, label=None, alpha=1.0,
+                           zorder=0):
         """Magnitude spectrum ``|X(f)|``. ``scale='dB'`` plots decibels.
 
         Returns ``(spectrum, freqs, line)``.
@@ -1680,36 +1702,38 @@ class Axes:
         mag, freqs = _spectral.magnitude_spectrum(x, Fs, win, detrend)
         y = 20.0 * np.log10(mag) if scale == "dB" else mag
         line = self.plot(freqs, y, color=color, linewidth=linewidth, label=label,
-                         alpha=alpha)
+                         alpha=alpha, zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Magnitude (dB)" if scale == "dB" else "Magnitude")
         return mag, freqs, line
 
     def angle_spectrum(self, x, Fs=2, detrend=True, window=None,
-                       color=None, linewidth=None, label=None, alpha=1.0):
+                       color=None, linewidth=None, label=None, alpha=1.0,
+                       zorder=0):
         """Wrapped phase spectrum (radians). Returns ``(angles, freqs, line)``."""
         win = np.hanning if window is None else window
         ang, freqs = _spectral.angle_spectrum(x, Fs, win, detrend)
         line = self.plot(freqs, ang, color=color, linewidth=linewidth,
-                         label=label, alpha=alpha)
+                         label=label, alpha=alpha, zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Angle (radians)")
         return ang, freqs, line
 
     def phase_spectrum(self, x, Fs=2, detrend=True, window=None,
-                       color=None, linewidth=None, label=None, alpha=1.0):
+                       color=None, linewidth=None, label=None, alpha=1.0,
+                       zorder=0):
         """Unwrapped phase spectrum (radians). Returns ``(phase, freqs, line)``."""
         win = np.hanning if window is None else window
         ph, freqs = _spectral.phase_spectrum(x, Fs, win, detrend)
         line = self.plot(freqs, ph, color=color, linewidth=linewidth,
-                         label=label, alpha=alpha)
+                         label=label, alpha=alpha, zorder=zorder)
         self.set_xlabel("Frequency")
         self.set_ylabel("Phase (radians)")
         return ph, freqs, line
 
     def specgram(self, x, NFFT=256, Fs=2, noverlap=128, detrend=True,
                  window=None, cmap="viridis", norm=None, vmin=None, vmax=None,
-                 alpha=1.0):
+                 alpha=1.0, zorder=0):
         """Spectrogram (power in dB). Returns ``(spectrum, freqs, t, image)``."""
         win = np.hanning if window is None else window
         P, freqs, t = _spectral.specgram(x, NFFT, Fs, noverlap, win, detrend)
@@ -1717,7 +1741,7 @@ class Axes:
         dt = (t[1] - t[0]) / 2.0 if t.size > 1 else 0.5
         df = (freqs[1] - freqs[0]) / 2.0 if freqs.size > 1 else 0.5
         im = self.imshow(Z, cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
-                         origin="lower", alpha=alpha,
+                         origin="lower", alpha=alpha, zorder=zorder,
                          extent=(t[0] - dt, t[-1] + dt,
                                  freqs[0] - df, freqs[-1] + df))
         self.set_xlabel("Time")
@@ -1726,23 +1750,24 @@ class Axes:
 
     def xcorr(self, x, y, normed=True, detrend=False, maxlags=10, usevlines=True,
               color=None, marker="o", markersize=None, linewidth=None,
-              label=None, alpha=1.0):
+              label=None, alpha=1.0, zorder=0):
         """Cross-correlation of ``x`` and ``y`` over ``+-maxlags``.
 
         Returns ``(lags, c, lines, markers)`` where ``lines`` is the stem
         collection (``usevlines``) or connecting line, and ``markers`` is the
-        dot at each lag. ``alpha`` applies to both.
+        dot at each lag. ``alpha``/``zorder`` apply to both.
         """
         lags, c = _spectral.correlation(x, y, detrend, normed, maxlags)
         col = self._resolve_color(color)
         self.axhline(0.0, color="#333333", linewidth=0.8, linestyle="-")
         if usevlines:
             lines = self.vlines(lags, 0.0, c, color=col, linewidth=linewidth,
-                               alpha=alpha)
+                               alpha=alpha, zorder=zorder)
         else:
-            lines = self.plot(lags, c, color=col, linewidth=linewidth, alpha=alpha)
+            lines = self.plot(lags, c, color=col, linewidth=linewidth,
+                             alpha=alpha, zorder=zorder)
         markers = self.scatter(lags, c, s=markersize, color=col, marker=marker,
-                               label=label, alpha=alpha)
+                               label=label, alpha=alpha, zorder=zorder)
         return lags, c, lines, markers
 
     def acorr(self, x, **kwargs):
@@ -2152,7 +2177,7 @@ class Axes:
         return pc
 
     def stairs(self, values, edges=None, color=None, linewidth=None,
-               linestyle="-", label=None, alpha=1.0):
+               linestyle="-", label=None, alpha=1.0, zorder=0):
         """Step outline from bin ``edges`` (len ``values`` + 1), like matplotlib."""
         values = np.asarray(values, float)
         edges = (np.arange(values.size + 1, dtype=float) if edges is None
@@ -2160,7 +2185,8 @@ class Axes:
         x = np.repeat(edges, 2)[1:-1]
         y = np.repeat(values, 2)
         return self.plot(x, y, color=color, linewidth=linewidth,
-                         linestyle=linestyle, label=label, alpha=alpha)
+                         linestyle=linestyle, label=label, alpha=alpha,
+                         zorder=zorder)
 
     def axhline(self, y, color=None, linewidth=None, linestyle="--",
                 label=None, alpha=1.0, zorder=0):
