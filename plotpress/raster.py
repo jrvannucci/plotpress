@@ -26,6 +26,7 @@ from .fonts.families import HELVETICA_FILES as _HELVETICA_METRIC_FILES
 from .fonts.families import HELVETICA_FILES_BOLD as _HELVETICA_METRIC_FILES_BOLD
 from .fonts.families import font_files as _font_files
 from .primitives import artist_to_prims
+from .primitives import tick_axis_edge
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -964,11 +965,8 @@ def _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
     ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
     x_top = xside == "top"
-    x_axis = T if x_top else T + Hp
-    x_sign = -1 if x_top else 1
     y_right = yside == "right"
-    y_axis = L + Wp if y_right else L
-    y_sign = 1 if y_right else -1
+    x_axis, x_sign, y_axis, y_sign = tick_axis_edge(L, Wp, T, Hp, xside, yside)
     for xt, lab in zip(xticks, xlabels):
         x = float(tr.x(xt))
         draw.line([x, x_axis, x, x_axis + x_sign * xts], fill=xcol, width=xtw)
@@ -992,12 +990,7 @@ def _raster_minor_ticks(xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     yts = yst.tick_size * 0.6 * S
     ycol = _rgb(yst.spine_color)
     ytw = max(1, int(round(yst.tick_width * S)))
-    x_top = xside == "top"
-    x_axis = T if x_top else T + Hp
-    x_sign = -1 if x_top else 1
-    y_right = yside == "right"
-    y_axis = L + Wp if y_right else L
-    y_sign = 1 if y_right else -1
+    x_axis, x_sign, y_axis, y_sign = tick_axis_edge(L, Wp, T, Hp, xside, yside)
     for xt in xticks:
         x = float(tr.x(xt))
         draw.line([x, x_axis, x, x_axis + x_sign * xts], fill=xcol, width=xtw)

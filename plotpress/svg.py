@@ -24,7 +24,7 @@ from .artists import (
 from .colors import apply_colormap, colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
-from .primitives import pie_center_radius, pie_label_positions
+from .primitives import pie_center_radius, pie_label_positions, tick_axis_edge
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -2196,10 +2196,7 @@ def _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
     xts, xfs = xst.tick_size, xst.tick_label_size
     yts, yfs = yst.tick_size, yst.tick_label_size
     xmarks, ymarks, labels = [], [], []
-    x_axis = px_top if xside == "top" else px_top + px_h
-    xsign = -1 if xside == "top" else 1
-    y_axis = px_left if yside == "left" else px_left + px_w
-    ysign = -1 if yside == "left" else 1
+    x_axis, xsign, y_axis, ysign = tick_axis_edge(px_left, px_w, px_top, px_h, xside, yside)
 
     for xt, lab in zip(xticks, xlabels):
         x = tr.x(xt)
@@ -2231,10 +2228,7 @@ def _render_minor_ticks(xst, yst, tr, xticks, yticks, px_left, px_top, px_w, px_
     xts = xst.tick_size * 0.6
     yts = yst.tick_size * 0.6
     xmarks, ymarks = [], []
-    x_axis = px_top if xside == "top" else px_top + px_h
-    xsign = -1 if xside == "top" else 1
-    y_axis = px_left if yside == "left" else px_left + px_w
-    ysign = -1 if yside == "left" else 1
+    x_axis, xsign, y_axis, ysign = tick_axis_edge(px_left, px_w, px_top, px_h, xside, yside)
 
     for xt in xticks:
         x = tr.x(xt)

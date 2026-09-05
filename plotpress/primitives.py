@@ -388,3 +388,22 @@ def pie_label_positions(fracs, startangle, cx, cy, R):
             "right_side": math.cos(am) >= 0,
         })
     return rows
+
+
+def tick_axis_edge(px_left, px_w, px_top, px_h, xside, yside):
+    """Which pixel edge of the axes rect ticks/labels are drawn against,
+    and which direction (sign) they point outward from it.
+
+    ``svg.py``'s ``_render_ticks``/``_render_minor_ticks`` and ``raster.py``'s
+    ``_raster_ticks``/``_raster_minor_ticks`` each independently recomputed
+    this identical four-line block -- the actual tick-mark/label drawing
+    genuinely differs per backend (SVG bakes an approximate baseline offset
+    into the label's y-coordinate; raster uses Pillow's own real font-metric
+    anchors instead), which is why this factors out only the edge/sign
+    lookup those functions all share, not the drawing itself.
+    """
+    x_axis = px_top if xside == "top" else px_top + px_h
+    x_sign = -1 if xside == "top" else 1
+    y_axis = px_left if yside == "left" else px_left + px_w
+    y_sign = -1 if yside == "left" else 1
+    return x_axis, x_sign, y_axis, y_sign
