@@ -12,6 +12,7 @@ malformed; see the accompanying CHANGELOG entry).
 """
 import json
 import math
+import warnings
 
 import numpy as np
 import pytest
@@ -457,3 +458,90 @@ def test_axes_title_and_labels_carry_through():
     assert group["title"] == "my title"
     assert group["axes"][0]["title"] == "time"
     assert group["axes"][1]["title"] == "value"
+
+
+# ---------------------------------------------------------------------------
+# _prim_to_vega's fallback path (artists routed through primitives.py's
+# shared artist_to_prims() rather than a dedicated _artist_to_vega_marks
+# branch): Rug, PolyCollection (hexbin), LineCollection (hlines/vlines),
+# AxLine, Span (axvspan/axhspan), and Polygon (fill()). None of these
+# appeared anywhere in this file before -- confirmed by grep -- despite
+# test_vega_lite_output.py having explicit tests for every Vega-Lite
+# equivalent. A regression in this fallback (a broken dash array, wrong
+# rect corners for axvspan, ...) would have shipped undetected.
+# ---------------------------------------------------------------------------
+def _assert_exports_without_a_mapping_warning(fig):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spec = fig.to_vega()
+    assert not any("no Vega mapping" in str(w.message) for w in caught)
+    return spec
+
+
+def test_axline_exports_as_a_rule_mark():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.axline((0.0, 0.0), slope=1.0)
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "rule")) >= 1
+
+
+def test_axvspan_axhspan_export_as_rect_marks():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.axvspan(0.2, 0.4)
+    ax.axhspan(0.6, 0.8)
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    rects = _marks_of_type(group, "rect")
+    assert len(rects) == 2
+    enter = rects[0]["encode"]["enter"]
+    assert {"x", "y", "width", "height", "fill"} <= enter.keys()
+
+
+def test_fill_exports_as_a_path_mark():
+    fig, ax = plotpress.subplots()
+    ax.fill([0, 1, 1, 0], [0, 0, 1, 1], color="#ff0000")
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    paths = _marks_of_type(group, "path")
+    assert len(paths) >= 1
+    assert paths[0]["encode"]["enter"]["fill"]["value"] == "#ff0000"
+
+
+def test_hlines_vlines_export_as_data_driven_rule_marks():
+    fig, ax = plotpress.subplots()
+    ax.hlines([0.2, 0.4], 0.0, 1.0)
+    ax.vlines([0.6, 0.8], 0.0, 1.0)
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    rules = _marks_of_type(group, "rule")
+    assert len(rules) >= 2
+    for r in rules:
+        assert "from" in r and "data" in r["from"]
+        rows = _data(spec, r["from"]["data"])
+        assert len(rows) == 2
+        assert {"x0", "y0", "x1", "y1"} <= rows[0].keys()
+
+
+def test_rugplot_exports_as_data_driven_rule_marks():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.rugplot([0.1, 0.5, 0.9])
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    rules = _marks_of_type(group, "rule")
+    assert len(rules) >= 1
+    rows = _data(spec, rules[-1]["from"]["data"])
+    assert len(rows) == 3
+
+
+def test_hexbin_exports_as_path_marks_with_no_mapping_warning():
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    x, y = rng.normal(size=200), rng.normal(size=200)
+    ax.hexbin(x, y, gridsize=5)
+    spec = _assert_exports_without_a_mapping_warning(fig)
+    group = spec["marks"][0]
+    assert len(_marks_of_type(group, "path")) >= 1
