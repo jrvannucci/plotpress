@@ -340,6 +340,22 @@ def to_hex(color) -> str:
     return resolved
 
 
+def _nonzero_span(lo, hi):
+    """``hi - lo``, or ``1.0`` if that's zero (a flat/constant field, or a
+    single-value ``vmin == vmax``) -- otherwise every value maps to a
+    ``0/0`` divide. ``Normalize``, ``LogNorm``, ``PowerNorm``, and
+    ``SymLogNorm`` each reimplemented this identically (in log space for
+    ``LogNorm``, symlog space for ``SymLogNorm``) with drifted syntax
+    (``if span == 0: span = 1.0`` vs. ``span = (...) or 1.0`` -- equivalent,
+    since a float span is only falsy when it's exactly zero, but drifted
+    nonetheless); one helper keeps any future edge-case refinement (e.g.
+    ``-0.0``, or a very small nonzero span) from needing four separate
+    fixes to stay in sync.
+    """
+    span = hi - lo
+    return 1.0 if span == 0 else span
+
+
 class Normalize:
     """Linearly map data to [0, 1] using ``vmin``/``vmax``.
 
@@ -374,9 +390,7 @@ class Normalize:
     def __call__(self, A):
         A = np.asarray(A, dtype=float)
         self.autoscale_none(A)
-        span = self.vmax - self.vmin
-        if span == 0:
-            span = 1.0
+        span = _nonzero_span(self.vmin, self.vmax)
         return (A - self.vmin) / span
 
 
@@ -397,11 +411,21 @@ class LogNorm(Normalize):
                 self.vmax = float(pos.max()) if pos.size else 1.0
 
     def __call__(self, A):
+        from .ticker import log_floor
+
         A = np.asarray(A, dtype=float)
         self.autoscale_none(A)
-        vmin = max(self.vmin, 1e-300)
+        # Three decades below vmax, matching ticker.log_ticks/minor_ticks --
+        # not the old fixed 1e-300, which put the color mapping's own floor
+        # 300 decades away from a colorbar's ticks (via colorbar_ticks() ->
+        # log_ticks(), same vmin/vmax) for a LogNorm(vmin<=0, ...), silently
+        # compressing almost the entire real data range into one end of the
+        # colormap. autoscale_none() already keeps self.vmin > 0 whenever
+        # there's real positive data to infer it from -- this floor only
+        # actually matters for an explicit vmin=0 (or negative).
+        vmin = self.vmin if self.vmin > 0 else log_floor(self.vmax)
         lmin, lmax = np.log10(vmin), np.log10(max(self.vmax, vmin * 10))
-        span = (lmax - lmin) or 1.0
+        span = _nonzero_span(lmin, lmax)
         with np.errstate(divide="ignore", invalid="ignore"):
             logA = np.log10(np.where(A > 0, A, np.nan))
         return (logA - lmin) / span
@@ -420,7 +444,7 @@ class PowerNorm(Normalize):
     def __call__(self, A):
         A = np.asarray(A, dtype=float)
         self.autoscale_none(A)
-        span = (self.vmax - self.vmin) or 1.0
+        span = _nonzero_span(self.vmin, self.vmax)
         t = np.clip((A - self.vmin) / span, 0.0, 1.0)
         return np.power(t, self.gamma)
 
@@ -446,7 +470,7 @@ class SymLogNorm(Normalize):
         A = np.asarray(A, dtype=float)
         self.autoscale_none(A)
         lo, hi = self._symlog(self.vmin), self._symlog(self.vmax)
-        span = (hi - lo) or 1.0
+        span = _nonzero_span(lo, hi)
         return (self._symlog(A) - lo) / span
 
 

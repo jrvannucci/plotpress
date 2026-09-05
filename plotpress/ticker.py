@@ -8,6 +8,22 @@ from typing import List
 import numpy as np
 
 
+def log_floor(vmax: float) -> float:
+    """A sensible positive floor for a log-scale bound that reached zero or
+    negative -- three decades below ``vmax`` (or ``1e-3`` if ``vmax`` itself
+    isn't positive either), never exactly zero.
+
+    Shared by :func:`log_ticks`/:func:`minor_ticks` here and by
+    :class:`~plotpress.colors.LogNorm`, which used to independently floor at
+    a fixed ``1e-300`` instead -- for a ``LogNorm(vmin=0, vmax=...)``
+    colorbar, that meant the tick positions (via this function) and the
+    actual color mapping (via the old fixed floor) disagreed on where the
+    scale's usable bottom sits, visually compressing almost the entire real
+    data range into one end of the colormap.
+    """
+    return max(vmax / 1000.0, 1e-300) if vmax > 0 else 1e-3
+
+
 def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
     """Return ~``n`` evenly spaced "nice" tick locations within [vmin, vmax].
 
@@ -69,7 +85,7 @@ def log_ticks(vmin: float, vmax: float) -> np.ndarray:
     if vmin <= 0:
         # Data/limits reached here non-positive; pick a small positive floor
         # (three decades below the top), never zero. Matches the interactive JS.
-        vmin = max(vmax / 1000.0, 1e-300) if vmax > 0 else 1e-3
+        vmin = log_floor(vmax)
     lo = math.floor(math.log10(vmin))
     hi = math.ceil(math.log10(vmax))
     # Huge dynamic range (a bit-error-rate axis spans seventeen decades): thin
@@ -114,7 +130,7 @@ def minor_ticks(major: np.ndarray, vmin: float, vmax: float,
         vmin, vmax = vmax, vmin
     if scale == "log":
         if vmin <= 0:
-            vmin = max(vmax / 1000.0, 1e-300) if vmax > 0 else 1e-3
+            vmin = log_floor(vmax)
         lo = math.floor(math.log10(vmin))
         hi = math.ceil(math.log10(vmax))
         fine = np.concatenate([np.arange(2, 10) * 10.0 ** e
