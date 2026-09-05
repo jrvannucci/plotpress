@@ -11,6 +11,8 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-05
+
 ### Added
 
 - **The home page's "one figure, several outputs" diagram now uses real
@@ -22,6 +24,29 @@ anywhere in the source.
   `plotpress.load_data()` and `plotpress.subplots_from_layout()`, to a
   rebuilt `Figure` ready for the caller to replot recovered data into.
   Links to the full API docs and the `data_roundtrip` example gallery.
+- **The README's own opening line undersold what plotpress does now**:
+  it still said "renders SVG and self-contained interactive HTML,"
+  written before PNG/PDF/Vega/Vega-Lite export and the full in-page
+  toolbar (pan/zoom, point-picking + extract, annotation) existed, and
+  never mentioned speed despite that being one of the three stated
+  pillars. Updated the README/`docs/index.rst` tagline, `pyproject.toml`'s
+  PyPI description, and `__init__.py`'s module docstring, all without
+  dropping the original motto (matplotlib-shaped API, no global state,
+  no compiled extension); also spelled out what "self-contained"
+  actually buys the reader (shareable via email/chat/USB, nothing
+  installed on the other end, no Python, no internet needed) and
+  rewrote `docs/user_guide/architecture.rst`'s "How a page actually
+  loads" section from a confusing ASCII pseudocode trace into plain
+  prose making the same point.
+- **Two new umbrella install extras**: `pip install plotpress[full]`
+  (every real end-user feature -- `[gui]`/`[qt]`/`[jupyter]`, bundled as
+  `[viewers]`, plus `[xarray]`) and `pip install plotpress[contrib]`
+  (everything a contributor needs -- `[dev]`/`[browser]`/`[bench]`/`[docs]`,
+  the standard PEP 621 "extra depends on another extra" pattern, so each
+  piece also still installs on its own. `docs/installation.rst`'s and the
+  README's own extras tables/lists were also stale -- both had drifted to
+  list only 3-4 of the 8 (now 11) real extras since `[qt]`/`[xarray]`/
+  `[jupyter]`/`[browser]`/`[docs]` were added; both now list everything.
 
 ### Fixed
 
@@ -117,6 +142,75 @@ anywhere in the source.
     (`tick_size`/`tick_width`, `>= 0`) this time verified against a
     real `python -m sphinx -b html -W` build, not just the pytest
     suite -- the gap that let this ship in the first place.
+  - **`zorder` was missing (no principled reason) from `step`, `stairs`,
+    `matshow`, `spy`, `hist2d`, `stackplot`, `kdeplot`, `ecdfplot`, and
+    all 9 spectral methods**, while ~30 sibling plotting methods already
+    had it. Threaded through everywhere each method delegates to
+    (`plot()`/`fill_between()`/`imshow()`/`vlines()`/`scatter()`).
+  - **`stem()` required `linecolor=`/`markercolor=` with no plain
+    `color=` at all** -- the one line/marker method breaking that
+    universal convention. Added `color=` as a shared default for both,
+    with `linecolor=`/`markercolor=` still available to override one
+    independently (the same shape `errorbar()`'s `ecolor` already has).
+  - **`matshow()`/`spy()` didn't expose `zorder`/`label`**, and `spy()`
+    additionally hardcoded `cmap="gray_r"` with no override, despite
+    both delegating to `imshow()`, which supports all of it. Plumbed
+    through.
+  - **`hist()`'s edge linewidth was hardcoded** (`0.6` for
+    `histtype="bar"`, `1.5` for `"step"`/`"stepfilled"`) with no way to
+    reach it, unlike sibling `bar()`'s own `linewidth=`. Added an
+    override; defaults unchanged.
+  - **`Bars.thickness`/`.base`, `FillBetween.y1`/`.y2`, and
+    `ErrorBar.yerr`/`.xerr` each independently reimplemented the same
+    scalar-or-array broadcast** (`np.broadcast_to(...).copy()`) -- the
+    same bug class that once made `fill_between(x, floor, series)`
+    crash with an unrelated-looking shape error when only one side of a
+    pair was broadcast. Factored into one `_broadcast_field()` helper.
+  - **`Normalize`/`LogNorm`/`PowerNorm`/`SymLogNorm`'s zero-span guard**
+    (`vmin == vmax`, a flat/constant field) was reimplemented with
+    drifted syntax in three of the four classes. Factored into one
+    `_nonzero_span()` helper.
+  - **`LogNorm.__call__` floored a non-positive `vmin` at a fixed
+    `1e-300`, while `ticker.log_ticks()`/`minor_ticks()` floor the exact
+    same case at "three decades below vmax" instead** -- not
+    independent: `colorbar_ticks()` calls `log_ticks()` with a
+    `LogNorm`'s own `vmin`/`vmax`, so a `LogNorm(vmin=0, vmax=100)`
+    colorbar had its tick positions and its actual color mapping
+    computed against floors 300 decades apart, silently compressing
+    almost the entire real data range into one end of the colormap.
+    Extracted `ticker.log_floor()`, now shared by both. Added
+    `tests/test_colors.py` (no dedicated file existed before).
+  - **`raster.py`'s per-axes legend independently remeasured every label
+    with Pillow's own `draw.textlength()` instead of reusing
+    `svg.py`'s shared `legend_box()`** (bundled-metrics `text_width()`)
+    the way this same figure's *figure-level* legend already did -- the
+    same figure's PNG and SVG export could size the same labels'
+    legend box differently. Now calls `svg.py`'s `_legend_layout()` for
+    geometry and only uses Pillow for the actual pixel drawing.
+  - **`svg.py`'s `_render_ticks`/`_render_minor_ticks` and `raster.py`'s
+    `_raster_ticks`/`_raster_minor_ticks` each independently recomputed
+    the identical "which pixel edge does this axis draw against, and
+    which direction does it point" block** -- 4 copies, byte-identical
+    logic. Factored into `primitives.tick_axis_edge()`.
+  - Added `tests/test_style.py`, `tests/test_primitives.py`, and
+    coverage for `vega.py`'s previously-untested primitive-fallback path
+    (`_prim_to_vega()` -- the sole mapping for `Rug`, `PolyCollection`/
+    hexbin, `LineCollection`, `AxLine`, `Span`, and `Polygon`), none of
+    which had a dedicated test file or any coverage in
+    `test_vega_output.py` before, despite `test_vega_lite_output.py`
+    having explicit tests for every Vega-Lite equivalent.
+
+## [Historical -- versions prior to 0.24.0]
+
+Everything below predates this changelog being split by release (see
+`CLAUDE.md`'s own module-map/gallery-count entry above for the same class of
+drift) -- it accumulated under one `[Unreleased]` heading across roughly 46
+actual tagged releases (`0.1.0` through `0.23.2`) without ever being cut into
+per-version sections when each was tagged. Retroactively attributing each
+entry to its real release would mean reconstructing that mapping from git
+history commit-by-commit; left as-is here rather than guessing. The `[0.1.0]`
+section at the very end of this file is the one release that *did* get its
+own heading, from the original changelog before this drift started.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with

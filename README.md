@@ -176,17 +176,20 @@ forces. Every application figure is embedded live, with the interactive toolbar.
 
 ```bash
 pip install plotpress            # SVG + interactive HTML + PNG/PDF export
-pip install plotpress[gui]       # + native pop-up window (fig.show(), pywebview)
-pip install plotpress[qt]        # + embed in a PyQt/PySide app (fig.show_qt())
-pip install plotpress[dev]       # + pytest (contributors)
-pip install plotpress[bench]     # + matplotlib (benchmark comparison)
+pip install plotpress[full]      # + every real end-user feature: viewers (gui, qt, jupyter) + xarray
+pip install plotpress[contrib]   # + everything a contributor needs (dev, browser, bench, docs)
 ```
 
 The standard install covers **all file output** -- SVG, interactive HTML, PNG and
 vector PDF -- with pure-wheel dependencies that install everywhere (servers, CI,
-notebooks). Only the native ``fig.show()`` window needs the ``[gui]`` extra,
-since it pulls a desktop webview stack; without it, ``fig.show()`` falls back to
-the browser.
+notebooks). `[full]` is likely what you want if you're reaching for more than
+that at all; each of its pieces (`[gui]`, `[qt]`, `[jupyter]`, `[xarray]`, or all
+three viewers via `[viewers]`) also installs on its own, or combined in one
+command (`pip install plotpress[gui,xarray]`), for anyone who wants less than
+the full bundle -- `[gui]`, for instance, pulls a desktop webview stack for the
+native `fig.show()` window that a `[qt]`-only or `[jupyter]`-only install has
+no reason to carry. See [Installation](https://jrvannucci.github.io/plotpress/installation.html)
+for the full extras reference.
 
 ## Output surfaces (one scene, many targets)
 

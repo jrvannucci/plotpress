@@ -33,15 +33,30 @@ gui = ["pywebview>=4.0"]
 # Embed interactive figures in a PyQt/PySide app (plotpress.qt). PySide6 or
 # PyQt5+PyQtWebEngine work too; this extra pulls the PyQt6 stack by default.
 qt = ["PyQt6>=6.4", "PyQt6-WebEngine>=6.4"]
+# fig.show_in_jupyter(): embeds the interactive HTML in an IPython.display
+# HTML/iframe, for the notebook-inline toolbar. Any real Jupyter environment
+# already has IPython; this extra is for exercising the call outside one.
+jupyter = ["ipython>=7"]
+# Every way to view/embed a figure outside a static file, bundled for anyone
+# who just wants all of them rather than picking one at a time -- each of
+# gui/qt/jupyter stays installable on its own too, for anyone who wants only
+# one of these (dependency-light) rather than pulling every viewer's stack.
+viewers = ["plotpress[gui]", "plotpress[qt]", "plotpress[jupyter]"]
+
 # plotpress.load_data_xarray(): a uniform grid of recovered mesh/line data
 # as one labeled xarray.Dataset (row/col dims), instead of load_data()'s
 # title-keyed dict of dicts -- xarray pulls in pandas, so it's kept out of
 # the standard install the same way every other format-specific extra is.
 xarray = ["xarray>=2023.1"]
-# fig.show_in_jupyter(): embeds the interactive HTML in an IPython.display
-# HTML/iframe, for the notebook-inline toolbar. Any real Jupyter environment
-# already has IPython; this extra is for exercising the call outside one.
-jupyter = ["ipython>=7"]
+
+# Every real end-user feature at once -- everything above except the
+# contributor-only tooling below (dev/browser/bench/docs, none of which a
+# plotpress *user* has any reason to install). Likely what most people
+# reaching for more than the bare install actually want; reach for one of
+# viewers/gui/qt/jupyter/xarray directly instead only if the extra weight of
+# the others (PyQt6 in particular) matters.
+full = ["plotpress[viewers]", "plotpress[xarray]"]
+
 dev = ["pytest>=7"]
 # End-to-end point-picking tests: they drive the interactive HTML's JavaScript
 # in a headless browser. After installing, fetch the browser itself with
@@ -75,6 +90,12 @@ docs = [
     "joblib>=1.3",
     "xarray>=2023.1",
 ]
+# Everything a contributor needs in one shot: the fast test suite, the
+# browser-driven point-picking tests (still needs a separate
+# `playwright install chromium`), the cross-library benchmark/parity suite,
+# and the docs toolchain -- each of dev/browser/bench/docs stays installable
+# on its own too, for CI jobs that only need one of them.
+contrib = ["plotpress[dev]", "plotpress[browser]", "plotpress[bench]", "plotpress[docs]"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
