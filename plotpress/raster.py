@@ -35,7 +35,7 @@ from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
 from .svg import (
     _effective_rect, _group_axes_extra, _group_colorbar_extra, _group_colorbars,
-    _max_ytick_width, _pixel_rect,
+    _LEGEND_ANCHORS, _max_ytick_width, _pixel_rect,
     _resolve_tick_labels,
 )
 from .ticker import log_ticks, nice_ticks
@@ -1089,15 +1089,6 @@ def _vtext(draw, text, x, y, fill, font):
     tmp = tmp.rotate(90, expand=True)
     draw._image.alpha_composite(
         tmp, (int(x - tmp.width / 2), int(y - tmp.height / 2)))
-
-
-_LEGEND_ANCHORS = {
-    "upper right": (1.0, 0.0), "upper left": (0.0, 0.0),
-    "lower left": (0.0, 1.0), "lower right": (1.0, 1.0),
-    "upper center": (0.5, 0.0), "lower center": (0.5, 1.0),
-    "center left": (0.0, 0.5), "center right": (1.0, 0.5),
-    "right": (1.0, 0.5), "center": (0.5, 0.5), "best": (1.0, 0.0),
-}
 
 
 def _raster_legend(ax, st, L, T, Wp, Hp, S, draw):

@@ -80,6 +80,12 @@ anywhere in the source.
     byte-identical output (SVG hash unchanged; Vega/Vega-Lite JSON
     unchanged once each spec's own `id()`-based data names, which
     differ run to run regardless, are normalized out).
+  - **`raster.py` had its own byte-for-byte copy of `svg.py`'s
+    `_LEGEND_ANCHORS`** (the `loc` string -> fractional-anchor mapping)
+    instead of importing it, even though `raster.py` already imports
+    several other private legend helpers from `svg.py`. A new `loc`
+    value could easily have been added to one copy and forgotten in
+    the other. Now imported.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
