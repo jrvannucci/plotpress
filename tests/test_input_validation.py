@@ -498,14 +498,25 @@ def test_non_positive_dpi_raises_at_assignment(dpi):
 
 @pytest.mark.parametrize("field", [
     "dpi", "spine_width", "font_size", "title_size", "label_size",
-    "tick_size", "tick_width", "tick_label_size", "grid_width",
-    "line_width", "marker_size",
+    "tick_label_size", "grid_width", "line_width", "marker_size",
 ])
 @pytest.mark.parametrize("value", [0, -1.0])
 def test_style_positive_field_validation(field, value):
     fig, ax = plotpress.subplots()
     with pytest.raises(ValueError, match=field):
         setattr(fig.style, field, value)
+
+
+@pytest.mark.parametrize("field", ["tick_size", "tick_width"])
+def test_style_nonnegative_field_allows_zero(field):
+    """tick_size/tick_width=0 is a real value (Axes.tick_params(length=0)/
+    (width=0) hides the tick mark while keeping the label -- exercised by
+    docs/examples/gridded_data/plot_11_colormap_reference.py), unlike every
+    other size/width field: only negative is rejected here."""
+    fig, ax = plotpress.subplots()
+    setattr(fig.style, field, 0)  # must not raise
+    with pytest.raises(ValueError, match=field):
+        setattr(fig.style, field, -1.0)
 
 
 def test_style_svg_raster_dpi_checks_are_still_reachable_directly(tmp_path):

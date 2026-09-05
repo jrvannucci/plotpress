@@ -24,9 +24,16 @@ DEFAULT_COLOR_CYCLE: List[str] = [
 # else in the codebase.
 _POSITIVE_FIELDS = frozenset({
     "dpi", "spine_width", "font_size", "title_size", "label_size",
-    "tick_size", "tick_width", "tick_label_size", "grid_width",
-    "line_width", "marker_size",
+    "tick_label_size", "grid_width", "line_width", "marker_size",
 })
+
+# tick_size/tick_width are different: 0 is a real, intentional value here
+# (Axes.tick_params(length=0)/(width=0), a documented way to hide tick marks
+# while keeping labels -- exercised by docs/examples/gridded_data/
+# plot_11_colormap_reference.py, which is exactly how the first cut of this
+# validation, requiring > 0 for every size/width field without checking for
+# this, broke the docs build). Only negative is actually nonsensical.
+_NONNEGATIVE_FIELDS = frozenset({"tick_size", "tick_width"})
 
 
 @dataclass
@@ -85,6 +92,8 @@ class Style:
     def __setattr__(self, name, value):
         if name in _POSITIVE_FIELDS and not (value > 0):
             raise ValueError(f"Style.{name} must be > 0, got {value!r}")
+        if name in _NONNEGATIVE_FIELDS and not (value >= 0):
+            raise ValueError(f"Style.{name} must be >= 0, got {value!r}")
         object.__setattr__(self, name, value)
 
     def text_width(self, text: str, size: float, bold: bool = False,

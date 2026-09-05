@@ -106,6 +106,17 @@ anywhere in the source.
     `test_axes_api_audit.py`, and `test_render_all.py`. Added
     `tests/conftest.py` with `SVG_NS`/`parse_svg()`; all three now
     import from it instead.
+  - **The `Style` field validation above (two entries up) broke the
+    docs build**: `tick_size`/`tick_width` are the two fields where
+    `0` is a real, intentional value -- `Axes.tick_params(length=0)`/
+    `(width=0)` hides the tick mark while keeping its label, exercised
+    by `docs/examples/gridded_data/plot_11_colormap_reference.py` via
+    `fig.tight_layout()` -- but the first cut required `> 0` for every
+    size/width field without checking for this. Split into
+    `_POSITIVE_FIELDS` (still `> 0`) and a new `_NONNEGATIVE_FIELDS`
+    (`tick_size`/`tick_width`, `>= 0`) this time verified against a
+    real `python -m sphinx -b html -W` build, not just the pytest
+    suite -- the gap that let this ship in the first place.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
