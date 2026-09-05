@@ -49,8 +49,8 @@ format below — no separate figure per output, no plugin to install:
 
 ```
                                     one Figure object
-                                            │
-    ┌───────────────┬───────────────┬───────┴───────┬───────────────┬───────────────┐
+                                            |
+    +---------------+---------------+-------+-------+---------------+---------------+
     ▼               ▼               ▼               ▼               ▼               ▼
   .svg            .png            .pdf            .html           Vega          Vega-Lite
 (vector,        (raster,        (vector,        (SVG + JS       (v5 JSON,      (v5 JSON, a
@@ -79,24 +79,24 @@ figure back out and rebuild it:
 a saved .html (Figure.save(path, interactive=True))
       embeds <script id="plotpress-pick"> and
          id="plotpress-layout"> per figure
-                         │
+                         |
                          ▼
              plotpress.load_data(path)
          parses that embedded JSON back out
-                          │
-           ┌──────────────┴──────────────┐
+                          |
+           +--------------+--------------+
            ▼                             ▼
        "layout"                       "axes"
    (grid shape, each            (recovered series/
 axes' own decorations,        mesh/pie data per axes,
   groups, sup-title)              keyed by title)
 
-           │
+           |
            ▼
        plotpress.subplots_from_layout(layout)
        rebuilds the grid and every axes' own
      decorations -- not the plotted data itself
-                         │
+                         |
                          ▼
      a new, already-labeled Figure -- ready for
      the caller to replot the recovered "axes"
