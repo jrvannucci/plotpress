@@ -648,3 +648,26 @@ def test_json_serializable_end_to_end():
     axes[1].pie([1, 2, 3])
     result, caveats = fig.to_vega_lite()
     json.dumps(result)  # must not raise
+
+
+def test_unmapped_artist_warning_blames_the_caller_for_a_uniform_grid():
+    """A uniform grid (the common case) reaches the unmapped-artist warning
+    through one extra frame (_build_grid -> _axes_to_vl_spec) that the
+    non-grid/twin paths don't go through -- stacklevel has to account for
+    it, or the warning gets attributed to a line inside vega_lite.py's own
+    _build_grid instead of the public Figure.to_vega_lite() call site."""
+    import warnings
+
+    fig, axes = plotpress.subplots(2, 2)
+    axes[0][0].plot([1, 2], [1, 2])
+    axes[0][1].boxplot([[1, 2, 3]])  # unmapped -> triggers the warning
+    axes[1][0].plot([1, 2], [1, 2])
+    axes[1][1].plot([1, 2], [1, 2])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fig.to_vega_lite()
+
+    matches = [r for r in caught if "BoxPlot" in str(r.message)]
+    assert len(matches) == 1
+    assert matches[0].filename.endswith("figure.py")

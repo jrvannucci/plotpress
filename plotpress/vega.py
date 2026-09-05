@@ -44,13 +44,16 @@ this export is a static picture unless the caller wires up Vega's own
 ``signals``. 3-D has no Vega grammar either, but that is moot: plotpress has
 none itself (see the ``Removed`` changelog entry). An artist kind with no
 mapping here yet (``BoxPlot``, ``Violin``, ``Quiver``, ``Contour``,
-``EventPlot``, ``Barbs``, ``Table``) is skipped with a ``UserWarning`` naming
-it and the axes it was on, not silently dropped and not a hard failure for
-the rest of the figure -- the same "degrade a part, not the whole" choice
-``pick_data()`` already makes for an oversized series. A legend (axes- or
-figure-level) is the same story -- it needs real layout (``svg.py``'s
-``figure_legend_layout()``/``draw_legend()``) this module doesn't build --
-and warns the same way, naming which axes or the figure has one.
+``EventPlot``, ``Barbs``, ``Table``, and the slider-driven ``FrameLine2D``/
+``FrameQuadMesh`` from ``plot_frames()``/``pcolormesh_frames()`` -- a static
+JSON spec has nothing to scrub with) is skipped with a ``UserWarning``
+naming it and the axes it was on, not silently dropped and not a hard
+failure for the rest of the figure -- the same "degrade a part, not the
+whole" choice ``pick_data()`` already makes for an oversized series. A
+legend (axes- or figure-level) is the same story -- it needs real layout
+(``svg.py``'s ``figure_legend_layout()``/``draw_legend()``) this module
+doesn't build -- and warns the same way, naming which axes or the figure
+has one.
 """
 
 from __future__ import annotations
@@ -360,7 +363,8 @@ def _artist_to_vega_marks(art, tr, ai, k, x_name, y_name, size_scale, st,
     warnings.warn(
         f"figure_to_vega(): axes {ai} has a {type(art).__name__} artist with "
         "no Vega mapping yet (box plots, violins, quiver, contour, "
-        "event plots, wind barbs, and tables aren't supported) -- skipped, "
+        "event plots, wind barbs, tables, and plot_frames()/"
+        "pcolormesh_frames() sliders aren't supported) -- skipped, "
         "the rest of the figure still exports.",
         UserWarning, stacklevel=4,
     )

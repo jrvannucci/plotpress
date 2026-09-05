@@ -46,6 +46,20 @@ anywhere in the source.
     `<title>`. Docstring corrected; the two (identical) functions
     now each say why, so a future reader doesn't mistake this for an
     accidental copy-paste.
+  - **`to_vega()`/`to_vega_lite()`'s "unsupported artist" warning and
+    docstrings omitted `plot_frames()`/`pcolormesh_frames()`** (their
+    `FrameLine2D`/`FrameQuadMesh` artists don't subclass `Line2D`/
+    `QuadMesh`, so they fall through to the generic "no mapping yet"
+    path in both exporters) from the list of what's actually
+    unsupported. Both now name them explicitly.
+  - **`to_vega_lite()`'s unmapped-artist/legend warnings used a fixed
+    `stacklevel=4`**, correct only for the less common
+    entangled-axes/twin-merge/standalone paths -- for an ordinary
+    *uniform grid* figure (the common case), the real call chain is
+    one frame deeper, so the warning was attributed to a line inside
+    `vega_lite.py` itself instead of the public `Figure.to_vega_lite()`
+    call site. `_artist_layers()`/`_axes_to_vl_spec()` now take an
+    explicit `stacklevel` the grid-building path adjusts for.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with

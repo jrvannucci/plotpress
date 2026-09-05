@@ -44,7 +44,8 @@ by which call built it.
 "degrade a part, not the whole" policy :func:`plotpress.vega.figure_to_vega`
 already follows): everything already unsupported there (``BoxPlot``,
 ``Violin``, ``Quiver``, ``Contour``, ``EventPlot``, ``Barbs``, ``Table``,
-legends), plus ``PolyCollection`` (no closed-vocabulary polygon-batch mark),
+the slider-driven ``FrameLine2D``/``FrameQuadMesh``, legends), plus
+``PolyCollection`` (no closed-vocabulary polygon-batch mark),
 a non-monotonic ``FillBetween``, a ``Polygon`` that isn't a two-boundary
 strip (an arbitrary closed ``fill()`` shape -- a filled circle, a hexbin
 cell -- has no Vega-Lite closed-vocabulary mark either), annotation
@@ -93,7 +94,8 @@ _SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
 # vocabulary is closed), so unmapped here really does mean unmapped.
 _UNSUPPORTED_NAMES = (
     "box plots, violins, quiver, contour, event plots, wind barbs, tables, "
-    "and arbitrary polygon batches (e.g. hexbin)"
+    "arbitrary polygon batches (e.g. hexbin), and plot_frames()/"
+    "pcolormesh_frames() sliders"
 )
 
 # The one aggregate structural warning figure_to_vega_lite() emits, exposed
@@ -280,7 +282,12 @@ def _build_grid(composable, fig, size_scale, mesh_data=False):
     caveats = []
     for i, ax in composable:
         ss = ax._subplotspec
-        spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data)
+        # This call chain (figure_to_vega_lite -> _build_grid ->
+        # _axes_to_vl_spec -> _artist_layers) is one frame deeper than the
+        # standalone/twin paths' stacklevel=4 default was tuned for, so
+        # pass 5 to still blame figure_to_vega_lite's own caller rather
+        # than a line inside _build_grid itself.
+        spec, axcav = _axes_to_vl_spec(ax, size_scale, mesh_data, stacklevel=5)
         caveats.extend(axcav)
         if spec is None:
             continue
@@ -370,12 +377,17 @@ def _find_spec_for_axes(ax, container):
 
 # ---- one axes -> one Vega-Lite spec ------------------------------------
 
-def _axes_to_vl_spec(ax, size_scale, mesh_data=False):
+def _axes_to_vl_spec(ax, size_scale, mesh_data=False, stacklevel=4):
     """One axes' own content as a single-view (or layered) Vega-Lite spec,
     or ``(None, caveats)`` if nothing on it was exportable (mirrors
     :func:`plotpress.vega._vega_has_content`'s role for the Vega sibling).
+
+    ``stacklevel`` is forwarded to :func:`_artist_layers` unchanged --
+    this function adds no warning of its own, so it doesn't need to shift
+    it, only pass along whatever depth its own caller (``_build_grid`` or
+    ``figure_to_vega_lite`` directly) is at.
     """
-    layers, caveats = _artist_layers(ax, size_scale, mesh_data)
+    layers, caveats = _artist_layers(ax, size_scale, mesh_data, stacklevel)
     if not layers:
         return None, caveats
     fig = ax.figure
@@ -453,7 +465,15 @@ def _xy_axis(ax):
     return x_enc, y_enc, caveats
 
 
-def _artist_layers(ax, size_scale, mesh_data=False):
+def _artist_layers(ax, size_scale, mesh_data=False, stacklevel=4):
+    """``stacklevel`` defaults to the depth that's correct when this is
+    reached via ``figure_to_vega_lite -> _axes_to_vl_spec -> _artist_layers``
+    or ``figure_to_vega_lite -> _merge_twin -> _artist_layers`` (3 frames
+    below the caller of ``figure_to_vega_lite`` itself) -- ``_build_grid``'s
+    own call chain is one frame deeper (it goes through ``_axes_to_vl_spec``
+    too) and passes ``stacklevel=5`` to compensate, so the warning still
+    blames the real external caller instead of a line inside this module.
+    """
     layers, caveats = [], []
     draw_order = sorted(enumerate(ax.artists), key=lambda ka: (ka[1].zorder, ka[0]))
     for k, art in draw_order:
@@ -490,7 +510,7 @@ def _artist_layers(ax, size_scale, mesh_data=False):
                 f"figure_to_vega_lite(): axes {_axes_index(ax)} has a "
                 f"{type(art).__name__} artist with no Vega-Lite mapping yet "
                 f"({_UNSUPPORTED_NAMES}) -- skipped, the rest of the figure "
-                "still exports.", UserWarning, stacklevel=4,
+                "still exports.", UserWarning, stacklevel=stacklevel,
             )
             l, c = [], []
         layers.extend(l)
@@ -499,7 +519,7 @@ def _artist_layers(ax, size_scale, mesh_data=False):
         warnings.warn(
             f"figure_to_vega_lite(): axes {_axes_index(ax)} has a legend, "
             "which to_vega_lite() does not export yet -- skipped.",
-            UserWarning, stacklevel=4,
+            UserWarning, stacklevel=stacklevel,
         )
     return layers, caveats
 
