@@ -35,6 +35,17 @@ anywhere in the source.
     render instead of raising -- right next to the `dpi <= 0` check in
     the same function, which does raise for the analogous mistake. Now
     validated the same way.
+  - **The interactive toolbar's module docstring overclaimed what
+    "Save" does**: it described Save as trying to overwrite the file
+    the page was opened from, via the File System Access API. In
+    reality a plain HTML file opened by double-clicking or navigating
+    to it carries no writable handle for the page to reuse -- there
+    never was one to overwrite with -- so Save and Save As have always
+    been functionally identical: both open the same native save
+    picker, pre-filled with a filename derived from the page's
+    `<title>`. Docstring corrected; the two (identical) functions
+    now each say why, so a future reader doesn't mistake this for an
+    accidental copy-paste.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with

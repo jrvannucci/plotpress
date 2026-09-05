@@ -130,16 +130,21 @@ first ``plotpressAddTool()`` call -- never folded into a built-in one.
 **Extract** opens a panel to copy out picked points (not annotations -- see
 ``doExtract()``) as CSV.
 
-**Save As** downloads the current page -- pan/zoom, every pin/annotation,
-hidden-legend-series toggles, and Hide Points/Hide Annotations -- as a new,
-equally self-contained HTML file: reopening it resumes exactly where this
-session left off, not just what was originally plotted. **Save** does the same but
-tries to overwrite the file this page was opened from instead of downloading
-a new one; that needs the File System Access API (Chromium, a secure
-context), so elsewhere it falls back to the same download Save As does.
-Both work the same way inside a :class:`~plotpress.Report`'s embedded
-figure -- each panel is its own independent document, so saving from one
-saves only that panel, not the whole report.
+**Save**/**Save As** both persist the current page -- pan/zoom, every
+pin/annotation, hidden-legend-series toggles, and Hide Points/Hide
+Annotations -- as a self-contained HTML file: reopening it resumes exactly
+where this session left off, not just what was originally plotted. They are
+functionally identical today: both open the browser's native save picker
+(Chromium, a secure context; a plain download everywhere else) pre-filled
+with a filename derived from the page's ``<title>``, not a handle to
+whatever file the page was originally opened from -- a plain HTML file
+opened by double-clicking or navigating to it carries no such handle for
+the page to reuse, so there is nothing to reuse it. Overwriting the original
+file is one click away (browsers already warn before replacing an existing
+file at the same path) rather than automatic. Both work the same way inside
+a :class:`~plotpress.Report`'s embedded figure -- each panel is its own
+independent document, so saving from one saves only that panel, not the
+whole report.
 
 Legend entries remain clickable to toggle series regardless of mode.
 """
@@ -2409,6 +2414,13 @@ _JS_SOURCE = r"""
     saveViaPicker(buildSaveHTML());
   }
 
+  // Deliberately identical to saveAsNewPage() today, not an accidental
+  // duplicate left behind by a refactor: see saveViaPicker()'s own comment
+  // above for why there is no writable handle to "the file this page was
+  // opened from" for either button to reuse. Kept as its own named function
+  // (rather than aliased or merged) so the two toolbar entries stay easy to
+  // tell apart if a real overwrite-in-place path is ever added for one of
+  // them but not the other.
   function overwriteCurrentPage() {
     saveViaPicker(buildSaveHTML());
   }
