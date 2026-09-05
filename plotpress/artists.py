@@ -757,6 +757,22 @@ def _as_colors(color, n):
     return [color] * n
 
 
+def _broadcast_field(value, shape):
+    """A scalar-or-array field, broadcast to ``shape`` and copied.
+
+    ``Bars.thickness``/``.base``, ``FillBetween.y1``/``.y2``, and
+    ``ErrorBar.yerr``/``.xerr`` each independently did
+    ``np.broadcast_to(np.asarray(value, float), shape).copy()`` -- and this
+    exact bug class already bit one of them once: ``FillBetween`` broadcasting
+    only ``y2`` (its default is the scalar ``0.0``) and not ``y1`` made
+    ``fill_between(x, floor, series)`` crash with an unrelated-looking
+    ``column_stack`` shape error, while the same call with the arguments
+    swapped worked fine. One helper, used on both sides of every such pair,
+    makes that mistake structurally harder to repeat.
+    """
+    return np.broadcast_to(np.asarray(value, float), shape).copy()
+
+
 class Bars(Artist):
     """Rectangular bars (bar / barh / hist)."""
 
@@ -764,9 +780,8 @@ class Bars(Artist):
                  edgecolor=None, linewidth=0.8, label=None, alpha=1.0):
         self.pos = np.atleast_1d(np.asarray(pos, float))
         self.length = np.atleast_1d(np.asarray(length, float))
-        self.thickness = np.broadcast_to(
-            np.asarray(thickness, float), self.pos.shape).copy()
-        self.base = np.broadcast_to(np.asarray(base, float), self.pos.shape).copy()
+        self.thickness = _broadcast_field(thickness, self.pos.shape)
+        self.base = _broadcast_field(base, self.pos.shape)
         self.orientation = orientation
         self.colors = _as_colors(color, len(self.pos))
         self.edgecolor = edgecolor
@@ -790,13 +805,10 @@ class FillBetween(Artist):
     def __init__(self, x, y1, y2, color, alpha=0.4, label=None, edgecolor=None,
                  linewidth=0.0):
         self.x = np.asarray(x, float)
-        # Broadcast *both* bounds against x. Only y2 was, because its default
-        # is the scalar 0.0 -- so filling from a constant baseline up to a
-        # curve, ``fill_between(x, floor, series)``, crashed inside the
-        # transform with an unrelated-looking column_stack shape error, while
-        # the same call with the arguments the other way round worked.
-        self.y1 = np.broadcast_to(np.asarray(y1, float), self.x.shape).copy()
-        self.y2 = np.broadcast_to(np.asarray(y2, float), self.x.shape).copy()
+        # Broadcast *both* bounds against x (see _broadcast_field's own
+        # docstring for the bug this once caused when only one side was).
+        self.y1 = _broadcast_field(y1, self.x.shape)
+        self.y2 = _broadcast_field(y2, self.x.shape)
         self.color = color
         self.alpha = alpha
         self.label = label
@@ -934,10 +946,8 @@ class ErrorBar(Artist):
                  capthick=None):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
-        self.yerr = None if yerr is None else np.broadcast_to(
-            np.asarray(yerr, float), self.x.shape).copy()
-        self.xerr = None if xerr is None else np.broadcast_to(
-            np.asarray(xerr, float), self.x.shape).copy()
+        self.yerr = None if yerr is None else _broadcast_field(yerr, self.x.shape)
+        self.xerr = None if xerr is None else _broadcast_field(xerr, self.x.shape)
         self.color = color
         self.marker = marker
         self.markersize = markersize
