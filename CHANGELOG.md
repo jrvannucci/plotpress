@@ -69,6 +69,17 @@ anywhere in the source.
     property that matters: removing one widget's temp file can't
     disturb another's. Both fixed: a comment explaining the exception,
     and a new regression test exercising the registry directly.
+  - **The pie wedge-label/`autopct` trig walk was triplicated** across
+    `svg.py`'s `_render_pie`, `vega.py`'s `_pie_marks`, and
+    `vega_lite.py`'s `_pie_layers`, each independently computing the
+    same center/radius formula (with the `0.42` fill-fraction constant
+    copy-pasted three times) and the same per-wedge label/pct anchor
+    positions (the `1.15`/`0.6` radius multiples). Factored into two
+    shared functions in `primitives.py` -- `pie_center_radius()` and
+    `pie_label_positions()` -- used by all three; verified to produce
+    byte-identical output (SVG hash unchanged; Vega/Vega-Lite JSON
+    unchanged once each spec's own `id()`-based data names, which
+    differ run to run regardless, are normalized out).
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with

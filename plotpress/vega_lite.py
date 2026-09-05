@@ -79,6 +79,7 @@ from .artists import (
     Annotation, VLine,
 )
 from .png import png_data_uri
+from .primitives import pie_center_radius, pie_label_positions
 from .svg import _effective_rect, _pixel_rect
 from .vega import (
     _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
@@ -730,8 +731,7 @@ def _pie_layers(art, ax):
     W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
     xlim, ylim = ax._resolved_limits()
     _, _, px_w, px_h = _effective_rect(ax, *_pixel_rect(ax, W, H), xlim, ylim)
-    cx, cy = px_w / 2.0, px_h / 2.0
-    R = 0.42 * min(px_w, px_h) * art.radius
+    cx, cy, R = pie_center_radius(px_w, px_h, art.radius)
     layers = [{
         "data": {"values": values},
         "mark": {"type": "arc", "opacity": float(art.alpha), "stroke": "#ffffff",
@@ -758,27 +758,19 @@ def _pie_layers(art, ax):
         },
     }]
     # Wedge label / autopct%% text: Vega-Lite's `arc` mark has no built-in
-    # per-wedge label placement (unlike `theta`'s auto-stacking), so the
-    # same wedge-midpoint trig walk plotpress.vega's own _pie_marks and
-    # svg.py's _render_pie both do is repeated here, in Python, to get a
-    # literal pixel x/y per label -- frozen positions via {"value": px}
-    # (bypassing any data scale entirely, the same literal-pixel idiom
-    # _rug_layer's tick length uses), matching the arc's own explicit
-    # cx/cy/R above so labels land on their actual wedges regardless of
-    # what Vega-Lite's own auto-sizing would have produced.
+    # per-wedge label placement (unlike `theta`'s auto-stacking), so
+    # pie_label_positions() (the shared trig walk plotpress.vega's own
+    # _pie_marks and svg.py's _render_pie also use) supplies a literal
+    # pixel x/y per label -- frozen positions via {"value": px} (bypassing
+    # any data scale entirely, the same literal-pixel idiom _rug_layer's
+    # tick length uses), matching the arc's own explicit cx/cy/R above so
+    # labels land on their actual wedges regardless of what Vega-Lite's
+    # own auto-sizing would have produced.
     if art.labels is not None or art.autopct is not None:
-        ang = math.radians(art.startangle)
-        label_rows, pct_rows = [], []
-        for frac in art.fracs:
-            sweep = frac * 2 * math.pi
-            a0, a1 = ang, ang - sweep
-            am = (a0 + a1) / 2.0
-            ang = a1
-            label_rows.append({
-                "x": cx + 1.15 * R * math.cos(am), "y": cy - 1.15 * R * math.sin(am),
-                "align": "left" if math.cos(am) >= 0 else "right",
-            })
-            pct_rows.append({"x": cx + 0.6 * R * math.cos(am), "y": cy - 0.6 * R * math.sin(am)})
+        rows = pie_label_positions(art.fracs, art.startangle, cx, cy, R)
+        label_rows = [{"x": r["label_x"], "y": r["label_y"],
+                      "align": "left" if r["right_side"] else "right"} for r in rows]
+        pct_rows = [{"x": r["pct_x"], "y": r["pct_y"]} for r in rows]
         if art.labels is not None:
             for row, lbl in zip(label_rows, art.labels):
                 layers.append({

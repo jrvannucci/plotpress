@@ -24,6 +24,7 @@ from .artists import (
 from .colors import apply_colormap, colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
+from .primitives import pie_center_radius, pie_label_positions
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -1582,9 +1583,8 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
 
 def _render_pie(pie: Pie, tr, body):
     """Draw wedges in axes-pixel space so the pie stays circular."""
-    cx = tr.px_left + tr.px_w / 2.0
-    cy = tr.px_top + tr.px_h / 2.0
-    R = 0.42 * min(tr.px_w, tr.px_h) * pie.radius
+    cx, cy, R = pie_center_radius(tr.px_w, tr.px_h, pie.radius, tr.px_left, tr.px_top)
+    label_rows = pie_label_positions(pie.fracs, pie.startangle, cx, cy, R)
     ang = math.radians(pie.startangle)
     op = f' fill-opacity="{pie.alpha}"' if pie.alpha < 1 else ""
     parts = []
@@ -1600,19 +1600,17 @@ def _render_pie(pie: Pie, tr, body):
             f'A{_fmt(R)},{_fmt(R)} 0 {large} 1 {_fmt(x1)},{_fmt(y1)} Z" '
             f'fill="{pie.colors[i]}" stroke="#ffffff" stroke-width="1.5"{op}/>'
         )
-        am = (a0 + a1) / 2.0
+        row = label_rows[i]
         if pie.labels is not None:
-            lx, ly = cx + 1.15 * R * math.cos(am), cy - 1.15 * R * math.sin(am)
-            anchor = "start" if math.cos(am) >= 0 else "end"
+            anchor = "start" if row["right_side"] else "end"
             labels.append(
-                f'<text x="{_fmt(lx)}" y="{_fmt(ly)}" text-anchor="{anchor}" '
+                f'<text x="{_fmt(row["label_x"])}" y="{_fmt(row["label_y"])}" text-anchor="{anchor}" '
                 f'font-size="10" dominant-baseline="middle">{_esc(pie.labels[i])}</text>'
             )
         pct = pie.pct_text(frac)
         if pct is not None:
-            px, py = cx + 0.6 * R * math.cos(am), cy - 0.6 * R * math.sin(am)
             labels.append(
-                f'<text x="{_fmt(px)}" y="{_fmt(py)}" text-anchor="middle" '
+                f'<text x="{_fmt(row["pct_x"])}" y="{_fmt(row["pct_y"])}" text-anchor="middle" '
                 f'font-size="10" dominant-baseline="middle">{_esc(pct)}</text>'
             )
         ang = a1

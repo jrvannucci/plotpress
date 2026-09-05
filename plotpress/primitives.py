@@ -13,6 +13,7 @@ artist, or ``None`` if the artist still uses its legacy per-backend renderer.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -333,3 +334,57 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
                           label=a.label or "")]
 
     return None
+
+
+def pie_center_radius(px_w, px_h, radius, origin_x=0.0, origin_y=0.0):
+    """A pie's center and outer radius in pixel space.
+
+    Not routed through ``artist_to_prims`` above -- a ``Pie`` draws as fixed
+    pixel geometry independent of any x/y data scale (matplotlib's own
+    behavior: ``ax.pie()`` always calls ``set_axis_off()``), so each backend
+    computes this itself from its own axes-pixel rect rather than going
+    through a transform meant for data coordinates. All three backends
+    (``svg.py``'s ``_render_pie``, ``vega.py``'s ``_pie_marks``,
+    ``vega_lite.py``'s ``_pie_layers``) used to compute this identical
+    formula independently, with the ``0.42`` fill-fraction constant
+    copy-pasted three times; factored out here since none of it is
+    backend-specific.
+    """
+    cx = origin_x + px_w / 2.0
+    cy = origin_y + px_h / 2.0
+    R = 0.42 * min(px_w, px_h) * radius
+    return cx, cy, R
+
+
+def pie_label_positions(fracs, startangle, cx, cy, R):
+    """Per-wedge label/``autopct`` anchor points for a pie chart.
+
+    One dict per wedge in ``fracs`` order, walking matplotlib's clockwise
+    sweep starting from ``startangle`` (degrees, measured from 3 o'clock):
+    the label position (``1.15 * R`` out from center) and the ``autopct``
+    position (``0.6 * R`` out), the same two fixed multiples every
+    plotpress pie renderer places its text at, plus ``right_side`` (whether
+    the wedge's mid-angle points into the right half of the circle) for a
+    caller to pick which side a label's text-anchor/alignment belongs on.
+
+    Previously reimplemented identically three times (``svg.py``'s
+    ``_render_pie``, ``vega.py``'s ``_pie_marks``, ``vega_lite.py``'s
+    ``_pie_layers``) -- the trig walk itself has nothing backend-specific
+    about it; only what each caller does with the resulting x/y (an SVG
+    ``<text>``, a Vega text mark, a Vega-Lite text layer) differs.
+    """
+    ang = math.radians(startangle)
+    rows = []
+    for frac in fracs:
+        sweep = frac * 2 * math.pi
+        a0, a1 = ang, ang - sweep
+        am = (a0 + a1) / 2.0
+        ang = a1
+        rows.append({
+            "label_x": cx + 1.15 * R * math.cos(am),
+            "label_y": cy - 1.15 * R * math.sin(am),
+            "pct_x": cx + 0.6 * R * math.cos(am),
+            "pct_y": cy - 0.6 * R * math.sin(am),
+            "right_side": math.cos(am) >= 0,
+        })
+    return rows

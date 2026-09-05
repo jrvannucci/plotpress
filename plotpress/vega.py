@@ -70,6 +70,7 @@ from .artists import (
 from .colors import Normalize, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
+from .primitives import pie_center_radius, pie_label_positions
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -831,9 +832,7 @@ def _pie_marks(art, tr):
     # Center/radius mirror svg.py's _render_pie exactly (tr is built with a
     # local (0, 0, px_w, px_h) rect -- see _axes_to_group -- so px_left/
     # px_top are already 0 here, same as that function's cx/cy math).
-    cx = tr.px_left + tr.px_w / 2.0
-    cy = tr.px_top + tr.px_h / 2.0
-    R = 0.42 * min(tr.px_w, tr.px_h) * art.radius
+    cx, cy, R = pie_center_radius(tr.px_w, tr.px_h, art.radius, tr.px_left, tr.px_top)
     data_name = f"data_{id(art):x}"
     # art.fracs (not art.values) -- Pie.__init__ already turns an all-zero
     # total into equal fractions rather than dividing by zero; feeding Vega's
@@ -871,24 +870,18 @@ def _pie_marks(art, tr):
              "strokeWidth": {"value": 1.5},
          }}},
     ]
-    # Wedge label / autopct%% text -- svg.py:1596-1610 draws both at fixed
-    # points, one wedge-midpoint angle at a time; Vega's `pie` data
+    # Wedge label / autopct%% text -- svg.py's _render_pie draws both at
+    # fixed points, one wedge-midpoint angle at a time; Vega's `pie` data
     # transform only computes angles for the arc mark that reads it (there's
-    # no equivalent auto-placement for a *text* mark), so the same
-    # fracs/startangle walk svg.py does is repeated here in Python to get a
+    # no equivalent auto-placement for a *text* mark), so pie_label_positions()
+    # (the shared trig walk every plotpress pie renderer uses) supplies a
     # literal x/y per label -- frozen pixel positions, matching how the arc
     # itself is frozen pixel geometry (see the module docstring).
     if art.labels is not None or art.autopct is not None:
-        ang = math.radians(art.startangle)
-        label_rows, pct_rows = [], []
-        for frac in art.fracs:
-            sweep = frac * 2 * math.pi
-            a0, a1 = ang, ang - sweep
-            am = (a0 + a1) / 2.0
-            ang = a1
-            label_rows.append({"x": cx + 1.15 * R * math.cos(am), "y": cy - 1.15 * R * math.sin(am),
-                               "anchor": "start" if math.cos(am) >= 0 else "end"})
-            pct_rows.append({"x": cx + 0.6 * R * math.cos(am), "y": cy - 0.6 * R * math.sin(am)})
+        rows = pie_label_positions(art.fracs, art.startangle, cx, cy, R)
+        label_rows = [{"x": r["label_x"], "y": r["label_y"],
+                      "anchor": "start" if r["right_side"] else "end"} for r in rows]
+        pct_rows = [{"x": r["pct_x"], "y": r["pct_y"]} for r in rows]
         if art.labels is not None:
             lvals = [{"x": round(float(r["x"]), 2), "y": round(float(r["y"]), 2),
                      "text": str(lbl), "align": r["anchor"]}
