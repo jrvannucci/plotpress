@@ -23,9 +23,14 @@ fig.show()                                # native pop-up window
 ```
 
 `out.html` above is a real, self-contained page — no server, no external JS —
-with a toolbar over every axes in the figure at once. PyPI/GitHub READMEs
-can't run the page's own script, so the three GIFs below stand in for it;
-open one yourself (or click through to the
+with a toolbar over every axes in the figure at once. Self-contained means
+genuinely shareable: the plotted data and the toolbar's own JS are both
+inlined into that one file, so anyone can open and interact with it with
+nothing installed on their end — no Python, no plotpress, no internet
+connection, just a browser. Email it, drop it in a chat, put it on a USB
+stick — it still works. PyPI/GitHub READMEs can't run the page's own script,
+so the three GIFs below stand in for it; open one yourself (or click through
+to the
 [real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html),
 embedded exactly this way) and it's fully live.
 
