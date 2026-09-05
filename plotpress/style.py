@@ -15,6 +15,19 @@ DEFAULT_COLOR_CYCLE: List[str] = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
 ]
 
+# Fields with no sensible non-positive value -- a size/width of zero or less
+# doesn't degrade gracefully, it produces broken output much later, far from
+# the mutation that caused it (dpi <= 0 alone used to reach svg.py/raster.py
+# before raising; the other fields here didn't raise at all, just rendered
+# wrong). Validated in __setattr__ below so `fig.style.dpi = -5` fails at the
+# point of the mistake, matching how Figure/Axes validate eagerly everywhere
+# else in the codebase.
+_POSITIVE_FIELDS = frozenset({
+    "dpi", "spine_width", "font_size", "title_size", "label_size",
+    "tick_size", "tick_width", "tick_label_size", "grid_width",
+    "line_width", "marker_size",
+})
+
 
 @dataclass
 class Style:
@@ -68,6 +81,11 @@ class Style:
     marker_size: float = 6.0  # diameter in points
 
     color_cycle: List[str] = field(default_factory=lambda: list(DEFAULT_COLOR_CYCLE))
+
+    def __setattr__(self, name, value):
+        if name in _POSITIVE_FIELDS and not (value > 0):
+            raise ValueError(f"Style.{name} must be > 0, got {value!r}")
+        object.__setattr__(self, name, value)
 
     def text_width(self, text: str, size: float, bold: bool = False,
                    italic: bool = False) -> float:

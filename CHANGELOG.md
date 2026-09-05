@@ -86,6 +86,16 @@ anywhere in the source.
     several other private legend helpers from `svg.py`. A new `loc`
     value could easily have been added to one copy and forgotten in
     the other. Now imported.
+  - **`Style`'s ~11 size/width fields (`dpi`, `font_size`, `line_width`,
+    `marker_size`, `spine_width`, `tick_size`, `tick_width`,
+    `tick_label_size`, `title_size`, `label_size`, `grid_width`)
+    accepted any value with no validation** -- `fig.style.dpi = -5`
+    (or any of the others) set silently, and only `dpi` was ever
+    caught at all, and only much later, deep inside `svg.py`/
+    `raster.py`, far from the actual mistake. `Style.__setattr__` now
+    validates all eleven eagerly, matching how `Figure`/`Axes` validate
+    everywhere else in the codebase; `svg.py`'s/`raster.py`'s own
+    `dpi <= 0` checks stay in place as defense in depth.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with

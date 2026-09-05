@@ -484,18 +484,46 @@ def test_contour_all_nan_does_not_leak_a_raw_runtime_warning(recwarn):
 # Round 4 continued: fig.style.dpi <= 0, errorbar()/bar() negative yerr/xerr.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("dpi", [0, -50])
-def test_non_positive_dpi_raises_on_svg_and_png(dpi, tmp_path):
-    """figsize is validated at Figure() construction, but dpi is a plain,
-    freely-mutable Style attribute that reaches the same width/height
-    product and used to produce the identical invalid SVG (width="0" or
-    negative) that fix was written to prevent."""
+def test_non_positive_dpi_raises_at_assignment(dpi):
+    """figsize is validated at Figure() construction; dpi -- and the other
+    size/width Style fields alongside it -- are now validated the same way,
+    at the point of assignment (see test_style_positive_field_validation),
+    rather than reaching svg.py/raster.py's own dpi<=0 checks (kept below as
+    defense in depth) or, for every other field, producing silently broken
+    output with no error at all."""
     fig, ax = plotpress.subplots()
-    fig.style.dpi = dpi
+    with pytest.raises(ValueError, match="dpi"):
+        fig.style.dpi = dpi
+
+
+@pytest.mark.parametrize("field", [
+    "dpi", "spine_width", "font_size", "title_size", "label_size",
+    "tick_size", "tick_width", "tick_label_size", "grid_width",
+    "line_width", "marker_size",
+])
+@pytest.mark.parametrize("value", [0, -1.0])
+def test_style_positive_field_validation(field, value):
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match=field):
+        setattr(fig.style, field, value)
+
+
+def test_style_svg_raster_dpi_checks_are_still_reachable_directly(tmp_path):
+    """svg.py's/raster.py's own dpi<=0 checks are now unreachable through
+    ordinary Style mutation (Style.__setattr__ raises first), but they stay
+    as defense in depth for a Style built by bypassing __setattr__ (e.g.
+    object.__setattr__) -- exercise them directly rather than deleting the
+    coverage."""
+    from plotpress.raster import figure_to_image
+    from plotpress.svg import figure_to_svg
+
+    fig, ax = plotpress.subplots()
     ax.plot([1, 2], [1, 2])
+    object.__setattr__(fig.style, "dpi", -50)
     with pytest.raises(ValueError, match="dpi"):
-        fig.to_svg()
+        figure_to_svg(fig)
     with pytest.raises(ValueError, match="dpi"):
-        fig.save(str(tmp_path / "out.png"))
+        figure_to_image(fig)
 
 
 def test_positive_dpi_still_works():
