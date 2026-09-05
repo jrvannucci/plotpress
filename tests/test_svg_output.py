@@ -477,6 +477,23 @@ def test_to_html_standalone_false_scales_svg_and_drops_centering():
     assert "width:100%;height:auto" in embedded
 
 
+def test_to_html_standalone_svg_does_not_shrink_in_the_flex_body():
+    """Regression: the SVG is a direct flex child of standalone=True's
+    centering body{display:flex} (no wrapper div unless the figure has
+    sliders) with no flex-shrink set -- a figure wider than the browser
+    viewport (unremarkable at ordinary sizes, real once a figure has
+    hundreds of axes) got shrunk by the flex container's default
+    flex-shrink:1 in its *width* only (a replaced element's flex-basis
+    shrinks per-axis with no aspect-ratio preservation), while its height
+    stayed at the full unscaled attribute value -- rendering the whole
+    figure non-uniformly squashed instead of simply centered with the page
+    free to scroll to see the rest."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    standalone = fig.to_html(standalone=True)
+    assert "flex-shrink:0" in standalone
+
+
 def _report_entry_doc(report_html, index=0):
     """Unescape and return the Nth embedded figure's own HTML document from
     a saved Report file's srcdoc-carrying iframes, in order."""

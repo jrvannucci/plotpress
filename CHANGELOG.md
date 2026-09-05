@@ -25,6 +25,17 @@ anywhere in the source.
   now take `max()` across the groups sharing an edge, not `+=`. Found
   building a 20x25-subplot demo figure (250 groups, 25 sharing the top
   edge) for the README.
+- **A standalone interactive HTML page renders squashed (non-uniformly
+  scaled) for any figure wider than the browser's viewport** -- unremarkable
+  at ordinary figure sizes, real once a figure has hundreds of axes. The
+  SVG is a direct flex child of `standalone=True`'s centering
+  `body{display:flex}` with no `flex-shrink` set; the flex container's
+  default `flex-shrink:1` shrank it in *width* only (a replaced element's
+  flex-basis shrinks per-axis with no aspect-ratio preservation), leaving
+  height at its full unscaled attribute value. `#plotpress-svg` now sets
+  `flex-shrink:0`, so an oversized figure is simply centered with the page
+  free to scroll to see the rest, instead of distorted. Found opening the
+  20x25-subplot demo figure above in a real browser.
 
 ## [0.24.0] - 2026-09-05
 

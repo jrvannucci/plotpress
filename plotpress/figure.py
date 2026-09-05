@@ -1311,7 +1311,21 @@ class Figure:
                                      # falls back to its fixed width/height
                                      # attributes instead, undoing the scaling
         svg_style = (
-            "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2)}" if standalone
+            # flex-shrink:0 -- the SVG is a direct flex child of body (below)
+            # with no wrapper div (that only exists for a plot_frames()/
+            # pcolormesh_frames() figure's docked sliders, see above). Without
+            # it, a figure wider than the viewport -- unremarkable at ordinary
+            # sizes, real once the figure is genuinely large (hundreds of
+            # axes) -- got shrunk by the flex container's default
+            # flex-shrink:1 to fit the viewport's *width* only, since a
+            # replaced element's flex-basis shrinks independently per axis
+            # with no aspect-ratio preservation: the SVG's height stayed at
+            # its full, unscaled attribute value while its width compressed,
+            # rendering every element non-uniformly squashed rather than
+            # simply centered with the page free to scroll to see the rest,
+            # which is what happens with this set.
+            "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2);"
+            "flex-shrink:0}" if standalone
             else "#plotpress-svg{cursor:default;display:block;width:100%;height:auto}"
         )
         # A plot_frames()/pcolormesh_frames() figure wraps the SVG in a div
