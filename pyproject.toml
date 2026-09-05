@@ -9,7 +9,7 @@ name = "plotpress"
 # two hand-maintained copies drift, and the tag is the thing a release
 # actually is.
 dynamic = ["version"]
-description = "A fast, figure-centric, SVG-first plotting library with a matplotlib-like API and no global state."
+description = "A fast, figure-centric plotting library with a matplotlib-like API, no global state, and one figure exportable to SVG, PNG, PDF, interactive HTML, or Vega/Vega-Lite."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

@@ -1,9 +1,10 @@
 # plotpress
 
-A **lightweight, dependency-light** plotting library that renders **SVG and
-self-contained interactive HTML** through a **matplotlib-shaped** API — with
-**no global state** and **no compiled extension**, so it installs everywhere
-`pip` runs.
+A **fast, dependency-light** plotting library that renders one figure to
+**SVG, PNG, PDF, Vega/Vega-Lite, and self-contained interactive HTML** — the
+HTML carrying a full pan/zoom, point-picking, and annotation toolbar —
+through a **matplotlib-shaped** API. **No global state**, **no compiled
+extension**, so it installs everywhere `pip` runs.
 
 ```python
 import plotpress

@@ -10,8 +10,10 @@ Distinct from matplotlib in three ways:
    ``scatter``, ``pcolormesh``, ``set_xlabel``, ``legend`` mirror matplotlib so
    existing code is easy to port. ``plotpress.subplots(...)`` returns
    ``(fig, axes)`` just like ``plt.subplots(...)`` -- minus the globals.
-3. **SVG-first + fast.** Output is vector SVG (with embedded raster only for
-   mesh/image layers), optionally interactive. The hot paths are vectorized in
+3. **SVG-first, fast, and multi-format.** Output is vector SVG (with embedded
+   raster only for mesh/image layers) -- and from that same figure, also PNG,
+   PDF, self-contained interactive HTML (a full pan/zoom/pick/annotate
+   toolbar), or a Vega/Vega-Lite JSON spec. The hot paths are vectorized in
    NumPy and huge lines are decimated, so it is fast in **pure Python** -- no
    compiled extension, installs everywhere pip does.
 
