@@ -11,21 +11,20 @@ geometry. PNG needs Pillow, so that surface is skipped cleanly when the raster
 extra is absent; SVG and HTML always run.
 """
 
-import xml.etree.ElementTree as ET
-
 import numpy as np
 import pytest
 
 from plotpress.figure import Figure
 
-NS = "{http://www.w3.org/2000/svg}"
+from conftest import SVG_NS as NS, parse_svg as _parse
+
 # Data-bearing marks (never axis decoration) and the full geometry set.
 _DATA = ("path", "polygon", "circle", "image")
 _ALL = _DATA + ("line", "rect", "text")
 
 
 def _counts(svg, tags):
-    root = ET.fromstring(svg)  # also asserts well-formedness
+    root = _parse(svg)  # also asserts well-formedness
     return {t: len(root.findall(".//" + NS + t)) for t in tags}
 
 

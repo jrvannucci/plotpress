@@ -8,18 +8,13 @@ import re
 import os
 import time
 import warnings
-import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
 
 import plotpress
 
-NS = "{http://www.w3.org/2000/svg}"
-
-
-def _parse(svg):
-    return ET.fromstring(svg)
+from conftest import SVG_NS as NS, parse_svg as _parse
 
 
 def test_svg_is_well_formed_and_sized():

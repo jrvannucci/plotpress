@@ -100,6 +100,12 @@ anywhere in the source.
     never read anywhere in the function body** -- leftover from a
     refactor that moved clipping math to the caller (`_clip_artists()`)
     without cleaning up the callee's signature. Removed.
+  - **No `tests/conftest.py` existed**, so the SVG-parsing helper (an
+    `NS` namespace constant plus a one-line `ET.fromstring(svg)`
+    wrapper) was copy-pasted independently into `test_svg_output.py`,
+    `test_axes_api_audit.py`, and `test_render_all.py`. Added
+    `tests/conftest.py` with `SVG_NS`/`parse_svg()`; all three now
+    import from it instead.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
