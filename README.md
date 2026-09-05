@@ -21,14 +21,26 @@ fig.save("out.html", interactive=True)    # interactive toolbar: zoom / pick / a
 fig.show()                                # native pop-up window
 ```
 
-![Point picking a value, then zooming toward the cursor -- plotpress's interactive HTML output](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_demo.gif)
+`out.html` above is a real, self-contained page — no server, no external JS —
+with a toolbar over every axes in the figure at once. PyPI/GitHub READMEs
+can't run the page's own script, so the three GIFs below stand in for it;
+open one yourself (or click through to the
+[real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html),
+embedded exactly this way) and it's fully live.
 
-`out.html` above is a real, self-contained page — no server, no external JS. The
-GIF is a recorded stand-in (PyPI/GitHub READMEs can't run the page's own
-script); open one yourself and it's fully live. Every figure in the
-[real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html)
-is embedded exactly this way, toolbar included — click through and try the
-real thing.
+**Pan / zoom**, working the same over every axes, not just the one under the cursor:
+
+![Wheel-zoom toward the cursor on one panel, then panning across to the next](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_zoom_pan.gif)
+
+**Point picking**, reading a value off any axes — a mesh's `z`, not just a
+line's `x`/`y` — then extracting every picked point as CSV/JSON:
+
+![Picking a point on a line panel and a mesh panel, then extracting both as CSV](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_point_picking.gif)
+
+**Annotation**, a free-form note whose label box drags independently of the
+point it's pinned to:
+
+![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
 
 ## What it is for
 
