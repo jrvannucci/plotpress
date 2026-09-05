@@ -11,6 +11,21 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Figure.group()`'s title-facing outer margin accumulated across every
+  group sharing that edge instead of taking the largest** -- fine with
+  one group per edge (every existing test's case), but a grid with
+  several groups side by side along the same outer edge (say, one
+  `title_position="top"` group per column in a wide multi-column grid)
+  summed each of their reservations into one top margin that grew with
+  the number of groups, producing an ever-widening band of blank space
+  above the actual grid instead of the single fixed-size band one group
+  alone would need. `group_top_px`/`_bottom_px`/`_left_px`/`_right_px`
+  now take `max()` across the groups sharing an edge, not `+=`. Found
+  building a 20x25-subplot demo figure (250 groups, 25 sharing the top
+  edge) for the README.
+
 ## [0.24.0] - 2026-09-05
 
 ### Added

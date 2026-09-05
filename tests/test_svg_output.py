@@ -3056,6 +3056,35 @@ def test_group_facing_the_outer_edge_reserves_layout_margin():
     assert all((n[1] + n[3]) < (b[1] + b[3]) for b, n in zip(before, after))
 
 
+def test_multiple_groups_on_the_same_outer_edge_share_one_margin_band():
+    """Regression: group_top_px/_bottom_px/_left_px/_right_px used to
+    accumulate (+=) every group's own extent instead of taking the largest
+    (max()) -- correct for the single-group case every other test here
+    covers, but wrong the moment more than one group faces the same outer
+    edge (one group per column in a wide multi-column grid, say): each
+    shares that same margin band side by side, so it only has to be tall
+    enough for the single largest title reaching it, not the sum of all of
+    them. Three side-by-side top-facing groups must reserve the same top
+    margin as one alone."""
+    fig1, axes1 = plotpress.subplots(2, 3, figsize=(9, 5))
+    for ax in axes1.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig1.group("Only one", [axes1[0, 0], axes1[1, 0]], title_position="top")
+    fig1.tight_layout()
+    one_group_top = axes1[0, 0]._rect[1]
+
+    fig3, axes3 = plotpress.subplots(2, 3, figsize=(9, 5))
+    for ax in axes3.ravel():
+        ax.plot([0, 1], [0, 1])
+    for col in range(3):
+        fig3.group(f"Group {col}", [axes3[0, col], axes3[1, col]],
+                  title_position="top")
+    fig3.tight_layout()
+    three_groups_top = axes3[0, 0]._rect[1]
+
+    assert three_groups_top == pytest.approx(one_group_top, abs=1e-6)
+
+
 def test_group_left_right_title_reserves_width_not_a_height_allowance():
     """Regression: a left/right title runs horizontally alongside its box, so
     the margin tight_layout() reserves for it has to fit the title's own

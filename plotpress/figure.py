@@ -728,14 +728,23 @@ class Figure:
             # rows in a column-band (say) still needs a top-margin band for
             # its top-facing title even though most of its own axes are in
             # rows 1+, same as one spanning a single row would.
+            # max(), not +=: every group touching a given outer edge shares
+            # that same margin band (they're side by side along it, not
+            # stacked), so the band only has to be tall/wide enough for the
+            # single largest title reaching it -- not the sum of every
+            # group's own extent. A grid with many groups along one edge
+            # (e.g. one group per column, all title_position="top") used to
+            # accumulate every one of their extents into one ever-growing
+            # top margin, producing a band of blank space scaling with the
+            # number of columns instead of a fixed, correctly-sized one.
             if pos == "top" and r0 == 0:
-                group_top_px += extent
+                group_top_px = max(group_top_px, extent)
             elif pos == "bottom" and r1 == nrows - 1:
-                group_bottom_px += extent
+                group_bottom_px = max(group_bottom_px, extent)
             elif pos == "left" and c0 == 0:
-                group_left_px += extent
+                group_left_px = max(group_left_px, extent)
             elif pos == "right" and c1 == ncols - 1:
-                group_right_px += extent
+                group_right_px = max(group_right_px, extent)
             if r0 > 0:
                 row_needs_hspace[r0 - 1] = True
             if r1 < nrows - 1:
