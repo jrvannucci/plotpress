@@ -126,22 +126,28 @@ That diagram is honest only as far as it goes -- two real exceptions:
 How a page actually loads
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Two real paths exist today, and they load very differently::
+``to_html(interactive=True)`` and ``to_vega()`` both end up "a chart in a
+web page," but they hand the browser two fundamentally different things,
+with a real practical consequence for how each can be shared.
 
-    Figure.to_html(interactive=True)
-      Figure.to_svg() + _interactive.py's JS
-        --> one self-contained .html file (SVG and JS both inlined)
-      Browser opens the file
-        --> renders immediately; no other request, no separate render step
+``to_html()`` pre-renders everything: :meth:`~plotpress.figure.Figure.to_svg`'s
+SVG string and ``_interactive.py``'s JS payload are both inlined into one
+``.html`` file. Opening it *is* the entire render step -- there is nothing
+left to compute, fetch, or parse; the file already is the chart. That is
+what makes it a genuinely portable artifact: no server, no separate JS
+runtime, no plotpress or Python on the viewing end, not even a network
+connection -- see the project README's own point about sharing one of
+these files directly.
 
-    Figure.to_vega() + a Vega-embed page (e.g. docs/conf.py's own
-    generated Vega-export pages, or any Vega-runtime host)
-      Figure.to_vega() --> a JSON spec (no picture, just data)
-        --> embedded in a page next to <script src=".../vega-embed...">
-      Browser opens the page
-        --> downloads vega-embed's JS --> vegaEmbed() parses the JSON and
-            draws the chart at LOAD TIME, in the browser -- nothing about
-            the figure is pre-rendered by plotpress at all
+``to_vega()`` renders nothing at all. It returns a JSON spec -- data
+*describing* a chart, not a chart -- which only becomes a picture once
+handed to a real Vega runtime (``vega-embed``'s JS, typically loaded from
+a CDN). That runtime does the actual drawing *at load time, in the
+browser*; plotpress's own involvement ends the moment the JSON is
+produced. This is the right shape for handing a figure to an *existing*
+Vega-based dashboard or notebook -- the reason ``to_vega()``/``to_vega_lite()``
+exist at all -- but the resulting page is not standalone: without that
+runtime already present, the JSON is just inert data.
 
 Performance
 -----------
