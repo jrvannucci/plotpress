@@ -128,6 +128,13 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
         # an empty or negative-size image Pillow itself rejects with much
         # less clarity (a bare "cannot write empty image").
         raise ValueError(f"Figure.style.dpi must be > 0, got {dpi!r}")
+    if not (scale > 0):
+        # `int(scale)` below would otherwise silently floor a fractional
+        # scale to 0 or floor a negative scale to a negative int -- either
+        # way `max(1, ...)` used to swallow the mistake into a plain
+        # scale=1 render instead of telling the caller their argument was
+        # invalid, unlike the dpi check just above for the same function.
+        raise ValueError(f"scale must be > 0, got {scale!r}")
     W = int(round(fig.figsize[0] * dpi))
     H = int(round(fig.figsize[1] * dpi))
     S = max(1, int(scale))

@@ -504,6 +504,20 @@ def test_positive_dpi_still_works():
     assert fig.to_svg()
 
 
+@pytest.mark.parametrize("scale", [0, -1, -0.5])
+def test_non_positive_scale_raises_on_png(scale):
+    """figure_to_image(scale=...) used to compute S = max(1, int(scale)),
+    silently clamping any non-positive scale to a plain scale=1 render
+    instead of raising -- right next to the dpi check above, which does
+    raise for the analogous mistake in the same function."""
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2], [1, 2])
+    with pytest.raises(ValueError, match="scale"):
+        figure_to_image(fig, scale=scale)
+
+
 @pytest.mark.parametrize("call", [
     lambda ax: ax.errorbar([1, 2, 3], [1, 2, 3], yerr=-0.5),
     lambda ax: ax.errorbar([1, 2, 3], [1, 2, 3], xerr=-0.5),

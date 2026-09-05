@@ -25,6 +25,17 @@ anywhere in the source.
 
 ### Fixed
 
+- **A full tech-debt audit** (duplication, dead code, stale docs, coverage
+  gaps -- not a bug-hunt) found one more real bug, fixed here; the rest
+  is tracked as follow-up work rather than dumped into one commit:
+
+  - **`figure_to_image(fig, scale=0)` / `scale=-1`** used to compute
+    `S = max(1, int(scale))`, silently clamping any non-positive (or
+    fractional-and-truncating-to-zero) `scale` to a plain `scale=1`
+    render instead of raising -- right next to the `dpi <= 0` check in
+    the same function, which does raise for the analogous mistake. Now
+    validated the same way.
+
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
   distracting internal-implementation noise in front of it:
