@@ -42,6 +42,82 @@ point it's pinned to:
 
 ![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
 
+## One figure, several outputs
+
+The same `Figure` built once from the matplotlib-shaped API renders to every
+format below — no separate figure per output, no plugin to install:
+
+```
+                                    one Figure object
+                                            │
+    ┌───────────────┬───────────────┬───────┴───────┬───────────────┬───────────────┐
+    ▼               ▼               ▼               ▼               ▼               ▼
+  .svg            .png            .pdf            .html           Vega          Vega-Lite
+(vector,        (raster,        (vector,        (SVG + JS       (v5 JSON,      (v5 JSON, a
+the core         Pillow)        svglib +       inlined --      real pixel-   stricter, more
+ format)                       reportlab)       no server     space marks)     declarative
+                                               round trip)                      grammar)
+```
+
+`fig.save(path, ...)` dispatches on the file extension for the first four;
+`fig.to_vega()` / `fig.to_vega_lite()` return a JSON specification as a plain
+`dict` for a separate Vega/Vega-Lite runtime to render, rather than a
+rendered artifact — useful for handing a figure to an existing Vega-based
+dashboard or notebook instead of embedding plotpress's own SVG/JS. See the
+[architecture docs](https://jrvannucci.github.io/plotpress/user_guide/architecture.html)
+for exactly how much of the rendering pipeline each of these six actually
+shares, and where a format gets its own dedicated path instead.
+
+## Reading a figure back out of HTML
+
+The interactive HTML above isn't a one-way trip: it embeds the plotted data
+and the figure's own layout as JSON alongside the SVG, so a later process —
+with none of the Python objects that built it still around — can read a
+figure back out and rebuild it:
+
+```
+a saved .html (Figure.save(path, interactive=True))
+      embeds <script id="plotpress-pick"> and
+         id="plotpress-layout"> per figure
+                         │
+                         ▼
+             plotpress.load_data(path)
+         parses that embedded JSON back out
+                          │
+           ┌──────────────┴──────────────┐
+           ▼                             ▼
+       "layout"                       "axes"
+   (grid shape, each            (recovered series/
+axes' own decorations,        mesh/pie data per axes,
+  groups, sup-title)              keyed by title)
+
+           │
+           ▼
+       plotpress.subplots_from_layout(layout)
+       rebuilds the grid and every axes' own
+     decorations -- not the plotted data itself
+                         │
+                         ▼
+     a new, already-labeled Figure -- ready for
+     the caller to replot the recovered "axes"
+                   data back into
+```
+
+A freeform `Figure.add_axes()` rect, an inset, or a colorbar axes has no grid
+cell to rebuild from — its index is listed in `layout["omitted_axes"]`
+instead of silently vanishing. See the
+[full API and worked examples](https://jrvannucci.github.io/plotpress/usage.html#reading-html-data)
+for the round trip end to end.
+
+For the common case of a *uniform* grid — every axes its own single
+`pcolormesh` or line series, all the same shape — `plotpress.load_data_xarray()`
+skips the title-keyed dict above entirely and reads the same file straight
+into one `xarray.Dataset` indexed by row/column instead, with the recovered
+layout still available under `ds.attrs["layout"]` for
+`plotpress.subplots_from_layout()`. See the
+[data round-trip example](https://jrvannucci.github.io/plotpress/auto_examples/data_roundtrip/index.html)
+for both paths worked through end to end.
+
 ## What it is for
 
 plotpress is **not a matplotlib replacement**, and it does not try to match
