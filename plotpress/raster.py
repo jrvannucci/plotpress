@@ -429,14 +429,14 @@ def _clip_artists(ax, tr, st, S, canvas, rect, frame=0, animate_unit="main"):
 
     # Stable sort by zorder (ties keep call order), matching svg.py's draw order.
     for artist in sorted(ax.artists, key=lambda a: a.zorder):
-        _raster_artist(artist, tr, st, S, ldraw, layer, rect, frame, animate_unit)
+        _raster_artist(artist, tr, st, S, ldraw, layer, frame, animate_unit)
 
     canvas.alpha_composite(layer.crop(box), (box[0], box[1]))
     # Clear only what was used, so the next axes starts from transparent.
     layer.paste((0, 0, 0, 0), box)
 
 
-def _raster_artist(artist, tr, st, S, draw, canvas, clip, frame=0, animate_unit="main"):
+def _raster_artist(artist, tr, st, S, draw, canvas, frame=0, animate_unit="main"):
     prims = artist_to_prims(artist, tr, 0, 0, size_scale=st.dpi / 72.0 * S)
     if prims is not None:
         for p in prims:

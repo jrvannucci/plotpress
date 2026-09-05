@@ -96,6 +96,10 @@ anywhere in the source.
     validates all eleven eagerly, matching how `Figure`/`Axes` validate
     everywhere else in the codebase; `svg.py`'s/`raster.py`'s own
     `dpi <= 0` checks stay in place as defense in depth.
+  - **`raster.py`'s `_raster_artist()` took a `clip` parameter that was
+    never read anywhere in the function body** -- leftover from a
+    refactor that moved clipping math to the caller (`_clip_artists()`)
+    without cleaning up the callee's signature. Removed.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
