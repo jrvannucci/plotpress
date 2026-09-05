@@ -42,24 +42,27 @@ need rather than the whole file.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `plotpress/axes.py` | 1430 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
-| `plotpress/svg.py` | 1291 | SVG serialization — one `_render_*` per artist kind, plus axis decoration |
-| `plotpress/_interactive.py` | 1181 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
-| `plotpress/artists.py` | 927 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
-| `plotpress/vega_lite.py` | 904 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
-| `plotpress/raster.py` | 820 | PNG backend via Pillow; PDF via svglib/reportlab |
-| `plotpress/vega.py` | 755 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
-| `plotpress/figure.py` | 729 | The root object: layout, `to_svg`, `save`, `show`, figure-level text and legend |
-| `plotpress/colors.py` | 290 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
-| `plotpress/primitives.py` | 286 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
-| `plotpress/qt.py` | 230 | Embed interactive figures in PyQt/PySide (`qt` extra) |
-| `plotpress/polar.py` | 213 | Polar `(theta, r)` axes on top of the Cartesian core |
-| `plotpress/ticker.py` | 166 | Tick locations and label formatting (1-2-5 "nice numbers") |
-| `plotpress/_spectral.py` | 142 | Spectral estimators behind the signal-processing methods |
+| `plotpress/axes.py` | 3221 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
+| `plotpress/figure.py` | 3084 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, plus the HTML round-trip (`load_data`, `subplots_from_layout`) and the `Report` multi-figure aggregator |
+| `plotpress/_interactive.py` | 2849 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
+| `plotpress/svg.py` | 2589 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `plotpress/artists.py` | 1382 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
+| `plotpress/vega.py` | 1324 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
+| `plotpress/raster.py` | 1316 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `plotpress/vega_lite.py` | 1199 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
+| `plotpress/colors.py` | 498 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
+| `plotpress/qt.py` | 427 | Embed interactive figures in PyQt/PySide (`qt` extra) |
+| `plotpress/primitives.py` | 335 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
+| `plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
+| `plotpress/ticker.py` | 212 | Tick locations and label formatting (1-2-5 "nice numbers") |
+| `plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
 | `plotpress/png.py` | 93 | Minimal stdlib-only PNG encoder (`zlib`) |
 | `plotpress/style.py` | 91 | Per-figure `Style` — the replacement for `rcParams` |
 | `plotpress/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
 | `plotpress/fonts/` | ~590 | Bundled advance-width tables, family resolution, opt-in installed-font measurement |
+
+This table is a size guide, not a promise -- regenerate it (`wc -l plotpress/*.py`) whenever
+it visibly drifts rather than trusting a stale number.
 
 ## Commands
 
@@ -124,10 +127,10 @@ artifact (git-ignored). Don't hand-edit it or add a literal to `__init__.py`.
 
 ## Repo gotchas
 
-- **`docs/` is 226 files, 183 of them gallery scripts** under `applications/`
-  (122), `examples/` (69), and `scale/` (15). Scope searches to `plotpress/` or
+- **`docs/` is 382 tracked files, 303 of them gallery scripts** under `applications/`
+  (165), `examples/` (123), and `scale/` (15). Scope searches to `plotpress/` or
   `tests/` unless the gallery is genuinely the subject.
-- **`docs/_build/` is ~94 MB** of generated HTML, and `examples/*.svg|html|png|pdf`
+- **`docs/_build/` is ~370 MB** of generated HTML, and `examples/*.svg|html|png|pdf`
   are generated outputs. All git-ignored; never read them to answer a question
   about behavior — read the script that produced them.
 - **`docs/auto_examples/`, `auto_scale/`, `auto_applications/`** are written by
