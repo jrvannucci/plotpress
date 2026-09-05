@@ -71,6 +71,34 @@ def test_show_qt_is_lazy():
     assert hasattr(plotpress.Figure, "show_qt")
 
 
+def test_temp_files_registry_entries_are_independent(tmp_path):
+    """qt.py's module-level _TEMP_FILES set is shared across every
+    PlotPressWidget in the process (see its own comment for why that's a
+    deliberate exception to the no-global-state rule) -- the property that
+    actually matters is that removing one widget's temp file can never
+    remove or otherwise disturb another's. Exercises the registry directly
+    (no real QWebEngineView needed) so it isn't gated on the fragile
+    single-shared-view constraint the other Qt tests are."""
+    if not _has_qt_binding():
+        pytest.skip("no Qt binding with WebEngine installed")
+    import plotpress.qt as spqt
+
+    a = str(tmp_path / "a.html")
+    b = str(tmp_path / "b.html")
+    for p in (a, b):
+        pathlib.Path(p).write_text("<html></html>", encoding="utf-8")
+        spqt._TEMP_FILES.add(p)
+
+    spqt._remove_temp(a)
+
+    assert not os.path.exists(a)
+    assert a not in spqt._TEMP_FILES
+    assert os.path.exists(b)
+    assert b in spqt._TEMP_FILES
+
+    spqt._remove_temp(b)  # leave the shared registry as we found it
+
+
 def test_live_artist_targets_the_pick_update_hook():
     # LiveArtist patches an already-loaded page's pick payload via
     # window.plotpressUpdatePick; that hook must exist in the interactive JS,

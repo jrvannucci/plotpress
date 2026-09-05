@@ -45,6 +45,15 @@ import types
 
 # Temp HTML files backing the views; QWebEngineView.load() is async, so each
 # file must outlive the load. Cleaned up per-widget and again at interpreter exit.
+#
+# A deliberate, narrow exception to "no module-level mutable state" (see
+# CLAUDE.md and tests/test_no_global_state.py): this is process-wide *resource
+# cleanup bookkeeping*, not figure-rendering state -- it never makes one
+# PlotPressWidget's behavior depend on another's, only ensures every widget's
+# own temp file still gets removed at interpreter exit even if its widget
+# was never cleanly closed. See test_temp_files_registry_entries_are_independent
+# in tests/test_qt.py for the property that actually matters here: removing
+# one widget's temp file never touches another's.
 _TEMP_FILES: set[str] = set()
 
 

@@ -60,6 +60,15 @@ anywhere in the source.
     `vega_lite.py` itself instead of the public `Figure.to_vega_lite()`
     call site. `_artist_layers()`/`_axes_to_vl_spec()` now take an
     explicit `stacklevel` the grid-building path adjusts for.
+  - **`qt.py`'s module-level `_TEMP_FILES` registry was untested and
+    undocumented as an intentional exception** to the no-global-state
+    rule (`tests/test_no_global_state.py` never imports `qt.py` at
+    all). It's process-wide resource-cleanup bookkeeping, not
+    figure-rendering state, so it doesn't actually violate the rule's
+    intent -- but nothing said so, and nothing verified the one
+    property that matters: removing one widget's temp file can't
+    disturb another's. Both fixed: a comment explaining the exception,
+    and a new regression test exercising the registry directly.
 
 - **A seventh break-it audit** (spectral-method degenerate input) found two
   more raw-warning leaks, both ending in a correct result but with
