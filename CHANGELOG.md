@@ -11,6 +11,32 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-06
+
+### Added
+
+- **A fourth README demo GIF, "At scale"** -- the same pan/zoom, point-pick
+  (pin, remove, re-pick, drag its label), pan-to-a-distant-group, annotate,
+  then Home sequence the first three GIFs show, but on
+  `docs/examples/grouping/plot_13_full_scale_demo.py`: 500 `pcolormesh`
+  panels across 250 groups (one per top/bottom subplot pair), each group
+  its own title and one of four cycling colors, each subplot its own
+  colorbar and title, at the full 20x25 grid size. Added as a real gallery
+  example, not just a README asset.
+- **Rewrote the homepage (`docs/index.rst`) and `README.md`** around a new
+  narrative -- "scientific plots you can explore, share, and reuse" --
+  leading with the interactive-HTML round trip and an
+  Explore-Analyze-Visualize-Share-Publish-Archive-Reuse figure lifecycle,
+  then folding "made for real scientific workloads" and "designed for
+  constrained environments" framing around the existing plot-type and
+  install-target reference material. Verified against the real API rather
+  than adopted verbatim -- one claimed usage
+  (`data, layout = plotpress.load_data(...)`) didn't match `load_data()`'s
+  actual title-keyed return shape and was corrected. Also documents
+  `extra_js` (custom toolbar tools), a real, working, previously
+  undocumented feature. Scoped to the homepage and README only; other doc
+  pages are unchanged.
+
 ### Fixed
 
 - **`Figure.group()`'s title-facing outer margin accumulated across every

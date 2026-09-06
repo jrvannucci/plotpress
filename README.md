@@ -162,20 +162,25 @@ for both paths worked through end to end.
 plotpress is designed around the way scientific figures actually get used:
 
 ```
-     ┌─────────────────────────────────────────────────────────┐
-     │                                                           │
-     ▼                                                           │
-  Explore ──► Analyze ──► Communicate ──► Publish ──► Archive ──► Reuse
- (interact    (signal      (export        (share a    (keep figure
-  with a       processing,  SVG/PNG/PDF,   self-       + data as one
-  measurement, stats,       or share       contained   portable
-  building an  multi-       interactive    figure with artifact)
-  experiment)  dimensional  HTML)          its data)
-               data)
+Explore ──► Analyze ──► Visualize ──► Share ──► Publish ──► Archive ──► Reuse
+   ▲                                                                       │
+   └───────────────────────────────────────────────────────────────────────┘
 ```
 
-Load the figure back later (`plotpress.load_data`), recover its data, and
-the cycle starts again from Reuse.
+- **Explore** — interact with a measurement, simulation, image, or spectrum
+  while building an experiment or analysis (pan/zoom, point-picking).
+- **Analyze** — the same figure workflow for signal processing, statistics,
+  and multidimensional data.
+- **Visualize** — build and style the figure: plot, arrange subplots, apply
+  colormaps and normalization.
+- **Share** — hand an interactive HTML figure to a collaborator — no server,
+  nothing to install on their end.
+- **Publish** — export a publication figure as SVG/PNG/PDF, or publish a
+  self-contained HTML figure that carries its own data.
+- **Archive** — keep the figure and its plotted data together in one
+  portable file.
+- **Reuse** — load the figure back with `plotpress.load_data()`, recover the
+  data, and analyze or replot it — the cycle starts again from Explore.
 
 ## Made for real scientific workloads
 
