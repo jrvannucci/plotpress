@@ -1,11 +1,12 @@
 plotpress
 ==========
 
-A **fast, dependency-light** plotting library that renders one figure to
-**SVG, PNG, PDF, Vega/Vega-Lite, and self-contained interactive HTML** -- the
-HTML carrying a full pan/zoom, point-picking, and annotation toolbar --
-through a **matplotlib-shaped API**. **No global state**, **no compiled
-extension**, so it installs everywhere ``pip`` runs.
+Scientific plots you can explore, share, and reuse.
+
+A **fast, dependency-light** plotting library for scientific computing, with a
+**matplotlib-shaped API** and **no compiled extension** -- so it installs
+everywhere Python does, from notebooks and scientific applications to CI
+pipelines and offline environments.
 
 .. code-block:: python
 
@@ -15,18 +16,19 @@ extension**, so it installs everywhere ``pip`` runs.
    fig, ax = plotpress.subplots()
    x = np.linspace(0, 4 * np.pi, 400)
    ax.plot(x, np.sin(x), label="sin")
-   ax.plot(x, np.cos(x), label="cos", linestyle="--")
-   ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend()
+   ax.plot(x, np.cos(x), "--", label="cos")
+   ax.set_xlabel("x"); ax.set_ylabel("amplitude"); ax.legend()
 
-   fig.save("out.svg")                    # static vector SVG
-   fig.save("out.png")                    # raster PNG
-   fig.save("out.html", interactive=True) # interactive toolbar
+   fig.save("figure.svg")                    # static vector SVG
+   fig.save("figure.png")                    # raster PNG
+   fig.save("figure.html", interactive=True) # self-contained interactive toolbar
 
-One figure, several outputs
-----------------------------
+One figure. Many destinations.
+-------------------------------
 
-The same ``Figure`` built once from the matplotlib-shaped API renders to
-every format below -- no separate figure per output, no plugin to install::
+Build the ``Figure`` once from the matplotlib-shaped API, then choose the
+output when you need it -- no separate figure per format, no plugin to
+install::
 
                                        one Figure object
                                                │
@@ -41,19 +43,23 @@ every format below -- no separate figure per output, no plugin to install::
 ``fig.save(path, ...)`` dispatches on the file extension for the first
 four; ``fig.to_vega()`` / ``fig.to_vega_lite()`` return a JSON
 specification as a plain ``dict`` for a separate Vega/Vega-Lite runtime to
-render, rather than a rendered artifact -- useful for handing a figure to
-an existing Vega-based dashboard or notebook instead of embedding
-plotpress's own SVG/JS. See :doc:`user_guide/architecture` for exactly how
-much of the rendering pipeline each of these six actually shares, and where
-a format gets its own dedicated path instead.
+render -- a bridge to web-native visualization for handing a figure to an
+existing Vega-based dashboard or notebook, without rebuilding the plot from
+scratch. See :doc:`user_guide/architecture` for exactly how much of the
+rendering pipeline each of these six actually shares, and where a format
+gets its own dedicated path instead.
 
-Reading a figure back out of HTML
-------------------------------------
+A plot doesn't have to be a dead image.
+-----------------------------------------
 
-The interactive HTML above isn't a one-way trip: it embeds the plotted data
-and the figure's own layout as JSON alongside the SVG, so a later process --
-with none of the Python objects that built it still around -- can read a
-figure back out and rebuild it::
+A PNG tells someone what your data looked like. An interactive plotpress
+figure lets them explore what was plotted -- and recover the data behind it.
+
+When you save an interactive HTML figure, plotpress embeds the plotted data
+alongside the figure itself. The result is one self-contained file: open it
+in a browser, attach it to a paper, or archive it -- no server, no
+plotpress, no Python needed to view it. Months later, the same file can
+still be read back with Python::
 
              a saved .html (Figure.save(path, interactive=True))
                    embeds <script id="plotpress-pick"> and
@@ -81,9 +87,11 @@ figure back out and rebuild it::
                   the caller to replot the recovered "axes"
                                 data back into
 
-A freeform :meth:`~plotpress.figure.Figure.add_axes` rect, an inset, or a
-colorbar axes has no grid cell to rebuild from -- its index is listed in
-``layout["omitted_axes"]`` instead of silently vanishing. See
+The figure becomes more than an image -- it becomes a portable
+representation of the data it displays, ready to inspect, transform, or
+replot. A freeform :meth:`~plotpress.figure.Figure.add_axes` rect, an
+inset, or a colorbar axes has no grid cell to rebuild from -- its index is
+listed in ``layout["omitted_axes"]`` instead of silently vanishing. See
 :ref:`reading-html-data` for the full API and
 :doc:`/auto_examples/data_roundtrip/index` for worked examples.
 
@@ -97,47 +105,159 @@ available under ``ds.attrs["layout"]`` for
 :doc:`/auto_examples/data_roundtrip/index` for both paths worked through
 end to end.
 
-What it is for
---------------
+Built for scientific Python
+------------------------------
 
-plotpress is **not a matplotlib replacement**, and it does not try to match
-matplotlib's twenty years of breadth (no geographic projections or triangulated
-grids, a handful of font-metric families, and its polar / 3-D axes are projected onto the
-2-D core rather than a dedicated pipeline -- see :ref:`limitations`). It aims at
-a narrower, underserved spot: plotting where matplotlib's install footprint or
-global state gets in the way.
+plotpress gives you a familiar, matplotlib-shaped interface without
+requiring matplotlib itself:
 
-Reach for plotpress when you want to:
+- **Familiar API** -- create figures and axes, plot data, configure labels
+  and ticks, build legends, arrange subplots, and style figures the way
+  scientific Python users already expect.
+- **No pyplot, no globals** -- a ``Figure`` owns its own axes and its own
+  ``Style``. There is no process-wide "current figure" and no global
+  ``rcParams`` to get in the way of applications, libraries, or concurrent
+  workflows. :func:`plotpress.subplots` returns ``(fig, axes)`` just like
+  ``plt.subplots()`` -- but touches no global state.
+- **Dependency-light** -- built around Python and NumPy, with no compiled
+  extension. Hot paths are vectorized (coordinate formatting, min/max
+  decimation for huge lines), so it installs, and runs, cleanly in
+  environments where a large visualization stack isn't practical.
 
-- **Ship plots from a constrained runtime** -- locked-down servers, minimal
-  containers, Pyodide/WASM, or CI -- where a pure-Python + NumPy install with no
-  build toolchain and no per-platform wheels matters.
-- **Embed in web apps or notebooks** as SVG or self-contained interactive HTML
-  whose JS makes no external requests (works under strict CSPs like Jupyter).
-- **Write library or server code** that should never touch a global "current
-  figure" or a process-wide ``rcParams``.
+It is shaped, not drop-in: there's no ``pyplot`` state machine and not every
+matplotlib keyword is present -- treat the gallery as the compatibility
+surface.
 
-Reach for **matplotlib** (or seaborn, Plotly) when you need publication-grade
-typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or the
-deep ecosystem that pandas, seaborn and scikit-learn plot into. The
-:ref:`matplotlib-shaped API <matplotlib-shaped-api>` means moving between them is
-mostly mechanical.
+Interactive when you need it
+--------------------------------
 
-Highlights
-----------
+Static figures are great for papers. Interactive figures are great for
+everything else. plotpress can turn a figure into a self-contained HTML
+document with a toolbar for:
 
-- **No pyplot / no globals** -- a ``Figure`` owns its axes and its own ``Style``.
-- **Pure Python + NumPy**, no compiled extension -- installs everywhere ``pip`` does.
-- **SVG-first**, with PNG/PDF export and self-contained interactive HTML.
-- **matplotlib-shaped API** so moving code either direction is mostly mechanical.
+- Pan and zoom, over every axes at once or one at a time
+- Point picking, with extraction to CSV/JSON
+- Annotations, with a draggable label independent of the point it's pinned to
+- Frame and data sliders for 3-D/animated data (:meth:`~plotpress.axes.Axes.plot_frames`)
+- Interactive meshes -- picking works cell-by-cell on a ``pcolormesh``, not just a line's ``x``/``y``
+- Custom JavaScript tools, added to the same toolbar via ``extra_js``
 
-See the :ref:`example gallery <gallery>` for plots recreating matplotlib's
-"Plot types" reference, :ref:`large-scale figures <scale_gallery>` for the cases
-where build time and file size are the constraint -- including a head-to-head
-against matplotlib -- :ref:`live streaming <live_streaming_gallery>` for
-watching data update in a Qt window as it's collected, and
+There is no server to run and no external application required -- the HTML
+travels with its data and opens directly in a browser. Send someone a file,
+not a service they have to install. See :doc:`user_guide/interactivity` for
+the full toolbar reference.
+
+Scientific visualization, end to end
+----------------------------------------
+
+plotpress is designed around the way scientific figures actually get used::
+
+      ┌─────────────────────────────────────────────────────────┐
+      │                                                           │
+      ▼                                                           │
+   Explore ──► Analyze ──► Communicate ──► Publish ──► Archive ──► Reuse
+   (interact    (signal      (export        (share a    (keep figure
+    with a       processing,  SVG/PNG/PDF,   self-       + data as one
+    measurement, stats,       or share       contained   portable
+    building an  multi-       interactive    figure with artifact)
+    experiment)  dimensional  HTML)          its data)
+                 data)
+
+Load the figure back later (``plotpress.load_data``), recover its data, and
+the cycle starts again from Reuse.
+
+Made for real scientific workloads
+--------------------------------------
+
+plotpress isn't just a handful of basic plotting primitives -- it covers the
+kinds of figures scientists actually build:
+
+- **Signal processing** -- power spectral density, cross-spectral density,
+  coherence, spectrograms, autocorrelation, cross-correlation, and
+  magnitude/angle/phase spectra (pure-NumPy Welch estimators).
+- **2-D and gridded data** -- images, meshes (including curvilinear grids),
+  contours, vector fields, and logarithmic/power/symlog normalization for
+  large scientific fields.
+- **Statistical visualization** -- histograms, 2-D histograms, box plots,
+  violin plots, ECDFs, KDEs, event rasters, error bars, and hexbins.
+- **Complex figures** -- subplot grids, shared axes, colorbars (including
+  one shared across several axes), secondary axes, inset axes, grouped
+  panels, figure-level titles/labels, and mixed layouts.
+- **Animation** -- animated lines and meshes with frame sliders, exportable
+  as self-contained looping GIFs.
+- **Large figures** -- built to keep object and output-node counts under
+  control, so a very large multi-panel figure stays practical; see the
+  :doc:`/auto_examples/grouping/plot_13_full_scale_demo` example (500
+  ``pcolormesh`` panels across 250 grouped, individually colorbar'd pairs).
+
+See the :ref:`example gallery <gallery>` for a figure per plot type,
+:ref:`large-scale figures <scale_gallery>` for build-time and file-size
+comparisons against matplotlib, :ref:`live streaming <live_streaming_gallery>`
+for watching data update in a Qt window as it's collected, and
 :ref:`real applications <applications>` for a hundred-odd figures built from
 the data real measurements produce, grouped by field.
+
+Designed for constrained environments
+-----------------------------------------
+
+Scientific software doesn't always run on a developer laptop. plotpress
+targets environments where a conventional plotting stack can be hard to
+deploy: locked-down networks, offline systems, minimal containers, CI,
+scientific and web applications, Pyodide/WASM, library and server code, and
+shared computing environments. No GUI is required to create a figure, no
+global plotting state is required, and interactive HTML needs no running
+server.
+
+plotpress is **not a matplotlib replacement**, and it does not try to match
+matplotlib's twenty years of breadth (no geographic projections or
+triangulated grids, a handful of font-metric families, and its polar / 3-D
+axes are projected onto the 2-D core rather than a dedicated pipeline --
+see :ref:`limitations`). It aims at a narrower, underserved spot: plotting
+where matplotlib's install footprint or global state gets in the way.
+
+Reach for **matplotlib** (or seaborn, Plotly) when you need publication-grade
+typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or
+the deep ecosystem that pandas, seaborn and scikit-learn plot into. The
+:ref:`matplotlib-shaped API <matplotlib-shaped-api>` means moving between
+them is mostly mechanical.
+
+One API. One figure. Many representations.
+-----------------------------------------------
+
+The figure should be independent of where you eventually use it::
+
+                            ┌─────────── SVG
+                            │
+                            ├─────────── PNG
+                            │
+   Scientific Python ──► Figure ─────── PDF
+                            │
+                            ├─────────── HTML ──► explore
+                            │                     share
+                            │                     recover data
+                            │
+                            ├─────────── Vega
+                            │
+                            └─────────── Vega-Lite
+
+Create the visualization once, choose how to render it later, and keep the
+data available for whenever you need it again.
+
+Start plotting
+------------------
+
+.. code-block:: bash
+
+   pip install plotpress
+
+.. code-block:: python
+
+   import plotpress
+   fig, ax = plotpress.subplots()
+   ax.plot(x, y)
+   fig.save("figure.html", interactive=True)
+
+Explore it in a browser. Share the file. Archive it. Load it again.
 
 .. toctree::
    :maxdepth: 1
