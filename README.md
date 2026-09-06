@@ -29,7 +29,7 @@ inlined into that one file, so anyone can open and interact with it with
 nothing installed on their end — no Python, no plotpress, no internet
 connection, just a browser. Email it, drop it in a chat, put it on a USB
 stick — it still works. PyPI/GitHub READMEs can't run the page's own script,
-so the three GIFs below stand in for it; open one yourself (or click through
+so the four GIFs below stand in for it; open one yourself (or click through
 to the
 [real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html),
 embedded exactly this way) and it's fully live.
@@ -47,6 +47,15 @@ line's `x`/`y` — then extracting every picked point as CSV/JSON:
 point it's pinned to:
 
 ![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
+
+**At scale**, every gesture above still works the same way on a figure with
+hundreds of axes — zoom from the full grid into a handful of panels, pan,
+pick a value, remove it, pick again and drag its label, pan to a distant
+group, annotate, then back Home (the figure is
+[`docs/examples/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_examples/grouping/plot_13_full_scale_demo.html) —
+500 `pcolormesh` panels, 250 groups, each with its own colorbar):
+
+![Zooming from a 500-panel figure into a handful of panels, panning, picking a value, removing and re-picking it, dragging its label, panning to a distant group, annotating, then Home](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
 
 ## One figure, several outputs
 
