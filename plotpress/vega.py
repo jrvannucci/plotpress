@@ -67,7 +67,7 @@ from .artists import (
     Bars, ErrorBar, Line2D, Pie, QuadMesh, ScatterCollection, Stem, Text,
     Annotation, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, to_hex
+from .colors import Normalize, colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import pie_center_radius, pie_label_positions
@@ -119,7 +119,10 @@ def figure_to_vega(fig, mesh_data: bool = False) -> dict:
     groups = []
     legend_axes = []
     for i, ax in enumerate(fig.axes):
-        if ax._is_colorbar or not ax._visible:
+        if not ax._visible:
+            continue
+        if ax._is_colorbar:
+            groups.append(_colorbar_to_group(ax, i, W, H, fig.style))
             continue
         groups.append(_axes_to_group(ax, i, W, H, size_scale, fig.style, mesh_data))
         if ax._show_legend:
@@ -206,6 +209,69 @@ def _axis_def(orient, scale_name, label, grid, custom_ticks, custom_labels, scal
                 "text": {"scale": label_scale, "field": "value"},
             }}}
     return axis
+
+
+def _colorbar_to_group(ax, i, W, H, st):
+    """A colorbar axes as its own Vega group: a gradient ``image`` mark (the
+    same 256x1-LUT-as-a-stretched-image technique svg.py's own
+    ``_render_colorbar`` uses) plus tick ``rule``/``text`` marks along its
+    right edge.
+
+    Not routed through ``_axes_to_group``/``artist_to_prims`` -- a colorbar
+    has no data-space x/y scale to encode marks against (its own
+    ``_resolved_limits()`` is meaningless placeholder 0..1), just a fixed
+    pixel rect and a ``Normalize`` to read tick positions from -- closer to
+    a `Text`/`Image` figure decoration than a real axes.
+    """
+    alloc = _pixel_rect(ax, W, H)
+    xlim, ylim = ax._resolved_limits()
+    px_left, px_top, px_w, px_h = _effective_rect(ax, *alloc, xlim, ylim)
+    src = ax._cbar_source
+    lut = src.lut
+    grad = np.flipud(lut).reshape(-1, 1, 3)  # top = vmax, matches svg.py
+    alpha = np.full((grad.shape[0], 1, 1), 255, np.uint8)
+    rgba = np.concatenate([grad, alpha], axis=2)
+    marks = [{
+        "type": "image",
+        "encode": {"enter": {
+            "x": {"value": round(float(px_left), 2)},
+            "y": {"value": round(float(px_top), 2)},
+            "width": {"value": round(float(px_w), 2)},
+            "height": {"value": round(float(px_h), 2)},
+            "url": {"value": png_data_uri(rgba)},
+            "smooth": {"value": False}, "aspect": {"value": False},
+        }},
+    }]
+    _, fracs, tlabels = colorbar_ticks(src.norm)
+    for frac, lab in zip(fracs, tlabels):
+        y = px_top + (1 - frac) * px_h
+        marks.append({
+            "type": "rule",
+            "encode": {"enter": {
+                "x": {"value": round(float(px_left + px_w), 2)}, "y": {"value": round(float(y), 2)},
+                "x2": {"value": round(float(px_left + px_w + st.tick_size), 2)}, "y2": {"value": round(float(y), 2)},
+                "stroke": {"value": _color(st.spine_color)},
+                "strokeWidth": {"value": float(st.tick_width)},
+            }},
+        })
+        marks.append({
+            "type": "text",
+            "encode": {"enter": {
+                "x": {"value": round(float(px_left + px_w + st.tick_size + 2), 2)},
+                "y": {"value": round(float(y + st.tick_label_size * 0.35), 2)},
+                "text": {"value": str(lab)},
+                "fontSize": {"value": float(st.tick_label_size)},
+                "fill": {"value": _color(st.text_color)},
+            }},
+        })
+    return {
+        "type": "group", "name": f"axes{i}",
+        "encode": {"enter": {
+            "x": {"value": 0}, "y": {"value": 0},
+            "width": {"value": round(float(W), 2)}, "height": {"value": round(float(H), 2)},
+        }},
+        "marks": marks,
+    }
 
 
 def _axes_to_group(ax, i, W, H, size_scale, st, mesh_data=False):

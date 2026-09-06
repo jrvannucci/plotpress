@@ -36,6 +36,23 @@ anywhere in the source.
   `flex-shrink:0`, so an oversized figure is simply centered with the page
   free to scroll to see the rest, instead of distorted. Found opening the
   20x25-subplot demo figure above in a real browser.
+- **`Figure.to_vega()` silently dropped every colorbar, with no warning at
+  all** -- unlike every other unsupported case in this file, and unlike
+  `to_vega_lite()`, which at least caveats the same drop. A colorbar axes
+  now renders as its own group: the same 256x1-gradient-stretched-into-an-
+  `image` technique `svg.py`'s own `_render_colorbar` uses, plus `rule`/
+  `text` marks for its ticks (`colorbar_ticks()`, honoring `LogNorm`/
+  `PowerNorm`/`SymLogNorm` the same way the SVG/PNG backends do). A mesh
+  figure exported via `to_vega()` used to silently lose its color scale
+  entirely -- found auditing every `docs/examples`/`docs/applications`
+  script's Vega export against a real Vega engine, not just checking the
+  JSON structure.
+- **`Figure.to_vega_lite()` dropped a colorbar with only a caveat, never a
+  real spec** -- Vega-Lite has no standalone gradient-legend mark, but the
+  same gradient-image technique above needs no legend mark at all. A
+  colorbar now exports as its own standalone panel (still can't join the
+  grid -- Vega-Lite's composition has no slot to place it relative to its
+  parent axes -- so it's still a caveat, just no longer an empty one).
 
 ## [0.24.0] - 2026-09-05
 

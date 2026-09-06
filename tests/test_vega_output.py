@@ -386,7 +386,12 @@ def test_unsupported_artist_warns_and_skips_but_the_rest_of_the_figure_exports()
     assert len(_marks_of_type(group, "rect")) == 0   # the boxplot itself never rendered
 
 
-def test_colorbar_and_hidden_axes_are_excluded():
+def test_colorbar_renders_as_its_own_group_hidden_axes_are_excluded():
+    """Regression: a colorbar axes used to be skipped outright (`if
+    ax._is_colorbar: continue`), silently dropping it from the export with
+    no warning at all -- unlike to_vega_lite(), which at least caveats the
+    same drop. It now gets a real group (gradient image + tick rule/text
+    marks), matching what svg.py's own _render_colorbar draws."""
     fig, ax = plotpress.subplots()
     mesh = ax.pcolormesh(np.arange(4.0).reshape(2, 2))
     fig.colorbar(mesh, ax=ax)
@@ -395,7 +400,12 @@ def test_colorbar_and_hidden_axes_are_excluded():
     ax2.set_visible(False)
 
     spec = fig.to_vega()
-    assert len(spec["marks"]) == 1   # the colorbar axes must not get its own group
+    assert len(spec["marks"]) == 2   # the axes group and the colorbar's own group
+    cbar_group = spec["marks"][1]
+    assert cbar_group["name"] == "axes1"
+    types = [m["type"] for m in cbar_group["marks"]]
+    assert types[0] == "image"
+    assert "rule" in types and "text" in types
 
     spec2 = fig2.to_vega()
     assert len(spec2["marks"]) == 0   # nothing visible to draw

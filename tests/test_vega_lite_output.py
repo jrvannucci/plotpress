@@ -342,13 +342,27 @@ def test_grid_span_is_placed_once_not_duplicated():
     assert any("spans rows" in c for c in caveats)
 
 
-def test_colorbar_axes_is_dropped_with_a_caveat_not_silently():
+def test_colorbar_axes_exports_as_a_standalone_gradient_panel():
+    """Regression: a colorbar axes used to be dropped outright with just a
+    caveat -- it never reached "standalone" -- because it has no artists of
+    its own for the generic per-axes builder to find (fig.colorbar() draws
+    it via a separate _cbar_source-reading path, not ax.artists). It now
+    gets a real gradient image + tick rule/text spec, matching what
+    plotpress.vega.figure_to_vega renders for the same axes; Vega-Lite's
+    grid composition still has no slot to place it in relative to its
+    parent, so it's still a caveat-carrying standalone entry, not a grid
+    member."""
     fig, ax = plotpress.subplots()
     mesh = ax.pcolormesh([0, 1], [0, 1], [[1]])
     fig.colorbar(mesh, ax=ax)
     result, caveats = fig.to_vega_lite()
-    assert result["standalone"] == []
+    assert len(result["standalone"]) == 1
     assert any("colorbar" in c for c in caveats)
+    spec = result["standalone"][0]
+    assert spec["width"] > 0 and spec["height"] > 0
+    types = [layer["mark"]["type"] for layer in spec["layer"]]
+    assert types[0] == "image"
+    assert "rule" in types and "text" in types
 
 
 def test_twiny_gets_independent_x_not_y():

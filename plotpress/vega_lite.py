@@ -81,6 +81,7 @@ from .artists import (
 from .png import png_data_uri
 from .primitives import pie_center_radius, pie_label_positions
 from .svg import _effective_rect, _pixel_rect
+from .colors import colorbar_ticks
 from .vega import (
     _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
     _symbol_size,
@@ -126,17 +127,21 @@ def figure_to_vega_lite(fig, mesh_data: bool = False) -> tuple[dict, list[str]]:
       couldn't join the grid: a single axes with nothing to grid against,
       axes from a mismatched-shape grid, and any axes Vega-Lite's own
       composition model has no slot for at all (``add_axes()`` free rects,
-      ``inset_axes()``, secondary axes) -- a **twin** (``twinx``/``twiny``)
-      is the one exception, merged into its parent's own spec as an extra
-      ``layer`` with an independent scale on the shared channel
-      (``resolve.scale.y: "independent"`` for ``twinx``, ``.x`` for
-      ``twiny`` -- whichever axis the twin doesn't share) instead, since
-      dropping an entire overlaid series is the worst of the fallbacks
-      available. A colorbar axes has no artists of its own to export at
-      all (``fig.colorbar()`` draws it through a separate path ``svg.py``
-      reads, not ``ax.artists``) and no Vega-Lite gradient-legend mark to
-      stand in for it, so it is simply dropped, with a caveat -- it never
-      reaches ``"standalone"``.
+      ``inset_axes()``, secondary axes, colorbars) -- a **twin**
+      (``twinx``/``twiny``) is the one exception, merged into its parent's
+      own spec as an extra ``layer`` with an independent scale on the
+      shared channel (``resolve.scale.y: "independent"`` for ``twinx``,
+      ``.x`` for ``twiny`` -- whichever axis the twin doesn't share)
+      instead, since dropping an entire overlaid series is the worst of
+      the fallbacks available. A colorbar axes has no artists of its own
+      (``fig.colorbar()`` draws it through a separate path ``svg.py``
+      reads, not ``ax.artists``), so it gets its own builder rather than
+      the generic per-artist one -- a gradient ``image`` mark plus tick
+      ``rule``/``text`` layers, the same technique
+      :func:`plotpress.vega.figure_to_vega` uses -- but it still can't
+      join the grid (Vega-Lite's composition has nowhere to place it
+      relative to the axes it belongs to), so it reaches
+      ``"standalone"`` like any other entangled axes, with a caveat.
 
     ``caveats`` lists every structural compromise made building the result
     (a dropped entangled axes, a grid-shape mismatch forcing the standalone
@@ -214,14 +219,19 @@ def figure_to_vega_lite(fig, mesh_data: bool = False) -> tuple[dict, list[str]]:
         if ax._is_colorbar:
             # A colorbar axes has no artists of its own (fig.colorbar()
             # draws it via a separate _cbar_source/_cbar_parents-reading
-            # path, not ax.artists -- see svg.py's _render_colorbar), so
-            # _axes_to_vl_spec always finds nothing exportable here. Say so
-            # plainly rather than claim it was "exported independently"
-            # when nothing actually was.
+            # path, not ax.artists -- see svg.py's _render_colorbar), so it
+            # needs its own builder rather than _axes_to_vl_spec (which
+            # would find nothing exportable here). Exported as its own
+            # standalone gradient-image panel instead of dropped outright --
+            # Vega-Lite still has no composition slot to place it relative
+            # to its parent axes, so it can't join the grid either.
             caveats.append(
-                f"axes {i} is a colorbar -- Vega-Lite has no standalone "
-                "gradient-legend mark to export it as, so it was dropped."
+                f"axes {i} is a colorbar -- Vega-Lite's hconcat/vconcat "
+                "composition has no way to position it relative to the "
+                "axes it belongs to, so it was exported as its own "
+                "independent gradient-image panel instead."
             )
+            standalone.append(_colorbar_to_vl_spec(ax))
             continue
         kind = ("an inset_axes()" if ax._inset_parent is not None else
                 "a secondary_xaxis()/secondary_yaxis()" if ax._secondary_of is not None else
@@ -377,6 +387,67 @@ def _find_spec_for_axes(ax, container):
 
 
 # ---- one axes -> one Vega-Lite spec ------------------------------------
+
+def _colorbar_to_vl_spec(ax):
+    """A colorbar axes as its own standalone Vega-Lite spec: a gradient
+    ``image`` mark (the same 256x1-LUT-as-a-stretched-image technique
+    ``svg.py``'s own ``_render_colorbar`` and ``plotpress.vega``'s
+    ``_colorbar_to_group`` both use) layered with ``rule``/``text`` marks
+    for its ticks, each a literal-dataset layer since none of this has a
+    real data-space x/y scale to encode against -- just a fixed pixel size
+    and a ``Normalize`` to read tick positions from.
+    """
+    fig = ax.figure
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    xlim, ylim = ax._resolved_limits()
+    _, _, w, h = _effective_rect(ax, *_pixel_rect(ax, W, H), xlim, ylim)
+    st = ax.style
+    src = ax._cbar_source
+    lut = src.lut
+    grad = np.flipud(lut).reshape(-1, 1, 3)  # top = vmax, matches svg.py
+    alpha = np.full((grad.shape[0], 1, 1), 255, np.uint8)
+    rgba = np.concatenate([grad, alpha], axis=2)
+    url = png_data_uri(rgba)
+
+    no_axis = {"domain": False, "ticks": False, "labels": False, "grid": False,
+              "title": None}
+    layers = [{
+        "data": {"values": [{"x": 0, "x2": w, "y": 0, "y2": h, "url": url}]},
+        "mark": {"type": "image", "aspect": False, "smooth": False},
+        "encoding": {
+            "x": {"field": "x", "type": "quantitative",
+                 "scale": {"domain": [0, w]}, "axis": no_axis},
+            "x2": {"field": "x2"},
+            "y": {"field": "y", "type": "quantitative",
+                 "scale": {"domain": [0, h]}, "axis": no_axis},
+            "y2": {"field": "y2"},
+            "url": {"field": "url", "type": "nominal"},
+        },
+    }]
+    _, fracs, tlabels = colorbar_ticks(src.norm)
+    if fracs.size:
+        rows = [{"y": float((1 - f) * h), "label": str(lab)}
+               for f, lab in zip(fracs, tlabels)]
+        y_enc = {"field": "y", "type": "quantitative",
+                "scale": {"domain": [0, h]}, "axis": no_axis}
+        layers.append({
+            "data": {"values": rows},
+            "mark": {"type": "rule", "color": _color(st.spine_color),
+                    "strokeWidth": float(st.tick_width)},
+            "encoding": {"y": y_enc, "x": {"datum": w}, "x2": {"datum": w + st.tick_size}},
+        })
+        layers.append({
+            "data": {"values": rows},
+            "mark": {"type": "text", "align": "left", "dx": st.tick_size + 2,
+                    "fontSize": float(st.tick_label_size), "color": _color(st.text_color)},
+            "encoding": {"y": y_enc, "x": {"datum": w}, "text": {"field": "label", "type": "nominal"}},
+        })
+    return {
+        "name": f"axes{id(ax):x}",
+        "width": round(float(w), 2), "height": round(float(h), 2),
+        "layer": layers,
+    }
+
 
 def _axes_to_vl_spec(ax, size_scale, mesh_data=False, stacklevel=4):
     """One axes' own content as a single-view (or layered) Vega-Lite spec,
