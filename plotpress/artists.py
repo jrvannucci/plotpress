@@ -99,7 +99,8 @@ def finite_range(a):
 
 class Line2D(Artist):
     def __init__(self, x, y, color, linewidth, linestyle="-", label=None, alpha=1.0,
-                 values=None, marker=None, markersize=None, markerfacecolor=None):
+                 values=None, marker=None, markersize=None, markerfacecolor=None,
+                 markeredgecolor=None, markeredgewidth=None):
         self.x = np.asarray(x, dtype=float)
         self.y = np.asarray(y, dtype=float)
         self.color = color
@@ -110,13 +111,17 @@ class Line2D(Artist):
         # Extra per-point dimensions (name -> array) surfaced by point picking,
         # e.g. z or any 4th+ value beyond x/y.
         self.pick_values = dict(values) if values else {}
-        # A marker at each vertex, in addition to the line itself -- only
-        # round shapes render as anything but a dot (see _warn_marker_shape),
-        # same limitation scatter()/errorbar() already have. markerfacecolor
-        # defaults to the line's own color, matching matplotlib.
+        # A marker at each vertex, in addition to the line itself.
+        # markerfacecolor defaults to the line's own color, matching
+        # matplotlib; markeredgecolor/markeredgewidth outline it the same
+        # way scatter()'s edgecolors/linewidths already do -- same
+        # Markers primitive underneath, just not reachable from plot()
+        # itself before.
         self.marker = marker
         self.markersize = markersize
         self.markerfacecolor = markerfacecolor
+        self.markeredgecolor = markeredgecolor
+        self.markeredgewidth = markeredgewidth
 
     def data_bounds(self):
         if self.x.size == 0:
@@ -777,7 +782,8 @@ class Bars(Artist):
     """Rectangular bars (bar / barh / hist)."""
 
     def __init__(self, pos, length, thickness, base, orientation, color,
-                 edgecolor=None, linewidth=0.8, label=None, alpha=1.0):
+                 edgecolor=None, linewidth=0.8, label=None, alpha=1.0,
+                 hatch=None):
         self.pos = np.atleast_1d(np.asarray(pos, float))
         self.length = np.atleast_1d(np.asarray(length, float))
         self.thickness = _broadcast_field(thickness, self.pos.shape)
@@ -788,6 +794,11 @@ class Bars(Artist):
         self.linewidth = linewidth
         self.label = label
         self.alpha = alpha
+        # matplotlib's hatch characters -- '/','\\','|','-','+','x' render as
+        # a real tiled pattern (see svg._hatch_pattern_def); anything else is
+        # ignored (plain fill), not an error, matching an unrecognized
+        # marker's own graceful fallback.
+        self.hatch = hatch
 
     def data_bounds(self):
         if self.pos.size == 0:

@@ -955,7 +955,8 @@ class Figure:
 
     # -- figure-level legend ------------------------------------------------
     def legend(self, ax=None, loc="lower center", ncol=1, title=None,
-               pad=0.01, fontsize=None, framealpha=0.85) -> "Figure":
+               pad=0.01, fontsize=None, framealpha=0.85, handles=None,
+               labels=None, bbox_to_anchor=None) -> "Figure":
         """One legend for the whole figure, drawn from labelled artists.
 
         The counterpart to :meth:`colorbar` over a list of axes: a grid whose
@@ -966,16 +967,39 @@ class Figure:
         ``ax`` selects which axes contribute (default: all of them).
         ``fontsize``/``framealpha`` match :meth:`Axes.legend`.
 
+        ``handles`` overrides which artists appear -- any plotpress artist,
+        from any axes (or none), in the order given, regardless of their own
+        ``label`` -- the only way to legend a figure whose panels are
+        meshes/contours/filled regions with no labeled *line* artist to draw
+        from. Pair with ``labels`` to also override the text shown for each,
+        positionally; without it, each handle's own ``label`` is used.
+        ``handles``/``labels`` take precedence over ``ax`` (a handle already
+        names its own source).
+
         ``loc`` names a placement in **figure** coordinates. The four outside
         placements -- ``"lower center"``, ``"upper center"``, ``"right"`` and
         ``"center left"`` (also ``"center right"``) -- reserve a band at that
         edge and shrink the subplot grid to fit, so the legend never lands on a
         plot. Any other name overlays without reserving, matching how an axes
-        legend sits inside its own rect.
+        legend sits inside its own rect. ``bbox_to_anchor=(x, y)``, in whole-
+        figure fraction coordinates (``(0, 0)`` bottom-left, ``(1, 1)``
+        top-right), places the ``loc`` corner of the legend box at that exact
+        point instead of ``loc``'s own inset/edge position -- the common way
+        to put a figure-level legend just outside every panel, e.g.
+        ``loc="upper left", bbox_to_anchor=(1.0, 1.0)``. Whether space is
+        reserved is still purely up to ``loc`` (one of the four named edges
+        above, or not) -- ``bbox_to_anchor`` only fine-tunes where inside (or
+        outside) that reservation, if any, the box actually lands, and can
+        place it outside the figure canvas entirely.
 
         Order relative to :meth:`tight_layout` does not matter -- the reservation
         is re-applied whenever the grid is reflowed.
         """
+        if handles is not None:
+            handles = list(handles)
+            if labels is not None:
+                for h, lbl in zip(handles, labels):
+                    h.label = lbl
         self._figure_legend = {
             "axes": _flatten_axes(ax) if ax is not None else None,
             "loc": loc,
@@ -984,6 +1008,9 @@ class Figure:
             "pad": float(pad),
             "fontsize": fontsize,
             "framealpha": framealpha,
+            "handles": handles,
+            "bbox_to_anchor": (None if bbox_to_anchor is None else
+                              (float(bbox_to_anchor[0]), float(bbox_to_anchor[1]))),
         }
         _layout_figure_legend(self)
         return self
@@ -1360,13 +1387,23 @@ class Figure:
     # therefore fall back to the clean static SVG above; for an interactive
     # figure in a notebook, embed to_html() in an <iframe> (see the docs).
 
-    def save(self, path: str, interactive: bool = False, scale: int = 2,
+    def save(self, path, interactive: bool = False, scale: int = 2,
              pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
              pick_max_points: int = 20000, binary_pick_data: bool = True,
              fps: int = 10, slider_unit: str = "main", label_frames: bool = True,
-             include_default_js: bool = True, extra_js: str = None):
+             include_default_js: bool = True, extra_js: str = None,
+             dpi: float = None, transparent: bool = False, format: str = None):
         """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``,
         ``.gif``, ``.eps``, ``.jpg``/``.jpeg``, or ``.webp``.
+
+        ``path`` may also be a file-like object (a ``BytesIO``, an open
+        file) instead of a filename -- the standard ``fig.savefig(buf,
+        format="png")`` idiom for serving a figure without touching disk.
+        ``format`` names the format explicitly (a bare extension, with or
+        without the leading dot); it is **required** when ``path`` is a
+        file-like object, since there is no filename to read an extension
+        from, and optional otherwise, where it overrides whatever the
+        path's own extension would have picked.
 
         All formats work with the standard install (PNG/JPEG/WebP are a
         supersampled raster; PDF/EPS are vector). ``pick_precision``/
@@ -1387,9 +1424,29 @@ class Figure:
         stays the better default unless a downstream consumer specifically
         needs one of these. ``.eps`` is vector, like ``.pdf`` -- for
         submission pipelines that still require EPS specifically.
+
+        ``dpi`` (PNG/JPEG only) overrides ``Style.dpi`` for this save alone,
+        without mutating the figure -- a physically larger/smaller image at
+        the same layout proportions (fonts, markers and margins all scale
+        with it, exactly as they would if ``Style.dpi`` itself had been set
+        that way), and the dpi value the saved file's own metadata reports.
+        ``transparent`` (PNG only -- JPEG has no alpha channel) drops the
+        figure's own background fill, leaving the outer canvas transparent
+        instead of painted with ``Style.facecolor``; each axes' own
+        ``facecolor`` is unaffected.
         """
-        lower = path.lower()
-        if lower.endswith(".html") or lower.endswith(".htm"):
+        is_buffer = hasattr(path, "write")
+        if format is not None:
+            ext = format.lower().lstrip(".")
+        elif is_buffer:
+            raise ValueError(
+                "save(): format= is required when path is a file-like "
+                "object -- there is no filename to read an extension from"
+            )
+        else:
+            ext = os.path.splitext(os.fspath(path))[1].lower().lstrip(".")
+
+        if ext in ("html", "htm"):
             content = self.to_html(interactive=interactive,
                                    pick_precision=pick_precision,
                                    pick_max_mesh_cells=pick_max_mesh_cells,
@@ -1397,33 +1454,37 @@ class Figure:
                                    binary_pick_data=binary_pick_data,
                                    include_default_js=include_default_js,
                                    extra_js=extra_js)
-        elif lower.endswith(".svg"):
+        elif ext == "svg":
             content = self.to_svg()
-        elif lower.endswith(".png"):
+        elif ext == "png":
             from .raster import save_png
-            return save_png(self, path, scale=scale)
-        elif lower.endswith(".jpg") or lower.endswith(".jpeg"):
+            return save_png(self, path, scale=scale, dpi=dpi, transparent=transparent)
+        elif ext in ("jpg", "jpeg"):
             from .raster import save_jpeg
-            return save_jpeg(self, path, scale=scale)
-        elif lower.endswith(".webp"):
+            return save_jpeg(self, path, scale=scale, dpi=dpi)
+        elif ext == "webp":
             from .raster import save_webp
             return save_webp(self, path, scale=scale)
-        elif lower.endswith(".pdf"):
+        elif ext == "pdf":
             from .raster import save_pdf
             return save_pdf(self, path)
-        elif lower.endswith(".eps"):
+        elif ext == "eps":
             from .raster import save_eps
             return save_eps(self, path)
-        elif lower.endswith(".gif"):
+        elif ext == "gif":
             from .raster import save_gif
             return save_gif(self, path, fps=fps, scale=scale,
                            slider_unit=slider_unit, label_frames=label_frames)
         else:
             raise ValueError(
-                "save() supports .svg/.html/.png/.jpg/.jpeg/.webp/.pdf/.eps/"
-                ".gif (got %r)" % path)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+                "save() supports svg/html/png/jpg/jpeg/webp/pdf/eps/gif "
+                f"(got path={path!r}, format={format!r})"
+            )
+        if is_buffer:
+            path.write(content)
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
         return path
 
     def savefig(self, path, **kwargs):
@@ -2567,6 +2628,10 @@ def _load_single_figure(text):
                 "y": np.asarray(s["y"], dtype=float),
                 "vals": {k: np.asarray(v, dtype=float)
                         for k, v in s.get("vals", {}).items()},
+                # None for a file saved before these existed, or a series
+                # kind (box/violin/quiver/event/contour) that never carried
+                # one meaningful color/label to begin with.
+                "label": s.get("label"), "color": s.get("color"),
             })
         meshes = []
         for msh in entry.get("meshes", []):
@@ -2682,7 +2747,8 @@ def load_data(path: str, by_index: bool = False):
     -- for an untitled one), and ``"layout"``::
 
         {"series": [{"kind": "line", "x": array, "y": array,
-                    "vals": {name: array, ...}}, ...],
+                    "vals": {name: array, ...},
+                    "label": str | None, "color": str | None}, ...],
          "meshes": [{"x": array,          # 1-D cell centers (None if curvilinear)
                      "y": array,          # 1-D cell centers (None if curvilinear)
                      "z": array,          # 2-D, shape (ny, nx), row 0 = ymin
@@ -2692,6 +2758,16 @@ def load_data(path: str, by_index: bool = False):
          "title": str | None, "xlabel": str | None, "ylabel": str | None,
          "zlabel": str | None, "xlim": (float, float) | None,
          "ylim": (float, float) | None, "xscale": str, "yscale": str}
+
+    A series' ``"label"``/``"color"`` are the artist's own ``label=``/
+    (single, resolved) ``color=`` at save time -- ``None`` for a file saved
+    before these existed, an unlabeled/uncolored series, a
+    colormap-mapped ``scatter(c=...)`` (no one color to report), or a kind
+    with no single meaningful color/label at all (box/violin/quiver/event/
+    contour). Real for ``"line"``/``"scatter"``/``"stem"``/``"errorbar"``/
+    ``"bar"``, which is enough to rebuild a labeled, colored legend after
+    replotting recovered data -- see
+    :func:`~plotpress.figure.subplots_from_layout`.
 
     ``"layout"`` is the figure-level structure -- grid shape/position and
     every decoration (title, labels, limits, scale, ...) of each

@@ -25,6 +25,9 @@ from .colors import apply_colormap, resolve_colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import pie_center_radius, pie_label_positions, tick_axis_edge
+from .primitives import (
+    marker_polygon, marker_shape_kind, marker_strokes, normalize_marker_shape,
+)
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -680,11 +683,12 @@ def pick_data(fig, max_points=20000, max_mesh_cells=250000, precision=6):
                 series.append({
                     "kind": "scatter" if isinstance(art, ScatterCollection) else "line",
                     "x": _round_list(art.x), "y": _round_list(art.y),
-                    "vals": vals,
+                    "vals": vals, "label": art.label, "color": art.color,
                 })
             elif isinstance(art, Stem):
                 series.append({"kind": "stem", "x": _round_list(art.x),
-                               "y": _round_list(art.y), "vals": {}})
+                               "y": _round_list(art.y), "vals": {},
+                               "label": art.label, "color": art.linecolor})
             elif isinstance(art, ErrorBar):
                 vals = {}
                 if art.yerr is not None:
@@ -692,15 +696,25 @@ def pick_data(fig, max_points=20000, max_mesh_cells=250000, precision=6):
                 if art.xerr is not None:
                     vals["xerr"] = _round_list(art.xerr)
                 series.append({"kind": "errorbar", "x": _round_list(art.x),
-                               "y": _round_list(art.y), "vals": vals})
+                               "y": _round_list(art.y), "vals": vals,
+                               "label": art.label, "color": art.color})
             elif isinstance(art, Bars):
                 if art.orientation == "vertical":
                     xs, ys = art.pos, art.base + art.length
                 else:
                     xs, ys = art.base + art.length, art.pos
+                # Bars.colors is always a per-bar list (_as_colors()
+                # broadcasts a single color to one per bar) -- only when
+                # every bar actually shares one color does that collapse to
+                # one meaningful "color" here, matching the honest
+                # "nothing to preserve" behavior a per-point scatter color
+                # already has (see the line/scatter branch above).
+                bar_color = (art.colors[0] if art.colors and
+                            all(c == art.colors[0] for c in art.colors) else None)
                 series.append({"kind": "bar", "x": _round_list(xs),
                                "y": _round_list(ys),
-                               "vals": {"value": _round_list(art.length)}})
+                               "vals": {"value": _round_list(art.length)},
+                               "label": art.label, "color": bar_color})
             elif isinstance(art, Quiver):
                 series.append({"kind": "quiver", "x": _round_list(art.X),
                                "y": _round_list(art.Y),
@@ -1084,7 +1098,7 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         elif isinstance(artist, FrameQuadMesh):
             _render_framequadmesh(artist, tr, index, k, body)
         elif isinstance(artist, Bars):
-            _render_bars(artist, tr, index, k, body)
+            _render_bars(artist, tr, index, k, body, defs)
         elif isinstance(artist, Stem):
             _render_stem(artist, tr, st, fig, body)
         elif isinstance(artist, ErrorBar):
@@ -1197,7 +1211,14 @@ def _prim_color(c):
 
 
 def _emit_markers(p) -> str:
-    """Markers as zero-length round-capped strokes -> circular dots.
+    shape = getattr(p, "shape", "o") or "o"
+    if shape in ("o", "."):
+        return _emit_round_markers(p)
+    return _emit_shaped_markers(p, shape)
+
+
+def _emit_round_markers(p) -> str:
+    """Round markers as zero-length round-capped strokes -> circular dots.
 
     Tagged ``plotpress-marker`` so the interactive CSS (see _interactive.py)
     can single them out of the zoom group's usual non-scaling-stroke rule --
@@ -1250,6 +1271,70 @@ def _emit_markers(p) -> str:
                     f'stroke-width="{_fmt(dm)}" stroke-linecap="round"/>')
     return (f'<g class="plotpress-series plotpress-marker"{idattr} '
             f'data-label="{_esc(p.label)}"{op}>{"".join(parts)}</g>')
+
+
+def _emit_shaped_markers(p, shape: str) -> str:
+    """Non-round marker shapes -- square/triangle(x4)/diamond as filled
+    polygons, plus/x as open strokes -- batched into one ``<path>`` per
+    (shape, color) group in the common case (one color, one size), the same
+    discipline :func:`_emit_round_markers` uses for the round case.
+
+    Each polygon/stroke is built from :func:`~plotpress.primitives.
+    marker_polygon`/``marker_strokes``, offset from the marker's own pixel
+    center -- unlike the round case's zero-length-stroke trick, this needs a
+    real per-point coordinate list, but it's the same vertex count either
+    way (a handful of points per marker, nothing close to mesh-cell scale).
+    """
+    pts, diam = p.points, p.diameters
+    finite = np.isfinite(pts).all(axis=1)
+    idattr = f' id="{p.series_id}"' if p.series_id else ""
+    is_stroke = marker_shape_kind(shape) == "stroke"
+    same_size = diam.size and float(np.ptp(diam)) < 1e-9
+
+    def path_d(cx, cy, r):
+        if is_stroke:
+            return "".join(
+                f"M{_fmt(cx + ax)},{_fmt(cy + ay)}L{_fmt(cx + bx)},{_fmt(cy + by)}"
+                for (ax, ay), (bx, by) in marker_strokes(shape, r))
+        verts = marker_polygon(shape, r)
+        head = f"M{_fmt(cx + verts[0][0])},{_fmt(cy + verts[0][1])}"
+        tail = "".join(f"L{_fmt(cx + dx)},{_fmt(cy + dy)}" for dx, dy in verts[1:])
+        return head + tail + "Z"
+
+    parts = []
+    if is_stroke:
+        # An open shape (plus/x) has no interior to fill and no separate
+        # edge to outline -- its "color" is the stroke itself, matching
+        # matplotlib's own plus/x markers.
+        op = f' stroke-opacity="{p.alpha}"' if p.alpha < 1 else ""
+        if p.single_color and same_size:
+            d = "".join(path_d(cx, cy, dm / 2.0)
+                       for (cx, cy), dm, ok in zip(pts, diam, finite) if ok)
+            w = float(diam[0]) * 0.28 if diam.size else 1.0
+            parts.append(f'<path d="{d}" fill="none" stroke="{p.colors[0]}" '
+                        f'stroke-width="{_fmt(w)}" stroke-linecap="round"{op}/>')
+        else:
+            for (cx, cy), dm, col, ok in zip(pts, diam, p.colors, finite):
+                if ok:
+                    parts.append(f'<path d="{path_d(cx, cy, dm / 2.0)}" fill="none" '
+                                f'stroke="{col}" stroke-width="{_fmt(dm * 0.28)}" '
+                                f'stroke-linecap="round"{op}/>')
+    else:
+        op = f' fill-opacity="{p.alpha}"' if p.alpha < 1 else ""
+        edged = getattr(p, "edgecolor", None) and getattr(p, "edgewidth", 0) > 0
+        edge_attr = (f' stroke="{p.edgecolor}" stroke-width="{_fmt(p.edgewidth)}"'
+                    if edged else ' stroke="none"')
+        if p.single_color and same_size:
+            d = "".join(path_d(cx, cy, dm / 2.0)
+                       for (cx, cy), dm, ok in zip(pts, diam, finite) if ok)
+            parts.append(f'<path d="{d}" fill="{p.colors[0]}"{edge_attr}{op}/>')
+        else:
+            for (cx, cy), dm, col, ok in zip(pts, diam, p.colors, finite):
+                if ok:
+                    parts.append(f'<path d="{path_d(cx, cy, dm / 2.0)}" '
+                                f'fill="{col}"{edge_attr}{op}/>')
+    return (f'<g class="plotpress-series plotpress-marker"{idattr} '
+            f'data-label="{_esc(p.label)}">{"".join(parts)}</g>')
 
 
 def _emit_prim(p) -> str:
@@ -1516,11 +1601,65 @@ def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
     )
 
 
-def _render_bars(bars: Bars, tr, ai, k, body):
+#: matplotlib hatch characters this library draws -- a rotated single-line
+#: pattern covers '/','\\','|','-' for free; '+'/'x' need two lines of
+#: their own. Anything else is simply ignored (no hatch), rather than
+#: raising, matching how an unrecognized marker degrades gracefully too.
+_HATCH_ANGLES = {"|": 0, "-": 90, "/": -45, "\\": 45}
+_HATCH_NAMES = {"|": "v", "-": "h", "/": "fs", "\\": "bs", "+": "plus", "x": "x"}
+_HATCH_SIZE = 6.0
+
+
+def _hatch_pattern_id(hatch: str, fill: str) -> str:
+    return f"hatch_{_HATCH_NAMES.get(hatch, 'u')}_{fill.lstrip('#')}"
+
+
+def _defs_has_id(defs: list, pid: str) -> bool:
+    marker = f'id="{pid}"'
+    return any(marker in d for d in defs)
+
+
+def _hatch_pattern_def(hatch: str, fill: str) -> str | None:
+    """An SVG ``<pattern>`` tiling ``hatch`` lines (always black, matplotlib's
+    own default) over a ``fill``-colored background, or ``None`` if ``hatch``
+    isn't one this library draws.
+    """
+    size = _HATCH_SIZE
+    pid = _hatch_pattern_id(hatch, fill)
+    bg = f'<rect width="{size}" height="{size}" fill="{fill}"/>'
+    if hatch in _HATCH_ANGLES:
+        transform = f' patternTransform="rotate({_HATCH_ANGLES[hatch]})"'
+        lines = f'<line x1="0" y1="0" x2="0" y2="{size}" stroke="#000000" stroke-width="1"/>'
+    elif hatch == "+":
+        transform = ""
+        lines = (f'<line x1="0" y1="0" x2="0" y2="{size}" stroke="#000000" stroke-width="1"/>'
+                f'<line x1="0" y1="0" x2="{size}" y2="0" stroke="#000000" stroke-width="1"/>')
+    elif hatch == "x":
+        transform = ""
+        lines = (f'<line x1="0" y1="0" x2="{size}" y2="{size}" stroke="#000000" stroke-width="1"/>'
+                f'<line x1="{size}" y1="0" x2="0" y2="{size}" stroke="#000000" stroke-width="1"/>')
+    else:
+        return None
+    return (f'<pattern id="{pid}" width="{size}" height="{size}" '
+            f'patternUnits="userSpaceOnUse"{transform}>{bg}{lines}</pattern>')
+
+
+def _render_bars(bars: Bars, tr, ai, k, body, defs):
     label = _esc(bars.label) if bars.label else ""
     op = f' fill-opacity="{bars.alpha}"' if bars.alpha < 1 else ""
     edge = (f' stroke="{bars.edgecolor}" stroke-width="{bars.linewidth}"'
             if bars.edgecolor else "")
+    hatch = getattr(bars, "hatch", None)
+    fill_urls = {}
+    if hatch:
+        for fill in set(bars.colors):
+            pdef = _hatch_pattern_def(hatch, fill)
+            if pdef is None:
+                break   # not a hatch this library draws -- fall back to plain fill
+            pid = _hatch_pattern_id(hatch, fill)
+            if not _defs_has_id(defs, pid):
+                defs.append(pdef)
+            fill_urls[fill] = f"url(#{pid})"
     rects = []
     for i in range(len(bars.pos)):
         p, ln, th, ba = bars.pos[i], bars.length[i], bars.thickness[i], bars.base[i]
@@ -1531,9 +1670,10 @@ def _render_bars(bars: Bars, tr, ai, k, body):
             y0, y1 = tr.y(p - th / 2), tr.y(p + th / 2)
             x0, x1 = tr.x_base(ba), tr.x_base(ba + ln)
         rx, ry = min(x0, x1), min(y0, y1)
+        fill = fill_urls.get(bars.colors[i], bars.colors[i])
         rects.append(
             f'<rect x="{_fmt(rx)}" y="{_fmt(ry)}" width="{_fmt(abs(x1 - x0))}" '
-            f'height="{_fmt(abs(y1 - y0))}" fill="{bars.colors[i]}"{edge}/>'
+            f'height="{_fmt(abs(y1 - y0))}" fill="{fill}"{edge}/>'
         )
     body.append(
         f'<g class="plotpress-series" id="s{ai}_{k}" data-label="{label}"{op}>'
@@ -1602,9 +1742,31 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
     # Skip points that do not map to a pixel -- a value at or below zero on a
     # log axis, most often. Emitting cx/cy="nan" produces invalid SVG that some
     # renderers reject outright rather than merely skipping the one marker.
-    dots = [f'<circle cx="{_fmt(x)}" cy="{_fmt(y)}" r="{_fmt(r)}" fill="{eb.color}"/>'
-            for x, y in zip(xb, yb) if np.isfinite(x) and np.isfinite(y)]
-    body.append("".join(dots))
+    shape = normalize_marker_shape(eb.marker) or "o"
+    finite_xy = [(x, y) for x, y in zip(xb, yb) if np.isfinite(x) and np.isfinite(y)]
+    if shape in ("o", "."):
+        dots = [f'<circle cx="{_fmt(x)}" cy="{_fmt(y)}" r="{_fmt(r)}" fill="{eb.color}"/>'
+                for x, y in finite_xy]
+        body.append("".join(dots))
+    elif marker_shape_kind(shape) == "stroke":
+        w = r * 0.56
+        segs = "".join(
+            f"M{_fmt(x + ax)},{_fmt(y + ay)}L{_fmt(x + bx)},{_fmt(y + by)}"
+            for x, y in finite_xy for (ax, ay), (bx, by) in marker_strokes(shape, r)
+        )
+        if segs:
+            body.append(
+                f'<path d="{segs}" fill="none" stroke="{eb.color}" '
+                f'stroke-width="{_fmt(w)}" stroke-linecap="round"/>')
+    else:
+        polys = []
+        for x, y in finite_xy:
+            verts = marker_polygon(shape, r)
+            head = f"M{_fmt(x + verts[0][0])},{_fmt(y + verts[0][1])}"
+            tail = "".join(f"L{_fmt(x + dx)},{_fmt(y + dy)}" for dx, dy in verts[1:])
+            polys.append(head + tail + "Z")
+        if polys:
+            body.append(f'<path d="{"".join(polys)}" fill="{eb.color}"/>')
 
 
 def _render_pie(pie: Pie, tr, body):
@@ -2480,16 +2642,31 @@ def figure_legend_layout(fig):
     spec = fig._figure_legend
     if spec is None:
         return None
-    sources = spec["axes"] or [a for a in fig.axes if not a._is_colorbar]
-    return legend_box(legend_entries(sources), fig.style,
+    if spec.get("handles") is not None:
+        entries = [a for a in spec["handles"] if getattr(a, "label", None) not in (None, "")]
+    else:
+        sources = spec["axes"] or [a for a in fig.axes if not a._is_colorbar]
+        entries = legend_entries(sources)
+    return legend_box(entries, fig.style,
                       spec["ncol"], spec["title"], fontsize=spec.get("fontsize"),
                       framealpha=spec.get("framealpha", 0.85))
 
 
 def figure_legend_origin(spec, lay, W, H, pad_px):
     """Top-left corner of the figure legend, in figure pixels."""
-    edge = FIGURE_LEGEND_EDGE.get(spec["loc"])
     box_w, box_h = lay["box_w"], lay["box_h"]
+    fx, fy = _LEGEND_ANCHORS.get(spec["loc"], (1.0, 0.0))
+    bbox = spec.get("bbox_to_anchor")
+    if bbox is not None:
+        # (x, y) in whole-figure fraction coordinates, y-up (matplotlib's own
+        # convention) -- flipped to pixel space (y-down) here. The loc corner
+        # (fx, fy) is which corner of the box sits at that point, free to
+        # land outside the figure canvas -- the common reason to reach for
+        # bbox_to_anchor at all, so this never reserves space (see the named
+        # edges below for that).
+        anchor_x, anchor_y = bbox[0] * W, (1.0 - bbox[1]) * H
+        return anchor_x - fx * box_w, anchor_y - fy * box_h
+    edge = FIGURE_LEGEND_EDGE.get(spec["loc"])
     if edge == "bottom":
         return (W - box_w) / 2.0, H - pad_px - box_h
     if edge == "top":
@@ -2500,7 +2677,6 @@ def figure_legend_origin(spec, lay, W, H, pad_px):
         return pad_px, (H - box_h) / 2.0
     # Overlaid: anchor inside the whole figure the way an axes legend anchors
     # inside its own rect.
-    fx, fy = _LEGEND_ANCHORS.get(spec["loc"], (1.0, 0.0))
     return (pad_px + fx * max(0.0, W - box_w - 2 * pad_px),
             pad_px + fy * max(0.0, H - box_h - 2 * pad_px))
 

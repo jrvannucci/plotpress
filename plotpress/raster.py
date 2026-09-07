@@ -111,24 +111,40 @@ def _font(size, family=None, bold=False):
     return font
 
 
-def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
-    """Render ``fig`` to a Pillow ``Image`` (RGB), supersampled by ``scale``.
+def figure_to_image(fig, scale=2, frame=0, animate_unit="main", dpi=None,
+                    transparent=False):
+    """Render ``fig`` to a Pillow ``Image`` (RGB, or RGBA if ``transparent``),
+    supersampled by ``scale``.
 
     ``frame``/``animate_unit`` select which frame of any ``plot_frames()``
     series registered under ``animate_unit`` to draw (see :func:`save_gif`);
     every other artist, and any ``FrameLine2D`` under a different slider
     unit, is unaffected and renders as it always has.
+
+    ``dpi``, if given, temporarily overrides ``fig.style.dpi`` for this
+    render only (restored before returning, even on error) -- since every
+    point-to-pixel conversion in both backends already keys off
+    ``style.dpi``, this scales the canvas *and* every font/marker/margin
+    together, matching matplotlib's own ``dpi=`` (a physically larger image
+    at the same layout proportions) rather than just stretching a
+    fixed-content raster.
+
+    ``transparent`` skips filling the outer canvas with ``style.facecolor``,
+    leaving it fully transparent instead -- each axes' own ``facecolor`` is
+    unaffected (usually still opaque white), so this makes the space around
+    the axes transparent, not necessarily every pixel.
     """
     from PIL import Image as PILImage, ImageDraw
 
     fig._settle_layout()
-    dpi = fig.style.dpi
-    if not (dpi > 0):
+    original_dpi = fig.style.dpi
+    render_dpi = original_dpi if dpi is None else dpi
+    if not (render_dpi > 0):
         # See the matching check in svg.figure_to_svg -- dpi is a plain,
         # freely-mutable Style attribute, and a non-positive value produces
         # an empty or negative-size image Pillow itself rejects with much
         # less clarity (a bare "cannot write empty image").
-        raise ValueError(f"Figure.style.dpi must be > 0, got {dpi!r}")
+        raise ValueError(f"dpi must be > 0, got {render_dpi!r}")
     if not (scale > 0):
         # `int(scale)` below would otherwise silently floor a fractional
         # scale to 0 or floor a negative scale to a negative int -- either
@@ -136,44 +152,53 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
         # scale=1 render instead of telling the caller their argument was
         # invalid, unlike the dpi check just above for the same function.
         raise ValueError(f"scale must be > 0, got {scale!r}")
-    W = int(round(fig.figsize[0] * dpi))
-    H = int(round(fig.figsize[1] * dpi))
+    W = int(round(fig.figsize[0] * render_dpi))
+    H = int(round(fig.figsize[1] * render_dpi))
     S = max(1, int(scale))
-    canvas = PILImage.new("RGBA", (W * S, H * S), _rgba(fig.style.facecolor))
-    draw = ImageDraw.Draw(canvas)
+    if dpi is not None:
+        fig.style.dpi = render_dpi
+    try:
+        bg = (0, 0, 0, 0) if transparent else _rgba(fig.style.facecolor)
+        canvas = PILImage.new("RGBA", (W * S, H * S), bg)
+        draw = ImageDraw.Draw(canvas)
 
-    for ax in fig.axes:
-        _raster_axes(ax, fig, W * S, H * S, S, draw, canvas, frame, animate_unit)
-    _raster_figtexts(fig, W * S, H * S, S, draw)
-    _raster_figure_legend(fig, fig.style, W * S, H * S, S, draw)
-    _raster_groups(fig, W * S, H * S, S, draw)
+        for ax in fig.axes:
+            _raster_axes(ax, fig, W * S, H * S, S, draw, canvas, frame, animate_unit)
+        _raster_figtexts(fig, W * S, H * S, S, draw)
+        _raster_figure_legend(fig, fig.style, W * S, H * S, S, draw)
+        _raster_groups(fig, W * S, H * S, S, draw)
+    finally:
+        if dpi is not None:
+            fig.style.dpi = original_dpi
 
     if S > 1:
         canvas = canvas.resize((W, H), PILImage.LANCZOS)
-    return canvas.convert("RGB")
+    return canvas if transparent else canvas.convert("RGB")
 
 
-def save_png(fig, path, scale=2):
-    # Embed the figure's own dpi as the PNG's physical pixel density (a
+def save_png(fig, path, scale=2, dpi=None, transparent=False):
+    # Embed the actual render dpi as the PNG's physical pixel density (a
     # `pHYs` chunk) -- without it, a viewer that cares about physical size
     # (Word, LaTeX, Google Docs) assumes 96dpi regardless of what dpi the
-    # image was actually rendered at, so a `Style(dpi=300)` figure pastes in
-    # at triple its intended physical size.
-    dpi = fig.style.dpi
-    figure_to_image(fig, scale=scale).save(path, format="PNG", dpi=(dpi, dpi))
+    # image was actually rendered at, so a `Style(dpi=300)` figure (or an
+    # explicit dpi= override here) pastes in at the wrong physical size.
+    render_dpi = fig.style.dpi if dpi is None else dpi
+    img = figure_to_image(fig, scale=scale, dpi=dpi, transparent=transparent)
+    img.save(path, format="PNG", dpi=(render_dpi, render_dpi))
     return path
 
 
-def save_jpeg(fig, path, scale=2, quality=95):
+def save_jpeg(fig, path, scale=2, quality=95, dpi=None):
     """Export as JPEG. Smaller than PNG for photographic-style content, but
     its lossy block compression is a poor fit for the sharp text/line edges
     most plotpress figures are made of (visible ringing around axis labels
     and thin strokes) -- PNG stays the better default; reach for this when
-    a downstream consumer specifically requires JPEG.
+    a downstream consumer specifically requires JPEG. No ``transparent=``:
+    JPEG has no alpha channel.
     """
-    dpi = fig.style.dpi
-    figure_to_image(fig, scale=scale).save(
-        path, format="JPEG", dpi=(dpi, dpi), quality=quality)
+    render_dpi = fig.style.dpi if dpi is None else dpi
+    figure_to_image(fig, scale=scale, dpi=dpi).save(
+        path, format="JPEG", dpi=(render_dpi, render_dpi), quality=quality)
     return path
 
 
@@ -408,14 +433,34 @@ def _draw_prim(p, S, draw, canvas):
         canvas.alpha_composite(im, (int(round(p.x)), int(round(p.y))))
         return
     if isinstance(p, PMarkers):
+        from .primitives import marker_polygon, marker_shape_kind, marker_strokes
+
         finite = np.isfinite(p.points).all(axis=1)
-        edge = _rgb(p.edgecolor) if (p.edgecolor and p.edgewidth > 0) else None
-        ew = max(1, int(round(p.edgewidth))) if edge else 1
-        for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
-            if ok:
-                rad = dm / 2.0
-                draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
-                             fill=_rgba(col, p.alpha), outline=edge, width=ew)
+        shape = getattr(p, "shape", "o") or "o"
+        if shape in ("o", "."):
+            edge = _rgb(p.edgecolor) if (p.edgecolor and p.edgewidth > 0) else None
+            ew = max(1, int(round(p.edgewidth))) if edge else 1
+            for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
+                if ok:
+                    rad = dm / 2.0
+                    draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad],
+                                 fill=_rgba(col, p.alpha), outline=edge, width=ew)
+        elif marker_shape_kind(shape) == "stroke":
+            # plus/x: no interior, no separate edge -- same convention as
+            # the SVG backend (see svg._emit_shaped_markers).
+            for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
+                if ok:
+                    w = max(1, int(round(dm * 0.28)))
+                    for (ax, ay), (bx, by) in marker_strokes(shape, dm / 2.0):
+                        draw.line([cx + ax, cy + ay, cx + bx, cy + by],
+                                 fill=_rgba(col, p.alpha), width=w)
+        else:
+            edge = _rgb(p.edgecolor) if (p.edgecolor and p.edgewidth > 0) else None
+            ew = max(1, int(round(p.edgewidth))) if edge else 1
+            for (cx, cy), dm, col, ok in zip(p.points, p.diameters, p.colors, finite):
+                if ok:
+                    verts = [(cx + dx, cy + dy) for dx, dy in marker_polygon(shape, dm / 2.0)]
+                    draw.polygon(verts, fill=_rgba(col, p.alpha), outline=edge, width=ew)
         return
     if isinstance(p, PLine):
         # Same stroke_opacity-dropped-on-the-floor bug as PPath below (axvline/
@@ -532,7 +577,7 @@ def _raster_artist(artist, tr, st, S, draw, canvas, frame=0, animate_unit="main"
         for p in mesh_prims or []:
             _draw_prim(p, S, draw, canvas)
     elif isinstance(artist, Bars):
-        _bars(artist, tr, S, draw)
+        _bars(artist, tr, S, draw, canvas)
     elif isinstance(artist, Stem):
         _stem(artist, tr, st, S, draw)
     elif isinstance(artist, ErrorBar):
@@ -727,7 +772,57 @@ def _dashed(draw, seg, color, width, dash):
                 on = not on
 
 
-def _bars(bars, tr, S, draw):
+#: Kept in sync with svg._HATCH_SIZE (the tile period, in unscaled px) --
+#: not shared code since the two backends' pattern primitives are different
+#: (an SVG <pattern> vs. lines drawn directly onto a compositing layer here).
+_HATCH_TILE = 6.0
+
+
+def _hatch_layer(w, h, hatch, fill_rgba, S):
+    """An RGBA layer, ``w``x``h`` (supersampled) pixels, of ``fill_rgba``
+    with black hatch lines tiled across it -- composited over the canvas the
+    same way :func:`_composite_polygon` blends a filled polygon, so a
+    translucent ``alpha`` still blends correctly (a direct ``ImageDraw``
+    fill would just overwrite pixels, dropping alpha -- see that function's
+    own docstring).
+    """
+    from PIL import Image as PILImage, ImageDraw
+
+    w, h = max(1, int(round(w))), max(1, int(round(h)))
+    layer = PILImage.new("RGBA", (w, h), fill_rgba)
+    ld = ImageDraw.Draw(layer)
+    step = max(1, int(round(_HATCH_TILE * S)))
+    lw = max(1, int(round(S)))
+    black = (0, 0, 0, 255)
+    if hatch in ("/", "\\"):
+        n = int((w + h) / step) + 2
+        for i in range(-n, n):
+            x0 = i * step
+            if hatch == "\\":
+                ld.line([x0, 0, x0 + h, h], fill=black, width=lw)
+            else:
+                ld.line([x0, h, x0 + h, 0], fill=black, width=lw)
+    elif hatch in ("|", "+"):
+        for x in range(0, w + step, step):
+            ld.line([x, 0, x, h], fill=black, width=lw)
+        if hatch == "+":
+            for y in range(0, h + step, step):
+                ld.line([0, y, w, y], fill=black, width=lw)
+    elif hatch == "-":
+        for y in range(0, h + step, step):
+            ld.line([0, y, w, y], fill=black, width=lw)
+    elif hatch == "x":
+        n = int((w + h) / step) + 2
+        for i in range(-n, n):
+            x0 = i * step
+            ld.line([x0, 0, x0 + h, h], fill=black, width=lw)
+            ld.line([x0, h, x0 + h, 0], fill=black, width=lw)
+    return layer
+
+
+def _bars(bars, tr, S, draw, canvas=None):
+    hatch = getattr(bars, "hatch", None)
+    hatch_ok = hatch in ("/", "\\", "|", "-", "+", "x")
     for i in range(len(bars.pos)):
         p, ln, th, ba = bars.pos[i], bars.length[i], bars.thickness[i], bars.base[i]
         if bars.orientation == "vertical":
@@ -738,8 +833,16 @@ def _bars(bars, tr, S, draw):
             x0, x1 = float(tr.x_base(ba)), float(tr.x_base(ba + ln))
         box = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
         outline = _rgb(bars.edgecolor) if bars.edgecolor else None
-        draw.rectangle(box, fill=_rgba(bars.colors[i], bars.alpha), outline=outline,
-                       width=max(1, int(round(bars.linewidth * S))) if outline else 1)
+        ow = max(1, int(round(bars.linewidth * S))) if outline else 1
+        if hatch_ok and canvas is not None and box[2] > box[0] and box[3] > box[1]:
+            layer = _hatch_layer(box[2] - box[0], box[3] - box[1], hatch,
+                                 _rgba(bars.colors[i], bars.alpha), S)
+            canvas.alpha_composite(layer, (int(round(box[0])), int(round(box[1]))))
+            if outline:
+                draw.rectangle(box, outline=outline, width=ow)
+        else:
+            draw.rectangle(box, fill=_rgba(bars.colors[i], bars.alpha),
+                           outline=outline, width=ow)
 
 
 def _stem(stem, tr, st, S, draw):

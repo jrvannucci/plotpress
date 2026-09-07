@@ -2,6 +2,9 @@
 colormaps + norms, reference lines/spans, fill/line helpers, tick labels,
 axis inversion, and legend placement.
 """
+import io
+import warnings
+
 import numpy as np
 import pytest
 
@@ -1107,10 +1110,13 @@ def test_plot_without_marker_draws_no_dots():
     assert fig2.to_svg().count("<path") == 2   # the line, plus the markers' own path
 
 
-def test_plot_marker_warns_on_non_round_shape():
+def test_plot_marker_warns_on_unsupported_shape():
+    """"s" (square) is now a real supported shape (see the marker-shapes
+    functionality-audit addition) -- "*" (star) still isn't, and should
+    still warn and fall back to a dot."""
     fig, ax = plotpress.subplots()
     with pytest.warns(UserWarning):
-        ax.plot([0, 1], [0, 1], marker="s")   # square: accepted, drawn as a dot
+        ax.plot([0, 1], [0, 1], marker="*")
 
 
 def test_bar_yerr_draws_caps_and_whiskers_and_autoscales():
@@ -2905,10 +2911,146 @@ def test_save_jpeg_webp_eps_round_trip(tmp_path):
     assert eps.read_bytes().startswith(b"%!PS-Adobe")
 
 
+# -- functionality audit, Tier 2: bar()/barh() hatching -----------------
+def test_bar_hatch_produces_a_pattern_def_and_url_fill():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], color="#4c72b0", hatch="/")
+    svg = fig.to_svg()
+    assert "<pattern" in svg
+    assert "fill=\"url(#hatch_" in svg
+
+
+def test_bar_no_hatch_still_uses_a_plain_flat_fill():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], color="#4c72b0")
+    svg = fig.to_svg()
+    assert "<pattern" not in svg
+    assert 'fill="#4c72b0"' in svg
+
+
+def test_bar_unrecognized_hatch_falls_back_to_plain_fill():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], color="#4c72b0", hatch="not-a-real-hatch")
+    svg = fig.to_svg()
+    assert "<pattern" not in svg
+    assert 'fill="#4c72b0"' in svg
+
+
+def test_bar_hatch_pattern_deduplicates_across_bars_sharing_color():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1, 2], [3, 5, 2], color="#4c72b0", hatch="x")
+    svg = fig.to_svg()
+    assert svg.count("<pattern") == 1   # one pattern def, reused by every bar
+
+
+def test_bar_hatch_with_two_colors_gets_two_pattern_defs():
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], color=["red", "blue"], hatch="+")
+    svg = fig.to_svg()
+    assert svg.count("<pattern") == 2
+
+
+def test_barh_hatch_works_the_same_as_bar():
+    fig, ax = plotpress.subplots()
+    ax.barh([0, 1], [3, 5], color="green", hatch="-")
+    svg = fig.to_svg()
+    assert "<pattern" in svg
+
+
+def test_bar_hatch_renders_in_raster_backend():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    for h in ["/", "\\", "|", "-", "+", "x"]:
+        ax.bar([len(ax.artists)], [3], color="#4c72b0", hatch=h)
+    arr = np.asarray(figure_to_image(fig, scale=1))
+    assert not np.all(arr == arr[0, 0])   # something was actually drawn
+
+
+def test_bar_hatch_svg_is_well_formed():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1, 2], [3, 5, 2], color="#4c72b0", hatch="/", edgecolor="black")
+    ET.fromstring(fig.to_svg())
+
+
+def test_save_dpi_override_scales_pixel_dimensions_and_metadata(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image as PILImage
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    before_dpi = fig.style.dpi
+    path = tmp_path / "out.png"
+    fig.save(str(path), dpi=300)
+    assert fig.style.dpi == before_dpi   # no side effect on the figure
+    with PILImage.open(path) as im:
+        assert im.size == (int(round(fig.figsize[0] * 300)),
+                           int(round(fig.figsize[1] * 300)))
+        assert round(im.info["dpi"][0]) == 300
+
+
+def test_save_transparent_drops_the_outer_background_only():
+    pytest.importorskip("PIL")
+    import numpy as np
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    img = figure_to_image(fig, scale=1, transparent=True)
+    assert img.mode == "RGBA"
+    arr = np.asarray(img)
+    assert arr[0, 0, 3] == 0            # figure margin: transparent
+    cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
+    assert arr[cy, cx, 3] == 255        # inside the (opaque white) axes
+
+
+def test_save_format_overrides_extension(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image as PILImage
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "out.dat"   # no recognizable extension
+    fig.save(str(path), format="png")
+    with PILImage.open(path) as im:
+        assert im.format == "PNG"
+
+
+def test_save_to_a_file_like_buffer_needs_format():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    with pytest.raises(ValueError, match="format"):
+        fig.save(io.BytesIO())
+
+
+def test_save_to_a_bytesio_buffer_png():
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    buf = io.BytesIO()
+    fig.save(buf, format="png")
+    assert buf.tell() > 0
+    buf.seek(0)
+    from PIL import Image as PILImage
+    with PILImage.open(buf) as im:
+        assert im.format == "PNG"
+
+
+def test_save_to_a_stringio_buffer_svg():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    buf = io.StringIO()
+    fig.save(buf, format="svg")
+    assert buf.getvalue().startswith("<svg")
+
+
 def test_save_unknown_extension_still_raises_and_lists_new_formats():
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
-    with pytest.raises(ValueError, match=r"\.eps"):
+    with pytest.raises(ValueError, match=r"eps"):
         fig.save("out.bogus")
 
 
@@ -2988,3 +3130,260 @@ def test_svg_with_title_children_is_still_well_formed():
     ax.plot([0, 1, 2], [0, 1, 4], label="a")
     fig.suptitle("Whole Figure")
     ET.fromstring(fig.to_svg())   # must parse without error
+
+
+# -- functionality audit, Tier 2: real (non-round) marker shapes --------
+def test_normalize_marker_shape_maps_matplotlib_codes():
+    from plotpress.primitives import normalize_marker_shape
+
+    assert normalize_marker_shape("o") == "o"
+    assert normalize_marker_shape(".") == "o"
+    assert normalize_marker_shape(None) == "o"
+    assert normalize_marker_shape("s") == "square"
+    assert normalize_marker_shape("^") == "triangle_up"
+    assert normalize_marker_shape("v") == "triangle_down"
+    assert normalize_marker_shape("<") == "triangle_left"
+    assert normalize_marker_shape(">") == "triangle_right"
+    assert normalize_marker_shape("D") == "diamond"
+    assert normalize_marker_shape("d") == "diamond"
+    assert normalize_marker_shape("+") == "plus"
+    assert normalize_marker_shape("x") == "x"
+    assert normalize_marker_shape("X") == "x"
+    assert normalize_marker_shape("|") == "vline"
+    assert normalize_marker_shape("_") == "hline"
+    assert normalize_marker_shape("*") is None   # genuinely unsupported
+
+
+def test_vline_hline_markers_render_as_single_stroke_segments():
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ax.scatter([0, 1], [0, 1], marker="|", s=20, color="black")
+        ax.scatter([0, 1], [1, 0], marker="_", s=20, color="black")
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    ET.fromstring(svg)
+    assert svg.count('fill="none"') >= 2   # both are open strokes, no fill
+
+
+def test_scatter_shapes_render_as_real_geometry_not_a_dot():
+    fig, ax = plotpress.subplots()
+    shapes = ["o", "s", "^", "v", "<", ">", "D", "+", "x"]
+    for i, m in enumerate(shapes):
+        ax.scatter([i], [0], marker=m, s=20)
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    ET.fromstring(svg)   # well-formed
+    # Every non-round shape draws as a <path> (polygon or stroke), not the
+    # round marker's zero-length-stroke <path> that always has M==L; check
+    # this indirectly via counting the marker groups instead.
+    assert svg.count('class="plotpress-series plotpress-marker"') == len(shapes)
+    assert "<circle" not in svg   # errorbar's own dots aside, none used here
+
+
+def test_square_marker_is_a_real_filled_quadrilateral():
+    fig, ax = plotpress.subplots()
+    ax.scatter([0], [0], marker="s", s=20, color="red")
+    svg = fig.to_svg()
+    import re
+    m = re.search(r'plotpress-marker[^>]*>(.*?)</g>', svg)
+    assert m is not None
+    path_d = re.search(r'<path d="([^"]+)"', m.group(1)).group(1)
+    # A closed 4-vertex polygon: 1 move + 3 lines + close.
+    assert path_d.count("M") == 1 and path_d.count("L") == 3 and path_d.endswith("Z")
+
+
+def test_plus_and_x_markers_are_open_strokes_not_filled():
+    fig, ax = plotpress.subplots()
+    ax.scatter([0], [0], marker="+", s=20, color="blue")
+    svg = fig.to_svg()
+    assert 'fill="none"' in svg
+    assert 'stroke="#0000ff"' in svg
+
+
+def test_plot_marker_shape_and_edge_color_width():
+    fig, ax = plotpress.subplots()
+    line = ax.plot([0, 1], [0, 1], marker="D", markersize=12, linestyle="none",
+                   markerfacecolor="yellow", markeredgecolor="black",
+                   markeredgewidth=1.5)
+    assert line.markeredgecolor == "#000000" and line.markeredgewidth == 1.5
+    svg = fig.to_svg()
+    assert 'fill="#ffff00"' in svg   # markerfacecolor
+    assert 'stroke="#000000"' in svg   # markeredgecolor, on the diamond path itself
+
+
+def test_plot_marker_shape_does_not_warn():
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ax.plot([0, 1], [0, 1], marker="^")   # must not warn -- real shape
+
+
+def test_errorbar_marker_shape_renders_and_does_not_warn():
+    fig, ax = plotpress.subplots()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        eb = ax.errorbar([0, 1, 2], [0, 1, 2], yerr=0.2, marker="s")
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    ET.fromstring(svg)
+
+
+def test_errorbar_unsupported_marker_still_warns_and_falls_back():
+    fig, ax = plotpress.subplots()
+    with pytest.warns(UserWarning):
+        ax.errorbar([0, 1], [0, 1], yerr=0.1, marker="*")
+
+
+def test_marker_shapes_render_in_raster_backend():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    for i, m in enumerate(["o", "s", "^", "v", "<", ">", "D", "+", "x"]):
+        ax.scatter([i], [0], marker=m, s=15, color="green")
+        ax.plot([i], [1], marker=m, markersize=10, linestyle="none",
+               markerfacecolor="orange", markeredgecolor="black", markeredgewidth=1.0)
+    arr = np.asarray(figure_to_image(fig, scale=1))
+    assert arr.shape[2] == 3   # rendered, no exception
+    # Something was actually drawn (not an all-background image).
+    assert not np.all(arr == arr[0, 0])
+
+
+def test_scatter_per_point_colors_and_sizes_with_a_shape():
+    """The batched single-color/same-size fast path and the per-point
+    fallback must produce the same well-formed output for shaped markers."""
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=20)
+    y = rng.normal(size=20)
+    c = rng.random(20)
+    s = rng.uniform(8, 20, size=20)
+    ax.scatter(x, y, marker="^", c=c, s=s)
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    ET.fromstring(svg)
+
+
+def test_figure_legend_handles_and_labels_override():
+    """A grid of meshes has no labeled line artist to draw a legend from --
+    handles=/labels= is the only way to legend it at all."""
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].pcolormesh(np.random.default_rng(0).random((4, 4)))
+    axes[1].pcolormesh(np.random.default_rng(1).random((4, 4)))
+    proxy_a = axes[0].plot([0], [0], color="red")
+    proxy_b = axes[0].plot([0], [0], color="blue")
+    fig.legend(handles=[proxy_a, proxy_b], labels=["alpha", "beta"])
+    assert proxy_a.label == "alpha" and proxy_b.label == "beta"
+    svg = fig.to_svg()
+    assert "alpha" in svg and "beta" in svg
+
+
+def test_figure_legend_bbox_to_anchor_moves_the_box():
+    fig, ax = plotpress.subplots(figsize=(4, 3))
+    ax.plot([0, 1], [0, 1], label="a")
+    fig.legend(loc="upper left")
+    from plotpress.svg import figure_legend_layout, figure_legend_origin
+
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    lay = figure_legend_layout(fig)
+    default_origin = figure_legend_origin(fig._figure_legend, lay, W, H, 10.0)
+
+    fig.legend(loc="upper left", bbox_to_anchor=(0.5, 0.5))
+    moved_origin = figure_legend_origin(fig._figure_legend, lay, W, H, 10.0)
+    assert moved_origin != default_origin
+
+
+def test_figure_legend_without_handles_still_works_as_before():
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1], label="sin")
+    axes[1].plot([0, 1], [1, 0], label="sin")   # same label, de-duplicated
+    fig.legend()
+    svg = fig.to_svg()
+    assert svg.count(">sin</text>") == 1
+
+
+# -- functionality audit, Tier 2: HTML round-trip saves labels/colors ---
+def test_load_data_recovers_line_label_and_color(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], label="sin", color="red")
+    path = tmp_path / "fig.html"
+    fig.save(str(path), interactive=True)
+    data = plotpress.load_data(str(path))
+    entry = next(iter(data.values()))
+    s = entry["axes"]["axes 0"]["series"][0]
+    assert s["label"] == "sin"
+    assert s["color"] == "#ff0000"
+
+
+def test_load_data_recovers_bar_label_and_shared_color(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], label="counts", color="blue")
+    path = tmp_path / "fig.html"
+    fig.save(str(path), interactive=True)
+    data = plotpress.load_data(str(path))
+    entry = next(iter(data.values()))
+    s = entry["axes"]["axes 0"]["series"][0]
+    assert s["kind"] == "bar" and s["label"] == "counts" and s["color"] == "#0000ff"
+
+
+def test_load_data_bar_with_per_bar_colors_has_no_single_color(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.bar([0, 1], [3, 5], color=["red", "blue"])   # no one shared color
+    path = tmp_path / "fig.html"
+    fig.save(str(path), interactive=True)
+    data = plotpress.load_data(str(path))
+    entry = next(iter(data.values()))
+    s = entry["axes"]["axes 0"]["series"][0]
+    assert s["color"] is None
+
+
+def test_load_data_scatter_with_colormap_has_no_single_color(tmp_path):
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, 1, 2], [0, 1, 2], c=[0.1, 0.5, 0.9], label="mapped")
+    path = tmp_path / "fig.html"
+    fig.save(str(path), interactive=True)
+    data = plotpress.load_data(str(path))
+    entry = next(iter(data.values()))
+    s = entry["axes"]["axes 0"]["series"][0]
+    assert s["label"] == "mapped"   # label still recovers even without one color
+
+
+def test_load_data_unlabeled_series_has_none_label():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])   # no label=
+    from plotpress.figure import _load_single_figure
+
+    html = fig.to_html()
+    entry = _load_single_figure(html)
+    assert entry[0]["series"][0]["label"] is None
+
+
+def test_recovered_label_and_color_replot_into_a_working_legend(tmp_path):
+    """The actual payoff: recovered label/color are enough to rebuild a
+    labeled, colored legend after replotting -- previously impossible
+    since neither survived the round trip at all."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], label="sin", color="red")
+    ax.plot([0, 1, 2], [4, 1, 0], label="cos", color="blue")
+    path = tmp_path / "fig.html"
+    fig.save(str(path), interactive=True)
+
+    data = plotpress.load_data(str(path))
+    entry = next(iter(data.values()))
+    layout = entry["layout"]
+    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    for s in entry["axes"]["axes 0"]["series"]:
+        ax2.plot(s["x"], s["y"], label=s["label"], color=s["color"])
+    ax2.legend()
+    svg2 = fig2.to_svg()
+    assert "sin" in svg2 and "cos" in svg2
+    assert 'stroke="#ff0000"' in svg2 and 'stroke="#0000ff"' in svg2
+
+
+def test_scatter_shape_with_nan_points_skips_them_cleanly():
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, np.nan, 2], [0, 1, np.nan], marker="D", s=15)
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    ET.fromstring(svg)   # NaN points must not produce invalid path data

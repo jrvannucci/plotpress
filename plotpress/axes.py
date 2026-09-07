@@ -337,7 +337,8 @@ class Axes:
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle=None,
              label=None, alpha=1.0, values=None, marker=None, markersize=None,
-             markerfacecolor=None, zorder=0):
+             markerfacecolor=None, markeredgecolor=None, markeredgewidth=None,
+             zorder=0):
         """Plot ``y``, ``x, y``, or ``x, y, fmt`` as a line. Returns the
         :class:`Line2D`.
 
@@ -351,12 +352,16 @@ class Axes:
         ``values`` is an optional ``{name: array}`` of extra per-point
         dimensions (e.g. ``z``) surfaced when a point is picked interactively.
 
-        ``marker`` draws a dot at each vertex in addition to the line itself
-        (``markersize`` in points, default matches the style's own marker
-        size; ``markerfacecolor`` defaults to the line's own ``color``).
-        Only round markers are drawn (see :func:`_warn_marker_shape`); any
-        other ``marker`` is accepted for matplotlib compatibility but warns,
-        the same limitation :meth:`scatter`/:meth:`errorbar` already have.
+        ``marker`` draws a shape at each vertex in addition to the line
+        itself (``markersize`` in points, default matches the style's own
+        marker size; ``markerfacecolor`` defaults to the line's own
+        ``color``; ``markeredgecolor``/``markeredgewidth`` outline it, the
+        same as :meth:`scatter`'s ``edgecolors``/``linewidths``). Beyond
+        round (``"o"``/``"."``), ``"s"``/``"^"``/``"v"``/``"<"``/``">"``/
+        ``"D"``/``"d"``/``"+"``/``"x"``/``"X"``/``"|"``/``"_"`` render as
+        their own real shape; anything else falls back to a round dot with
+        a warning (see :func:`_warn_marker_shape`), the same limitation
+        :meth:`scatter`/:meth:`errorbar` share.
         """
         fmt = None
         if len(args) == 1:
@@ -399,6 +404,9 @@ class Axes:
             markersize=self.style.marker_size if markersize is None else markersize,
             markerfacecolor=(self._resolve_color(markerfacecolor)
                             if markerfacecolor is not None else None),
+            markeredgecolor=(self._resolve_color(markeredgecolor)
+                             if markeredgecolor is not None else None),
+            markeredgewidth=markeredgewidth,
         )
         line.zorder = zorder
         self.artists.append(line)
@@ -625,7 +633,7 @@ class Axes:
 
     def bar(self, x, height, width=0.8, bottom=0.0, align="center", color=None,
             edgecolor=None, linewidth=0.8, label=None, alpha=1.0, yerr=None,
-            xerr=None, capsize=3.0, ecolor=None, zorder=0):
+            xerr=None, capsize=3.0, ecolor=None, hatch=None, zorder=0):
         """Vertical bar chart.
 
         ``align`` (matplotlib's own choices) is ``"center"`` (default: each
@@ -638,6 +646,13 @@ class Axes:
         so they autoscale and render exactly like a standalone error bar
         would. ``ecolor`` (default black, independent of the bars' own
         ``color``) matches matplotlib's own bar-error-bar default.
+
+        ``hatch`` tiles a pattern over the fill -- one of ``"/"``, ``"\\\\"``,
+        ``"|"``, ``"-"``, ``"+"``, ``"x"`` (matplotlib's own single-density
+        hatch characters; always drawn in black, matching matplotlib's
+        default) -- the standard way to distinguish grouped bars in
+        greyscale print or for a colorblind reader, when color alone can't.
+        Any other value is ignored (plain fill), not an error.
         """
         _check_broadcastable("bar", x=x, height=height, width=width, bottom=bottom)
         if align == "edge":
@@ -646,7 +661,7 @@ class Axes:
             raise ValueError(f"bar(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(x, height, width, bottom, "vertical",
                  color=self._resolve_color(color), edgecolor=to_hex(edgecolor),
-                 linewidth=linewidth, label=label, alpha=alpha)
+                 linewidth=linewidth, label=label, alpha=alpha, hatch=hatch)
         b.zorder = zorder
         self.artists.append(b)
         if yerr is not None or xerr is not None:
@@ -659,10 +674,10 @@ class Axes:
 
     def barh(self, y, width, height=0.8, left=0.0, align="center", color=None,
              edgecolor=None, linewidth=0.8, label=None, alpha=1.0, xerr=None,
-             yerr=None, capsize=3.0, ecolor=None, zorder=0):
+             yerr=None, capsize=3.0, ecolor=None, hatch=None, zorder=0):
         """Horizontal bar chart. ``align``/``xerr``/``yerr``/``capsize``/
-        ``ecolor`` match :meth:`bar`, centered at each bar's own right edge
-        (``left + width``)."""
+        ``ecolor``/``hatch`` match :meth:`bar`, centered at each bar's own
+        right edge (``left + width``)."""
         _check_broadcastable("barh", y=y, width=width, height=height, left=left)
         if align == "edge":
             y = np.asarray(y, float) + np.asarray(height, float) / 2.0
@@ -670,7 +685,7 @@ class Axes:
             raise ValueError(f"barh(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(y, width, height, left, "horizontal",
                  color=self._resolve_color(color), edgecolor=to_hex(edgecolor),
-                 linewidth=linewidth, label=label, alpha=alpha)
+                 linewidth=linewidth, label=label, alpha=alpha, hatch=hatch)
         b.zorder = zorder
         self.artists.append(b)
         if xerr is not None or yerr is not None:
@@ -3123,27 +3138,26 @@ def _parse_fmt(fmt):
     return color, linestyle, marker
 
 
-#: Marker specifications that render as drawn. Markers are emitted as
-#: zero-length round-capped strokes so they keep a constant pixel size under the
-#: interactive zoom's group transform (see ``svg._emit_markers``); a polygonal
-#: marker would have to scale with the zoom, which is worse than being round.
-_ROUND_MARKERS = frozenset({"o", ".", "", None})
-
-
 def _warn_marker_shape(marker, who):
-    """Warn that a non-round ``marker`` will still be drawn as a dot.
+    """Warn that an unrecognized ``marker`` will still be drawn as a dot.
 
-    ``marker`` is accepted for matplotlib compatibility, but only the round
-    shapes are rendered. Silently drawing a circle where the caller asked for a
-    cross is the worst option: shape often carries meaning -- censored versus
-    observed, pass versus fail -- and a figure that quietly collapses that
-    distinction is wrong in a way nothing on the page reveals.
+    ``marker`` is accepted for matplotlib compatibility; round, square,
+    triangle (4 directions), diamond, plus, and x/X all render as their own
+    real shape (see ``primitives.normalize_marker_shape``) -- anything else
+    (matplotlib's star/pentagon/hexagon/octagon/tri-marker codes, none of
+    which this library draws) falls back to a dot. Silently drawing a circle
+    where the caller asked for a star is the worst option: shape often
+    carries meaning -- censored versus observed, pass versus fail -- and a
+    figure that quietly collapses that distinction is wrong in a way nothing
+    on the page reveals.
     """
-    if marker not in _ROUND_MARKERS:
+    from .primitives import normalize_marker_shape
+
+    if normalize_marker_shape(marker) is None:
         warnings.warn(
-            f"{who}(marker={marker!r}) is not drawn: plotpress renders round "
-            "markers only, so this will appear as a dot. Distinguish the series "
-            "by color, size or a label instead.",
+            f"{who}(marker={marker!r}) is not drawn: this shape isn't one "
+            "plotpress renders, so it will appear as a dot. Distinguish the "
+            "series by color, size or a label instead.",
             UserWarning, stacklevel=3)
 
 

@@ -156,7 +156,7 @@ class ImagePrim:
 
 @dataclass
 class Markers:
-    """A batch of round point markers (scatter), constant-size in pixels."""
+    """A batch of point markers (scatter), constant-size in pixels."""
     points: np.ndarray             # (N, 2) pixel centers (may contain NaN)
     diameters: np.ndarray          # (N,) pixel diameters
     colors: list                   # per-point color strings (len N)
@@ -166,6 +166,87 @@ class Markers:
     label: str = ""
     edgecolor: Optional[str] = None   # one outline color for the whole batch
     edgewidth: float = 0.0            # pixel outline width; 0 draws no outline
+    shape: str = "o"                  # see normalize_marker_shape()
+
+
+# matplotlib marker codes this library actually renders as their own shape
+# (not a substitute) -- everything else still falls back to a round dot with
+# a warning (see axes._warn_marker_shape). "o"/"."/""/None are the existing
+# round marker, canonicalized to "o" here so every renderer only has to
+# special-case that one string.
+_MARKER_SHAPES = {
+    "o": "o", ".": "o", "": "o", None: "o",
+    "s": "square",
+    "^": "triangle_up", "v": "triangle_down",
+    "<": "triangle_left", ">": "triangle_right",
+    "D": "diamond", "d": "diamond",
+    "+": "plus",
+    "x": "x", "X": "x",
+    "|": "vline", "_": "hline",
+}
+
+
+def normalize_marker_shape(marker) -> Optional[str]:
+    """A canonical shape name for ``marker`` (one of :data:`_MARKER_SHAPES`'
+    values), or ``None`` if ``marker`` isn't one of the shapes this library
+    knows how to draw -- the caller falls back to a round dot and a warning
+    (matching every unrecognized matplotlib marker code, e.g. ``"*"``/
+    ``"p"``/``"h"``, which this library doesn't attempt)."""
+    return _MARKER_SHAPES.get(marker)
+
+
+#: Filled-polygon shapes vs. open/stroke shapes -- a polygon marker draws as
+#: one closed, fillable path; plus/x/vline/hline have no interior to fill,
+#: only strokes.
+_STROKE_SHAPES = frozenset({"plus", "x", "vline", "hline"})
+
+
+def marker_shape_kind(shape: str) -> str:
+    """``"stroke"`` for an open shape (plus/x), else ``"fill"``."""
+    return "stroke" if shape in _STROKE_SHAPES else "fill"
+
+
+# Equilateral-triangle vertex angles (degrees, 0 = +x axis, increasing
+# clockwise in screen space where y grows downward) -- one direction per
+# triangle marker, 120 degrees apart from there.
+_TRIANGLE_APEX_ANGLE = {
+    "triangle_up": -90.0, "triangle_down": 90.0,
+    "triangle_left": 180.0, "triangle_right": 0.0,
+}
+
+
+def marker_polygon(shape: str, r: float) -> List[tuple]:
+    """Vertex ``(dx, dy)`` offsets from center for a filled polygon marker,
+    ``r`` its nominal radius (the same "radius" a round marker of the same
+    ``diameter`` would have) -- not an exact matplotlib area/shape match,
+    just a visually distinct, reasonably matplotlib-like size for each.
+    """
+    if shape == "square":
+        s = r * 0.85   # matches a round marker's visual weight better than a full r
+        return [(-s, -s), (s, -s), (s, s), (-s, s)]
+    if shape == "diamond":
+        d = r * 1.15
+        return [(0.0, -d), (d, 0.0), (0.0, d), (-d, 0.0)]
+    if shape in _TRIANGLE_APEX_ANGLE:
+        a0 = math.radians(_TRIANGLE_APEX_ANGLE[shape])
+        return [(r * math.cos(a0 + math.radians(k * 120)),
+                 r * math.sin(a0 + math.radians(k * 120))) for k in range(3)]
+    raise ValueError(f"not a filled marker shape: {shape!r}")
+
+
+def marker_strokes(shape: str, r: float) -> List[tuple]:
+    """Line segments (``(dx0, dy0), (dx1, dy1)``) from center for an
+    open/stroke marker shape (``"plus"``/``"x"``/``"vline"``/``"hline"``)."""
+    if shape == "plus":
+        return [((-r, 0.0), (r, 0.0)), ((0.0, -r), (0.0, r))]
+    if shape == "x":
+        d = r * 0.75   # slightly shorter than plus's r, matching its visual weight
+        return [((-d, -d), (d, d)), ((-d, d), (d, -d))]
+    if shape == "vline":
+        return [((0.0, -r), (0.0, r))]
+    if shape == "hline":
+        return [((-r, 0.0), (r, 0.0))]
+    raise ValueError(f"not a stroke marker shape: {shape!r}")
 
 
 # -- artist -> primitives ---------------------------------------------------
@@ -186,7 +267,8 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
         return [Markers(pts, diam, list(colors), single_color=(fc is None),
                         alpha=a.alpha, series_id=f"s{ai}_{k}", label=lbl,
                         edgecolor=a.edgecolor,
-                        edgewidth=(a.linewidths or 0.0) * size_scale)]
+                        edgewidth=(a.linewidths or 0.0) * size_scale,
+                        shape=normalize_marker_shape(a.marker) or "o")]
 
     if isinstance(a, Line2D):
         x, y = a.x, a.y
@@ -222,8 +304,10 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
             # a.x.size just above, the same reason it does this).
             prims.append(Markers(
                 pts, diam, [face] * x.size, single_color=True, alpha=a.alpha,
-                label=lbl,
-                series_id=(f"s{ai}_{k}" if a.linestyle == "none" else None)))
+                label=lbl, edgecolor=a.markeredgecolor,
+                edgewidth=(a.markeredgewidth or 0.0) * size_scale,
+                series_id=(f"s{ai}_{k}" if a.linestyle == "none" else None),
+                shape=normalize_marker_shape(a.marker) or "o"))
         return prims
 
     # VLine/HLine/AxLine are pure reference lines -- no marker, no other

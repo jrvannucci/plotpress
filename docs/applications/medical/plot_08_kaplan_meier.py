@@ -83,13 +83,11 @@ for name, median, color in ARMS:
     ax.step(np.append(t, FOLLOW_UP), np.append(s, s[-1]), where="post",
             color=color, linewidth=1.8, label=f"{name} (n={N_PER_ARM})")
 
-    # Censoring ticks. Conventionally these are vertical dashes, but plotpress
-    # draws round markers only, so they are short ``vlines`` straddling the
-    # curve -- which is the mark's actual meaning and reads the same.
+    # Censoring ticks -- conventionally a vertical dash straddling the curve,
+    # which is exactly what the "|" marker draws.
     censored = observed[events == 0]
     height = np.interp(censored, t, s)
-    ax.vlines(censored, height - 0.016, height + 0.016, color=color,
-              linewidth=1.0, linestyle="-", alpha=0.9)
+    ax.scatter(censored, height, marker="|", s=14, color=color, alpha=0.9)
 
 ax.axhline(0.5, color="#888888", linestyle=":", linewidth=1.2)
 ax.text(0.6, 0.52, "median survival", fontsize=9, color="#666666")

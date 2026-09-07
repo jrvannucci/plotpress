@@ -11,6 +11,74 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-07
+
+Tier 2 of the functionality audit (see 0.26.0's Tier 1) -- a curated subset
+of the remaining list, chosen for value against risk to the shared
+rendering/layout code. Not included in this pass, deliberately deferred:
+`GridSpec` width/height ratios and tick-label rotation (both touch
+layout-margin math shared by every figure), `Report` improvements, font
+embedding, Vega/Vega-Lite Tier-3 promotions, and the interactive toolbar's
+touch/keyboard/measure-tool additions.
+
+### Added
+
+- **Real (non-round) marker shapes** -- `scatter()`/`plot()`/`errorbar()`'s
+  `marker=` beyond round (`"o"`/`"."`) now draws its own real geometry:
+  `"s"` (square), `"^"`/`"v"`/`"<"`/`">"` (triangles, four directions),
+  `"D"`/`"d"` (diamond), `"+"` (plus), `"x"`/`"X"` (x), and `"|"`/`"_"`
+  (vertical/horizontal dash -- the conventional censoring-tick mark on a
+  Kaplan-Meier survival curve, now used for exactly that in
+  `docs/applications/medical/plot_08_kaplan_meier.py`, replacing the
+  `vlines()` workaround the round-only limitation used to need). An
+  unrecognized marker code still falls back to a round dot with a warning.
+  `plot()` also gained `markeredgecolor`/`markeredgewidth` (the
+  `Line2D`/`Markers` primitive already supported an outline; `plot()` just
+  had no way to reach it).
+- **`Figure.legend(handles=, labels=, bbox_to_anchor=)`** -- parity with
+  `Axes.legend()`'s own. `handles`/`labels` is the only way to legend a
+  figure whose panels are meshes/contours/filled regions with no labeled
+  line artist to draw from (a proxy legend); `bbox_to_anchor` places the
+  legend at an exact whole-figure-fraction point instead of `loc`'s own
+  inset/edge position.
+- **The HTML round-trip now saves each series' `label`/`color`** -- 
+  `plotpress.load_data()`'s `"series"` entries carry `"label"`/`"color"`
+  for `"line"`/`"scatter"`/`"stem"`/`"errorbar"`/`"bar"` (`None` for a
+  colormap-mapped scatter, a per-bar-colored bar chart, an older file, or a
+  kind with no single meaningful color -- box/violin/quiver/event/contour).
+  This was the reason `subplots_from_layout()` could never auto-restore a
+  legend: the labels needed to rebuild one were never saved to begin with.
+  They're enough now to replot recovered data with a working, labeled,
+  colored legend -- see the new regression test for the full round trip.
+- **`save()`/`savefig()`: `dpi=`, `transparent=`, `format=`, and file-like
+  targets.** `dpi` overrides `Style.dpi` for one save only (without
+  mutating the figure) -- since every point-to-pixel conversion in both
+  backends already keys off `style.dpi`, this scales the canvas *and*
+  every font/marker/margin together, matching matplotlib's own `dpi=`
+  rather than just stretching a fixed-content raster. `transparent=True`
+  (PNG only) drops the outer canvas fill, leaving it transparent instead of
+  painted with `Style.facecolor` (each axes' own facecolor is unaffected).
+  `format=` names the format explicitly and is what lets `path` be a
+  file-like object (a `BytesIO`/`StringIO`) instead of a filename -- the
+  standard `fig.savefig(buf, format="png")` idiom for serving a figure
+  without touching disk.
+- **`bar()`/`barh()` hatching** -- `hatch="/"`/`"\\"`/`"|"`/`"-"`/`"+"`/`"x"`
+  tiles a pattern (always black, matplotlib's own default) over the fill,
+  an SVG `<pattern>` in one backend and a composited tiled layer in the
+  other -- the standard way to keep grouped bars apart in greyscale print
+  or for a colorblind reader, when color alone can't. An unrecognized
+  hatch character is ignored (plain fill), not an error.
+
+New tests: ~50 cases across `tests/test_matplotlib_gaps.py`. New gallery
+examples: `docs/examples/pairwise/plot_16_marker_shapes.py`,
+`docs/examples/pairwise/plot_17_bar_hatching.py`,
+`docs/examples/figure_layout/plot_14_save_kwargs.py`; reused
+`docs/applications/medical/plot_08_kaplan_meier.py` for the `"|"` marker.
+
+Verified: full pytest suite (1232 passed) and a real
+`python -m sphinx -b html -W --keep-going -j auto docs docs/_build/html`
+build, both clean.
+
 ## [0.26.0] - 2026-09-06
 
 Tier 1 of a functionality audit (6 parallel subagent sweeps across the
