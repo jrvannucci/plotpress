@@ -21,7 +21,7 @@ from .artists import (
     PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Table, Text,
     Violin, _edges_from,
 )
-from .colors import apply_colormap, colorbar_ticks, to_hex
+from .colors import apply_colormap, resolve_colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import pie_center_radius, pie_label_positions, tick_axis_edge
@@ -81,9 +81,14 @@ def figure_to_svg(fig, interactive: bool = False) -> str:
         f'viewBox="0 0 {_fmt(W)} {_fmt(H)}" '
         f'font-family="{fig.style.font_family}">'
     )
+    # A document <title> is both an accessibility hook (screen readers,
+    # browser-tab title if the SVG is opened standalone) and free metadata
+    # for anything that lists SVG files by name -- only emitted when there
+    # is a real title to give it, rather than a generic filler on every plot.
+    title_block = f"<title>{_esc(fig._suptitle['text'])}</title>" if fig._suptitle else ""
     bg = f'<rect x="0" y="0" width="{_fmt(W)}" height="{_fmt(H)}" fill="{fig.style.facecolor}"/>'
     defs_block = f"<defs>{''.join(defs)}</defs>" if defs else ""
-    return header + defs_block + bg + "".join(body) + "</svg>"
+    return header + title_block + defs_block + bg + "".join(body) + "</svg>"
 
 
 def _pixel_rect(ax, W, H):
@@ -197,7 +202,8 @@ def _group_colorbar_extra(cax, st):
     right, regardless of any tick-side setting a plain axes would have.
     """
     top = _group_top_clearance(cax, st)
-    _, _, tlabels = colorbar_ticks(cax._cbar_source.norm)
+    _, _, tlabels = resolve_colorbar_ticks(cax._cbar_source.norm, cax._cbar_ticks,
+                                           cax._cbar_format)
     width = max((st.text_width(l, st.tick_label_size) for l in tlabels), default=0.0)
     return top, 0.0, 0.0, st.tick_size + width + 4
 
@@ -325,6 +331,7 @@ def axes_metadata(fig, idx_of=None):
             "xmin": round(float(xmin), 6), "xmax": round(float(xmax), 6),
             "ymin": round(float(ymin), 6), "ymax": round(float(ymax), 6),
             "grid": bool(ax._grid), "axis_off": bool(ax._axis_off),
+            "grid_axis": ax._grid_axis, "grid_which": ax._grid_which,
             # None (omitted from the client's perspective via the JS ?? below)
             # unless grid(alpha=...) actually overrode the figure-wide
             # default, mirroring tick_style's "only present when overridden"
@@ -462,6 +469,7 @@ def layout_metadata(fig, idx_of=None):
             "xscale": ax._xscale, "yscale": ax._yscale,
             "xinverted": bool(ax._xinverted), "yinverted": bool(ax._yinverted),
             "grid": bool(ax._grid), "grid_alpha": ax._grid_alpha,
+            "grid_axis": ax._grid_axis, "grid_which": ax._grid_which,
             "aspect": ax._aspect, "box_aspect": ax._box_aspect,
             "axis_off": bool(ax._axis_off),
             "facecolor": ax._facecolor,
@@ -1008,8 +1016,16 @@ def _render_axes(ax, fig, W, H, index, defs, body):
     body.append(f'<g id="ticks{index}">')
     if ax._grid and not ax._axis_off and not overlay:
         grid_alpha = ax._grid_alpha if ax._grid_alpha is not None else st.grid_alpha
-        _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
-                    grid_alpha)
+        if ax._grid_which in ("major", "both"):
+            _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
+                        grid_alpha, axis=ax._grid_axis)
+        if ax._grid_which in ("minor", "both"):
+            xminor_g = (ax._xticks_minor if ax._xticks_minor is not None
+                       else minor_ticks(xticks, xmin, xmax, ax._xscale))
+            yminor_g = (ax._yticks_minor if ax._yticks_minor is not None
+                       else minor_ticks(yticks, ymin, ymax, ax._yscale))
+            _render_grid(st, tr, xminor_g, yminor_g, px_left, px_top, px_w, px_h,
+                        body, grid_alpha, axis=ax._grid_axis, minor=True)
     if not ax._axis_off:
         if is_twin:
             _render_twin_ticks(ax, st, tr, xticks, yticks,
@@ -1288,6 +1304,11 @@ def _emit_prim(p) -> str:
         return "".join(out)
     if isinstance(p, PPath):
         idattr = f' id="{p.series_id}"' if p.series_id else ""
+        # A <title> child is a real, no-JS browser tooltip on hover -- the
+        # one bit of the interactive toolbar's "what series is this" that a
+        # static SVG (a README, a Sphinx gallery page, a PDF/print viewer
+        # that renders SVG) can still offer without the JS payload at all.
+        title = f"<title>{lbl}</title>" if p.label else ""
         if p.element == "polygon":
             pts = p.subpaths[0]
             coords = " ".join(f"{_fmt(x)},{_fmt(y)}" for x, y in pts
@@ -1296,12 +1317,12 @@ def _emit_prim(p) -> str:
                       if p.stroke else 'stroke="none"')
             return (f'<polygon class="plotpress-series"{idattr} data-label="{lbl}" '
                     f'points="{coords}" fill="{p.fill}" '
-                    f'fill-opacity="{p.fill_opacity}" {stroke}/>')
+                    f'fill-opacity="{p.fill_opacity}" {stroke}>{title}</polygon>')
         d = _path_d(p.subpaths, p.closed)
         if p.fill and not p.stroke:
             return (f'<path class="plotpress-series"{idattr} data-label="{lbl}" '
                     f'd="{d}" fill="{p.fill}" fill-opacity="{p.fill_opacity}" '
-                    f'stroke="none"/>')
+                    f'stroke="none">{title}</path>')
         attrs = (f'fill="none" stroke="{p.stroke}" stroke-width="{p.stroke_width}" '
                  f'stroke-linejoin="round" stroke-linecap="round"')
         dash = _DASH.get(p.linestyle)
@@ -1310,7 +1331,7 @@ def _emit_prim(p) -> str:
         if p.stroke_opacity < 1:
             attrs += f' stroke-opacity="{p.stroke_opacity}"'
         return (f'<path class="plotpress-series"{idattr} data-label="{lbl}" '
-                f'd="{d}" {attrs}/>')
+                f'd="{d}" {attrs}>{title}</path>')
     raise TypeError(f"unknown primitive {type(p).__name__}")
 
 
@@ -1553,18 +1574,23 @@ def _render_errorbar(eb: ErrorBar, tr, st, fig, body):
                 f'stroke-width="{eb.linewidth}" d="{d}"/>'
             )
     whiskers, caps, cap = [], [], eb.capsize
+    every = eb.errorevery
     if eb.yerr is not None:
         # An error bar reaching below zero on a log axis has no pixel to land
         # on; clamp the whisker to the frame rather than emitting NaN, which
         # drops the whole bar and quietly understates the uncertainty.
         ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
-        for x, a, b in zip(xb, ylo, yhi):
+        for i, (x, a, b) in enumerate(zip(xb, ylo, yhi)):
+            if i % every:
+                continue
             whiskers.append(f'<line x1="{_fmt(x)}" y1="{_fmt(a)}" x2="{_fmt(x)}" y2="{_fmt(b)}"/>')
             caps.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(a)}" x2="{_fmt(x + cap)}" y2="{_fmt(a)}"/>')
             caps.append(f'<line x1="{_fmt(x - cap)}" y1="{_fmt(b)}" x2="{_fmt(x + cap)}" y2="{_fmt(b)}"/>')
     if eb.xerr is not None:
         xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
-        for y, a, b in zip(yb, xlo, xhi):
+        for i, (y, a, b) in enumerate(zip(yb, xlo, xhi)):
+            if i % every:
+                continue
             whiskers.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y)}" x2="{_fmt(b)}" y2="{_fmt(y)}"/>')
             caps.append(f'<line x1="{_fmt(a)}" y1="{_fmt(y - cap)}" x2="{_fmt(a)}" y2="{_fmt(y + cap)}"/>')
             caps.append(f'<line x1="{_fmt(b)}" y1="{_fmt(y - cap)}" x2="{_fmt(b)}" y2="{_fmt(y + cap)}"/>')
@@ -2116,29 +2142,45 @@ def _render_barbs(b: Barbs, tr, st, body):
 
 def _render_contour(ct: Contour, tr, body):
     op = f' stroke-opacity="{ct.alpha}"' if ct.alpha < 1 else ""
-    for lvl, color, segs in ct.line_segments:
+    for lvl, color, lw, ls, segs in ct.line_segments:
         if not segs:
             continue
         d = "".join(
             f"M{_fmt(tr.x(a))},{_fmt(tr.y(b))}L{_fmt(tr.x(c))},{_fmt(tr.y(e))}"
             for a, b, c, e in segs
         )
-        body.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.2"{op}/>')
+        dash = _DASH.get(ls)
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+        body.append(
+            f'<path d="{d}" fill="none" stroke="{color}" '
+            f'stroke-width="{_fmt(lw)}"{dash_attr}{op}/>'
+        )
 
 
 # -- axes furniture --------------------------------------------------------
 def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
-                 alpha=None):
+                 alpha=None, axis="both", minor=False):
+    """``axis`` restricts lines to ``"x"``/``"y"``/``"both"``; ``minor=True``
+    draws them thinner and lighter, the standard subordinate look for a
+    minor grid alongside (or instead of) the major one.
+    """
     lines = []
-    for xt in xticks:
-        x = tr.x(xt)
-        lines.append(f'<line x1="{_fmt(x)}" y1="{_fmt(px_top)}" x2="{_fmt(x)}" y2="{_fmt(px_top + px_h)}"/>')
-    for yt in yticks:
-        y = tr.y(yt)
-        lines.append(f'<line x1="{_fmt(px_left)}" y1="{_fmt(y)}" x2="{_fmt(px_left + px_w)}" y2="{_fmt(y)}"/>')
+    if axis != "y":
+        for xt in xticks:
+            x = tr.x(xt)
+            lines.append(f'<line x1="{_fmt(x)}" y1="{_fmt(px_top)}" x2="{_fmt(x)}" y2="{_fmt(px_top + px_h)}"/>')
+    if axis != "x":
+        for yt in yticks:
+            y = tr.y(yt)
+            lines.append(f'<line x1="{_fmt(px_left)}" y1="{_fmt(y)}" x2="{_fmt(px_left + px_w)}" y2="{_fmt(y)}"/>')
+    if not lines:
+        return
+    width = st.grid_width * (0.6 if minor else 1.0)
+    base_alpha = st.grid_alpha if alpha is None else alpha
+    grid_alpha = base_alpha * (0.6 if minor else 1.0)
     body.append(
-        f'<g stroke="{st.grid_color}" stroke-width="{st.grid_width}" '
-        f'stroke-opacity="{st.grid_alpha if alpha is None else alpha}">'
+        f'<g stroke="{st.grid_color}" stroke-width="{_fmt(width)}" '
+        f'stroke-opacity="{_fmt(grid_alpha)}">'
         f'{"".join(lines)}</g>'
     )
 
@@ -2568,7 +2610,7 @@ def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body):
     _render_spines(ax, px_left, px_top, px_w, px_h, body)
 
     st = ax.style
-    _, fracs, tlabels = colorbar_ticks(norm)
+    _, fracs, tlabels = resolve_colorbar_ticks(norm, ax._cbar_ticks, ax._cbar_format)
     marks, labels = [], []
     for frac, lab in zip(fracs, tlabels):
         y = px_top + (1 - frac) * px_h

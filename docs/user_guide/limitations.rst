@@ -160,7 +160,7 @@ Deliberate omissions, listed so you do not go looking:
 
 * No geographic / map projections (these need projection-database and datum
   machinery out of proportion to a pure-Python library).
-* No ``streamplot`` / ``barbs``, and no triangulation (``tri*``) plot types.
+* No ``streamplot``, and no triangulation (``tri*``) plot types.
 * No animation API. ``plot_frames`` gives a slider over an extra dimension in
   interactive HTML, which covers the common case.
 * No text layout beyond single-line strings -- no rich text, no math/LaTeX

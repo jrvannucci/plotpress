@@ -105,10 +105,12 @@ See :ref:`limitation-font-metrics` for the full table and the reasoning, and
 Colormaps and normalization
 ---------------------------
 
-24 built-in colormaps -- perceptually uniform (``"viridis"``, ``"plasma"``,
+28 built-in colormaps -- perceptually uniform (``"viridis"``, ``"plasma"``,
 ...), sequential (``"Blues"``, ``"YlOrRd"``, ...), diverging
-(``"coolwarm"``, ``"Spectral"``, ...), cyclic (``"twilight"``), and a few
-classics (``"jet"``, ``"turbo"``). See
+(``"coolwarm"``, ``"Spectral"``, ...), cyclic (``"twilight"``), a few
+classics (``"jet"``, ``"turbo"``), and qualitative/categorical
+(``"tab10"``, ``"tab20"``, ``"Set1"``, ``"Dark2"`` -- banded, not
+interpolated, for class labels with no natural ordering). See
 :doc:`../auto_examples/gridded_data/plot_11_colormap_reference` for every
 one of them as a gradient swatch. Append ``"_r"`` to any name to reverse it.
 
@@ -117,6 +119,21 @@ one of them as a gradient swatch. Append ``"_r"`` to any name to reverse it.
 
 ``plotpress.get_cmap(name)``
     Return a ``256x3`` uint8 lookup table (or pass an array through).
+
+``plotpress.make_cmap(colors, n=256)``
+    Build a continuous colormap by interpolating any list of colors (names,
+    hex, or RGB(A) tuples) -- for a custom or brand-specific scale that
+    isn't one of the 28 built-in names.
+
+``plotpress.make_listed_cmap(colors, n=256)``
+    Like ``make_cmap``, but banded rather than interpolated -- for
+    categorical data, the same shape as ``"tab10"``/``"Set1"``.
+
+``plotpress.register_cmap(name, colors_or_lut, listed=False)``
+    Register a custom colormap (built from a color list, or a ready-made
+    ``(n, 3)`` uint8 LUT) under ``name``, so it becomes usable by name --
+    ``cmap="name"``, the reversed ``"name_r"``, and
+    ``available_colormaps()`` -- everywhere a built-in colormap is.
 
 ``plotpress.Normalize(vmin=None, vmax=None)``
     Linearly map data to ``[0, 1]`` for colormapping. Unset limits are inferred
@@ -127,3 +144,14 @@ one of them as a gradient swatch. Append ``"_r"`` to any name to reverse it.
 
        norm = plotpress.Normalize(0, 1)
        ax.pcolormesh(x, y, Z, cmap="plasma", norm=norm)
+
+``plotpress.TwoSlopeNorm(vcenter=0.0, vmin=None, vmax=None)``
+    Keep a diverging colormap's neutral color pinned to ``vcenter`` even
+    when ``vmin``/``vmax`` aren't symmetric around it -- a plain
+    ``Normalize`` puts the midpoint at ``(vmin + vmax) / 2``, which only
+    lands on a meaningful value (zero, for an anomaly field) by coincidence.
+
+``plotpress.BoundaryNorm(boundaries, ncolors=None)``
+    Map data into discrete bins defined by ``boundaries`` instead of a
+    gradient -- classified rasters, risk tiers, significance thresholds.
+    ``Figure.colorbar``'s ticks land on the boundaries themselves.

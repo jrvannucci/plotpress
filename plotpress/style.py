@@ -15,6 +15,42 @@ DEFAULT_COLOR_CYCLE: List[str] = [
     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
 ]
 
+# Okabe-Ito: the standard colorblind-safe 8-color palette (Okabe & Ito,
+# 2008), distinguishable under deuteranopia/protanopia/tritanopia -- unlike
+# DEFAULT_COLOR_CYCLE, whose red/green pair (#d62728/#2ca02c) collapses
+# under deuteranopia, the single most common form of color blindness.
+OKABE_ITO: List[str] = [
+    "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+    "#0072B2", "#D55E00", "#CC79A7", "#000000",
+]
+
+# Paul Tol's "bright" qualitative palette -- a second colorblind-safe
+# option, 7 colors, favoring more saturated hues than Okabe-Ito.
+TOL_BRIGHT: List[str] = [
+    "#4477AA", "#EE6677", "#228833", "#CCBB44",
+    "#66CCEE", "#AA3377", "#BBBBBB",
+]
+
+_NAMED_CYCLES = {
+    "tab10": DEFAULT_COLOR_CYCLE,
+    "okabe-ito": OKABE_ITO,
+    "tol-bright": TOL_BRIGHT,
+}
+
+
+def named_cycle(name: str) -> List[str]:
+    """Look up a built-in color cycle by name: ``"tab10"`` (the default),
+    ``"okabe-ito"`` or ``"tol-bright"`` (colorblind-safe). Returns a fresh
+    copy, safe to assign straight to ``Style.color_cycle`` or pass to
+    ``Axes.set_prop_cycle``.
+    """
+    try:
+        return list(_NAMED_CYCLES[name.lower()])
+    except KeyError:
+        raise ValueError(
+            f"Unknown color cycle {name!r}. Available: {sorted(_NAMED_CYCLES)}"
+        ) from None
+
 # Fields with no sensible non-positive value -- a size/width of zero or less
 # doesn't degrade gracefully, it produces broken output much later, far from
 # the mutation that caused it (dpi <= 0 alone used to reach svg.py/raster.py

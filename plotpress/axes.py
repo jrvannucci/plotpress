@@ -261,6 +261,8 @@ class Axes:
         self._title = ""
         self._title_size = None    # None -> the style's title_size
         self._grid = False
+        self._grid_axis = "both"   # grid(axis="x"|"y"|"both")
+        self._grid_which = "major"  # grid(which="major"|"minor"|"both")
         self._color_idx = 0
         self._color_cycle_override = None  # per-axes prop cycle; style.color_cycle is shared
 
@@ -286,6 +288,8 @@ class Axes:
         self._cbar_parents = None
         self._cbar_fraction = 0.05
         self._cbar_pad = 0.02
+        self._cbar_ticks = None    # explicit tick values, or None for auto
+        self._cbar_format = None   # a %-style string or value -> str callable
 
     # -- style / color cycle ------------------------------------------------
     def _next_color(self):
@@ -830,9 +834,19 @@ class Axes:
         counts_out = all_counts if multi else all_counts[0]
         return counts_out, edges, bars_out
 
-    def step(self, x, y, where="pre", color=None, linewidth=None, label=None,
-             alpha=1.0, zorder=0):
-        """Step (staircase) plot."""
+    def step(self, x, y, where="pre", color=None, linewidth=None,
+             linestyle=None, label=None, alpha=1.0, zorder=0):
+        """Step (staircase) plot.
+
+        ``linestyle`` forwards straight to :meth:`plot` -- a dashed or
+        dotted step, for overlaying two step curves distinguishably. No
+        ``marker=``: the staircase's own corner vertices aren't the real
+        data points (each is repeated to draw the vertical/horizontal
+        jump), so a marker drawn at every vertex would double up per point
+        and land on the corner instead of the actual sample -- plot the
+        real ``x``/``y`` separately with :meth:`scatter` if markers at the
+        original points are wanted.
+        """
         x = np.asarray(x, float)
         y = np.asarray(y, float)
         if where == "mid":
@@ -843,11 +857,12 @@ class Axes:
         else:  # 'pre'
             xs, ys = np.repeat(x, 2)[:-1], np.repeat(y, 2)[1:]
         return self.plot(xs, ys, color=self._resolve_color(color),
-                         linewidth=linewidth, label=label, alpha=alpha,
-                         zorder=zorder)
+                         linewidth=linewidth, linestyle=linestyle,
+                         label=label, alpha=alpha, zorder=zorder)
 
-    def fill_between(self, x, y1, y2=0.0, where=None, color=None, alpha=0.4,
-                     label=None, edgecolor=None, linewidth=0.0, zorder=0):
+    def fill_between(self, x, y1, y2=0.0, where=None, interpolate=False,
+                     color=None, alpha=0.4, label=None, edgecolor=None,
+                     linewidth=0.0, zorder=0):
         """Fill the area between ``y1`` and ``y2``.
 
         ``edgecolor``/``linewidth`` outline the filled region -- the same
@@ -855,11 +870,15 @@ class Axes:
         closed-path primitive; there was no reason the outline was
         ``fill()``-only.
 
-        ``where`` (a boolean mask matching ``x``) restricts the fill to its
-        contiguous ``True`` runs -- each its own artist (no interpolation at
-        the boundary between a ``True`` and ``False`` point, unlike
-        matplotlib's own default). Returns a list of them, one per run,
-        instead of a single artist when given.
+        ``where`` (a boolean mask matching ``x``, typically ``y1 > y2`` or
+        similar) restricts the fill to its contiguous ``True`` runs -- each
+        its own artist. By default each run stops at the last sample still
+        inside it, leaving a visible gap up to where ``y1``/``y2`` actually
+        cross; ``interpolate=True`` extends each run to that exact
+        linearly-interpolated crossing point instead (matplotlib's own
+        default for this case), for the common "shade where y1 exceeds y2"
+        idiom. Returns a list of runs, one per contiguous region, instead of
+        a single artist when ``where`` is given.
         """
         x = np.asarray(x, float)
         y1b = _broadcast_like("fill_between", "y1", y1, x, "x")
@@ -882,7 +901,19 @@ class Axes:
             j = i
             while j < n and where[j]:
                 j += 1
-            fb = FillBetween(x[i:j], y1b[i:j], y2b[i:j], color=resolved,
+            xs, ys1, ys2 = x[i:j], y1b[i:j], y2b[i:j]
+            if interpolate:
+                if i > 0:
+                    xc, vc = _boundary_crossing(x, y1b, y2b, i - 1, i)
+                    xs = np.concatenate([[xc], xs])
+                    ys1 = np.concatenate([[vc], ys1])
+                    ys2 = np.concatenate([[vc], ys2])
+                if j < n:
+                    xc, vc = _boundary_crossing(x, y1b, y2b, j - 1, j)
+                    xs = np.concatenate([xs, [xc]])
+                    ys1 = np.concatenate([ys1, [vc]])
+                    ys2 = np.concatenate([ys2, [vc]])
+            fb = FillBetween(xs, ys1, ys2, color=resolved,
                              alpha=alpha, label=(label if not segments else None),
                              edgecolor=to_hex(edgecolor), linewidth=linewidth)
             fb.zorder = zorder
@@ -891,14 +922,17 @@ class Axes:
             i = j
         return segments
 
-    def fill_betweenx(self, y, x1, x2=0.0, where=None, color=None, alpha=0.4,
-                      label=None, edgecolor=None, linewidth=0.0, zorder=0):
+    def fill_betweenx(self, y, x1, x2=0.0, where=None, interpolate=False,
+                      color=None, alpha=0.4, label=None, edgecolor=None,
+                      linewidth=0.0, zorder=0):
         """Fill the horizontal area between ``x1`` and ``x2`` across ``y``.
 
         ``edgecolor``/``linewidth`` match :meth:`fill_between`. ``where``
         (a boolean mask matching ``y``) restricts the fill to its
-        contiguous ``True`` runs, the same way -- returns a list of
-        artists, one per run, instead of a single one when given.
+        contiguous ``True`` runs, the same way, and ``interpolate=True``
+        extends each run to ``x1``/``x2``'s exact linearly-interpolated
+        crossing point the same way -- returns a list of artists, one per
+        run, instead of a single one when given.
         """
         y = np.asarray(y, float)
         x1 = _broadcast_like("fill_betweenx", "x1", x1, y, "y")
@@ -926,8 +960,19 @@ class Axes:
             j = i
             while j < n and where[j]:
                 j += 1
-            segments.append(_one(y[i:j], x1[i:j], x2[i:j],
-                                 label if not segments else None))
+            yy, xx1, xx2 = y[i:j], x1[i:j], x2[i:j]
+            if interpolate:
+                if i > 0:
+                    yc, vc = _boundary_crossing(y, x1, x2, i - 1, i)
+                    yy = np.concatenate([[yc], yy])
+                    xx1 = np.concatenate([[vc], xx1])
+                    xx2 = np.concatenate([[vc], xx2])
+                if j < n:
+                    yc, vc = _boundary_crossing(y, x1, x2, j - 1, j)
+                    yy = np.concatenate([yy, [yc]])
+                    xx1 = np.concatenate([xx1, [vc]])
+                    xx2 = np.concatenate([xx2, [vc]])
+            segments.append(_one(yy, xx1, xx2, label if not segments else None))
             i = j
         return segments
 
@@ -996,7 +1041,7 @@ class Axes:
     def errorbar(self, x, y, yerr=None, xerr=None, fmt="", color=None,
                  marker=_UNSET, markersize=None, capsize=3.0, linestyle=_UNSET,
                  linewidth=None, label=None, alpha=1.0, zorder=0, ecolor=None,
-                 elinewidth=None, capthick=None):
+                 elinewidth=None, capthick=None, errorevery=1):
         """Line/markers with error bars. Only round markers are drawn.
 
         ``fmt`` is matplotlib's 5th positional argument here too (its own
@@ -1014,6 +1059,12 @@ class Axes:
         (resolved the same way) / ``linewidth`` if not given, so nothing
         changes unless you pass them. ``capthick`` (the caps' own width)
         falls back to ``elinewidth`` in turn.
+
+        ``errorevery`` draws a whisker/cap only every Nth point (default
+        every point) -- the connecting line and every marker still draw in
+        full, only the error bars themselves thin out. For a dense series
+        (thousands of samples), a whisker on every point paints solid black;
+        ``errorevery=20`` keeps the uncertainty visible without the clutter.
         """
         if fmt:
             fmt_color, fmt_linestyle, fmt_marker = _parse_fmt(fmt)
@@ -1049,7 +1100,7 @@ class Axes:
             linewidth=self.style.line_width if linewidth is None else linewidth,
             label=label, alpha=alpha,
             ecolor=self._resolve_color(ecolor) if ecolor is not None else None,
-            elinewidth=elinewidth, capthick=capthick)
+            elinewidth=elinewidth, capthick=capthick, errorevery=errorevery)
         eb.zorder = zorder
         self.artists.append(eb)
         return eb
@@ -1462,7 +1513,8 @@ class Axes:
         return b
 
     def contour(self, *args, levels=8, colors=None, cmap="viridis", vmin=None,
-                vmax=None, label=None, alpha=1.0, zorder=0):
+                vmax=None, linewidths=None, linestyles=None,
+                negative_linestyles="dashed", label=None, alpha=1.0, zorder=0):
         """Contour lines. ``contour(Z)`` or ``contour(x, y, Z)``.
 
         Colors (when ``colors`` isn't given explicitly) come from mapping
@@ -1472,7 +1524,18 @@ class Axes:
         colors both the same way, and non-uniform ``levels`` (e.g.
         ``[0, 1, 2, 10]``) get each level's true position on the scale,
         not just its rank among them.
+
+        ``linewidths``/``linestyles`` are a single value or one per level
+        (matching ``levels``' own length).  When ``colors`` is given
+        explicitly (a single flat color, not a ``cmap`` gradient) and
+        ``linestyles`` is left unset, negative levels default to
+        ``negative_linestyles`` ("dashed") instead of solid -- matplotlib's
+        own convention for reading a stream-function/vorticity/anomaly
+        field's sign without a colorbar. This default only applies to an
+        explicit single color: a colormapped contour set already encodes
+        sign through hue, so every level stays solid unless asked otherwise.
         """
+        explicit_color = colors is not None
         if len(args) == 1:
             Z = np.asarray(args[0], float)
             _check_2d(Z, "contour")
@@ -1504,7 +1567,10 @@ class Axes:
             colors = [to_hex(colors)]
         else:
             colors = [to_hex(c) for c in colors]
-        c = Contour(x, y, Z, levels, colors, label=label, alpha=alpha)
+        if linestyles is None and explicit_color:
+            linestyles = [negative_linestyles if lvl < 0 else "-" for lvl in levels]
+        c = Contour(x, y, Z, levels, colors, linewidths=linewidths,
+                   linestyles=linestyles, label=label, alpha=alpha)
         c.zorder = zorder
         self.artists.append(c)
         return c
@@ -1576,7 +1642,7 @@ class Axes:
         """
         want = set(levels) if levels is not None else None
         texts = []
-        for lvl, color, segs in CS.line_segments:
+        for lvl, color, _lw, _ls, segs in CS.line_segments:
             if (want is not None and lvl not in want) or not segs:
                 continue
             x0, y0, x1, y1 = segs[len(segs) // 2]
@@ -1588,7 +1654,8 @@ class Axes:
         return texts
 
     def hexbin(self, x, y, gridsize=20, cmap="viridis", mincnt=1, label=None,
-               norm=None, vmin=None, vmax=None, alpha=1.0, zorder=0):
+               norm=None, vmin=None, vmax=None, edgecolors=None,
+               linewidths=None, alpha=1.0, zorder=0):
         """Hexagonal 2-D binning of points ``x``/``y`` (colormapped counts).
 
         Returns a mappable collection of hexagons (works with ``fig.colorbar``).
@@ -1599,6 +1666,11 @@ class Axes:
         and a linear ramp then paints everything but the peak the same colour,
         so ``norm=LogNorm()`` is often the difference between a readable density
         map and two blobs.
+
+        ``edgecolors``/``linewidths`` outline each hexagon -- the standard
+        look for a sparse/low-count hexbin, where separating adjacent cells
+        matters more than for a dense one. ``edgecolors=None`` (default)
+        draws no outline, matching the previous behavior.
         """
         if gridsize <= 0:
             # A non-positive gridsize doesn't error -- it just can't tile
@@ -1613,7 +1685,9 @@ class Axes:
         if len(counts):
             norm.autoscale_none(counts)
         facecolors = apply_colormap(counts, lut, norm)[:, :3] if len(counts) else []
-        pc = PolyCollection(verts, facecolors, label=label, alpha=alpha)
+        pc = PolyCollection(verts, facecolors, edgecolor=to_hex(edgecolors),
+                           linewidth=(0.4 if linewidths is None else linewidths),
+                           label=label, alpha=alpha)
         pc.lut, pc.norm = lut, norm      # make it a colorbar mappable
         pc.counts = counts               # picking reports the raw count per hexagon
         pc.zorder = zorder
@@ -2632,15 +2706,28 @@ class Axes:
         self._title_size = size if size is not None else fontsize
         self.figure._layout_dirty = True
 
-    def grid(self, visible=True, alpha=None):
-        """Show or hide the gridlines at the major tick positions.
+    def grid(self, visible=True, axis="both", which="major", alpha=None):
+        """Show or hide the gridlines at the major (and/or minor) tick
+        positions.
+
+        ``axis`` restricts the gridlines to ``"x"`` or ``"y"`` only
+        (default ``"both"``) -- the standard clean look for a bar/category
+        chart, where gridlines along the category axis carry no
+        information. ``which`` draws lines at ``"major"`` tick positions
+        (default), ``"minor"`` (see :meth:`minorticks_on`), or ``"both"``.
 
         ``alpha`` overrides this axes' gridline opacity; ``None`` (the
         default) falls back to the figure style's own ``grid_alpha``, the
         same "override vs. style default" convention ``Spine`` and the
         per-axes tick overrides already use.
         """
+        if axis not in ("both", "x", "y"):
+            raise ValueError(f"grid(): axis must be 'both', 'x' or 'y', got {axis!r}")
+        if which not in ("major", "minor", "both"):
+            raise ValueError(f"grid(): which must be 'major', 'minor' or 'both', got {which!r}")
         self._grid = bool(visible)
+        self._grid_axis = axis
+        self._grid_which = which
         self._grid_alpha = alpha
 
     def legend(self, loc="upper right", ncol=1, title=None, handles=None,
@@ -3101,6 +3188,23 @@ def _broadcast_like(who, name, value, target, target_name):
             f"{who}(): {name} has shape {arr.shape}, which doesn't "
             f"broadcast against {target_name}'s shape {target.shape}"
         ) from None
+
+
+def _boundary_crossing(t, a, b, i, j):
+    """Linearly interpolate where ``a - b`` crosses zero between adjacent
+    samples ``i``/``j`` of parameter ``t`` -- the exact point ``fill_between``
+    /``fill_betweenx``'s ``interpolate=True`` extends a filled run to, instead
+    of stopping short at the last sample still inside the run.
+
+    Returns ``(t_c, v_c)`` where ``v_c`` is the shared value of ``a``/``b``
+    at the crossing (by construction, they're equal there).
+    """
+    da, db = a[i] - b[i], a[j] - b[j]
+    denom = da - db
+    frac = 0.5 if denom == 0 else da / denom
+    tc = t[i] + frac * (t[j] - t[i])
+    vc = a[i] + frac * (a[j] - a[i])
+    return tc, vc
 
 
 def _warn_vector_mesh_size(mesh, who):

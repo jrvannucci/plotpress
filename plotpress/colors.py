@@ -158,7 +158,51 @@ def _build_lut(anchors: np.ndarray, n: int = 256) -> np.ndarray:
     return lut
 
 
+def _build_listed_lut(anchors: np.ndarray, n: int = 256) -> np.ndarray:
+    """Band-replicate ``anchors`` into an ``(n, 3)`` uint8 LUT with **no**
+    interpolation between entries -- each color occupies an equal-width band.
+
+    For qualitative/categorical data (class labels, discrete groups), where
+    intermediate blended colors between two categories would be meaningless.
+    """
+    m = anchors.shape[0]
+    idx = np.minimum((np.arange(n) * m) // n, m - 1)
+    return np.round(anchors[idx]).astype(np.uint8)
+
+
 _GRAY_LUT = np.repeat(np.linspace(0, 255, 256, dtype=np.uint8)[:, None], 3, axis=1)
+
+# tab10 (matplotlib's default color cycle, see style.DEFAULT_COLOR_CYCLE) and
+# tab20 (its 20-color extension), as *colormaps* rather than just a cycle --
+# for coloring already-labeled/binned data (scatter(c=class_labels), a
+# categorical mesh) where a continuous colormap would misleadingly imply an
+# ordering between classes that don't have one.
+_TAB10_ANCHORS = np.array([
+    [31, 119, 180], [255, 127, 14], [44, 160, 44], [214, 39, 40],
+    [148, 103, 189], [140, 86, 75], [227, 119, 194], [127, 127, 127],
+    [188, 189, 34], [23, 190, 207],
+], dtype=float)
+
+_TAB20_ANCHORS = np.array([
+    [31, 119, 180], [174, 199, 232], [255, 127, 14], [255, 187, 120],
+    [44, 160, 44], [152, 223, 138], [214, 39, 40], [255, 152, 150],
+    [148, 103, 189], [197, 176, 213], [140, 86, 75], [196, 156, 148],
+    [227, 119, 194], [247, 182, 210], [127, 127, 127], [199, 199, 199],
+    [188, 189, 34], [219, 219, 141], [23, 190, 207], [158, 218, 229],
+], dtype=float)
+
+# Set1/Dark2 (ColorBrewer qualitative palettes) -- a second, third look for
+# categorical data distinct from tab10/tab20's hues.
+_SET1_ANCHORS = np.array([
+    [228, 26, 28], [55, 126, 184], [77, 175, 74], [152, 78, 163],
+    [255, 127, 0], [255, 255, 51], [166, 86, 40], [247, 129, 191],
+    [153, 153, 153],
+], dtype=float)
+
+_DARK2_ANCHORS = np.array([
+    [27, 158, 119], [217, 95, 2], [117, 112, 179], [231, 41, 138],
+    [102, 166, 30], [230, 171, 2], [166, 118, 29], [102, 102, 102],
+], dtype=float)
 
 _COLORMAPS = {
     # Perceptually uniform sequential
@@ -190,6 +234,11 @@ _COLORMAPS = {
     "jet": _build_lut(_JET_ANCHORS),
     "turbo": _build_lut(_TURBO_ANCHORS),
     "cool": _build_lut(_COOL_ANCHORS),
+    # Qualitative / categorical (banded, not interpolated)
+    "tab10": _build_listed_lut(_TAB10_ANCHORS),
+    "tab20": _build_listed_lut(_TAB20_ANCHORS),
+    "Set1": _build_listed_lut(_SET1_ANCHORS),
+    "Dark2": _build_listed_lut(_DARK2_ANCHORS),
 }
 
 
@@ -340,6 +389,63 @@ def to_hex(color) -> str:
     return resolved
 
 
+def _hex_to_rgb(h: str):
+    h = h.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _colors_to_anchors(colors) -> np.ndarray:
+    if len(colors) < 2:
+        raise ValueError("need at least 2 colors")
+    return np.array([_hex_to_rgb(to_hex(c)) for c in colors], dtype=float)
+
+
+def make_cmap(colors, n: int = 256) -> np.ndarray:
+    """Build a continuous colormap LUT by interpolating between ``colors``
+    (each anything :func:`to_hex` accepts -- a name, hex code, or RGB(A)
+    tuple) -- the ``LinearSegmentedColormap.from_list`` equivalent.
+
+    Returns a plain ``(n, 3)`` uint8 array, usable directly as ``cmap=``
+    anywhere a colormap is accepted (:func:`get_cmap` passes an array
+    straight through), or handed to :func:`register_cmap` to give it a name.
+    """
+    return _build_lut(_colors_to_anchors(colors), n)
+
+
+def make_listed_cmap(colors, n: int = 256) -> np.ndarray:
+    """Build a discrete (banded, non-interpolated) colormap LUT from
+    ``colors`` -- each entry occupies an equal-width band, for categorical
+    data with no natural ordering between values (``scatter(c=class_ids,
+    cmap=make_listed_cmap(["crimson", "steelblue", "goldenrod"]))``).
+
+    Returns a plain ``(n, 3)`` uint8 array, same as :func:`make_cmap`.
+    """
+    return _build_listed_lut(_colors_to_anchors(colors), n)
+
+
+def register_cmap(name: str, colors_or_lut, *, listed: bool = False,
+                   n: int = 256) -> np.ndarray:
+    """Register a custom colormap under ``name`` so it becomes usable by
+    name everywhere a colormap name is accepted (``cmap="name"``, the
+    reversed ``"name_r"``, and :func:`available_colormaps`).
+
+    ``colors_or_lut`` is either a ready-made ``(n, 3)`` uint8 LUT, or a list
+    of colors to build one from via :func:`make_cmap` (or
+    :func:`make_listed_cmap` when ``listed=True``, for a categorical map).
+    Returns the LUT that was registered.
+    """
+    if isinstance(colors_or_lut, np.ndarray):
+        lut = colors_or_lut.astype(np.uint8, copy=False)
+    elif listed:
+        lut = make_listed_cmap(colors_or_lut, n)
+    else:
+        lut = make_cmap(colors_or_lut, n)
+    _COLORMAPS[name] = lut
+    return lut
+
+
 def _nonzero_span(lo, hi):
     """``hi - lo``, or ``1.0`` if that's zero (a flat/constant field, or a
     single-value ``vmin == vmax``) -- otherwise every value maps to a
@@ -474,6 +580,85 @@ class SymLogNorm(Normalize):
         return (self._symlog(A) - lo) / span
 
 
+class TwoSlopeNorm(Normalize):
+    """Map data to [0, 1] with ``vcenter`` pinned to the exact midpoint
+    (matplotlib's TwoSlopeNorm).
+
+    A plain :class:`Normalize` puts the colormap's midpoint at
+    ``(vmin + vmax) / 2``, which only lands on a meaningful reference value
+    (zero for an anomaly/residual field) when ``vmin``/``vmax`` happen to be
+    symmetric around it. With asymmetric bounds -- the common case for real
+    data -- a diverging colormap's neutral color (white, for ``coolwarm``/
+    ``RdBu``/``seismic``) silently lands on the wrong value instead of on
+    the one the colormap was chosen to highlight.
+    """
+
+    def __init__(self, vcenter=0.0, vmin=None, vmax=None):
+        super().__init__(vmin, vmax)
+        self.vcenter = float(vcenter)
+
+    def autoscale_none(self, A):
+        super().autoscale_none(A)
+        # Widen an inferred bound that doesn't actually straddle vcenter --
+        # e.g. all-positive data with a vcenter of 0 -- rather than dividing
+        # by a negative/zero span below.
+        if self.vmin > self.vcenter:
+            self.vmin = self.vcenter
+        if self.vmax < self.vcenter:
+            self.vmax = self.vcenter
+
+    def __call__(self, A):
+        A = np.asarray(A, dtype=float)
+        self.autoscale_none(A)
+        lo_span = _nonzero_span(self.vmin, self.vcenter)
+        hi_span = _nonzero_span(self.vcenter, self.vmax)
+        t = np.where(
+            A < self.vcenter,
+            0.5 * (A - self.vmin) / lo_span,
+            0.5 + 0.5 * (A - self.vcenter) / hi_span,
+        )
+        return np.clip(t, 0.0, 1.0)
+
+
+class BoundaryNorm(Normalize):
+    """Map data into discrete bins defined by ``boundaries`` (matplotlib's
+    BoundaryNorm) -- for classified data with no natural continuous scale:
+    risk tiers, land-cover classes, significance thresholds.
+
+    Bin ``i`` covers ``[boundaries[i], boundaries[i + 1])`` (the last bin is
+    closed on both ends); each bin maps to one flat color -- its own evenly
+    spaced fraction of the colormap -- rather than a gradient. A value
+    outside ``[boundaries[0], boundaries[-1]]`` maps to NaN (transparent),
+    matching every other norm's out-of-range handling. Unlike the other
+    norms, limits come entirely from ``boundaries`` and are never inferred
+    from data.
+    """
+
+    def __init__(self, boundaries, ncolors=None):
+        boundaries = np.asarray(boundaries, dtype=float)
+        if boundaries.ndim != 1 or boundaries.size < 2:
+            raise ValueError(
+                "BoundaryNorm: boundaries must be a 1-D sequence of at "
+                f"least 2 edges, got shape {boundaries.shape}"
+            )
+        if np.any(np.diff(boundaries) <= 0):
+            raise ValueError("BoundaryNorm: boundaries must be strictly increasing")
+        self.boundaries = boundaries
+        self.ncolors = (boundaries.size - 1) if ncolors is None else int(ncolors)
+        super().__init__(float(boundaries[0]), float(boundaries[-1]))
+
+    def autoscale_none(self, A):
+        pass  # limits come from boundaries, never inferred from data
+
+    def __call__(self, A):
+        A = np.asarray(A, dtype=float)
+        nbins = self.boundaries.size - 1
+        idx = np.clip(np.searchsorted(self.boundaries, A, side="right") - 1, 0, nbins - 1)
+        valid = (A >= self.boundaries[0]) & (A <= self.boundaries[-1])
+        frac = (idx.astype(float) + 0.5) / nbins
+        return np.where(valid, frac, np.nan)
+
+
 def resolve_norm(norm, vmin=None, vmax=None) -> Normalize:
     """Return the norm instance an artist should own.
 
@@ -498,8 +683,18 @@ def colorbar_ticks(norm):
     The gradient strip is an even colormap ramp; ticks are positioned at
     ``norm(value)`` (their fractional height), so a ``LogNorm``/``PowerNorm``/
     ``SymLogNorm`` colorbar places its labels correctly instead of linearly.
+
+    A ``BoundaryNorm`` is a special case: its ticks are the bin edges
+    themselves (evenly spaced along the bar, one per boundary), not
+    ``nice_ticks``' usual round numbers -- a boundary is the one value that
+    actually means something on a discrete colorbar.
     """
     from .ticker import format_ticks, log_ticks, nice_ticks
+
+    if isinstance(norm, BoundaryNorm):
+        vals = norm.boundaries
+        fracs = np.linspace(0.0, 1.0, vals.size)
+        return vals, fracs, format_ticks(vals)
 
     vmin, vmax = norm.vmin, norm.vmax
     vals = log_ticks(vmin, vmax) if isinstance(norm, LogNorm) else nice_ticks(vmin, vmax)
@@ -509,6 +704,55 @@ def colorbar_ticks(norm):
     keep = np.isfinite(fracs) & (fracs >= -1e-9) & (fracs <= 1 + 1e-9)
     vals, fracs = vals[keep], np.clip(fracs[keep], 0.0, 1.0)
     return vals, fracs, format_ticks(vals)
+
+
+def _apply_tick_format(fmt, vals) -> list:
+    if callable(fmt):
+        return [fmt(v) for v in vals]
+    return [fmt % v for v in vals]
+
+
+def resolve_colorbar_ticks(norm, ticks=None, fmt=None):
+    """:func:`colorbar_ticks`, but honoring an explicit tick-value list
+    and/or a custom label format -- ``Figure.colorbar(..., ticks=[...],
+    format="%.1f")``'s underlying resolution, shared by every backend that
+    draws a colorbar so the three don't each reimplement the override
+    precedence separately.
+
+    ``ticks`` (explicit values) replaces the norm's own auto-generated
+    positions entirely; ``fmt`` (a ``%``-style string or a value -> str
+    callable) replaces the labels only, over whichever tick values end up
+    in play.
+    """
+    if ticks is None:
+        vals, fracs, labels = colorbar_ticks(norm)
+        if fmt is not None:
+            labels = _apply_tick_format(fmt, vals)
+        return vals, fracs, labels
+
+    from .ticker import format_ticks
+
+    vals = np.asarray(ticks, dtype=float)
+    if isinstance(norm, BoundaryNorm):
+        # BoundaryNorm's own __call__ answers "which bin does this value
+        # color as" (its bin's flat midpoint fraction) -- not "where on the
+        # bar does this value's own position sit", which is what a tick
+        # needs. Two different boundary values can share a bin (there is no
+        # bin whose edges are two adjacent explicit ticks), which would
+        # otherwise stack their tick marks on top of each other. Position by
+        # linear interpolation along the boundaries themselves instead, so
+        # an explicit ticks=[...] -- typically the boundaries themselves, or
+        # a subset -- lands each one at its own true edge position.
+        edges = norm.boundaries
+        fracs = np.interp(vals, edges, np.linspace(0.0, 1.0, edges.size))
+        keep = (vals >= edges[0]) & (vals <= edges[-1])
+    else:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            fracs = np.asarray(norm(vals), dtype=float)
+        keep = np.isfinite(fracs) & (fracs >= -1e-9) & (fracs <= 1 + 1e-9)
+    vals, fracs = vals[keep], np.clip(fracs[keep], 0.0, 1.0)
+    labels = format_ticks(vals) if fmt is None else _apply_tick_format(fmt, vals)
+    return vals, fracs, labels
 
 
 def apply_colormap(A, lut, norm: Normalize) -> np.ndarray:

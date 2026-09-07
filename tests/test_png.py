@@ -10,7 +10,9 @@ from plotpress.png import _encode_rgba, encode_png, png_data_uri
 
 
 def _decode_png(data):
-    """Minimal decoder for our own output (8-bit RGBA, filter type 0)."""
+    """Minimal decoder for our own output (8-bit RGBA, filter type None or Up
+    -- the two encode_png actually emits, chosen per-scanline; see
+    png._filter_scanlines)."""
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
     pos = 8
     width = height = None
@@ -31,10 +33,16 @@ def _decode_png(data):
     raw = zlib.decompress(idat)
     stride = width * 4
     out = np.empty((height, width, 4), np.uint8)
+    prior = np.zeros(stride, np.uint8)
     for r in range(height):
         row = raw[r * (stride + 1):(r + 1) * (stride + 1)]
-        assert row[0] == 0  # filter: none
-        out[r] = np.frombuffer(row[1:], np.uint8).reshape(width, 4)
+        ftype = row[0]
+        assert ftype in (0, 2), f"unsupported PNG filter type {ftype}"
+        cur = np.frombuffer(row[1:], np.uint8)
+        if ftype == 2:  # Up: reconstructed = filtered + prior row, mod 256
+            cur = (cur.astype(np.uint16) + prior.astype(np.uint16)).astype(np.uint8)
+        out[r] = cur.reshape(width, 4)
+        prior = cur
     return out
 
 

@@ -67,7 +67,7 @@ from .artists import (
     Bars, ErrorBar, Line2D, Pie, QuadMesh, ScatterCollection, Stem, Text,
     Annotation, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, colorbar_ticks, to_hex
+from .colors import Normalize, resolve_colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
 from .primitives import pie_center_radius, pie_label_positions
@@ -242,7 +242,7 @@ def _colorbar_to_group(ax, i, W, H, st):
             "smooth": {"value": False}, "aspect": {"value": False},
         }},
     }]
-    _, fracs, tlabels = colorbar_ticks(src.norm)
+    _, fracs, tlabels = resolve_colorbar_ticks(src.norm, ax._cbar_ticks, ax._cbar_format)
     for frac, lab in zip(fracs, tlabels):
         y = px_top + (1 - frac) * px_h
         marks.append({

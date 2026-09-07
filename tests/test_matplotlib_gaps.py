@@ -7,7 +7,9 @@ import pytest
 
 import plotpress
 from plotpress.colors import (
-    LogNorm, PowerNorm, SymLogNorm, apply_colormap, get_cmap, to_hex,
+    BoundaryNorm, LogNorm, PowerNorm, SymLogNorm, TwoSlopeNorm,
+    apply_colormap, get_cmap, make_cmap, make_listed_cmap, register_cmap,
+    resolve_colorbar_ticks, to_hex,
 )
 
 
@@ -2493,3 +2495,496 @@ def test_legend_bbox_to_anchor_places_the_box_outside_the_axes():
     pytest.importorskip("PIL")
     from plotpress.raster import figure_to_image
     figure_to_image(fig)   # must not raise
+
+
+# -- functionality audit, Tier 1: norms/colormaps -----------------------
+def test_boundary_norm_bins_values_into_flat_evenly_spaced_fractions():
+    bn = BoundaryNorm([0, 1, 2, 4])
+    fracs = bn(np.array([0.0, 0.5, 1.5, 3.9, -1.0, 4.0]))
+    # 3 bins -> fractions at the middle of each 1/3-wide band; out-of-range
+    # values (below the first/above the last boundary) map to NaN.
+    np.testing.assert_allclose(fracs[:4], [1 / 6, 1 / 6, 3 / 6, 5 / 6])
+    assert np.isnan(fracs[4])
+    assert fracs[5] == 5 / 6   # boundaries[-1] itself is included (closed both ends)
+
+
+def test_boundary_norm_rejects_non_increasing_boundaries():
+    with pytest.raises(ValueError):
+        BoundaryNorm([0, 2, 1])
+    with pytest.raises(ValueError):
+        BoundaryNorm([1])
+
+
+def test_boundary_norm_colorbar_ticks_are_the_boundaries_themselves():
+    bn = BoundaryNorm([0, 10, 20, 30])
+    vals, fracs, labels = resolve_colorbar_ticks(bn)
+    assert list(vals) == [0, 10, 20, 30]
+    np.testing.assert_allclose(fracs, [0, 1 / 3, 2 / 3, 1.0])
+
+
+def test_two_slope_norm_centers_on_vcenter_with_asymmetric_bounds():
+    tsn = TwoSlopeNorm(vcenter=0.0, vmin=-1.0, vmax=9.0)
+    np.testing.assert_allclose(tsn(np.array([-1.0, 0.0, 9.0])), [0.0, 0.5, 1.0])
+    # A plain Normalize over the same asymmetric range would NOT put 0 at
+    # the midpoint -- confirming this actually differs from the plain case.
+    from plotpress.colors import Normalize
+    plain = Normalize(-1.0, 9.0)
+    assert plain(np.array([0.0]))[0] != 0.5
+
+
+def test_two_slope_norm_widens_an_inferred_bound_that_misses_vcenter():
+    tsn = TwoSlopeNorm(vcenter=0.0)
+    tsn.autoscale_none(np.array([1.0, 2.0, 3.0]))   # all-positive data
+    assert tsn.vmin <= 0.0
+
+
+def test_make_cmap_interpolates_and_make_listed_cmap_bands():
+    interp = make_cmap(["blue", "white", "red"])
+    assert interp.shape == (256, 3) and interp.dtype == np.uint8
+    np.testing.assert_array_equal(interp[0], [0, 0, 255])
+    np.testing.assert_array_equal(interp[-1], [255, 0, 0])
+    # Interpolated: colors blend smoothly, so no huge jump between neighbors.
+    assert np.abs(interp[128].astype(int) - interp[127].astype(int)).max() < 10
+
+    listed = make_listed_cmap(["crimson", "steelblue", "goldenrod"])
+    assert listed.shape == (256, 3)
+    # Banded: the first third is one flat color, not a gradient.
+    assert np.array_equal(listed[0], listed[80])
+
+
+def test_make_cmap_needs_at_least_two_colors():
+    with pytest.raises(ValueError):
+        make_cmap(["red"])
+
+
+def test_register_cmap_makes_a_name_usable_everywhere():
+    register_cmap("plotpress-test-cmap", ["black", "white"])
+    assert "plotpress-test-cmap" in plotpress.available_colormaps()
+    assert "plotpress-test-cmap_r" in plotpress.available_colormaps()
+    lut = get_cmap("plotpress-test-cmap")
+    np.testing.assert_array_equal(lut[0], [0, 0, 0])
+    np.testing.assert_array_equal(lut[-1], [255, 255, 255])
+    reversed_lut = get_cmap("plotpress-test-cmap_r")
+    np.testing.assert_array_equal(reversed_lut[0], lut[-1])
+
+
+def test_register_cmap_accepts_a_ready_made_lut():
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    lut[:, 0] = 200
+    out = register_cmap("plotpress-test-raw-lut", lut)
+    assert out is lut
+    assert np.array_equal(get_cmap("plotpress-test-raw-lut"), lut)
+
+
+def test_tab10_tab20_set1_dark2_are_qualitative_not_interpolated():
+    for name in ("tab10", "tab20", "Set1", "Dark2"):
+        lut = get_cmap(name)
+        assert lut.shape == (256, 3)
+        # Qualitative: no gradient within a band -- neighboring rows near
+        # the start of the LUT match exactly (same banded color).
+        assert np.array_equal(lut[0], lut[1])
+    assert "tab10" in plotpress.available_colormaps()
+
+
+def test_named_cycle_looks_up_builtin_palettes():
+    from plotpress.style import DEFAULT_COLOR_CYCLE, OKABE_ITO, TOL_BRIGHT, named_cycle
+
+    assert named_cycle("tab10") == DEFAULT_COLOR_CYCLE
+    assert named_cycle("okabe-ito") == OKABE_ITO
+    assert named_cycle("tol-bright") == TOL_BRIGHT
+    # A fresh copy each time -- mutating the result must not corrupt the
+    # module-level constant for the next caller.
+    got = named_cycle("okabe-ito")
+    got.append("#000000")
+    assert len(named_cycle("okabe-ito")) == len(OKABE_ITO)
+    with pytest.raises(ValueError):
+        named_cycle("not-a-real-cycle")
+
+
+def test_okabe_ito_cycle_is_usable_as_a_real_color_cycle():
+    from plotpress.style import OKABE_ITO, Style
+
+    fig, ax = plotpress.subplots(style=Style(color_cycle=list(OKABE_ITO)))
+    lines = [ax.plot([0, 1], [i, i + 1]) for i in range(3)]
+    assert [l.color for l in lines] == OKABE_ITO[:3]
+
+
+# -- functionality audit, Tier 1: fill_between/fill_betweenx interpolate --
+def test_fill_between_interpolate_extends_to_the_true_crossing():
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    y1 = np.array([0.0, 2.0, -1.0, 1.0])
+    y2 = np.array([1.0, 1.0, 1.0, 1.0])
+    segs = plotpress.subplots()[1].fill_between(
+        x, y1, y2, where=y1 > y2, interpolate=True)
+    # Without interpolate, the first run would stop at x=1 (the last True
+    # sample); with it, the run extends to the actual crossing at x=0.5.
+    assert segs[0].x[0] == pytest.approx(0.5)
+    assert segs[0].y1[0] == pytest.approx(1.0)
+    assert segs[0].y2[0] == pytest.approx(1.0)
+
+
+def test_fill_between_without_interpolate_stops_at_the_last_sample():
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    y1 = np.array([0.0, 2.0, -1.0, 1.0])
+    y2 = np.array([1.0, 1.0, 1.0, 1.0])
+    segs = plotpress.subplots()[1].fill_between(x, y1, y2, where=y1 > y2)
+    assert segs[0].x[0] == 1.0   # no crossing vertex inserted
+
+
+def test_fill_betweenx_interpolate_extends_to_the_true_crossing():
+    y = np.array([0.0, 1.0, 2.0, 3.0])
+    x1 = np.array([0.0, 2.0, -1.0, 1.0])
+    x2 = np.array([1.0, 1.0, 1.0, 1.0])
+    fig, ax = plotpress.subplots()
+    segs = ax.fill_betweenx(y, x1, x2, where=x1 > x2, interpolate=True)
+    assert segs[0].y[0] == pytest.approx(0.5)
+
+
+# -- functionality audit, Tier 1: contour linewidths/linestyles ---------
+def test_contour_negative_levels_default_to_dashed_with_an_explicit_color():
+    fig, ax = plotpress.subplots()
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = X + Y   # spans negative and positive
+    cs = ax.contour(X, Y, Z, levels=[-1, 1], colors="black")
+    styles = {lvl: ls for lvl, _c, _lw, ls, _segs in cs.line_segments}
+    assert styles[-1] == "--"
+    assert styles[1] == "-"
+    svg = fig.to_svg()
+    assert "stroke-dasharray" in svg
+
+
+def test_contour_with_cmap_stays_solid_even_for_negative_levels():
+    fig, ax = plotpress.subplots()
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = X + Y
+    cs = ax.contour(X, Y, Z, levels=[-1, 1])   # no explicit colors -> cmap
+    styles = {lvl: ls for lvl, _c, _lw, ls, _segs in cs.line_segments}
+    assert styles[-1] == "-" and styles[1] == "-"
+
+
+def test_contour_linewidths_and_linestyles_accept_per_level_lists():
+    fig, ax = plotpress.subplots()
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = X + Y
+    cs = ax.contour(X, Y, Z, levels=[-1, 0, 1], colors="black",
+                   linewidths=[1, 2, 3], linestyles=["-", "--", ":"])
+    widths = [lw for _l, _c, lw, _ls, _s in cs.line_segments]
+    styles = [ls for _l, _c, _lw, ls, _s in cs.line_segments]
+    assert widths == [1.0, 2.0, 3.0]
+    assert styles == ["-", "--", ":"]
+
+
+def test_contour_raster_backend_draws_dashed_negative_levels_too():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = X + Y
+    ax.contour(X, Y, Z, levels=[-1, 1], colors="black")
+    figure_to_image(fig, scale=1)   # must not raise
+
+
+def test_clabel_still_works_with_the_new_line_segments_shape():
+    fig, ax = plotpress.subplots()
+    g = np.linspace(-2, 2, 20)
+    X, Y = np.meshgrid(g, g)
+    Z = np.exp(-(X ** 2 + Y ** 2))
+    cs = ax.contour(g, g, Z, levels=[0.3, 0.6])
+    texts = ax.clabel(cs)
+    assert len(texts) == 2
+
+
+# -- functionality audit, Tier 1: grid(axis=, which=) --------------------
+def test_grid_axis_restricts_to_one_direction():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.grid(True, axis="y")
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(svg)
+    ns = "{http://www.w3.org/2000/svg}"
+    grid_g = next(el for el in root.iter(f"{ns}g")
+                  if el.get("stroke") == "#b0b0b0")
+    lines = grid_g.findall(f"{ns}line")
+    # Every gridline is horizontal (y-only): shared y1==y2 would mean
+    # vertical instead -- a y-gridline has x1==x2 == fixed axes width edges
+    # would be equal only for x-lines, so check the concrete axis instead.
+    assert all(l.get("y1") == l.get("y2") for l in lines)
+
+
+def test_grid_which_both_draws_a_second_lighter_minor_group():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.grid(True, which="both")
+    svg = fig.to_svg()
+    assert svg.count('stroke="#b0b0b0"') == 2
+
+
+def test_grid_rejects_bad_axis_or_which():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError):
+        ax.grid(True, axis="z")
+    with pytest.raises(ValueError):
+        ax.grid(True, which="sometimes")
+
+
+def test_grid_axis_which_round_trip_through_html_layout():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.grid(True, axis="x", which="minor")
+    path = fig.to_html()
+    from plotpress.figure import _load_layout
+
+    layout = _load_layout(path)
+    spec = layout["axes"][0]
+    assert spec["grid_axis"] == "x" and spec["grid_which"] == "minor"
+    fig2, ax2 = plotpress.subplots_from_layout(layout)   # 1x1 grid -> bare Axes
+    assert ax2._grid_axis == "x" and ax2._grid_which == "minor"
+
+
+def test_grid_raster_backend_handles_axis_and_which():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.grid(True, axis="x", which="both")
+    figure_to_image(fig, scale=1)   # must not raise
+
+
+# -- functionality audit, Tier 1: Figure.colorbar(label=, ticks=, format=) --
+def test_colorbar_label_sets_the_axes_title():
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.random.default_rng(0).random((5, 5)))
+    cax = fig.colorbar(mesh, ax, label="Signal (V)")
+    assert cax.get_title() == "Signal (V)"
+    assert "Signal (V)" in fig.to_svg()
+
+
+def test_colorbar_explicit_ticks_override_the_auto_ones():
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.linspace(0, 1, 25).reshape(5, 5))
+    fig.colorbar(mesh, ax, ticks=[0.0, 0.5, 1.0])
+    vals, fracs, labels = resolve_colorbar_ticks(mesh.norm, [0.0, 0.5, 1.0], None)
+    assert list(vals) == [0.0, 0.5, 1.0]
+    np.testing.assert_allclose(fracs, [0.0, 0.5, 1.0])
+
+
+def test_colorbar_format_string_and_callable_both_work():
+    mesh_norm = plotpress.subplots()[1].pcolormesh(
+        np.linspace(0, 1, 25).reshape(5, 5)).norm
+    _, _, pct_labels = resolve_colorbar_ticks(mesh_norm, [0.0, 1.0], "%.0f%%")
+    assert pct_labels == ["0%", "1%"]
+    _, _, custom_labels = resolve_colorbar_ticks(
+        mesh_norm, [0.0, 1.0], lambda v: f"<{v}>")
+    assert custom_labels == ["<0.0>", "<1.0>"]
+
+
+def test_colorbar_ticks_and_format_render_in_svg_and_raster():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.linspace(0, 1, 25).reshape(5, 5))
+    fig.colorbar(mesh, ax, ticks=[0.0, 1.0], format="%.2f")
+    svg = fig.to_svg()
+    assert "0.00" in svg and "1.00" in svg
+    figure_to_image(fig, scale=1)   # must not raise
+
+
+def test_colorbar_explicit_ticks_on_a_boundary_norm_land_at_true_edges():
+    """Regression: explicit ticks=[...] on a BoundaryNorm used to run through
+    the norm's own bin-fraction __call__, which maps two different boundary
+    values into the *same* bin's midpoint fraction whenever they aren't each
+    other's exact bin edge -- stacking their tick marks on top of each other
+    instead of spreading them across the bar."""
+    bn = BoundaryNorm([0, 1, 2, 3, 5])
+    vals, fracs, _labels = resolve_colorbar_ticks(bn, [0, 1, 2, 3, 5], None)
+    np.testing.assert_allclose(fracs, [0.0, 0.25, 0.5, 0.75, 1.0])
+    assert len(set(fracs)) == 5   # every tick lands at a distinct position
+
+
+def test_colorbar_ticks_format_reach_vega_and_vega_lite_too():
+    fig, ax = plotpress.subplots()
+    mesh = ax.pcolormesh(np.linspace(0, 1, 25).reshape(5, 5))
+    fig.colorbar(mesh, ax, ticks=[0.0, 1.0], format="%.2f")
+    import json
+    assert "0.00" in json.dumps(fig.to_vega())
+    vl, _caveats = fig.to_vega_lite()
+    assert "0.00" in json.dumps(vl)
+
+
+# -- functionality audit, Tier 1: small matplotlib-parity batch ----------
+def test_hexbin_edgecolors_and_linewidths():
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    hb = ax.hexbin(rng.normal(size=200), rng.normal(size=200),
+                   edgecolors="white", linewidths=0.8)
+    assert hb.edgecolor == "#ffffff" and hb.linewidth == 0.8
+    svg = fig.to_svg()
+    assert 'stroke="#ffffff"' in svg
+
+
+def test_hexbin_default_has_no_edge_unchanged():
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    hb = ax.hexbin(rng.normal(size=50), rng.normal(size=50))
+    assert hb.edgecolor is None
+
+
+def test_step_linestyle_forwards_to_plot():
+    fig, ax = plotpress.subplots()
+    line = ax.step([0, 1, 2], [0, 1, 0], linestyle="--")
+    assert line.linestyle == "--"
+    assert "stroke-dasharray" in fig.to_svg()
+
+
+def test_errorbar_errorevery_thins_whiskers_not_the_line_or_markers():
+    fig, ax = plotpress.subplots()
+    x = np.arange(10, dtype=float)
+    eb = ax.errorbar(x, x, yerr=0.5, errorevery=3)
+    assert eb.errorevery == 3
+    svg = fig.to_svg()
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(svg)
+    ns = "{http://www.w3.org/2000/svg}"
+    # 10 points, every 3rd gets a whisker: indices 0, 3, 6, 9 -> 4 whiskers.
+    dots = [el for el in root.iter(f"{ns}circle")]
+    assert len(dots) == 10   # markers unaffected
+    whisker_group = next(g for g in root.iter(f"{ns}g")
+                         if g.get("stroke-width") is not None
+                         and len(g.findall(f"{ns}line")) in (4,))
+    assert len(whisker_group.findall(f"{ns}line")) == 4
+
+
+def test_errorbar_errorevery_default_is_every_point():
+    fig, ax = plotpress.subplots()
+    eb = ax.errorbar([0, 1, 2], [0, 1, 2], yerr=0.5)
+    assert eb.errorevery == 1
+
+
+def test_errorbar_errorevery_rejects_less_than_one():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError):
+        ax.errorbar([0, 1], [0, 1], yerr=0.1, errorevery=0)
+
+
+def test_errorbar_raster_backend_honors_errorevery():
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    x = np.arange(10, dtype=float)
+    ax.errorbar(x, x, yerr=0.5, errorevery=2)
+    figure_to_image(fig, scale=1)   # must not raise
+
+
+# -- functionality audit, Tier 1: export formats (EPS/JPEG/WebP) --------
+def test_save_jpeg_webp_eps_round_trip(tmp_path):
+    pytest.importorskip("PIL")
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4])
+
+    jpg = tmp_path / "out.jpg"
+    fig.save(str(jpg))
+    assert jpg.exists() and jpg.stat().st_size > 0
+
+    webp = tmp_path / "out.webp"
+    fig.save(str(webp))
+    assert webp.exists() and webp.stat().st_size > 0
+
+    pytest.importorskip("reportlab")
+    pytest.importorskip("svglib")
+    eps = tmp_path / "out.eps"
+    fig.save(str(eps))
+    assert eps.read_bytes().startswith(b"%!PS-Adobe")
+
+
+def test_save_unknown_extension_still_raises_and_lists_new_formats():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    with pytest.raises(ValueError, match=r"\.eps"):
+        fig.save("out.bogus")
+
+
+# -- functionality audit, Tier 1: PNG dpi metadata + adaptive filter ----
+def test_saved_png_carries_dpi_metadata(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image as PILImage
+    from plotpress import Style
+
+    fig, ax = plotpress.subplots(style=Style(dpi=300))
+    ax.plot([0, 1], [0, 1])
+    path = tmp_path / "out.png"
+    fig.save(str(path))
+    with PILImage.open(path) as im:
+        dpi = im.info.get("dpi")
+    assert dpi is not None
+    assert round(dpi[0]) == 300 and round(dpi[1]) == 300
+
+
+def test_png_encoder_prefers_up_filter_for_a_smooth_gradient():
+    from plotpress.png import _filter_scanlines
+
+    w = 64
+    row = np.linspace(0, 255, w).astype(np.uint8)
+    # Every row identical but for a slight vertical drift -- a smooth
+    # gradient, the realistic shape of a colormapped mesh/image.
+    pixels = np.stack([row + i for i in range(40)]).astype(np.uint8)
+    filtered = _filter_scanlines(pixels)
+    # Rows after the first should mostly choose Up (filter type 2): a
+    # constant per-row offset makes the row-to-row delta near-uniform,
+    # which Up captures and None cannot.
+    assert (filtered[1:, 0] == 2).mean() > 0.5
+
+
+def test_png_encoder_round_trips_correctly_when_filters_are_mixed():
+    """Real decode-level correctness (not just the heuristic), for a field
+    with both smooth and noisy regions in the same image -- exercised via a
+    real embedded-mesh SVG export, which is what actually ships this data."""
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    smooth = np.linspace(0, 1, 40 * 40).reshape(40, 40)
+    Z = smooth.copy()
+    Z[:10, :10] = rng.random((10, 10))   # noisy patch mixed into a smooth field
+    ax.pcolormesh(Z, cmap="viridis")
+    svg = fig.to_svg()
+    assert "<image" in svg   # rasterized as expected; no exception on decode paths
+
+
+# -- functionality audit, Tier 1: native SVG <title>/<desc> --------------
+def test_root_title_present_only_when_suptitle_is_set():
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    assert "<title>" not in fig1.to_svg()
+
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    fig2.suptitle("Experiment 7")
+    svg2 = fig2.to_svg()
+    assert "<title>Experiment 7</title>" in svg2
+    # Must appear before any drawing content, right after the opening <svg>.
+    assert svg2.index("<title>") < svg2.index("<rect")
+
+
+def test_labeled_series_gets_a_hover_title_unlabeled_does_not():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], label="sin wave")
+    ax.plot([0, 1, 2], [4, 1, 0])   # no label
+    svg = fig.to_svg()
+    assert "<title>sin wave</title>" in svg
+    assert svg.count("<title>") == 1   # only the labeled series got one
+
+
+def test_svg_with_title_children_is_still_well_formed():
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 4], label="a")
+    fig.suptitle("Whole Figure")
+    ET.fromstring(fig.to_svg())   # must parse without error

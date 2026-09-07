@@ -81,7 +81,7 @@ from .artists import (
 from .png import png_data_uri
 from .primitives import pie_center_radius, pie_label_positions
 from .svg import _effective_rect, _pixel_rect
-from .colors import colorbar_ticks
+from .colors import resolve_colorbar_ticks
 from .vega import (
     _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
     _symbol_size,
@@ -424,7 +424,7 @@ def _colorbar_to_vl_spec(ax):
             "url": {"field": "url", "type": "nominal"},
         },
     }]
-    _, fracs, tlabels = colorbar_ticks(src.norm)
+    _, fracs, tlabels = resolve_colorbar_ticks(src.norm, ax._cbar_ticks, ax._cbar_format)
     if fracs.size:
         rows = [{"y": float((1 - f) * h), "label": str(lab)}
                for f, lab in zip(fracs, tlabels)]

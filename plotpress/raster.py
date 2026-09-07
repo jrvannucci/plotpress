@@ -17,7 +17,7 @@ from .artists import (
     FrameLine2D, FrameQuadMesh, Pie, Polygon, Quiver, ScatterCollection, Span,
     Stem, Table, Text, Violin,
 )
-from .colors import colorbar_ticks, to_hex
+from .colors import resolve_colorbar_ticks, to_hex
 # Which files can draw a given font stack is declared once, in fonts/families,
 # next to which width table measures it -- see that module for why the two must
 # be decided together. Imported under the old private names so anything
@@ -154,7 +154,56 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main"):
 
 
 def save_png(fig, path, scale=2):
-    figure_to_image(fig, scale=scale).save(path, format="PNG")
+    # Embed the figure's own dpi as the PNG's physical pixel density (a
+    # `pHYs` chunk) -- without it, a viewer that cares about physical size
+    # (Word, LaTeX, Google Docs) assumes 96dpi regardless of what dpi the
+    # image was actually rendered at, so a `Style(dpi=300)` figure pastes in
+    # at triple its intended physical size.
+    dpi = fig.style.dpi
+    figure_to_image(fig, scale=scale).save(path, format="PNG", dpi=(dpi, dpi))
+    return path
+
+
+def save_jpeg(fig, path, scale=2, quality=95):
+    """Export as JPEG. Smaller than PNG for photographic-style content, but
+    its lossy block compression is a poor fit for the sharp text/line edges
+    most plotpress figures are made of (visible ringing around axis labels
+    and thin strokes) -- PNG stays the better default; reach for this when
+    a downstream consumer specifically requires JPEG.
+    """
+    dpi = fig.style.dpi
+    figure_to_image(fig, scale=scale).save(
+        path, format="JPEG", dpi=(dpi, dpi), quality=quality)
+    return path
+
+
+def save_webp(fig, path, scale=2, quality=95):
+    """Export as WebP -- typically much smaller than PNG for a dense mesh
+    figure at a similar visual quality, at the same "not built for sharp
+    edges" caveat as JPEG for text/line-heavy figures. No dpi metadata:
+    Pillow's WebP writer has no field for it.
+    """
+    figure_to_image(fig, scale=scale).save(path, format="WEBP", quality=quality)
+    return path
+
+
+def save_eps(fig, path):
+    """Vector EPS via svglib + reportlab's PostScript renderer -- for
+    submission pipelines that still require EPS specifically (some
+    journal/LaTeX workflows), alongside :func:`save_pdf`'s PDF.
+    """
+    import io
+
+    try:
+        from reportlab.graphics import renderPS
+        from svglib.svglib import svg2rlg
+    except ImportError as e:
+        raise RuntimeError(
+            "EPS export needs svglib + reportlab (standard dependencies); "
+            "reinstall plotpress to restore them"
+        ) from e
+    drawing = svg2rlg(io.StringIO(fig.to_svg()))
+    renderPS.drawToFile(drawing, path)
     return path
 
 
@@ -279,18 +328,33 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
     yticks = (ax._yticks if ax._yticks is not None else
               (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
 
+    def _draw_grid_lines(xs, ys, alpha, minor=False):
+        gc = _rgba(st.grid_color, alpha * (0.6 if minor else 1.0))
+        gw = max(1, int(round(st.grid_width * (0.6 if minor else 1.0) * S)))
+        if ax._grid_axis != "y":
+            for xt in xs:
+                x = float(tr.x(xt))
+                if L <= x <= L + Wp:
+                    draw.line([x, T, x, T + Hp], fill=gc, width=gw)
+        if ax._grid_axis != "x":
+            for yt in ys:
+                y = float(tr.y(yt))
+                if T <= y <= T + Hp:
+                    draw.line([L, y, L + Wp, y], fill=gc, width=gw)
+
     if ax._grid and not ax._axis_off and not overlay:
-        gc = _rgba(st.grid_color, ax._grid_alpha if ax._grid_alpha is not None
-                  else st.grid_alpha)
-        gw = max(1, int(round(st.grid_width * S)))
-        for xt in xticks:
-            x = float(tr.x(xt))
-            if L <= x <= L + Wp:
-                draw.line([x, T, x, T + Hp], fill=gc, width=gw)
-        for yt in yticks:
-            y = float(tr.y(yt))
-            if T <= y <= T + Hp:
-                draw.line([L, y, L + Wp, y], fill=gc, width=gw)
+        grid_alpha = (ax._grid_alpha if ax._grid_alpha is not None
+                     else st.grid_alpha)
+        if ax._grid_which in ("major", "both"):
+            _draw_grid_lines(xticks, yticks, grid_alpha)
+        if ax._grid_which in ("minor", "both"):
+            from .ticker import minor_ticks
+
+            xminor_g = (ax._xticks_minor if ax._xticks_minor is not None
+                       else minor_ticks(xticks, xmin, xmax, ax._xscale))
+            yminor_g = (ax._yticks_minor if ax._yticks_minor is not None
+                       else minor_ticks(yticks, ymin, ymax, ax._yscale))
+            _draw_grid_lines(xminor_g, yminor_g, grid_alpha, minor=True)
 
     # Artists go onto a scratch layer, and only the part of that layer inside
     # the axes rect is composited back. This is the raster counterpart of the
@@ -480,12 +544,17 @@ def _raster_artist(artist, tr, st, S, draw, canvas, frame=0, animate_unit="main"
     elif isinstance(artist, Barbs):
         _barbs(artist, tr, st, S, draw)
     elif isinstance(artist, Contour):
-        for lvl, color, segs in artist.line_segments:
+        for lvl, color, lw, ls, segs in artist.line_segments:
             fill = (_rgba(color, artist.alpha) if artist.alpha < 1 else _rgb(color))
+            width = max(1, int(round(lw * S)))
+            dash = _DASH.get(ls)
             for a, b, c, e in segs:
-                draw.line([float(tr.x(a)), float(tr.y(b)),
-                           float(tr.x(c)), float(tr.y(e))],
-                          fill=fill, width=max(1, int(round(1.2 * S))))
+                p0 = (float(tr.x(a)), float(tr.y(b)))
+                p1 = (float(tr.x(c)), float(tr.y(e)))
+                if dash:
+                    _dashed(draw, [p0, p1], fill, width, tuple(d * S for d in dash))
+                else:
+                    draw.line([*p0, *p1], fill=fill, width=width)
     elif isinstance(artist, Pie):
         _pie(artist, tr, st, S, draw)
     elif isinstance(artist, BoxPlot):
@@ -698,9 +767,12 @@ def _errorbar(eb, tr, st, S, draw):
         _polyline(draw, np.column_stack([xb, yb]), col,
                   max(1, int(round(eb.linewidth * S))))
     cap = eb.capsize * S
+    every = eb.errorevery
     if eb.yerr is not None:
         ylo, yhi = tr.y_base(eb.y - eb.yerr), tr.y_base(eb.y + eb.yerr)
-        for x, a, b in zip(xb, ylo, yhi):
+        for i, (x, a, b) in enumerate(zip(xb, ylo, yhi)):
+            if i % every:
+                continue
             draw.line([x, a, x, b], fill=ecol, width=ew)
             draw.line([x - cap, a, x + cap, a], fill=ecol, width=cw)
             draw.line([x - cap, b, x + cap, b], fill=ecol, width=cw)
@@ -710,7 +782,9 @@ def _errorbar(eb, tr, st, S, draw):
         # PNG/PDF output, only in SVG (see svg._render_errorbar, which
         # already has both branches).
         xlo, xhi = tr.x_base(eb.x - eb.xerr), tr.x_base(eb.x + eb.xerr)
-        for y, a, b in zip(yb, xlo, xhi):
+        for i, (y, a, b) in enumerate(zip(yb, xlo, xhi)):
+            if i % every:
+                continue
             draw.line([a, y, b, y], fill=ecol, width=ew)
             draw.line([a, y - cap, a, y + cap], fill=ecol, width=cw)
             draw.line([b, y - cap, b, y + cap], fill=ecol, width=cw)
@@ -1287,7 +1361,7 @@ def _raster_colorbar(ax, tr, L, T, Wp, Hp, S, draw, canvas):
     draw.rectangle([L, T, L + Wp, T + Hp], outline=_rgb(ax.style.spine_color),
                    width=max(1, int(round(ax.style.spine_width * S))))
     st = ax.style
-    _, fracs, tlabels = colorbar_ticks(src.norm)
+    _, fracs, tlabels = resolve_colorbar_ticks(src.norm, ax._cbar_ticks, ax._cbar_format)
     font = _font(st.tick_label_size * S, st.font_family)
     for frac, lab in zip(fracs, tlabels):
         y = T + (1 - frac) * Hp

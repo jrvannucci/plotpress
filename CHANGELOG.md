@@ -11,6 +11,116 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-06
+
+Tier 1 of a functionality audit (6 parallel subagent sweeps across the
+whole codebase, looking for valuable missing/partial features rather than
+bugs) -- the small, high-value, low-cost half of the list. See the
+audit's own report for what's still ahead in Tier 2/3 (marker shapes,
+datetime axes, Vega Tier-3 promotions, the interactive toolbar's touch
+support, and more).
+
+### Added
+
+- **`BoundaryNorm(boundaries, ncolors=None)`** -- maps data into discrete
+  bins instead of a gradient, for classified data with no natural
+  continuous scale (risk tiers, land-cover classes, significance
+  thresholds). `Figure.colorbar`'s ticks land on the boundaries
+  themselves, evenly spaced along the bar, rather than `nice_ticks`' usual
+  round numbers -- including when a caller passes an explicit `ticks=`
+  subset of the boundaries, which needed its own edge-interpolated
+  positioning rather than running through `BoundaryNorm.__call__`'s own
+  bin-fraction math (two boundary values sharing one bin would otherwise
+  stack their tick marks on top of each other -- caught building the
+  worked example, not by the unit tests, and now has a regression test).
+- **`TwoSlopeNorm(vcenter=0.0, vmin=None, vmax=None)`** -- keeps a
+  diverging colormap's neutral color pinned to `vcenter` even when
+  `vmin`/`vmax` aren't symmetric around it. A plain `Normalize` puts the
+  midpoint at `(vmin + vmax) / 2`, which only lands on a meaningful
+  reference value (zero, for an anomaly/residual field) by coincidence --
+  with real, asymmetric data the six diverging colormaps plotpress ships
+  (`coolwarm`, `RdBu`, `seismic`, ...) were silently putting white at the
+  wrong value.
+- **`make_cmap(colors, n=256)` / `make_listed_cmap(colors, n=256)` /
+  `register_cmap(name, colors_or_lut, listed=False)`** -- build a
+  continuous (interpolated) or categorical (banded) colormap from any list
+  of colors (names, hex, or RGB(A) tuples), or register one under a name
+  so it becomes usable everywhere a built-in colormap name is (`cmap=`,
+  the reversed `_r` variant, `available_colormaps()`). The LUT-building
+  machinery underneath every built-in colormap was already exactly this;
+  it just had no public entry point.
+- **`tab10`/`tab20`/`Set1`/`Dark2` as colormaps**, not just cycles --
+  `tab10` was already plotpress's default line-color cycle (`Style.
+  color_cycle`), but coloring a `scatter(c=class_labels)` by category
+  had no discrete option and silently interpolated a continuous ramp
+  across integer labels instead, implying an ordering the data doesn't
+  have. 24 -> 28 built-in colormaps.
+- **`plotpress.style.OKABE_ITO` / `TOL_BRIGHT` / `named_cycle(name)`** --
+  two standard colorblind-safe palettes (Okabe-Ito, Paul Tol's "bright"),
+  reachable by name (`Axes.set_prop_cycle(named_cycle("okabe-ito"))` or
+  `Style(color_cycle=...)`) as a drop-in swap for the default tab10 cycle,
+  whose red/green pair collapses under deuteranopia.
+- **`fill_between`/`fill_betweenx(..., interpolate=True)`** -- extends a
+  `where=`-restricted fill to the true linearly-interpolated crossing
+  point between the two boundaries instead of stopping at the last sample
+  still inside the run, matching matplotlib's own default for the
+  standard "shade where y1 exceeds y2" idiom.
+- **`contour(linewidths=, linestyles=, negative_linestyles="dashed")`** --
+  per-level width/style (a single value or one per level). When `colors`
+  is given explicitly (not a `cmap` gradient) and `linestyles` is left
+  unset, negative levels default to dashed -- matplotlib's own convention
+  for reading a stream-function/vorticity/anomaly field's sign without a
+  colorbar, which plotpress had no way to reproduce before (every level
+  rendered identically).
+- **`Axes.grid(axis="x"|"y"|"both", which="major"|"minor"|"both")`** --
+  restricts gridlines to one direction (the standard clean look for a
+  bar/category chart) and/or adds a lighter, thinner minor grid alongside
+  the major one. Round-trips through the interactive HTML's layout
+  metadata and its client-side pan/zoom grid rebuild, not just the initial
+  render.
+- **`Figure.colorbar(label=, ticks=, format=)`** -- `label` is a
+  convenience for `cax.set_title(label)`; `ticks` fixes the bar's own tick
+  positions instead of the norm's auto-generated ones; `format` is a
+  `%`-style string or a value -> str callable overriding the labels.
+  Shared by all five places a colorbar renders (SVG, PNG/PDF raster,
+  `to_vega()`, `to_vega_lite()`) through one new `resolve_colorbar_ticks()`
+  in `colors.py`, rather than each reimplementing the override precedence.
+- **PNG dpi metadata + adaptive scanline filtering.** `fig.save("x.png")`
+  now writes the figure's own dpi into the file's `pHYs` chunk (via
+  Pillow's `dpi=`) -- without it, a `Style(dpi=300)` figure pasted into
+  Word/LaTeX/Google Docs at triple its intended physical size, since those
+  tools assume 96dpi with no metadata. Separately, the hand-written PNG
+  encoder used to embed mesh/image data inside SVG/HTML now chooses
+  between the None and Up filter per scanline (libpng's own minimum-sum-
+  of-absolute-values heuristic) instead of always encoding unfiltered --
+  roughly 2x smaller for a smooth colormapped field, the shape most
+  `pcolormesh`/`imshow` output actually has.
+- **`.eps`/`.jpg`/`.jpeg`/`.webp` added to `fig.save()`** -- EPS via
+  reportlab's PostScript renderer (for submission pipelines that still
+  require it specifically, alongside PDF); JPEG/WebP via Pillow, sharing
+  PNG's raster path and `scale=`, for a downstream consumer that
+  specifically wants one of them (both trade PNG's sharp-edge fidelity for
+  a smaller file, so PNG stays the better default).
+- **Native SVG `<title>`** -- a figure-level `<title>` (from `suptitle()`,
+  omitted when there is none) right after the opening `<svg>` tag, and a
+  per-series `<title>` on every labeled `plot()`/line-shaped series --
+  both are real, framework-free browser tooltips/accessibility hooks that
+  work in a static SVG a README or Sphinx gallery page embeds, where the
+  JS interactive toolbar can't run at all.
+- **Small matplotlib-parity batch**: `errorbar(errorevery=N)` thins the
+  whiskers/caps on a dense series without touching the connecting line or
+  markers; `hexbin(edgecolors=, linewidths=)` outlines each hexagon (the
+  `PolyCollection`/`PolygonBatch` primitive already carried an edge field,
+  just not reachable from `hexbin()` itself); `step(linestyle=)` forwards
+  to the underlying `plot()` (no `marker=` -- a step's own corner vertices
+  aren't the real data points, so a marker there would double up and land
+  on the wrong spot).
+- Fixed two stale doc claims found while updating the surrounding text:
+  the README undersold the colormap count (advertised 8, `colors.py`
+  actually shipped 24 before this release, now 28) and listed `barbs` as
+  "not yet implemented" when it's real (`Axes.barbs`) -- both also present
+  in `docs/user_guide/limitations.rst`.
+
 ## [0.25.0] - 2026-09-06
 
 ### Added

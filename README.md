@@ -264,8 +264,9 @@ for the full extras reference.
 | Call | Result |
 |------|--------|
 | `fig.save("x.svg")` | static vector SVG |
-| `fig.save("x.png")` / `fig.savefig(...)` | raster PNG (supersampled Pillow backend) |
-| `fig.save("x.pdf")` | vector PDF (svglib + reportlab) |
+| `fig.save("x.png")` / `fig.savefig(...)` | raster PNG (supersampled Pillow backend, dpi metadata included) |
+| `fig.save("x.jpg")` / `fig.save("x.webp")` | raster, lossy — smaller for dense mesh figures than PNG |
+| `fig.save("x.pdf")` / `fig.save("x.eps")` | vector PDF / EPS (svglib + reportlab) |
 | `fig.save("x.html", interactive=True)` | interactive HTML (self-contained JS toolbar) |
 | `fig.to_svg()` / `fig.to_html()` | string, for embedding |
 | `fig._repr_svg_()` | inline SVG in Jupyter |
@@ -370,9 +371,16 @@ matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
 arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
 `fig.colorbar(...)` (single **or shared across a list of axes**),
 `legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and
-colormaps `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `coolwarm`,
-`RdBu`, `gray` (+ any `_r` reversed variant) with `Normalize`, `LogNorm`,
-`PowerNorm`, or `SymLogNorm` scaling.
+**24 built-in colormaps** (perceptually-uniform `viridis`/`plasma`/`inferno`/
+`magma`/`cividis`; diverging `coolwarm`/`RdBu`/`Spectral`/`PiYG`/`BrBG`/
+`seismic`; sequential `Blues`/`Greens`/`Oranges`/`Reds`/`Purples`/`YlOrRd`/
+`gray`/`hot`/`cool`; cyclic `twilight`; rainbow `jet`/`turbo`; plus
+qualitative/categorical `tab10`/`tab20`/`Set1`/`Dark2` for class labels with
+no natural ordering) + any `_r` reversed variant, with `Normalize`,
+`LogNorm`, `PowerNorm`, `SymLogNorm`, `TwoSlopeNorm` (a diverging colormap's
+midpoint pinned to a real center value), or `BoundaryNorm` (discrete bins)
+scaling, and `plotpress.make_cmap()`/`register_cmap()` for a custom one from
+any list of colors.
 
 ```bash
 python examples/plot_types.py    # plot / scatter / bar / hist / pie / imshow / ...
@@ -380,7 +388,7 @@ python examples/plot_types_2.py  # boxplot / violin / quiver / contour / hist2d 
 python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
-**Not yet implemented** (would need new primitives): `streamplot`/`barbs`,
+**Not yet implemented** (would need new primitives): `streamplot`,
 triangulation (`tri*`), and geographic / map projections. These are the main
 remaining plot-type gaps vs matplotlib's full gallery.
 

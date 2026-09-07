@@ -47,11 +47,40 @@ def encode_png(rgba: np.ndarray) -> bytes:
     return indexed if indexed is not None else _encode_rgba(arr, h, w)
 
 
+def _filter_scanlines(pixels: np.ndarray) -> np.ndarray:
+    """Choose a per-scanline PNG filter -- None or Up -- via the
+    minimum-sum-of-absolute-values heuristic libpng itself uses, and return
+    the filtered rows with their filter-type byte prepended.
+
+    Up (each byte minus the byte directly above it, wrapping mod 256)
+    usually compresses much better than None on the smooth gradients a
+    colormapped mesh/image produces: adjacent rows of a smooth field differ
+    by small, near-constant deltas, which zlib's LZ77 stage collapses far
+    more effectively than the field's own often-large absolute byte values.
+    The first row has no row above it, so it always stays None.
+    """
+    h, w = pixels.shape
+    if h == 0:
+        return np.empty((0, 1 + w), dtype=np.uint8)
+    up = pixels.astype(np.int16)
+    up[1:] -= pixels[:-1].astype(np.int16)
+    up = (up & 0xFF).astype(np.uint8)
+
+    def _score(a):
+        signed = a.astype(np.int16)
+        signed[signed > 127] -= 256
+        return np.abs(signed).sum(axis=1)
+
+    use_up = _score(up) < _score(pixels)
+    use_up[0] = False   # no row above the first -- Up would just repeat it
+    out = np.empty((h, 1 + w), dtype=np.uint8)
+    out[:, 0] = np.where(use_up, 2, 0)
+    out[:, 1:] = np.where(use_up[:, None], up, pixels)
+    return out
+
+
 def _encode_rgba(arr: np.ndarray, h: int, w: int) -> bytes:
-    # Prepend a per-scanline filter byte (0 = None).
-    raw = np.empty((h, 1 + w * 4), dtype=np.uint8)
-    raw[:, 0] = 0
-    raw[:, 1:] = arr.reshape(h, w * 4)
+    raw = _filter_scanlines(arr.reshape(h, w * 4))
     ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)   # 8-bit RGBA
     return (_SIG + _chunk(b"IHDR", ihdr)
             + _chunk(b"IDAT", zlib.compress(raw.tobytes(), level=6))
@@ -70,9 +99,7 @@ def _encode_indexed(arr: np.ndarray, h: int, w: int):
         return None
 
     palette = palette_keys.view(np.uint8).reshape(-1, 4)
-    raw = np.empty((h, 1 + w), dtype=np.uint8)
-    raw[:, 0] = 0
-    raw[:, 1:] = index.astype(np.uint8).reshape(h, w)
+    raw = _filter_scanlines(index.astype(np.uint8).reshape(h, w))
 
     chunks = [_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 3, 0, 0, 0)),
               _chunk(b"PLTE", palette[:, :3].tobytes())]

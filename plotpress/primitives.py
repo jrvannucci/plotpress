@@ -311,7 +311,7 @@ def artist_to_prims(artist, tr, ai, k, size_scale=1.0):
     if isinstance(a, PolyCollection):
         polys = [tr.xy(v[:, 0], v[:, 1]) for v in a.verts]
         return [PolygonBatch(polys, list(a.facecolors), a.edgecolor,
-                             0.4, a.alpha, lbl)]
+                             a.linewidth, a.alpha, lbl)]
 
     if isinstance(a, (QuadMesh, Image)):
         xmin, xmax, ymin, ymax = a.extent()

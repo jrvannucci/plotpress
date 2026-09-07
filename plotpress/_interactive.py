@@ -1249,16 +1249,29 @@ _JS_SOURCE = r"""
     var yStyle = effTickStyle(globalStyle, tso.y);
 
     if (om.grid) {
-      var gl = [];
-      xr.ticks.forEach(function (xt) { var px = toPixel(m, xt, m.ymin).x;
-        gl.push('<line x1="' + px.toFixed(2) + '" y1="' + m.y.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (m.y + m.h).toFixed(2) + '"/>'); });
-      yr.ticks.forEach(function (yt) { var py = toPixel(m, m.xmin, yt).y;
-        gl.push('<line x1="' + m.x.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (m.x + m.w).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>'); });
       // om.grid_alpha is null unless grid(alpha=...) actually overrode the
       // figure default -- a plain `||` would also treat a real alpha=0
       // override as falsy and silently revert to the figure default.
       var gridAlpha = (om.grid_alpha == null) ? STYLE.grid_alpha : om.grid_alpha;
-      parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + gridAlpha + '">' + gl.join('') + '</g>');
+      var gAxis = om.grid_axis || 'both', gWhich = om.grid_which || 'major';
+      var buildGridLines = function (xs, ys) {
+        var gl = [];
+        if (gAxis !== 'y') xs.forEach(function (xt) { var px = toPixel(m, xt, m.ymin).x;
+          gl.push('<line x1="' + px.toFixed(2) + '" y1="' + m.y.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (m.y + m.h).toFixed(2) + '"/>'); });
+        if (gAxis !== 'x') ys.forEach(function (yt) { var py = toPixel(m, m.xmin, yt).y;
+          gl.push('<line x1="' + m.x.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (m.x + m.w).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>'); });
+        return gl;
+      };
+      if (gWhich === 'major' || gWhich === 'both') {
+        var majorGl = buildGridLines(xr.ticks, yr.ticks);
+        parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + STYLE.grid_width + '" stroke-opacity="' + gridAlpha + '">' + majorGl.join('') + '</g>');
+      }
+      if (gWhich === 'minor' || gWhich === 'both') {
+        var xMinorG = jsMinorTicks(xr.ticks, xr.step, m.xmin, m.xmax, m.xscale);
+        var yMinorG = jsMinorTicks(yr.ticks, yr.step, m.ymin, m.ymax, m.yscale);
+        var minorGl = buildGridLines(xMinorG, yMinorG);
+        parts.push('<g stroke="' + STYLE.grid_color + '" stroke-width="' + (STYLE.grid_width * 0.6) + '" stroke-opacity="' + (gridAlpha * 0.6) + '">' + minorGl.join('') + '</g>');
+      }
     }
     var xmarks = [], ymarks = [], labels = [];
     xr.ticks.forEach(function (xt, i) {

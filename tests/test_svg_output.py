@@ -2926,7 +2926,11 @@ def test_figure_legend_renders_in_both_backends():
     fig, _ = _grid_with_labels()
     fig.legend(loc="lower center", ncol=2, title="Series")
     svg = fig.to_svg()
-    assert "Series" in svg and svg.count(">sin<") == 1
+    # One legend entry per distinct label, not one per axes carrying that
+    # label -- distinguished from each series' own hover-tooltip <title>
+    # (also containing ">sin<", one per axes) by matching the legend's own
+    # <text> element specifically.
+    assert "Series" in svg and svg.count(">sin</text>") == 1
     assert raster.figure_to_image(fig, scale=1) is not None
 
 

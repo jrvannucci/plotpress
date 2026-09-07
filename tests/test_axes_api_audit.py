@@ -326,7 +326,7 @@ def test_clabel_adds_one_text_per_contour_level():
     Z = np.exp(-(X ** 2 + Y ** 2))
     CS = ax.contour(g, g, Z, levels=[0.2, 0.5, 0.8])
     texts = ax.clabel(CS)
-    levels_with_segments = [lvl for lvl, _, segs in CS.line_segments if segs]
+    levels_with_segments = [lvl for lvl, _, _, _, segs in CS.line_segments if segs]
     assert len(texts) == len(levels_with_segments)
 
 

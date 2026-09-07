@@ -46,8 +46,15 @@ _LAZY_ATTRS = {
     "LogNorm": (".colors", "LogNorm"),
     "PowerNorm": (".colors", "PowerNorm"),
     "SymLogNorm": (".colors", "SymLogNorm"),
+    "TwoSlopeNorm": (".colors", "TwoSlopeNorm"),
+    "BoundaryNorm": (".colors", "BoundaryNorm"),
     "get_cmap": (".colors", "get_cmap"),
     "available_colormaps": (".colors", "available_colormaps"),
+    "make_cmap": (".colors", "make_cmap"),
+    "make_listed_cmap": (".colors", "make_listed_cmap"),
+    "register_cmap": (".colors", "register_cmap"),
+    "to_hex": (".colors", "to_hex"),
+    "named_cycle": (".style", "named_cycle"),
 }
 
 
@@ -104,7 +111,14 @@ __all__ = [
     "LogNorm",
     "PowerNorm",
     "SymLogNorm",
+    "TwoSlopeNorm",
+    "BoundaryNorm",
     "get_cmap",
     "available_colormaps",
+    "make_cmap",
+    "make_listed_cmap",
+    "register_cmap",
+    "to_hex",
+    "named_cycle",
     "__version__",
 ]

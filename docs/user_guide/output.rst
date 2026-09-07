@@ -6,16 +6,25 @@ A figure knows how to serialize itself -- no backend selection, no globals.
 ``fig.save(path, interactive=False, scale=2, fps=10, slider_unit="main")``
     Save by file extension:
 
-    ==========  =========================================================
-    Extension   Output
-    ==========  =========================================================
-    ``.svg``    static vector SVG
-    ``.html``   interactive HTML (pass ``interactive=True``)
-    ``.png``    raster PNG, supersampled by ``scale``
-    ``.pdf``    vector PDF (svglib + reportlab)
-    ``.gif``    looping animated GIF of a :meth:`~plotpress.axes.Axes.plot_frames`
-                series, ``fps`` frames per second
-    ==========  =========================================================
+    ===========  ============================================================
+    Extension    Output
+    ===========  ============================================================
+    ``.svg``     static vector SVG
+    ``.html``    interactive HTML (pass ``interactive=True``)
+    ``.png``     raster PNG, supersampled by ``scale``; carries dpi metadata
+    ``.jpg``     raster, lossy -- smaller than PNG for photographic content
+    ``.jpeg``    same as ``.jpg``
+    ``.webp``    raster, lossy -- typically smaller than PNG for a dense mesh
+    ``.pdf``     vector PDF (svglib + reportlab)
+    ``.eps``     vector EPS (svglib + reportlab)
+    ``.gif``     looping animated GIF of a plot_frames() series
+    ===========  ============================================================
+
+    JPEG/WebP's lossy compression is a poor fit for the sharp text/line
+    edges most plotpress figures are made of -- PNG stays the better
+    default unless a downstream consumer specifically needs one of them.
+    ``.gif``'s ``fps`` frames per second draws from a
+    :meth:`~plotpress.axes.Axes.plot_frames` series.
 
     .. code-block:: python
 
@@ -23,6 +32,7 @@ A figure knows how to serialize itself -- no backend selection, no globals.
        fig.save("figure.png", scale=3)          # higher-res raster
        fig.save("figure.html", interactive=True)
        fig.save("figure.gif", fps=15)           # needs a plot_frames() series
+       fig.save("figure.webp")                  # smaller than PNG for a dense mesh
 
     ``.gif`` raises ``ValueError`` if the figure has no ``plot_frames()``
     series; ``fps``/``slider_unit`` are ignored for every other extension.

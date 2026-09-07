@@ -989,7 +989,8 @@ class Figure:
         return self
 
     # -- colorbar -----------------------------------------------------------
-    def colorbar(self, mappable, ax, fraction=0.05, pad=0.02) -> Axes:
+    def colorbar(self, mappable, ax, fraction=0.05, pad=0.02, label=None,
+                 ticks=None, format=None) -> Axes:
         """Add a colorbar for ``mappable``.
 
         ``ax`` may be a single :class:`~plotpress.axes.Axes` (the colorbar
@@ -997,6 +998,16 @@ class Figure:
         spanning them all, placed on their right -- the grid is squeezed to make
         room). All the axes should share the mappable's ``vmin``/``vmax`` for the
         shared bar to describe them accurately.
+
+        ``label`` sets what the color scale means (equivalent to, and just a
+        convenience for, ``cax.set_title(label)`` on the returned axes --
+        there is no separate ``set_label``). ``ticks`` fixes the bar's own
+        tick positions instead of the norm's auto-generated ones (a
+        ``BoundaryNorm``'s bin edges, or just a shorter list for a crowded
+        scale); ``format`` overrides the tick labels' formatting -- a
+        ``%``-style string (``"%.1f"``, ``"%d%%"``) or a callable taking one
+        value and returning its label -- over whichever tick values end up
+        in play.
 
         Order relative to :meth:`tight_layout` does not matter -- the steal is
         recorded and re-applied whenever the grid is reflowed.
@@ -1020,6 +1031,10 @@ class Figure:
         cax._cbar_parents = _flatten_axes(ax)
         cax._cbar_fraction = float(fraction)
         cax._cbar_pad = float(pad)
+        cax._cbar_ticks = ticks
+        cax._cbar_format = format
+        if label is not None:
+            cax.set_title(label)
         _layout_colorbar(cax)
         return cax
 
@@ -1350,20 +1365,28 @@ class Figure:
              pick_max_points: int = 20000, binary_pick_data: bool = True,
              fps: int = 10, slider_unit: str = "main", label_frames: bool = True,
              include_default_js: bool = True, extra_js: str = None):
-        """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``, or ``.gif``.
+        """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``,
+        ``.gif``, ``.eps``, ``.jpg``/``.jpeg``, or ``.webp``.
 
-        All formats work with the standard install (PNG is a supersampled
-        raster; PDF is vector). ``pick_precision``/``pick_max_mesh_cells``/
-        ``pick_max_points``/``binary_pick_data``/``include_default_js``/
-        ``extra_js`` apply only to interactive HTML (see :meth:`to_html`).
-        ``.gif`` needs at least one :meth:`Axes.plot_frames` or
-        :meth:`Axes.pcolormesh_frames` series -- it animates through that
-        series' frames at ``fps``, the same data an interactive HTML slider
-        scrubs through, as a self-contained looping file; ``slider_unit``
-        picks which slider drives the animation for figures with more than
-        one, and ``label_frames`` stamps each frame with its slider value
-        since a GIF has no slider to show it on (see
+        All formats work with the standard install (PNG/JPEG/WebP are a
+        supersampled raster; PDF/EPS are vector). ``pick_precision``/
+        ``pick_max_mesh_cells``/``pick_max_points``/``binary_pick_data``/
+        ``include_default_js``/``extra_js`` apply only to interactive HTML
+        (see :meth:`to_html`). ``.gif`` needs at least one
+        :meth:`Axes.plot_frames` or :meth:`Axes.pcolormesh_frames` series --
+        it animates through that series' frames at ``fps``, the same data an
+        interactive HTML slider scrubs through, as a self-contained looping
+        file; ``slider_unit`` picks which slider drives the animation for
+        figures with more than one, and ``label_frames`` stamps each frame
+        with its slider value since a GIF has no slider to show it on (see
         :func:`plotpress.raster.save_gif`).
+
+        ``.jpg``/``.jpeg``/``.webp`` are raster, like ``.png`` (and share its
+        ``scale``), but lossy -- JPEG and WebP compress dense mesh/image
+        content smaller than PNG at some cost to sharp text/line edges; PNG
+        stays the better default unless a downstream consumer specifically
+        needs one of these. ``.eps`` is vector, like ``.pdf`` -- for
+        submission pipelines that still require EPS specifically.
         """
         lower = path.lower()
         if lower.endswith(".html") or lower.endswith(".htm"):
@@ -1379,16 +1402,26 @@ class Figure:
         elif lower.endswith(".png"):
             from .raster import save_png
             return save_png(self, path, scale=scale)
+        elif lower.endswith(".jpg") or lower.endswith(".jpeg"):
+            from .raster import save_jpeg
+            return save_jpeg(self, path, scale=scale)
+        elif lower.endswith(".webp"):
+            from .raster import save_webp
+            return save_webp(self, path, scale=scale)
         elif lower.endswith(".pdf"):
             from .raster import save_pdf
             return save_pdf(self, path)
+        elif lower.endswith(".eps"):
+            from .raster import save_eps
+            return save_eps(self, path)
         elif lower.endswith(".gif"):
             from .raster import save_gif
             return save_gif(self, path, fps=fps, scale=scale,
                            slider_unit=slider_unit, label_frames=label_frames)
         else:
             raise ValueError(
-                "save() supports .svg/.html/.png/.pdf/.gif (got %r)" % path)
+                "save() supports .svg/.html/.png/.jpg/.jpeg/.webp/.pdf/.eps/"
+                ".gif (got %r)" % path)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         return path
@@ -1549,10 +1582,11 @@ def _cbar_label_width(cax) -> float:
     mappable resolves when it is constructed, so this is safe to call before
     anything has been drawn.
     """
-    from .colors import colorbar_ticks
+    from .colors import resolve_colorbar_ticks
 
     st = cax.style
-    _, _, labels = colorbar_ticks(cax._cbar_source.norm)
+    _, _, labels = resolve_colorbar_ticks(cax._cbar_source.norm, cax._cbar_ticks,
+                                          cax._cbar_format)
     text_px = max((st.text_width(t, st.tick_label_size) for t in labels),
                   default=0.0)
     return (st.tick_size + 2 + text_px) / (cax.figure.figsize[0] * st.dpi)
@@ -2090,7 +2124,8 @@ def _apply_axes_decorations(ax, spec):
     if spec.get("yinverted"):
         ax.invert_yaxis()
     if spec.get("grid"):
-        ax.grid(True, alpha=spec.get("grid_alpha"))
+        ax.grid(True, axis=spec.get("grid_axis", "both"),
+               which=spec.get("grid_which", "major"), alpha=spec.get("grid_alpha"))
 
 
 def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=None):
@@ -2674,6 +2709,7 @@ def load_data(path: str, by_index: bool = False):
                           "xscale": str, "yscale": str,
                           "xinverted": bool, "yinverted": bool,
                           "grid": bool, "grid_alpha": float | None,
+                          "grid_axis": str, "grid_which": str,
                           "aspect": float | None, "box_aspect": float | None,
                           "axis_off": bool, "facecolor": str | None,
                           "legend": {"loc": str, "ncol": int, "title": str | None,

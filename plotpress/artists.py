@@ -906,10 +906,12 @@ class PolyCollection(Artist):
     ``lut``/``norm`` so it can back a colorbar.
     """
 
-    def __init__(self, verts, facecolors, edgecolor=None, alpha=1.0, label=None):
+    def __init__(self, verts, facecolors, edgecolor=None, linewidth=0.4,
+                 alpha=1.0, label=None):
         self.verts = [np.asarray(v, float) for v in verts]
         self.facecolors = facecolors
         self.edgecolor = edgecolor
+        self.linewidth = linewidth
         self.alpha = alpha
         self.label = label
         self.lut = None
@@ -943,7 +945,7 @@ class ErrorBar(Artist):
     def __init__(self, x, y, yerr=None, xerr=None, color="#1f77b4", marker="o",
                  markersize=6.0, capsize=3.0, linestyle="-", linewidth=1.5,
                  label=None, alpha=1.0, ecolor=None, elinewidth=None,
-                 capthick=None):
+                 capthick=None, errorevery=1):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
         self.yerr = None if yerr is None else _broadcast_field(yerr, self.x.shape)
@@ -963,6 +965,14 @@ class ErrorBar(Artist):
         self.ecolor = ecolor if ecolor is not None else self.color
         self.elinewidth = elinewidth if elinewidth is not None else self.linewidth
         self.capthick = capthick if capthick is not None else self.elinewidth
+        # Draw a whisker/cap only every Nth point -- a dense series (a few
+        # thousand samples) with a whisker on every one goes solid black;
+        # the connecting line and every marker still draw at full density,
+        # matching matplotlib's own errorevery (it thins the *bars*, not
+        # the data).
+        if errorevery < 1:
+            raise ValueError(f"errorbar(): errorevery must be >= 1, got {errorevery!r}")
+        self.errorevery = int(errorevery)
 
     def data_bounds(self):
         if self.x.size == 0:
@@ -1295,7 +1305,8 @@ def _marching_squares(x, y, Z, level):
 class Contour(Artist):
     """Contour lines via marching squares (segments precomputed on build)."""
 
-    def __init__(self, x, y, Z, levels, colors, label=None, alpha=1.0):
+    def __init__(self, x, y, Z, levels, colors, linewidths=None,
+                 linestyles=None, label=None, alpha=1.0):
         self.x = np.asarray(x, float)
         self.y = np.asarray(y, float)
         self.Z = np.asarray(Z, float)
@@ -1303,8 +1314,14 @@ class Contour(Artist):
         self.colors = colors
         self.label = label
         self.alpha = alpha
+        n = len(self.levels)
+        lw = [1.2] * n if linewidths is None else _broadcast_field(linewidths, (n,))
+        ls_in = ["-"] * n if linestyles is None else linestyles
+        ls = [normalize_linestyle(s, "contour") for s in
+              (ls_in if isinstance(ls_in, (list, tuple)) else [ls_in] * n)]
         self.line_segments = [
-            (lvl, colors[k % len(colors)], _marching_squares(self.x, self.y, self.Z, lvl))
+            (lvl, colors[k % len(colors)], float(lw[k]), ls[k],
+             _marching_squares(self.x, self.y, self.Z, lvl))
             for k, lvl in enumerate(self.levels)
         ]
 
