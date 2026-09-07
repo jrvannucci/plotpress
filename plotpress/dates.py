@@ -15,6 +15,10 @@ everything downstream (autoscale, the transform, panning/zooming) works on
 that float exactly like it would for any other linear quantity. Only tick
 *locations* (:func:`date_ticks`) and tick *labels* (:func:`format_date_ticks`)
 need to know the axis is date-flavored.
+
+See :doc:`/auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`
+and :doc:`/auto_examples/axes_features/plot_23_datetime_gantt_and_milestones`
+for worked examples.
 """
 
 from __future__ import annotations

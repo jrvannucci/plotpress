@@ -9,6 +9,10 @@ can be replayed client-side when an interactive figure is zoomed/panned (see
 ``_interactive.py``'s own mirror of every function here). A *formatter*
 spec is the same idea for labels: a name, a ``%``-style string, or (Python-
 only, see :func:`apply_tick_format`) a callable.
+
+See :doc:`/auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`
+and :doc:`/auto_examples/axes_features/plot_24_more_categorical_axes_and_tick_formats`
+for worked examples.
 """
 
 from __future__ import annotations

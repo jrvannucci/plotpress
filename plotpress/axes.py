@@ -472,7 +472,10 @@ class Axes:
         Once either kind touches an axis it stays that way for every artist
         plotted against it afterward (mixing plain numbers into an already
         categorical/date axis on the same dimension isn't meaningful and
-        isn't supported).
+        isn't supported). See
+        :doc:`/auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`
+        and :doc:`/auto_examples/axes_features/plot_23_datetime_gantt_and_milestones`
+        for worked examples.
         """
         fmt = None
         if len(args) == 1:
@@ -803,7 +806,9 @@ class Axes:
         """Horizontal bar chart. ``align``/``xerr``/``yerr``/``capsize``/
         ``ecolor``/``hatch`` match :meth:`bar`, centered at each bar's own
         right edge (``left + width``). ``y`` may be strings, the same
-        categorical axis :meth:`bar`'s ``x`` supports."""
+        categorical axis :meth:`bar`'s ``x`` supports -- see
+        :doc:`/auto_examples/axes_features/plot_24_more_categorical_axes_and_tick_formats`
+        for a worked example."""
         y = self._as_axis_data(y, "y")
         _check_broadcastable("barh", y=y, width=width, height=height, left=left)
         if align == "edge":
@@ -2410,7 +2415,9 @@ class Axes:
         :meth:`plot`'s own ``x`` -- a task's start date, say. ``xwidth`` stays
         a plain number in either case: it's a duration, not a position, and
         on a date axis that duration is in days, the unit :meth:`plot`
-        converts every date to.
+        converts every date to. See
+        :doc:`/auto_examples/axes_features/plot_23_datetime_gantt_and_milestones`
+        for a worked (real-dates Gantt chart) example.
         """
         y0, h = float(yrange[0]), float(yrange[1])
         starts = np.atleast_1d(self._as_axis_data([xr[0] for xr in xranges], "x"))
@@ -2483,6 +2490,8 @@ class Axes:
         "2024-06-01")`` or ``set_xlim("Q1", "Q3")`` work once the axis is
         already date/categorical (a string limit on an axis that hasn't
         seen any categories yet has nothing to resolve against and raises).
+        See :doc:`/auto_examples/axes_features/plot_23_datetime_gantt_and_milestones`
+        for a worked example.
         """
         self._xlim = _norm_axis_limits(self, "x", left, right)
         return self._xlim
@@ -2639,7 +2648,9 @@ class Axes:
         through the same coercion :meth:`plot`'s ``x``/``y`` use (see its
         docstring), so ``set_xticks(["Q1", "Q2", "Q3"])`` both declares those
         as this axis' categories *and* pins the tick positions in one call,
-        even before any data has been plotted.
+        even before any data has been plotted. See
+        :doc:`/auto_examples/axes_features/plot_24_more_categorical_axes_and_tick_formats`
+        for a worked example.
 
         ``labels`` optionally sets the tick label strings in the same call
         (matplotlib's combined ``set_xticks(ticks, labels)`` form) -- ignored
@@ -2709,6 +2720,8 @@ class Axes:
         Ranks below an explicit literal :meth:`set_xticks` array and this
         axis' own categories (if any), and above date/log/default ticking --
         see :func:`~plotpress.ticker.resolve_axis_ticks` for the full chain.
+        See :doc:`/auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`
+        for a worked example.
         """
         self._xlocator = spec
 
@@ -2730,7 +2743,11 @@ class Axes:
         to the default. See :func:`~plotpress.ticker.apply_tick_format` for
         the full spec grammar, and :func:`~plotpress.ticker.
         resolve_axis_tick_labels` for where this ranks against explicit
-        literal labels, categories, and date formatting.
+        literal labels, categories, and date formatting. See
+        :doc:`/auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`
+        and :doc:`/auto_examples/axes_features/plot_24_more_categorical_axes_and_tick_formats`
+        for worked examples (multiple-of-pi, comma, percent, and a raw
+        %-string format).
         """
         self._xformat = spec
 
