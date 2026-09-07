@@ -7,7 +7,56 @@ Limits
 ``set_xlim(left, right=None)`` / ``set_ylim(bottom, top=None)``
     Set data limits explicitly (either two args or a ``(lo, hi)`` tuple).
     ``get_xlim()`` / ``get_ylim()`` return the resolved limits (autoscaled from
-    the data when unset).
+    the data when unset). A bound may also be datetime-like or a string,
+    resolved the same way plotting data is -- see `Datetime and categorical
+    axes`_ below -- so ``set_xlim("2024-01-01", "2024-06-01")`` works once the
+    axis has seen date data, and ``set_xlim("Q1", "Q3")`` works once it has
+    seen those categories. A string bound the axis has no mapping for raises,
+    rather than silently starting a new category.
+
+Datetime and categorical axes
+------------------------------
+
+Every plotting method (``plot``, ``scatter``, ``bar``/``barh``, ``step``,
+``fill_between``/``fill_betweenx``, ``hlines``/``vlines``,
+``axhline``/``axvline``, ``errorbar``, ``stem``, ``broken_barh``) accepts two
+kinds of non-numeric ``x``/``y`` data directly, with no conversion step:
+
+**Datetime-like** -- a ``numpy.datetime64`` array, a ``datetime.date``/
+``datetime.datetime`` (or a sequence of either), or an ISO date string once
+the axis is already date-flavored. Values convert to real floating-point days
+since the 1970-01-01 epoch (the same epoch modern matplotlib uses), so points
+space **proportionally to real elapsed time** -- a gap of 100 days plots ten
+times wider than a gap of 10 days, unlike a categorical axis, which would
+space every point evenly regardless of what it represents. Ticks land on
+calendar-aware boundaries (year/month/day/hour/minute/second, whichever tier
+best fits the visible span):
+
+.. code-block:: python
+
+   dates = np.array(["2024-01-05", "2024-01-20", "2024-06-15"], dtype="datetime64[D]")
+   ax.plot(dates, [4.2, 5.1, 18.3])
+   ax.set_xlim("2024-01-01", "2024-07-01")
+
+**Categorical (string)** -- a plain list of strings plots as a categorical
+axis: each distinct value gets an integer position (0, 1, 2, ...) in the
+order it is first seen *on that axis*, shared across every plotting call on
+it, so a second series naming overlapping categories lands on the same
+positions instead of appending duplicates:
+
+.. code-block:: python
+
+   ax.bar(["Q1", "Q2", "Q3"], [10, 20, 15])
+   ax.plot(["Q1", "Q3"], [12, 18])   # shares Q1/Q3's positions with the bars above
+
+Mixing plain numbers into an axis that is already date- or category-flavored
+(on the same dimension) is not a supported idiom. See
+:doc:`../auto_examples/axes_features/plot_22_datetime_categorical_and_tick_specs`,
+:doc:`../auto_examples/axes_features/plot_23_datetime_gantt_and_milestones`
+(``broken_barh`` with real dates, the other common datetime idiom -- compare
+:doc:`../auto_examples/pairwise/plot_11_broken_barh`'s plain day-offsets),
+and :doc:`../auto_examples/axes_features/plot_24_more_categorical_axes_and_tick_formats`
+for worked examples.
 
 Scales
 ------
@@ -35,9 +84,37 @@ Aspect ratio
 Ticks and labels
 ----------------
 
-``set_xticks(ticks)`` / ``set_yticks(ticks)``
+``set_xticks(ticks, labels=None, minor=False)`` / ``set_yticks(ticks, labels=None, minor=False)``
     Fix tick locations. Pass ``[]`` to hide ticks; pass ``None`` to restore
-    automatic "nice number" ticks.
+    automatic "nice number" ticks. ``ticks`` may also be datetime-like or a
+    list of strings -- resolved the same way as plotting data (see `Datetime
+    and categorical axes`_ above), so ``set_xticks(["Q1", "Q2", "Q3"])``
+    both declares those as this axis' categories *and* pins the tick
+    positions, even before any data has been plotted.
+
+``set_xlocator(spec)`` / ``set_ylocator(spec)``
+    A declarative tick-*location* rule, in place of the default "nice
+    number" scheme -- currently just
+    ``{"kind": "multiple", "base": ...}`` (matplotlib's ``MultipleLocator``:
+    a tick at every multiple of ``base``, e.g. every ``np.pi / 2`` on a trig
+    plot). Ranks below an explicit literal ``set_xticks`` array and this
+    axis' own categories, and above date/log/default ticking.
+
+``set_xformat(spec)`` / ``set_yformat(spec)``
+    A declarative tick-*label* rule: ``"percent"``, ``"comma"``/
+    ``"thousands"``, ``"eng"``/``"engineering"`` (SI suffixes -- ``1.5k``,
+    ``2.3M``), ``"pi"``/``"multiple_of_pi"`` (``pi/2``, ``3pi/4``), any of
+    those as a dict with options (``{"kind": "percent", "decimals": 1}``), a
+    raw ``%``-style format string (``"$%.0f"``), or a plain callable
+    ``value -> str``.
+
+    Every form except a callable is plain, JSON-serializable data --
+    deliberately not a matplotlib-style ``Locator``/``Formatter`` object --
+    so the exact same rule replays correctly when an interactive figure is
+    panned or zoomed in the browser. A callable formatter still works for
+    static SVG/PNG/PDF output, but can't cross into the page's JavaScript:
+    a zoomed interactive figure using one falls back to default formatting
+    for that axis instead.
 
 ``set_xlabel(label)`` / ``set_ylabel(label)`` / ``set_title(title)``
     Axis labels and the per-axes title.
@@ -65,4 +142,8 @@ Grid, legend, visibility
 .. note::
 
    In interactive HTML, per-axes **data** zoom/pan recomputes ticks live and
-   redraws the artists of the axes under the cursor. See :doc:`interactivity`.
+   redraws the artists of the axes under the cursor. A date axis, a
+   categorical axis, and a ``set_xlocator``/``set_xformat`` spec all replay
+   correctly on that live rebuild -- except a *callable* ``set_xformat``,
+   which falls back to default formatting there (see above). See
+   :doc:`interactivity`.

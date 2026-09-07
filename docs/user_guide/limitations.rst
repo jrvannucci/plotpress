@@ -153,6 +153,32 @@ was consistently weaker than dedicated 3-D tools without being meaningfully
 simpler to build than doing 2-D well; it was removed rather than kept as a
 permanently-second-tier feature.
 
+.. _limitation-callable-formatter:
+
+A callable tick formatter doesn't survive interactive zoom
+-------------------------------------------------------------
+
+:meth:`~plotpress.axes.Axes.set_xformat`/``set_yformat`` accept a plain
+callable (``value -> str``) alongside the named specs (``"percent"``,
+``"comma"``, ``"eng"``, ``"pi"``, a raw ``%``-style string). Every named
+spec is plain, JSON-serializable data, so the interactive HTML's
+client-side zoom/pan rebuild can replay the exact same rule in JavaScript.
+A Python callable cannot cross that boundary: it renders correctly in the
+static SVG/PNG/PDF, but a zoomed interactive figure using one falls back to
+this axis' default numeric formatting instead of trying (and failing) to
+serialize arbitrary Python code. Use a named spec instead of a callable
+when the figure will be exported interactive and needs to stay correctly
+formatted after a zoom.
+
+A plain number on an already date- or category-flavored axis is undefined
+---------------------------------------------------------------------------
+
+Once an axis has seen datetime-like or string data on a given dimension
+(``x`` or ``y``), a later plotting call passing a plain number on that same
+dimension is not a supported idiom -- the number is plotted as-is (matching
+whatever positions the axis already uses), rather than raising or being
+converted. Keep one kind of data per axis dimension.
+
 Not implemented
 ---------------
 

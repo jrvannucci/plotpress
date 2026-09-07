@@ -10,6 +10,12 @@ within an axes, independent of call order. Ties keep call order, so this is
 opt-in: nothing changes unless you pass it. See
 :doc:`../auto_examples/axes_features/plot_14_zorder` for a worked example.
 
+Most of them also accept datetime-like (``numpy.datetime64``,
+``datetime.date``) or plain string ``x``/``y`` data directly, in place of
+numbers -- a date axis spaces points proportionally to real elapsed time, and
+a string axis maps distinct values to integer positions in first-seen order.
+See "Datetime and categorical axes" in :doc:`axes`.
+
 Lines and areas
 ---------------
 

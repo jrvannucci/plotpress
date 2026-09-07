@@ -50,6 +50,22 @@ Axes
    :members:
    :undoc-members:
 
+Ticks & dates
+-------------
+
+Backs :meth:`~plotpress.axes.Axes.set_xlocator`/``set_ylocator``/
+``set_xformat``/``set_yformat``'s spec grammar, and the datetime conversion
+:meth:`~plotpress.axes.Axes.plot` (and every other plotting method) applies
+automatically to datetime-like ``x``/``y`` data -- documented here for
+anyone building a spec by hand, or converting a date to/from the plain
+float days-since-epoch every plotpress axis works in internally.
+
+.. automodule:: plotpress.dates
+   :members:
+
+.. automodule:: plotpress.ticker
+   :members:
+
 Style & colors
 --------------
 
