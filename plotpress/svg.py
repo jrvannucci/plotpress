@@ -35,7 +35,7 @@ from .primitives import Path as PPath
 from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
-from .ticker import format_ticks, log_ticks, minor_ticks, nice_ticks
+from .ticker import minor_ticks
 from .transform import LinearTransform
 
 _DASH = {"-": None, "--": "6,4", ":": "1,3", "-.": "6,3,1,3"}
@@ -355,6 +355,22 @@ def axes_metadata(fig, idx_of=None):
             # tick_params() and once for grid(alpha=) (see grid_alpha above).
             "xfixed": ax._xticks is not None or ax._xticks_minor is not None,
             "yfixed": ax._yticks is not None or ax._yticks_minor is not None,
+            # Datetime/categorical/declarative-locator-or-format flavor, so
+            # the client's own pan/zoom tick rebuild (see _interactive.py's
+            # resolveAxisTicks) can replay the same priority chain
+            # (categorical > locator/format > date > log/default) that
+            # ticker.resolve_axis_ticks/resolve_axis_tick_labels apply here.
+            # A callable xformat/yformat can't cross into JS -- it serializes
+            # as None, so a zoomed date/plain axis with one just falls back
+            # to default formatting client-side (documented on set_xformat).
+            "xdate": bool(ax._xdate), "ydate": bool(ax._ydate),
+            "xcategorical": bool(ax._xcategorical),
+            "ycategorical": bool(ax._ycategorical),
+            "xcategories": list(ax._xcategories) if ax._xcategorical else None,
+            "ycategories": list(ax._ycategories) if ax._ycategorical else None,
+            "xlocator": ax._xlocator, "ylocator": ax._ylocator,
+            "xformat": ax._xformat if not callable(ax._xformat) else None,
+            "yformat": ax._yformat if not callable(ax._yformat) else None,
             "xside": ax._xtick_side, "yside": ax._ytick_side,
             "minor": bool(ax._minor_ticks_on),
             # Raw tick_params() overrides (Style field -> value), so the
@@ -1020,10 +1036,8 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             f'height="{_fmt(px_h)}" fill="{ax.get_facecolor()}"/>'
         )
 
-    xticks = (ax._xticks if ax._xticks is not None else
-              (log_ticks(xmin, xmax) if ax._xscale == "log" else nice_ticks(xmin, xmax)))
-    yticks = (ax._yticks if ax._yticks is not None else
-              (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
+    xticks = ax._resolve_xticks()
+    yticks = ax._resolve_yticks()
 
     # Grid + ticks live in one group so client-side per-axes zoom can rebuild
     # them from new limits (see _interactive.py).
@@ -1050,14 +1064,14 @@ def _render_axes(ax, fig, W, H, index, defs, body):
             xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
             yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
             is_x = ax._secondary_dim == "x"
-            xlabels = _resolve_tick_labels(ax._xticklabels, xticks) if is_x else []
-            ylabels = _resolve_tick_labels(ax._yticklabels, yticks) if not is_x else []
+            xlabels = ax._resolve_xticklabels(xticks) if is_x else []
+            ylabels = ax._resolve_yticklabels(yticks) if not is_x else []
             _render_ticks(xst, yst, tr, xticks if is_x else [], yticks if not is_x else [],
                           xlabels, ylabels, px_left, px_top, px_w, px_h, body,
                           xside=ax._xtick_side, yside=ax._ytick_side)
         else:
-            xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
-            ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+            xlabels = ax._resolve_xticklabels(xticks)
+            ylabels = ax._resolve_yticklabels(yticks)
             xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
             yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
             _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
@@ -2357,21 +2371,13 @@ def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
     )
 
 
-def _resolve_tick_labels(custom, ticks):
-    """Explicit tick-label strings if set, else formatted tick values."""
-    if custom is None:
-        return format_ticks(ticks)
-    labs = list(custom)[:len(ticks)]
-    return labs + [""] * (len(ticks) - len(labs))
-
-
 def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
     """Draw a twin overlay's independent axis on the side opposite the parent."""
     ts, tw, fs = st.tick_size, st.tick_width, st.tick_label_size
     marks, labels = [], []
     if ax._twin_shared == "x":                      # twinx: y-axis on the RIGHT
         xr = px_left + px_w
-        for yt, lab in zip(yticks, _resolve_tick_labels(ax._yticklabels, yticks)):
+        for yt, lab in zip(yticks, ax._resolve_yticklabels(yticks)):
             y = tr.y(yt)
             marks.append(f'<line x1="{_fmt(xr)}" y1="{_fmt(y)}" x2="{_fmt(xr + ts)}" y2="{_fmt(y)}"/>')
             labels.append(
@@ -2387,7 +2393,7 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
                 f'transform="rotate(90 {_fmt(lx)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
             )
     else:                                           # twiny: x-axis on the TOP
-        for xt, lab in zip(xticks, _resolve_tick_labels(ax._xticklabels, xticks)):
+        for xt, lab in zip(xticks, ax._resolve_xticklabels(xticks)):
             x = tr.x(xt)
             marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(px_top)}" x2="{_fmt(x)}" y2="{_fmt(px_top - ts)}"/>')
             labels.append(
@@ -2554,11 +2560,8 @@ def _max_ytick_width(ax, st):
     and ``set_yticklabels`` included -- or the y label gets placed on top of
     labels this never measured.
     """
-    (_, _), (ymin, ymax) = ax._resolved_limits()
-    ticks = (ax._yticks if ax._yticks is not None else
-             (log_ticks(ymin, ymax) if ax._yscale == "log"
-              else nice_ticks(ymin, ymax)))
-    labels = _resolve_tick_labels(ax._yticklabels, ticks)
+    ticks = ax._resolve_yticks()
+    labels = ax._resolve_yticklabels(ticks)
     return max((st.text_width(l, st.tick_label_size) for l in labels), default=0.0)
 
 

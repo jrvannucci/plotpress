@@ -40,9 +40,7 @@ from .primitives import Segments as PSegments
 from .svg import (
     _effective_rect, _group_axes_extra, _group_colorbar_extra, _group_colorbars,
     _LEGEND_ANCHORS, _max_ytick_width, _pixel_rect,
-    _resolve_tick_labels,
 )
-from .ticker import log_ticks, nice_ticks
 from .transform import LinearTransform
 
 _DASH = {"-": None, "--": (6, 4), ":": (1, 3), "-.": (6, 3, 1, 3)}
@@ -366,10 +364,8 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
     if not overlay:
         draw.rectangle([L, T, L + Wp, T + Hp], fill=_rgb(ax.get_facecolor()))
 
-    xticks = (ax._xticks if ax._xticks is not None else
-              (log_ticks(xmin, xmax) if ax._xscale == "log" else nice_ticks(xmin, xmax)))
-    yticks = (ax._yticks if ax._yticks is not None else
-              (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
+    xticks = ax._resolve_xticks()
+    yticks = ax._resolve_yticks()
 
     def _draw_grid_lines(xs, ys, alpha, minor=False):
         gc = _rgba(st.grid_color, alpha * (0.6 if minor else 1.0))
@@ -1177,8 +1173,8 @@ def _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     yfs = yst.tick_label_size * S
     yfont = _font(yfs, yst.font_family)
     ytw = max(1, int(round(yst.tick_width * S)))
-    xlabels = _resolve_tick_labels(ax._xticklabels, xticks)
-    ylabels = _resolve_tick_labels(ax._yticklabels, yticks)
+    xlabels = ax._resolve_xticklabels(xticks)
+    ylabels = ax._resolve_yticklabels(yticks)
     x_top = xside == "top"
     y_right = yside == "right"
     x_axis, x_sign, y_axis, y_sign = tick_axis_edge(L, Wp, T, Hp, xside, yside)
@@ -1222,7 +1218,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
     tw = max(1, int(round(st.tick_width * S)))
     if ax._twin_shared == "x":                       # twinx: y-axis on the RIGHT
         xr = L + Wp
-        for yt, lab in zip(yticks, _resolve_tick_labels(ax._yticklabels, yticks)):
+        for yt, lab in zip(yticks, ax._resolve_yticklabels(yticks)):
             y = float(tr.y(yt))
             draw.line([xr, y, xr + ts, y], fill=col, width=tw)
             draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
@@ -1232,7 +1228,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                    _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     else:                                            # twiny: x-axis on the TOP
-        for xt, lab in zip(xticks, _resolve_tick_labels(ax._xticklabels, xticks)):
+        for xt, lab in zip(xticks, ax._resolve_xticklabels(xticks)):
             x = float(tr.x(xt))
             draw.line([x, T, x, T - ts], fill=col, width=tw)
             draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),

@@ -1,8 +1,20 @@
-"""Tick location and label formatting ("nice numbers" 1-2-5 algorithm)."""
+"""Tick location and label formatting ("nice numbers" 1-2-5 algorithm),
+plus the declarative locator/formatter specs :meth:`~plotpress.axes.Axes.
+set_xlocator`/``set_xformat`` accept.
+
+A *locator* spec is a small dict naming a scheme (``{"kind": "multiple",
+"base": ...}``) rather than a matplotlib-style ``Locator`` object -- it has
+to be plain, JSON-serializable data so the exact same tick-placement rule
+can be replayed client-side when an interactive figure is zoomed/panned (see
+``_interactive.py``'s own mirror of every function here). A *formatter*
+spec is the same idea for labels: a name, a ``%``-style string, or (Python-
+only, see :func:`apply_tick_format`) a callable.
+"""
 
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 from typing import List
 
 import numpy as np
@@ -226,3 +238,173 @@ def format_ticks(values) -> List[str]:
     # Only adopt the rewrite if it actually separated them (a range so narrow
     # that 12 decimals cannot resolve it keeps the shorter per-value labels).
     return shared if len(set(shared)) == len(shared) else labels
+
+
+def multiple_ticks(vmin: float, vmax: float, base: float, offset: float = 0.0) -> np.ndarray:
+    """Tick locations at every multiple of ``base`` (plus ``offset``) within
+    ``[vmin, vmax]`` -- matplotlib's ``MultipleLocator``. The standard way to
+    force ticks at, say, every ``pi/2`` on a trig plot's axis, regardless of
+    what :func:`nice_ticks`'s own 1-2-5 scheme would have chosen.
+    """
+    if vmin > vmax:
+        vmin, vmax = vmax, vmin
+    if not (base > 0):
+        raise ValueError(f"multiple locator: base must be > 0, got {base!r}")
+    start = math.ceil((vmin - offset) / base) * base + offset
+    ticks = np.arange(start, vmax + base * 1e-9, base)
+    return ticks[(ticks >= vmin - base * 1e-6) & (ticks <= vmax + base * 1e-6)]
+
+
+def resolve_tick_locations(vmin: float, vmax: float, scale: str = "linear",
+                           locator=None, is_date: bool = False) -> np.ndarray:
+    """The location half of tick resolution, in the priority every renderer
+    (SVG, raster, the interactive JS rebuild) applies identically: an
+    explicit ``locator`` spec first, then a date axis, then a log scale,
+    then the default "nice number" scheme. An explicit, literal tick array
+    (``Axes.set_xticks``) is resolved by the caller before this is ever
+    reached -- it wins over all of these.
+    """
+    if locator is not None:
+        return apply_locator(locator, vmin, vmax)
+    if is_date:
+        from .dates import date_ticks
+        return date_ticks(vmin, vmax)
+    if scale == "log":
+        return log_ticks(vmin, vmax)
+    return nice_ticks(vmin, vmax)
+
+
+def apply_locator(spec, vmin: float, vmax: float) -> np.ndarray:
+    """Resolve a locator spec (see :meth:`~plotpress.axes.Axes.set_xlocator`)
+    into tick locations for the current ``[vmin, vmax]``."""
+    kind = spec.get("kind") if isinstance(spec, dict) else spec
+    if kind == "multiple":
+        return multiple_ticks(vmin, vmax, spec["base"], spec.get("offset", 0.0))
+    raise ValueError(f"unknown locator kind {kind!r}")
+
+
+def resolve_tick_format(values, fmt=None, is_date: bool = False) -> List[str]:
+    """The label half of tick resolution, mirroring
+    :func:`resolve_tick_locations`'s priority: an explicit ``fmt`` spec
+    first, then a date axis, then the default numeric formatting. Explicit,
+    literal tick *labels* (``Axes.set_xticklabels``) are resolved by the
+    caller before this is ever reached.
+    """
+    if fmt is not None:
+        return apply_tick_format(fmt, values)
+    if is_date:
+        from .dates import format_date_ticks
+        return format_date_ticks(values)
+    return format_ticks(values)
+
+
+#: SI/engineering suffixes by power-of-1000 exponent.
+_SI_PREFIXES = {
+    -8: "y", -7: "z", -6: "a", -5: "f", -4: "p", -3: "n", -2: "u", -1: "m",
+    0: "", 1: "k", 2: "M", 3: "G", 4: "T", 5: "P", 6: "E", 7: "Z", 8: "Y",
+}
+
+
+def _engineering_tick(v: float, decimals: int) -> str:
+    if v == 0:
+        return "0"
+    exp3 = max(-8, min(8, math.floor(math.log10(abs(v)) / 3)))
+    mant = f"{v / 10.0 ** (exp3 * 3):.{decimals}f}"
+    if "." in mant:
+        mant = mant.rstrip("0").rstrip(".")
+    return f"{mant}{_SI_PREFIXES[exp3]}"
+
+
+def _pi_tick(v: float, max_denominator: int) -> str:
+    if abs(v) < 1e-12:
+        return "0"
+    frac = Fraction(v / math.pi).limit_denominator(max_denominator)
+    num, den = frac.numerator, frac.denominator
+    if num == 0:
+        return "0"
+    sign = "-" if num < 0 else ""
+    num = abs(num)
+    num_str = "" if num == 1 else str(num)
+    return f"{sign}{num_str}π" if den == 1 else f"{sign}{num_str}π/{den}"
+
+
+def resolve_axis_ticks(vmin: float, vmax: float, explicit=None,
+                       categorical: bool = False, categories=None,
+                       scale: str = "linear", locator=None,
+                       is_date: bool = False) -> np.ndarray:
+    """Tick *locations* for one axis dimension, at the full priority every
+    renderer (SVG, raster, the interactive JS rebuild) must apply
+    identically: an explicit literal array (``Axes.set_xticks``) first,
+    then one tick per category on a categorical axis, then an explicit
+    :func:`apply_locator` spec, then a date axis, then a log scale, then
+    the default "nice number" scheme.
+    """
+    if explicit is not None:
+        return np.asarray(explicit, dtype=float)
+    if categorical:
+        cats = np.arange(len(categories or []), dtype=float)
+        kept = cats[(cats >= vmin - 1e-9) & (cats <= vmax + 1e-9)]
+        # An empty result (every category panned out of view) would render
+        # no ticks at all -- fall back to the full set, same as
+        # date_ticks()/multiple_ticks() do for their own edge cases.
+        return kept if kept.size else cats
+    return resolve_tick_locations(vmin, vmax, scale, locator, is_date)
+
+
+def resolve_axis_tick_labels(values, explicit=None, categorical: bool = False,
+                             categories=None, fmt=None,
+                             is_date: bool = False) -> List[str]:
+    """Tick *labels* for one axis dimension, mirroring
+    :func:`resolve_axis_ticks`'s priority: explicit literal labels
+    (``Axes.set_xticklabels``) first, then this axis' own category names,
+    then an explicit :func:`apply_tick_format` spec, then a date axis,
+    then plain numeric formatting.
+    """
+    if explicit is not None:
+        labs = list(explicit)[:len(values)]
+        return labs + [""] * (len(values) - len(labs))
+    if categorical and categories:
+        return [categories[i] if 0 <= (i := int(round(v))) < len(categories) else ""
+                for v in values]
+    return resolve_tick_format(values, fmt, is_date)
+
+
+def apply_tick_format(spec, values) -> List[str]:
+    """Apply a formatter spec (see :meth:`~plotpress.axes.Axes.set_xformat`)
+    to tick ``values``.
+
+    ``spec`` is one of:
+
+    - a callable ``value -> str`` (Python-only -- see ``set_xformat``'s own
+      docstring for why this can't survive an interactive zoom);
+    - ``"percent"``/``"comma"``/``"eng"``/``"pi"`` (or the same as a dict
+      with ``"kind"`` plus options, e.g. ``{"kind": "percent", "decimals": 1}``);
+    - any other string containing ``"%"``, applied as a plain ``%``-style
+      format applied to each value (``"%.2f"``, ``"$%.0f"``).
+    """
+    if callable(spec):
+        return [spec(v) for v in values]
+    if isinstance(spec, dict):
+        kind = spec.get("kind")
+        opts = {k: v for k, v in spec.items() if k != "kind"}
+    else:
+        kind, opts = spec, {}
+    vals = [float(v) for v in values]
+    if kind == "percent":
+        decimals = opts.get("decimals", 0)
+        return [f"{v * 100:.{decimals}f}%" for v in vals]
+    if kind in ("comma", "thousands"):
+        decimals = opts.get("decimals", 0)
+        return [f"{v:,.{decimals}f}" for v in vals]
+    if kind in ("eng", "engineering"):
+        decimals = opts.get("decimals", 1)
+        return [_engineering_tick(v, decimals) for v in vals]
+    if kind in ("pi", "multiple_of_pi"):
+        max_den = opts.get("max_denominator", 12)
+        return [_pi_tick(v, max_den) for v in vals]
+    if isinstance(kind, str) and "%" in kind:
+        return [kind % v for v in vals]
+    raise ValueError(
+        f"unknown tick format {spec!r} -- expected a callable, one of "
+        "'percent'/'comma'/'eng'/'pi', or a '%'-style format string"
+    )

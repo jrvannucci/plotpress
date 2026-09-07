@@ -20,7 +20,7 @@ from .artists import (
     Stem, Table, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
 from .colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
-from .ticker import log_ticks, nice_ticks
+from .ticker import resolve_axis_ticks, resolve_axis_tick_labels
 from . import _spectral
 
 #: Sentinel for ``text(transform=ax.transAxes)`` -- identity, not value, is
@@ -268,6 +268,24 @@ class Axes:
 
         self._xscale = "linear"
         self._yscale = "linear"
+        self._xdate = False   # True once datetime-like data/limits touch this axis
+        self._ydate = False
+        self._xlocator = None  # a spec dict (see set_xlocator), or None for the default
+        self._ylocator = None
+        self._xformat = None   # a spec/callable (see set_xformat), or None for the default
+        self._yformat = None
+        # Categorical axis: string (or other non-numeric) data plotted directly,
+        # positioned at 0, 1, 2, ... in first-occurrence order. The order list
+        # doubles as index -> label; _xcategory_index is label -> index so a
+        # later call plotting the same categories (a second series in the same
+        # bar group, say) reuses the same positions instead of appending
+        # duplicates.
+        self._xcategorical = False
+        self._ycategorical = False
+        self._xcategories = []
+        self._ycategories = []
+        self._xcategory_index = {}
+        self._ycategory_index = {}
         self._aspect = None        # None='auto'; 1.0='equal'; float=y/x ratio
         self._box_aspect = None    # None=unset; float=fixed height/width, independent of data
         self._axis_off = False
@@ -334,6 +352,62 @@ class Axes:
             return cyc[int(color[1:]) % len(cyc)]
         return to_hex(color)
 
+    def _as_axis_data(self, value, axis="x"):
+        """Coerce plotting data for ``axis`` ("x" or "y") to plain floats,
+        recognizing two non-numeric shapes and marking the axis accordingly
+        so tick locating/labeling knows to treat it specially -- everything
+        downstream of this call (autoscale, the transform, panning/zooming)
+        then works on an ordinary float array exactly like it would for any
+        other linear quantity:
+
+        - **Datetime-like** (``numpy.datetime64``, ``datetime.date``/
+          ``datetime.datetime``, or a sequence of those -- see
+          :func:`~plotpress.dates.is_datetime_like`) converts to real
+          floating-point days since an epoch, so irregularly-spaced
+          timestamps still plot proportionally to actual elapsed time (not
+          evenly spaced the way a categorical axis would).
+        - **Categorical** (strings, or any other non-numeric object array)
+          maps each distinct value to an integer position (0, 1, 2, ...) in
+          the order it's first seen *on this axis* -- across every plotting
+          call, so a second series naming the same categories lands on the
+          same positions instead of appending duplicates.
+
+        Plain numeric input (the common case) is untouched -- this is only
+        ever a plain ``np.asarray(value, dtype=float)`` for it, same as
+        every plotting method already did before either of these existed.
+        """
+        from .dates import is_datetime_like, to_days
+
+        if is_datetime_like(value):
+            if axis == "x":
+                self._xdate = True
+            else:
+                self._ydate = True
+            return to_days(value)
+
+        arr = np.atleast_1d(np.asarray(value))
+        is_strings = arr.dtype.kind in "US" or (
+            arr.dtype == object and arr.size and isinstance(arr.reshape(-1)[0], str))
+        if is_strings:
+            categories = self._xcategories if axis == "x" else self._ycategories
+            index = self._xcategory_index if axis == "x" else self._ycategory_index
+            flat = arr.reshape(-1)
+            positions = np.empty(flat.shape, dtype=float)
+            for i, label in enumerate(flat):
+                label = str(label)
+                pos = index.get(label)
+                if pos is None:
+                    pos = len(categories)
+                    categories.append(label)
+                    index[label] = pos
+                positions[i] = pos
+            if axis == "x":
+                self._xcategorical = True
+            else:
+                self._ycategorical = True
+            return positions.reshape(arr.shape)
+        return np.asarray(value, dtype=float)
+
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle=None,
              label=None, alpha=1.0, values=None, marker=None, markersize=None,
@@ -362,14 +436,35 @@ class Axes:
         their own real shape; anything else falls back to a round dot with
         a warning (see :func:`_warn_marker_shape`), the same limitation
         :meth:`scatter`/:meth:`errorbar` share.
+
+        ``x``/``y`` need not be plain numbers:
+
+        - **Datetime-like** (``numpy.datetime64``, ``datetime.date``/
+          ``datetime.datetime``, or a sequence of those -- a pandas
+          ``Series``/``DatetimeIndex`` already becomes one of these through
+          ``numpy.asarray``) plots at its real position in time, so an
+          irregular gap between two points still looks proportionally
+          different from a small one. Tick locations and labels then follow
+          a calendar-aware scheme (year/month/day/hour/... -- whichever tier
+          fits ~5 ticks across the current view) instead of plain numbers.
+        - **Strings** turn that axis categorical: each distinct value gets
+          an integer position (0, 1, 2, ...) in the order it's first seen
+          *on this axes* -- across every plotting call, so two series naming
+          the same categories share positions -- with the strings themselves
+          as the tick labels, one per category.
+
+        Once either kind touches an axis it stays that way for every artist
+        plotted against it afterward (mixing plain numbers into an already
+        categorical/date axis on the same dimension isn't meaningful and
+        isn't supported).
         """
         fmt = None
         if len(args) == 1:
-            y = np.asarray(args[0], dtype=float)
+            y = self._as_axis_data(args[0], "y")
             x = np.arange(y.size, dtype=float)
         elif len(args) in (2, 3):
-            x = np.asarray(args[0], dtype=float)
-            y = np.asarray(args[1], dtype=float)
+            x = self._as_axis_data(args[0], "x")
+            y = self._as_axis_data(args[1], "y")
             _check_broadcastable("plot", x=x, y=y)
             if len(args) == 3:
                 fmt = args[2]
@@ -428,10 +523,18 @@ class Axes:
         points distinguishable. Giving ``edgecolors`` with no ``linewidths``
         still draws a visible outline, at matplotlib's own default width.
 
-        Only round markers are drawn (see :func:`_warn_marker_shape`); any other
-        ``marker`` is accepted for matplotlib compatibility but warns.
+        Beyond round, ``"s"``/``"^"``/``"v"``/``"<"``/``">"``/``"D"``/``"d"``/
+        ``"+"``/``"x"``/``"X"``/``"|"``/``"_"`` render as their own real
+        shape (see :func:`_warn_marker_shape`); anything else falls back to
+        a round dot with a warning.
+
+        ``x``/``y`` may also be datetime-like (real time-proportional
+        spacing) or strings (a categorical axis, positions 0, 1, 2, ... in
+        first-occurrence order) -- see :meth:`plot` for both.
         """
         _warn_marker_shape(marker, "scatter")
+        x = self._as_axis_data(x, "x")
+        y = self._as_axis_data(y, "y")
         _check_broadcastable("scatter", x=x, y=y)
         if norm is None and (vmin is not None or vmax is not None):
             norm = Normalize(vmin, vmax)
@@ -653,10 +756,16 @@ class Axes:
         default) -- the standard way to distinguish grouped bars in
         greyscale print or for a colorblind reader, when color alone can't.
         Any other value is ignored (plain fill), not an error.
+
+        ``x`` may also be strings -- a categorical axis, one bar per
+        distinct value, positioned at 0, 1, 2, ... in first-occurrence
+        order (see :meth:`plot`) -- the standard ``bar(["Q1", "Q2", ...],
+        values)`` idiom.
         """
+        x = self._as_axis_data(x, "x")
         _check_broadcastable("bar", x=x, height=height, width=width, bottom=bottom)
         if align == "edge":
-            x = np.asarray(x, float) + np.asarray(width, float) / 2.0
+            x = x + np.asarray(width, float) / 2.0
         elif align != "center":
             raise ValueError(f"bar(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(x, height, width, bottom, "vertical",
@@ -677,10 +786,12 @@ class Axes:
              yerr=None, capsize=3.0, ecolor=None, hatch=None, zorder=0):
         """Horizontal bar chart. ``align``/``xerr``/``yerr``/``capsize``/
         ``ecolor``/``hatch`` match :meth:`bar`, centered at each bar's own
-        right edge (``left + width``)."""
+        right edge (``left + width``). ``y`` may be strings, the same
+        categorical axis :meth:`bar`'s ``x`` supports."""
+        y = self._as_axis_data(y, "y")
         _check_broadcastable("barh", y=y, width=width, height=height, left=left)
         if align == "edge":
-            y = np.asarray(y, float) + np.asarray(height, float) / 2.0
+            y = y + np.asarray(height, float) / 2.0
         elif align != "center":
             raise ValueError(f"barh(): align must be 'center' or 'edge', got {align!r}")
         b = Bars(y, width, height, left, "horizontal",
@@ -862,8 +973,8 @@ class Axes:
         real ``x``/``y`` separately with :meth:`scatter` if markers at the
         original points are wanted.
         """
-        x = np.asarray(x, float)
-        y = np.asarray(y, float)
+        x = self._as_axis_data(x, "x")
+        y = self._as_axis_data(y, "y")
         if where == "mid":
             edges = np.concatenate([[x[0]], (x[:-1] + x[1:]) / 2, [x[-1]]])
             xs, ys = np.repeat(edges, 2)[1:-1], np.repeat(y, 2)
@@ -895,7 +1006,7 @@ class Axes:
         idiom. Returns a list of runs, one per contiguous region, instead of
         a single artist when ``where`` is given.
         """
-        x = np.asarray(x, float)
+        x = self._as_axis_data(x, "x")
         y1b = _broadcast_like("fill_between", "y1", y1, x, "x")
         y2b = _broadcast_like("fill_between", "y2", y2, x, "x")
         resolved = self._resolve_color(color)
@@ -949,7 +1060,7 @@ class Axes:
         crossing point the same way -- returns a list of artists, one per
         run, instead of a single one when given.
         """
-        y = np.asarray(y, float)
+        y = self._as_axis_data(y, "y")
         x1 = _broadcast_like("fill_betweenx", "x1", x1, y, "y")
         x2 = _broadcast_like("fill_betweenx", "x2", x2, y, "y")
         resolved = self._resolve_color(color)
@@ -1003,9 +1114,9 @@ class Axes:
     def hlines(self, y, xmin, xmax, color=None, linewidth=None, linestyle="-",
                label=None, alpha=1.0, zorder=0):
         """Draw horizontal line segments at each ``y`` from ``xmin`` to ``xmax``."""
-        y = np.atleast_1d(np.asarray(y, float))
-        xmin = _broadcast_like("hlines", "xmin", xmin, y, "y")
-        xmax = _broadcast_like("hlines", "xmax", xmax, y, "y")
+        y = np.atleast_1d(self._as_axis_data(y, "y"))
+        xmin = _broadcast_like("hlines", "xmin", self._as_axis_data(xmin, "x"), y, "y")
+        xmax = _broadcast_like("hlines", "xmax", self._as_axis_data(xmax, "x"), y, "y")
         segs = np.column_stack([xmin, y, xmax, y])
         lc = LineCollection(
             segs, color=self._resolve_color(color),
@@ -1018,9 +1129,9 @@ class Axes:
     def vlines(self, x, ymin, ymax, color=None, linewidth=None, linestyle="-",
                label=None, alpha=1.0, zorder=0):
         """Draw vertical line segments at each ``x`` from ``ymin`` to ``ymax``."""
-        x = np.atleast_1d(np.asarray(x, float))
-        ymin = _broadcast_like("vlines", "ymin", ymin, x, "x")
-        ymax = _broadcast_like("vlines", "ymax", ymax, x, "x")
+        x = np.atleast_1d(self._as_axis_data(x, "x"))
+        ymin = _broadcast_like("vlines", "ymin", self._as_axis_data(ymin, "y"), x, "x")
+        ymax = _broadcast_like("vlines", "ymax", self._as_axis_data(ymax, "y"), x, "x")
         segs = np.column_stack([x, ymin, x, ymax])
         lc = LineCollection(
             segs, color=self._resolve_color(color),
@@ -1041,9 +1152,11 @@ class Axes:
         more specific override" shape :meth:`errorbar`'s ``ecolor`` has).
         """
         if y is None:
-            y = np.asarray(x, float)
+            y = self._as_axis_data(x, "y")
             x = np.arange(y.size, dtype=float)
         else:
+            x = self._as_axis_data(x, "x")
+            y = self._as_axis_data(y, "y")
             _check_broadcastable("stem", x=x, y=y)
         lc = self._resolve_color(linecolor if linecolor is not None else color)
         mc = (self._resolve_color(markercolor) if markercolor is not None
@@ -1057,7 +1170,7 @@ class Axes:
                  marker=_UNSET, markersize=None, capsize=3.0, linestyle=_UNSET,
                  linewidth=None, label=None, alpha=1.0, zorder=0, ecolor=None,
                  elinewidth=None, capthick=None, errorevery=1):
-        """Line/markers with error bars. Only round markers are drawn.
+        """Line/markers with error bars.
 
         ``fmt`` is matplotlib's 5th positional argument here too (its own
         real signature is ``errorbar(x, y, yerr, xerr, fmt, ...)``) -- a
@@ -1095,6 +1208,8 @@ class Axes:
             linestyle = "-"
 
         _warn_marker_shape(marker, "errorbar")
+        x = self._as_axis_data(x, "x")
+        y = self._as_axis_data(y, "y")
         _check_broadcastable("errorbar", **{
             k: v for k, v in (("x", x), ("y", y), ("yerr", yerr), ("xerr", xerr))
             if v is not None
@@ -2230,9 +2345,13 @@ class Axes:
 
     def axvline(self, x, color=None, linewidth=None, linestyle="--",
                 label=None, alpha=1.0, zorder=0):
-        """Draw a vertical line at data coordinate ``x`` (like matplotlib)."""
+        """Draw a vertical line at data coordinate ``x`` (like matplotlib).
+
+        ``x`` may be datetime-like or a string, the same as :meth:`plot`'s
+        own ``x``/``y``.
+        """
         vl = VLine(
-            x,
+            float(self._as_axis_data(x, "x").reshape(-1)[0]),
             color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
@@ -2264,10 +2383,18 @@ class Axes:
         """Draw a row of rectangles from ``(xstart, xwidth)`` spans at ``yrange``.
 
         ``yrange`` is ``(ystart, yheight)``. Handy for Gantt / timeline charts.
+
+        Each span's ``xstart`` may be datetime-like or a string, the same as
+        :meth:`plot`'s own ``x`` -- a task's start date, say. ``xwidth`` stays
+        a plain number in either case: it's a duration, not a position, and
+        on a date axis that duration is in days, the unit :meth:`plot`
+        converts every date to.
         """
         y0, h = float(yrange[0]), float(yrange[1])
+        starts = np.atleast_1d(self._as_axis_data([xr[0] for xr in xranges], "x"))
+        widths = np.asarray([xr[1] for xr in xranges], dtype=float)
         verts = [np.array([[x, y0], [x + w, y0], [x + w, y0 + h], [x, y0 + h]],
-                          dtype=float) for x, w in xranges]
+                          dtype=float) for x, w in zip(starts, widths)]
         col = self._resolve_color(color)
         pc = PolyCollection(verts, [col] * len(verts), alpha=alpha, label=label)
         pc.zorder = zorder
@@ -2288,9 +2415,13 @@ class Axes:
 
     def axhline(self, y, color=None, linewidth=None, linestyle="--",
                 label=None, alpha=1.0, zorder=0):
-        """Draw a horizontal line at data coordinate ``y`` (like matplotlib)."""
+        """Draw a horizontal line at data coordinate ``y`` (like matplotlib).
+
+        ``y`` may be datetime-like or a string, the same as :meth:`plot`'s
+        own ``x``/``y``.
+        """
         hl = HLine(
-            y,
+            float(self._as_axis_data(y, "y").reshape(-1)[0]),
             color=self._resolve_color(color),
             linewidth=self.style.line_width if linewidth is None else linewidth,
             linestyle=linestyle, label=label, alpha=alpha,
@@ -2321,13 +2452,20 @@ class Axes:
         either side to autoscale just that end -- ``set_xlim(0, None)`` pins the
         left edge and lets the data decide the right. Both ``None`` clears back
         to full autoscaling.
+
+        A bound may also be datetime-like or a string -- resolved through
+        this axis' own existing date/category mapping the same way
+        :meth:`plot`'s ``x``/``y`` are, so ``set_xlim("2024-01-01",
+        "2024-06-01")`` or ``set_xlim("Q1", "Q3")`` work once the axis is
+        already date/categorical (a string limit on an axis that hasn't
+        seen any categories yet has nothing to resolve against and raises).
         """
-        self._xlim = _norm_limits(left, right)
+        self._xlim = _norm_axis_limits(self, "x", left, right)
         return self._xlim
 
     def set_ylim(self, bottom=None, top=None):
         """Set the y limits; same forms as :meth:`set_xlim`."""
-        self._ylim = _norm_limits(bottom, top)
+        self._ylim = _norm_axis_limits(self, "y", bottom, top)
         return self._ylim
 
     def tick_params(self, axis="both", which="major", labelsize=None, length=None,
@@ -2473,6 +2611,12 @@ class Axes:
     def set_xticks(self, ticks, labels=None, minor=False):
         """Set explicit x tick locations. Pass ``[]`` to hide ticks.
 
+        ``ticks`` may also be datetime-like or a list of strings -- resolved
+        through the same coercion :meth:`plot`'s ``x``/``y`` use (see its
+        docstring), so ``set_xticks(["Q1", "Q2", "Q3"])`` both declares those
+        as this axis' categories *and* pins the tick positions in one call,
+        even before any data has been plotted.
+
         ``labels`` optionally sets the tick label strings in the same call
         (matplotlib's combined ``set_xticks(ticks, labels)`` form) -- ignored
         when ``minor=True``, since minor ticks never carry labels here.
@@ -2483,10 +2627,10 @@ class Axes:
         silently sitting unused.
         """
         if minor:
-            self._xticks_minor = None if ticks is None else np.asarray(ticks, dtype=float)
+            self._xticks_minor = None if ticks is None else self._as_axis_data(ticks, "x")
             self._minor_ticks_on = True
             return
-        self._xticks = None if ticks is None else np.asarray(ticks, dtype=float)
+        self._xticks = None if ticks is None else self._as_axis_data(ticks, "x")
         if labels is not None:
             if len(labels) != len(ticks):
                 # Matplotlib itself raises for this exact mismatch; silently
@@ -2502,13 +2646,14 @@ class Axes:
     def set_yticks(self, ticks, labels=None, minor=False):
         """Set explicit y tick locations. Pass ``[]`` to hide ticks.
 
-        ``labels``/``minor`` match :meth:`set_xticks`.
+        ``labels``/``minor`` match :meth:`set_xticks`; ``ticks`` accepts the
+        same datetime-like/string forms too.
         """
         if minor:
-            self._yticks_minor = None if ticks is None else np.asarray(ticks, dtype=float)
+            self._yticks_minor = None if ticks is None else self._as_axis_data(ticks, "y")
             self._minor_ticks_on = True
             return
-        self._yticks = None if ticks is None else np.asarray(ticks, dtype=float)
+        self._yticks = None if ticks is None else self._as_axis_data(ticks, "y")
         if labels is not None:
             if len(labels) != len(ticks):
                 raise ValueError(
@@ -2525,23 +2670,91 @@ class Axes:
         """Set explicit y tick label strings (pair with :meth:`set_yticks`)."""
         self._yticklabels = None if labels is None else [str(s) for s in labels]
 
+    def set_xlocator(self, spec):
+        """Set a declarative x tick-*location* rule, e.g.
+        ``ax.set_xlocator({"kind": "multiple", "base": np.pi / 2})`` to force
+        a tick at every multiple of pi/2 regardless of what the default
+        "nice number" scheme would pick.
+
+        ``spec`` is plain, JSON-serializable data -- a dict naming a scheme
+        (currently just ``"multiple"``, matplotlib's ``MultipleLocator``) --
+        rather than a locator object, so the exact same rule can be replayed
+        by the interactive HTML's client-side zoom/pan rebuild, which can't
+        execute Python. Pass ``None`` to go back to the default scheme.
+
+        Ranks below an explicit literal :meth:`set_xticks` array and this
+        axis' own categories (if any), and above date/log/default ticking --
+        see :func:`~plotpress.ticker.resolve_axis_ticks` for the full chain.
+        """
+        self._xlocator = spec
+
+    def set_ylocator(self, spec):
+        """Set a declarative y tick-location rule; see :meth:`set_xlocator`."""
+        self._ylocator = spec
+
+    def set_xformat(self, spec):
+        """Set a declarative x tick-*label* rule: ``"percent"``, ``"comma"``,
+        ``"eng"``, ``"pi"`` (each also a dict with options, e.g.
+        ``{"kind": "percent", "decimals": 1}``), a raw ``%``-style format
+        string (``"$%.0f"``), or a callable ``value -> str``.
+
+        Everything except a callable is plain, JSON-serializable data, so it
+        replays identically in the interactive HTML's client-side zoom/pan
+        rebuild; a callable only ever renders in the static SVG/PNG/PDF --
+        it can't cross into JS, so a zoomed interactive figure falls back to
+        default formatting for that axis instead. Pass ``None`` to go back
+        to the default. See :func:`~plotpress.ticker.apply_tick_format` for
+        the full spec grammar, and :func:`~plotpress.ticker.
+        resolve_axis_tick_labels` for where this ranks against explicit
+        literal labels, categories, and date formatting.
+        """
+        self._xformat = spec
+
+    def set_yformat(self, spec):
+        """Set a declarative y tick-label rule; see :meth:`set_xformat`."""
+        self._yformat = spec
+
+    def _resolve_xticks(self):
+        """Resolved x tick locations -- the single chain every renderer
+        (SVG, raster, the interactive JS rebuild) must apply identically.
+        See :func:`~plotpress.ticker.resolve_axis_ticks`."""
+        (xmin, xmax), _ = self._resolved_limits()
+        return resolve_axis_ticks(xmin, xmax, self._xticks, self._xcategorical,
+                                  self._xcategories, self._xscale,
+                                  self._xlocator, self._xdate)
+
+    def _resolve_yticks(self):
+        """Resolved y tick locations; see :meth:`_resolve_xticks`."""
+        _, (ymin, ymax) = self._resolved_limits()
+        return resolve_axis_ticks(ymin, ymax, self._yticks, self._ycategorical,
+                                  self._ycategories, self._yscale,
+                                  self._ylocator, self._ydate)
+
+    def _resolve_xticklabels(self, ticks):
+        """Resolved x tick label strings for the already-resolved
+        ``ticks``; see :func:`~plotpress.ticker.resolve_axis_tick_labels`."""
+        return resolve_axis_tick_labels(ticks, self._xticklabels,
+                                        self._xcategorical, self._xcategories,
+                                        self._xformat, self._xdate)
+
+    def _resolve_yticklabels(self, ticks):
+        """Resolved y tick label strings; see :meth:`_resolve_xticklabels`."""
+        return resolve_axis_tick_labels(ticks, self._yticklabels,
+                                        self._ycategorical, self._ycategories,
+                                        self._yformat, self._ydate)
+
     def get_xticklabels(self):
         """The x tick label strings that will actually be drawn: explicit
-        ones if set, else the resolved ticks formatted as text -- plain
-        strings rather than matplotlib's ``Text`` objects, matching every
-        other read-only accessor in this class."""
-        from .svg import _resolve_tick_labels
-
-        ticks = self.get_xticks()
-        return _resolve_tick_labels(self._xticklabels, ticks)
+        ones if set, else this axis' own categories, else formatted
+        date/declarative/default text -- plain strings rather than
+        matplotlib's ``Text`` objects, matching every other read-only
+        accessor in this class."""
+        return self._resolve_xticklabels(self.get_xticks())
 
     def get_yticklabels(self):
         """The y tick label strings that will actually be drawn; see
         :meth:`get_xticklabels`."""
-        from .svg import _resolve_tick_labels
-
-        ticks = self.get_yticks()
-        return _resolve_tick_labels(self._yticklabels, ticks)
+        return self._resolve_yticklabels(self.get_yticks())
 
     def invert_xaxis(self):
         """Reverse the x-axis direction (larger values to the left).
@@ -2865,18 +3078,14 @@ class Axes:
         return self._yscale
 
     def get_xticks(self):
-        """The resolved x tick locations (explicit if set, else auto "nice" ticks)."""
-        (xmin, xmax), _ = self._resolved_limits()
-        if self._xticks is not None:
-            return self._xticks
-        return log_ticks(xmin, xmax) if self._xscale == "log" else nice_ticks(xmin, xmax)
+        """The resolved x tick locations: explicit if set, else one per
+        category, else a locator/date/log/"nice number" scheme -- see
+        :func:`~plotpress.ticker.resolve_axis_ticks` for the full chain."""
+        return self._resolve_xticks()
 
     def get_yticks(self):
-        """The resolved y tick locations (explicit if set, else auto "nice" ticks)."""
-        _, (ymin, ymax) = self._resolved_limits()
-        if self._yticks is not None:
-            return self._yticks
-        return log_ticks(ymin, ymax) if self._yscale == "log" else nice_ticks(ymin, ymax)
+        """The resolved y tick locations; see :meth:`get_xticks`."""
+        return self._resolve_yticks()
 
     def print_summary(self) -> None:
         """Print a plain-English orientation to this one axes -- where it
@@ -3082,7 +3291,7 @@ def _hexbin(x, y, gridsize, mincnt):
     return verts, np.asarray(counts, float)
 
 
-def _norm_limits(lower, upper):
+def _norm_limits(lower, upper, resolve=float):
     """Normalize ``set_xlim``/``set_ylim`` arguments to a stored limit pair.
 
     Returns ``(lo, hi)`` with either entry ``None`` to mean "autoscale this
@@ -3090,12 +3299,59 @@ def _norm_limits(lower, upper):
     ``None`` here rather than storing it verbatim is what keeps a half-set limit
     from reaching the transform, where it used to surface as a bare
     ``float(None)`` TypeError at render time.
+
+    ``resolve`` converts a real (non-``None``) bound to its stored float --
+    plain ``float()`` by default; :func:`_norm_axis_limits` passes one that
+    also accepts a datetime-like or (already-seen) categorical string bound.
     """
     if upper is None and lower is not None and np.ndim(lower) != 0:
         lower, upper = lower                      # a single (lo, hi) sequence
-    lo = None if lower is None else float(lower)
-    hi = None if upper is None else float(upper)
+    lo = None if lower is None else resolve(lower)
+    hi = None if upper is None else resolve(upper)
     return None if lo is None and hi is None else (lo, hi)
+
+
+def _norm_axis_limits(ax, axis, lower, upper):
+    """:func:`_norm_limits`, resolving a datetime-like or categorical-string
+    bound through this axis' own date/category mapping first -- see
+    :meth:`Axes.set_xlim`'s own docstring for what that means for each kind.
+    """
+    from .dates import is_datetime_like, to_days
+
+    is_date = ax._xdate if axis == "x" else ax._ydate
+    categorical = ax._xcategorical if axis == "x" else ax._ycategorical
+    index = ax._xcategory_index if axis == "x" else ax._ycategory_index
+
+    def resolve(bound):
+        # A real datetime object always resolves as a date, regardless of
+        # whether this axis has seen date data yet. A *string* only parses
+        # as a date on an axis that's already date-flavored -- otherwise
+        # "2024-01-01" would be ambiguous with a categorical axis whose
+        # category happens to be that literal string.
+        if is_datetime_like(bound) or (isinstance(bound, str) and is_date):
+            try:
+                return float(to_days(bound).reshape(-1)[0])
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"set_{axis}lim(): {bound!r} could not be parsed as a "
+                    "date for this date axis"
+                ) from exc
+        if isinstance(bound, str):
+            if not categorical:
+                raise ValueError(
+                    f"set_{axis}lim(): {bound!r} is a string, but this axis "
+                    "has no categories yet -- plot categorical data on it "
+                    "first, or pass a number"
+                )
+            if bound not in index:
+                raise ValueError(
+                    f"set_{axis}lim(): {bound!r} is not one of this axis' "
+                    f"own categories: {list(index)}"
+                )
+            return float(index[bound])
+        return float(bound)
+
+    return _norm_limits(lower, upper, resolve=resolve)
 
 
 #: matplotlib format-string tokens (``plot(x, y, 'ro-')`` /

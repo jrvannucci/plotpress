@@ -1169,6 +1169,249 @@ _JS_SOURCE = r"""
     return { ticks: r.ticks, labels: fmtTickSet(r.ticks, r.step), step: r.step };
   }
 
+  // ---- Datetime axis ticks/labels -- mirrors plotpress/dates.py exactly ----
+  var MS_PER_DAY = 86400000;
+  // (step_days, round_unit, strftime-style format) -- same tiers/order as
+  // dates._TIERS, so the same span picks the same calendar granularity here
+  // as it would re-rendering in Python.
+  var DATE_TIERS = [
+    [10 * 365.25, 'Y', '%Y'], [5 * 365.25, 'Y', '%Y'], [2 * 365.25, 'Y', '%Y'],
+    [365.25, 'Y', '%Y'],
+    [6 * 30.44, 'M', '%Y-%m'], [3 * 30.44, 'M', '%Y-%m'], [30.44, 'M', '%Y-%m'],
+    [14, 'D', '%m-%d'], [7, 'D', '%m-%d'], [2, 'D', '%m-%d'], [1, 'D', '%m-%d'],
+    [0.5, 'h', '%m-%d %H:%M'], [0.25, 'h', '%H:%M'],
+    [1 / 24, 'h', '%H:%M'], [1 / 48, 'm', '%H:%M'],
+    [10 / 1440, 'm', '%H:%M:%S'], [1 / 1440, 'm', '%H:%M:%S'],
+    [10 / 86400, 's', '%H:%M:%S'], [1 / 86400, 's', '%H:%M:%S'],
+  ];
+  var DATE_UNIT_DAYS = { Y: 365.25, M: 30.44, D: 1, h: 1 / 24, m: 1 / 1440, s: 1 / 86400 };
+  function pickDateTier(spanDays) {
+    if (!isFinite(spanDays) || spanDays <= 0) return DATE_TIERS[DATE_TIERS.length - 1];
+    var target = spanDays / 5.0;
+    for (var i = DATE_TIERS.length - 1; i >= 0; i--) {
+      if (DATE_TIERS[i][0] >= target) return DATE_TIERS[i];
+    }
+    return DATE_TIERS[0];
+  }
+  // Round a UTC Date down to a calendar boundary of `unit` (year/month start,
+  // midnight, top of the hour/minute/second) -- mirrors the datetime64 unit
+  // cast dates.date_ticks() uses so ticks land on round boundaries, not on
+  // whatever fractional day the view happens to start at.
+  function truncateDateUTC(d, unit) {
+    var t = new Date(d.getTime());
+    if (unit === 'Y') { t.setUTCMonth(0, 1); t.setUTCHours(0, 0, 0, 0); }
+    else if (unit === 'M') { t.setUTCDate(1); t.setUTCHours(0, 0, 0, 0); }
+    else if (unit === 'D') { t.setUTCHours(0, 0, 0, 0); }
+    else if (unit === 'h') { t.setUTCMinutes(0, 0, 0); }
+    else if (unit === 'm') { t.setUTCSeconds(0, 0); }
+    else { t.setUTCMilliseconds(0); }
+    return t;
+  }
+  function addDateUnitsUTC(d, n, unit) {
+    var t = new Date(d.getTime());
+    if (unit === 'Y') t.setUTCFullYear(t.getUTCFullYear() + n);
+    else if (unit === 'M') t.setUTCMonth(t.getUTCMonth() + n);
+    else t.setTime(t.getTime() + n * { D: MS_PER_DAY, h: 3600000, m: 60000, s: 1000 }[unit]);
+    return t;
+  }
+  // Mirrors dates.date_ticks(): walk calendar-boundary candidates from one
+  // tier-step before `lo` to one past `hi` (so the first/last in-range tick
+  // is never missed to rounding), then keep only those inside [lo, hi].
+  function jsDateTicks(lo, hi) {
+    if (lo > hi) { var t0 = lo; lo = hi; hi = t0; }
+    if (lo === hi) { lo -= 1; hi += 1; }
+    if (!isFinite(lo) || !isFinite(hi)) return [lo, hi];
+    var tier = pickDateTier(hi - lo), step = tier[0], unit = tier[1];
+    var stepUnits = Math.max(1, Math.round(step / DATE_UNIT_DAYS[unit]));
+    var loD = truncateDateUTC(new Date(Math.round(lo * MS_PER_DAY)), unit);
+    var hiD = truncateDateUTC(new Date(Math.round(hi * MS_PER_DAY)), unit);
+    var cur = addDateUnitsUTC(loD, -stepUnits, unit);
+    var candidates = [];
+    for (var guard = 0; guard < 2000; guard++) {
+      candidates.push(cur.getTime() / MS_PER_DAY);
+      if (cur.getTime() > hiD.getTime()) break;
+      cur = addDateUnitsUTC(cur, stepUnits, unit);
+    }
+    var kept = candidates.filter(function (v) { return v >= lo - 1e-9 && v <= hi + 1e-9; });
+    return kept.length ? kept : [lo, hi];
+  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtDateTick(days, fmt) {
+    var d = new Date(Math.round(days * MS_PER_DAY));
+    var Y = d.getUTCFullYear(), M = pad2(d.getUTCMonth() + 1), D = pad2(d.getUTCDate());
+    var h = pad2(d.getUTCHours()), mi = pad2(d.getUTCMinutes()), s = pad2(d.getUTCSeconds());
+    if (fmt === '%Y') return String(Y);
+    if (fmt === '%Y-%m') return Y + '-' + M;
+    if (fmt === '%m-%d') return M + '-' + D;
+    if (fmt === '%m-%d %H:%M') return M + '-' + D + ' ' + h + ':' + mi;
+    if (fmt === '%H:%M') return h + ':' + mi;
+    return h + ':' + mi + ':' + s;   // '%H:%M:%S'
+  }
+  // Mirrors dates.format_date_ticks(): one calendar tier for the whole set,
+  // chosen from the set's own span.
+  function jsFormatDateTicks(values) {
+    if (!values.length) return [];
+    var span = 1.0;
+    if (values.length > 1) span = Math.max.apply(null, values) - Math.min.apply(null, values);
+    var fmt = pickDateTier(span > 0 ? span : 1.0)[2];
+    return values.map(function (v) { return fmtDateTick(v, fmt); });
+  }
+
+  // ---- Declarative locator/formatter specs -- mirrors ticker.py exactly,
+  // minus a callable formatter (Python-only; see Axes.set_xformat) ----
+  function jsMultipleTicks(lo, hi, base, offset) {
+    offset = offset || 0;
+    if (!(base > 0)) return null;
+    var start = Math.ceil((lo - offset) / base) * base + offset;
+    var out = [];
+    for (var v = start; v <= hi + base * 1e-9; v += base) out.push(v);
+    return out.filter(function (v) { return v >= lo - base * 1e-6 && v <= hi + base * 1e-6; });
+  }
+  function jsApplyLocator(spec, lo, hi) {
+    var kind = (spec && typeof spec === 'object') ? spec.kind : spec;
+    if (kind === 'multiple') return jsMultipleTicks(lo, hi, spec.base, spec.offset);
+    return null;   // unknown kind -- caller falls back to the default scheme
+  }
+  var SI_PREFIXES = { '-8': 'y', '-7': 'z', '-6': 'a', '-5': 'f', '-4': 'p', '-3': 'n',
+    '-2': 'u', '-1': 'm', '0': '', '1': 'k', '2': 'M', '3': 'G', '4': 'T', '5': 'P',
+    '6': 'E', '7': 'Z', '8': 'Y' };
+  function jsEngTick(v, decimals) {
+    if (v === 0) return '0';
+    var exp3 = Math.max(-8, Math.min(8, Math.floor(Math.log10(Math.abs(v)) / 3)));
+    var mant = (v / Math.pow(10, exp3 * 3)).toFixed(decimals);
+    if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
+    return mant + SI_PREFIXES[String(exp3)];
+  }
+  function gcdInt(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { var t = b; b = a % b; a = t; } return a || 1; }
+  // Approximates v/pi as num/den with den <= maxDenominator -- exact for the
+  // common case (a multiple-of-pi locator), where v/pi is already a clean
+  // fraction; not a full continued-fraction search like Python's
+  // Fraction.limit_denominator, which this client-side fallback doesn't need.
+  function jsPiTick(v, maxDenominator) {
+    if (Math.abs(v) < 1e-12) return '0';
+    var num = Math.round((v / Math.PI) * maxDenominator), den = maxDenominator;
+    var g = gcdInt(num, den);
+    num /= g; den /= g;
+    if (num === 0) return '0';
+    var sign = num < 0 ? '-' : '';
+    num = Math.abs(num);
+    var numStr = num === 1 ? '' : String(num);
+    return den === 1 ? (sign + numStr + 'π') : (sign + numStr + 'π/' + den);
+  }
+  function commaFmt(v, decimals) {
+    var s = v.toFixed(decimals), neg = s.charAt(0) === '-';
+    if (neg) s = s.slice(1);
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (neg ? '-' : '') + parts.join('.');
+  }
+  // A minimal single-conversion %-format mirror (%.2f, %d, $%.0f, ...) --
+  // covers the one-value-per-tick case apply_tick_format() actually needs.
+  function jsPrintfTick(fmt, v) {
+    var m = fmt.match(/%([#0+\- ]*)(\d*)(?:\.(\d+))?([sdfeEgG%])/);
+    if (!m) return String(v);
+    var flags = m[1], width = m[2] ? parseInt(m[2], 10) : 0;
+    var prec = m[3] !== undefined ? parseInt(m[3], 10) : null, conv = m[4];
+    var out;
+    if (conv === '%') return fmt.replace('%%', '%');
+    else if (conv === 'd') out = String(Math.round(v));
+    else if (conv === 'f') out = v.toFixed(prec != null ? prec : 6);
+    else if (conv === 'e' || conv === 'E') out = v.toExponential(prec != null ? prec : 6);
+    else out = String(v);
+    if (flags.indexOf('+') >= 0 && v >= 0) out = '+' + out;
+    while (out.length < width) out = flags.indexOf('-') >= 0 ? out + ' ' : ' ' + out;
+    return fmt.replace(m[0], out);
+  }
+  // Mirrors ticker.apply_tick_format(); returns null for a spec it can't
+  // apply (an unknown kind, or the None a callable formatter serializes to)
+  // so the caller falls back to this axis' default formatting.
+  function jsApplyFormat(spec, values) {
+    var kind, opts;
+    if (spec && typeof spec === 'object') { kind = spec.kind; opts = spec; }
+    else { kind = spec; opts = {}; }
+    if (kind === 'percent') {
+      var decP = opts.decimals != null ? opts.decimals : 0;
+      return values.map(function (v) { return (v * 100).toFixed(decP) + '%'; });
+    }
+    if (kind === 'comma' || kind === 'thousands') {
+      var decC = opts.decimals != null ? opts.decimals : 0;
+      return values.map(function (v) { return commaFmt(v, decC); });
+    }
+    if (kind === 'eng' || kind === 'engineering') {
+      var decE = opts.decimals != null ? opts.decimals : 1;
+      return values.map(function (v) { return jsEngTick(v, decE); });
+    }
+    if (kind === 'pi' || kind === 'multiple_of_pi') {
+      var maxDen = opts.max_denominator != null ? opts.max_denominator : 12;
+      return values.map(function (v) { return jsPiTick(v, maxDen); });
+    }
+    if (typeof kind === 'string' && kind.indexOf('%') >= 0) {
+      return values.map(function (v) { return jsPrintfTick(kind, v); });
+    }
+    return null;
+  }
+  // One category position per index, filtered to the current view (falling
+  // back to the full set if a zoom/pan pushed every category out of range) --
+  // mirrors ticker.resolve_axis_ticks()'s categorical branch.
+  function jsCategoryTicks(lo, hi, nCategories) {
+    var cats = [];
+    for (var i = 0; i < nCategories; i++) cats.push(i);
+    var kept = cats.filter(function (v) { return v >= lo - 1e-9 && v <= hi + 1e-9; });
+    return kept.length ? kept : cats;
+  }
+  // The full per-axis tick + label resolution, at the same priority
+  // ticker.resolve_axis_ticks()/resolve_axis_tick_labels() apply in Python:
+  // categorical > locator (ticks) / format (labels) > date > log/default.
+  // `om` is this axes' own axes_metadata() entry; `isX` picks the x or y half.
+  function resolveAxisTicks(om, lo, hi, scale, isX) {
+    var categorical = isX ? om.xcategorical : om.ycategorical;
+    var categories = isX ? om.xcategories : om.ycategories;
+    var locator = isX ? om.xlocator : om.ylocator;
+    var isDate = isX ? om.xdate : om.ydate;
+    var fmt = isX ? om.xformat : om.yformat;
+
+    var ticks, step = null, labels;
+    if (categorical) {
+      ticks = jsCategoryTicks(lo, hi, (categories || []).length);
+    } else if (locator) {
+      ticks = jsApplyLocator(locator, lo, hi);
+      if (ticks === null) { var rl = jsNiceTicks(lo, hi, 5); ticks = rl.ticks; step = rl.step; }
+    } else if (isDate) {
+      ticks = jsDateTicks(lo, hi);
+    } else if (scale === 'log') {
+      ticks = jsLogTicks(lo, hi);
+    } else {
+      var r = jsNiceTicks(lo, hi, 5);
+      ticks = r.ticks; step = r.step;
+    }
+    // jsMinorTicks() (like ticker.minor_ticks()) derives its own subdivision
+    // step from ticks[1]-ticks[0] regardless of flavor -- fill it in here too
+    // so a date/categorical/locator axis with minor ticks on doesn't lose
+    // them on the first zoom/pan just because this branch never computed one.
+    if (step === null && ticks.length >= 2) step = ticks[1] - ticks[0];
+
+    if (categorical) {
+      labels = ticks.map(function (v) {
+        var i = Math.round(v);
+        return (categories && categories[i] != null) ? categories[i] : '';
+      });
+    } else if (fmt) {
+      labels = jsApplyFormat(fmt, ticks);
+      if (labels === null) {
+        labels = isDate ? jsFormatDateTicks(ticks)
+               : scale === 'log' ? ticks.map(function (v) { return fmtNum(v); })
+               : fmtTickSet(ticks, step);
+      }
+    } else if (isDate) {
+      labels = jsFormatDateTicks(ticks);
+    } else if (scale === 'log') {
+      labels = ticks.map(function (v) { return fmtNum(v); });
+    } else {
+      labels = fmtTickSet(ticks, step);
+    }
+    return { ticks: ticks, labels: labels, step: step };
+  }
+
   // Mirrors ticker.minor_ticks: unlabeled subdivisions within [lo, hi]. Log
   // is the 2..9 sub-decade marks per decade the range spans; linear
   // subdivides the major step by a count keyed off its leading digit
@@ -1231,8 +1474,8 @@ _JS_SOURCE = r"""
     var g = document.getElementById('ticks' + key);
     if (!g) return;
     var m = CUR[key];
-    var xr = axisTicks(m.xmin, m.xmax, m.xscale);
-    var yr = axisTicks(m.ymin, m.ymax, m.yscale);
+    var xr = resolveAxisTicks(om, m.xmin, m.xmax, m.xscale, true);
+    var yr = resolveAxisTicks(om, m.ymin, m.ymax, m.yscale, false);
     var parts = [];
     var xTop = om.xside === 'top', yRight = om.yside === 'right';
     var xAxis = xTop ? m.y : m.y + m.h, xSign = xTop ? -1 : 1;

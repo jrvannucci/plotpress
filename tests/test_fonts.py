@@ -358,11 +358,7 @@ def test_tight_layout_still_measures_numeric_ticks():
 
 
 def _tick_labels(ax):
-    from plotpress.svg import _resolve_tick_labels
-    from plotpress.ticker import nice_ticks
-
-    (_, _), (lo, hi) = ax._resolved_limits()
-    return _resolve_tick_labels(ax._yticklabels, nice_ticks(lo, hi))
+    return ax._resolve_yticklabels(ax._resolve_yticks())
 
 
 @pytest.mark.parametrize("data_scale", [1.0, 1e7, 1e-7],

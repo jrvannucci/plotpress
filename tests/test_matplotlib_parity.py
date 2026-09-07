@@ -84,6 +84,14 @@ def test_method_names_are_a_subset_of_matplotlib():
         # no equivalent; see Figure.print_layout_summary for the
         # whole-figure version.
         "print_summary",
+        # matplotlib's tick-rule customization lives on ax.xaxis/ax.yaxis as
+        # set_major_locator()/set_major_formatter(), taking arbitrary
+        # Locator/Formatter objects. plotpress deliberately doesn't mirror
+        # that shape: these take a plain, JSON-serializable spec instead (a
+        # dict/string, or a callable for set_x/yformat only), so the same
+        # rule can be replayed by the interactive HTML's client-side
+        # zoom/pan rebuild, which can't execute an arbitrary Python object.
+        "set_xlocator", "set_ylocator", "set_xformat", "set_yformat",
     }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")

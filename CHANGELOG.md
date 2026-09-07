@@ -11,6 +11,69 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **Datetime axis support** -- `plot()`/`scatter()`/`bar()`/`barh()`/
+  `step()`/`fill_between()`/`fill_betweenx()`/`hlines()`/`vlines()`/
+  `axhline()`/`axvline()`/`errorbar()`/`stem()`/`broken_barh()` now accept
+  `numpy.datetime64`, `datetime.date`/`datetime.datetime`, or a sequence of
+  either, directly as `x`/`y` data. Values convert once, at plot time, to
+  plain floating-point days since the 1970-01-01 epoch (`plotpress.dates`,
+  new module) -- the same epoch modern matplotlib uses, so a value already
+  converted via `matplotlib.dates.date2num` is also valid here. Points space
+  proportionally to real elapsed time, not evenly by index: irregular gaps
+  between timestamps stay irregular. Ticks land on calendar-aware
+  boundaries (year/month/day/hour/minute/second, whichever tier best fits
+  the visible span) via `dates.date_ticks()`/`format_date_ticks()`, mirrored
+  exactly in the interactive HTML's client-side zoom/pan rebuild
+  (`_interactive.py`'s `jsDateTicks`/`jsFormatDateTicks`) so a date axis
+  keeps sensible calendar ticks after a browser zoom, not just on first
+  render. `set_xlim`/`set_ylim` accept datetime-like or ISO date-string
+  bounds on a date axis (`set_xlim("2024-01-01", "2024-06-01")`), and
+  `set_xticks`/`set_yticks` accept datetime-like tick positions too.
+- **General categorical (string) axis support** -- passing a plain list of
+  strings as `x`/`y` to any of the methods above plots it as a categorical
+  axis: each distinct value gets an integer position (0, 1, 2, ...) in the
+  order it's first seen *on that axis*, so `bar(["Q1", "Q2", "Q3"], vals)`
+  or `plot(["low", "mid", "high"], vals)` just work, and a second series
+  naming overlapping categories lands on the same positions instead of
+  appending duplicates. `set_xlim`/`set_ylim` accept a category name as a
+  bound once the axis has seen it (`set_xlim("Q1", "Q3")`), and
+  `set_xticks`/`set_yticks` accept a list of strings directly, declaring
+  them as categories even before any data is plotted.
+- **Declarative tick locator/formatter specs** -- `Axes.set_xlocator()`/
+  `set_ylocator()` take a small dict naming a tick-placement scheme (for
+  now, `{"kind": "multiple", "base": ...}`, matplotlib's
+  `MultipleLocator` -- ticks at every multiple of `base`, e.g. every
+  `pi/2` on a trig plot). `Axes.set_xformat()`/`set_yformat()` take a
+  label-formatting spec: `"percent"`, `"comma"`/`"thousands"`,
+  `"eng"`/`"engineering"` (SI suffixes: `1.5k`, `2.3M`, ...),
+  `"pi"`/`"multiple_of_pi"` (`pi/2`, `3pi/4`, ...), any of those as a dict
+  with options (`{"kind": "percent", "decimals": 1}`), a raw `%`-style
+  format string (`"$%.0f"`), or a plain callable `value -> str`. Every
+  form except a callable is plain, JSON-serializable data -- deliberately
+  not a matplotlib-style `Locator`/`Formatter` object -- so the exact same
+  rule replays in the interactive HTML's client-side zoom/pan rebuild
+  (`_interactive.py`'s new `resolveAxisTicks`, mirroring
+  `ticker.resolve_axis_ticks`/`resolve_axis_tick_labels` line for line); a
+  callable formatter only ever renders in the static SVG/PNG/PDF, and a
+  zoomed interactive figure using one falls back to default formatting for
+  that axis instead of trying to serialize Python code.
+- One shared coercion entry point, `Axes._as_axis_data()`, backs all three
+  features so every plotting method treats datetime/categorical/plain
+  input identically instead of each reimplementing its own detection --
+  and one shared tick-resolution chain
+  (`ticker.resolve_axis_ticks`/`resolve_axis_tick_labels`, applied via new
+  `Axes._resolve_xticks()`/`_resolve_yticks()`/`_resolve_xticklabels()`/
+  `_resolve_yticklabels()` methods) is now the single source `svg.py`,
+  `raster.py`, `figure.py`'s `tight_layout()`, and the interactive JS all
+  read from, closing off the kind of SVG/raster/JS divergence a previous
+  release's hatch-angle bug came from. Priority order: an explicit literal
+  `set_xticks`/`set_xticklabels` array wins over everything; then this
+  axis' own categories; then an explicit locator (for tick locations) or
+  format (for labels) spec; then a date axis; then a log scale or the
+  default "nice number" scheme.
+
 ## [0.27.1] - 2026-09-07
 
 A 7-angle multi-agent code review against 0.27.0's own diff (marker

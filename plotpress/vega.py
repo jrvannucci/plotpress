@@ -198,8 +198,8 @@ def _axis_def(orient, scale_name, label, grid, custom_ticks, custom_labels, scal
         # algorithm here just to know which position gets which label, so
         # this only fires for the (overwhelmingly common) paired case.
         if custom_labels is not None:
-            # svg.py's own _resolve_tick_labels() truncate/pad convention:
-            # extra labels are dropped, missing ones render blank.
+            # ticker.py's own resolve_axis_tick_labels() truncate/pad
+            # convention: extra labels are dropped, missing ones render blank.
             labels = list(custom_labels)[:len(ticks)]
             labels += [""] * (len(ticks) - len(labels))
             label_scale = f"{scale_name}_labels"

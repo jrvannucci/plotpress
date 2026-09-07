@@ -566,8 +566,6 @@ class Figure:
         """
         self._tight_pad = float(pad)
         self._layout_dirty = False
-        from .svg import _resolve_tick_labels
-        from .ticker import log_ticks, nice_ticks
 
         st = self.style
         # Base, un-grown pixel size -- group_spacing()'s reservations add to
@@ -601,13 +599,11 @@ class Figure:
             # over-widening every gap next to it.
             xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
             yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
-            (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
-            yt = (ax._yticks if ax._yticks is not None else
-                  (log_ticks(ymin, ymax) if ax._yscale == "log" else nice_ticks(ymin, ymax)))
+            yt = ax._resolve_yticks()
             # Measure the labels as drawn: explicit set_yticklabels strings are
             # usually far wider than the numbers they replace (category names),
             # and sizing the margin from the tick *values* clips them.
-            ylabels = _resolve_tick_labels(ax._yticklabels, yt)
+            ylabels = ax._resolve_yticklabels(yt)
             ytw = max((yst.text_width(l, yst.tick_label_size) for l in ylabels),
                       default=0.0)
             right_px = max(right_px, xst.tick_label_size * 0.6)  # last x label overhang
