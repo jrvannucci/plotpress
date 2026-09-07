@@ -600,3 +600,38 @@ def test_vega_lite_export_uses_date_labels_not_bare_day_floats():
     x_axis = layer["layer"][0]["encoding"]["x"]["axis"]
     assert "labelExpr" in x_axis
     assert "2024" in x_axis["labelExpr"]
+
+
+# ---------------------------------------------------------------------------
+# _as_axis_data always returns at least 1-D -- a bare scalar x/y (plain
+# number or a scalar datetime) used to leave a 0-D array reaching the
+# renderer, crashing deep inside svg.py/primitives.py the moment something
+# iterated or indexed into it. axvline()/axhline() already guarded against
+# this themselves (.reshape(-1)[0]); scatter/plot/errorbar/stem did not.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("method,args,kwargs", [
+    ("scatter", (5, 5), {}),
+    ("plot", (5, 5), {}),
+    ("errorbar", (5, 5), {"yerr": 1}),
+    ("stem", (5, 5), {}),
+])
+def test_bare_scalar_xy_renders_without_crashing(method, args, kwargs):
+    fig, ax = plotpress.subplots()
+    getattr(ax, method)(*args, **kwargs)
+    fig.to_svg()   # used to raise IndexError: invalid index to scalar variable
+
+
+def test_bare_scalar_datetime_x_renders_without_crashing():
+    fig, ax = plotpress.subplots()
+    ax.scatter(np.datetime64("2024-01-01"), 5)
+    assert ax._xdate is True
+    fig.to_svg()
+
+
+def test_as_axis_data_always_returns_at_least_1d():
+    fig, ax = plotpress.subplots()
+    assert ax._as_axis_data(5, "x").shape == (1,)
+    assert ax._as_axis_data(np.datetime64("2024-01-01"), "x").shape == (1,)
+    assert ax._as_axis_data(dt.date(2024, 1, 1), "x").shape == (1,)
+    assert ax._as_axis_data("only-category", "y").shape == (1,)

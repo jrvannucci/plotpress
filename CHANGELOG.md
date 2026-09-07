@@ -13,6 +13,33 @@ anywhere in the source.
 
 ### Fixed
 
+- **A bare scalar `x`/`y` (a plain number or a single `datetime.date`, not
+  an array) crashed `scatter()`/`plot()`/`errorbar()`/`stem()` at render
+  time** with `IndexError: invalid index to scalar variable` -- flagged as
+  a follow-up during the 0.28.1 audit. `Axes._as_axis_data()` now always
+  returns at least a 1-D array (matching what its categorical branch
+  already did), the same guard `axvline()`/`axhline()` already applied
+  themselves rather than relying on this method for it.
+
+### Added
+
+- **A real end-to-end browser test for the interactive HTML's client-side
+  tick-formatting JS** -- `tests/test_tick_parity_interactive.py`, using
+  the existing Playwright infrastructure. Drags a real "Axis Zoom"
+  rubber-band on the real toolbar, reads back the resolved view range via
+  the same public `window.plotpressToData()` a custom tool would use, and
+  asserts the tick labels actually rendered match what
+  `plotpress.ticker`/`plotpress.dates` compute in Python for that exact
+  range -- for a pi-formatted locator, a raw `%`-format string, and a date
+  axis. Verified against both bugs 0.28.1 fixed (reverted each fix in turn
+  and confirmed the new test fails with the old behavior, then confirmed
+  it passes again with the fix restored), so a future silent divergence
+  here fails CI instead of shipping unnoticed the way those two did.
+
+## [0.28.1] - 2026-09-07
+
+### Fixed
+
 An aggressive multi-agent audit against 0.28.0's own diff (datetime axes,
 categorical axes, declarative tick locator/formatter specs), run per the
 user's request to keep auditing new functionality until clean. Verified
@@ -118,6 +145,8 @@ Investigated and left as-is:
   this release). A pre-existing, unrelated gap in `scatter`/`plot`/
   `errorbar`/`stem`'s bare-scalar handling, tracked separately.
 
+## [0.28.0] - 2026-09-07
+
 ### Added
 
 - **Datetime axis support** -- `plot()`/`scatter()`/`bar()`/`barh()`/
@@ -180,8 +209,6 @@ Investigated and left as-is:
   axis' own categories; then an explicit locator (for tick locations) or
   format (for labels) spec; then a date axis; then a log scale or the
   default "nice number" scheme.
-
-## [0.28.0] - 2026-09-07
 
 ## [0.27.1] - 2026-09-07
 

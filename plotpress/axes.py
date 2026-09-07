@@ -376,6 +376,13 @@ class Axes:
         ever a plain ``np.asarray(value, dtype=float)`` for it, same as
         every plotting method already did before either of these existed.
 
+        Always returns at least a 1-D array, even for a bare scalar
+        (``5``, a single ``datetime.date``): a 0-D array reaching the
+        renderer as one of a method's ``x``/``y`` arrays raises deep inside
+        ``svg.py``/``primitives.py`` the first time something iterates or
+        indexes into it, which every caller here would otherwise have to
+        guard against individually.
+
         A bare string is ordinarily categorical -- but once this axis is
         already date-flavored (from earlier datetime-like data), a string
         here is resolved as a date instead, matching what
@@ -390,7 +397,7 @@ class Axes:
                 self._xdate = True
             else:
                 self._ydate = True
-            return to_days(value)
+            return np.atleast_1d(to_days(value))
 
         is_date = self._xdate if axis == "x" else self._ydate
         arr = np.atleast_1d(np.asarray(value))
@@ -398,7 +405,7 @@ class Axes:
             arr.dtype == object and arr.size and isinstance(arr.reshape(-1)[0], str))
         if is_strings and is_date:
             try:
-                return to_days(value)
+                return np.atleast_1d(to_days(value))
             except (ValueError, TypeError) as exc:
                 raise ValueError(
                     f"{value!r} is a string on a date axis, but couldn't be "
@@ -422,7 +429,7 @@ class Axes:
             else:
                 self._ycategorical = True
             return positions.reshape(arr.shape)
-        return np.asarray(value, dtype=float)
+        return np.atleast_1d(np.asarray(value, dtype=float))
 
     # -- plotting methods ---------------------------------------------------
     def plot(self, *args, color=None, linewidth=None, linestyle=None,
