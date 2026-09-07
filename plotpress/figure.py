@@ -1964,6 +1964,14 @@ def _sanitize_nan(obj):
     pixels, a masked land/ocean field, a scatter's dropped-out channel), not a
     rare one, so this has to hold for every payload, not just the common one.
     """
+    if isinstance(obj, np.generic):
+        # A numpy scalar (np.int64, np.float64, ...) reaching here -- e.g.
+        # from a set_xlocator()/set_xformat() spec built with a value pulled
+        # out of a numpy array -- isn't JSON-serializable even though most
+        # numpy float types happen to subclass the builtin float. .item()
+        # unwraps it to the equivalent native Python type; recursing lets
+        # the float branch below still catch a numpy NaN/Infinity.
+        return _sanitize_nan(obj.item())
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, dict):

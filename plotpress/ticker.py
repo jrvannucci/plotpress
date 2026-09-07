@@ -252,7 +252,12 @@ def multiple_ticks(vmin: float, vmax: float, base: float, offset: float = 0.0) -
         raise ValueError(f"multiple locator: base must be > 0, got {base!r}")
     start = math.ceil((vmin - offset) / base) * base + offset
     ticks = np.arange(start, vmax + base * 1e-9, base)
-    return ticks[(ticks >= vmin - base * 1e-6) & (ticks <= vmax + base * 1e-6)]
+    ticks = ticks[(ticks >= vmin - base * 1e-6) & (ticks <= vmax + base * 1e-6)]
+    # A zoom/pan window that lands entirely between two multiples of `base`
+    # has none inside it -- fall back to the bare range rather than an axis
+    # with no ticks at all, matching every other tick function's own
+    # never-empty convention (nice_ticks, log_ticks, date_ticks).
+    return ticks if ticks.size else np.array([vmin, vmax])
 
 
 def resolve_tick_locations(vmin: float, vmax: float, scale: str = "linear",

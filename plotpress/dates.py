@@ -57,6 +57,12 @@ def to_days(value) -> np.ndarray:
     1970-01-01 epoch -- the representation every other plotpress axis
     already uses, so nothing downstream needs to know the data was ever a
     date.
+
+    A missing timestamp (``numpy.datetime64("NaT")``, the datetime analogue
+    of ``NaN``) maps to ``NaN``, not a huge-but-finite float -- ``NaT``'s own
+    ``int64`` encoding is the minimum representable ``int64``, which without
+    this would silently become "roughly 300,000 years before 1970" instead
+    of being excluded the way a real missing value should be.
     """
     arr = np.asarray(value)
     if arr.dtype.kind != "M":
@@ -65,7 +71,9 @@ def to_days(value) -> np.ndarray:
         # (it already accepts both types) rather than hand-rolling it.
         arr = np.asarray(value, dtype="datetime64[us]")
     arr = arr.astype("datetime64[us]")
-    return (arr.astype("int64") - _EPOCH.astype("int64")) / _US_PER_DAY
+    days = (arr.astype("int64") - _EPOCH.astype("int64")) / _US_PER_DAY
+    nat = np.isnat(arr)
+    return np.where(nat, np.nan, days) if np.any(nat) else days
 
 
 def days_to_datetime64(days) -> np.ndarray:

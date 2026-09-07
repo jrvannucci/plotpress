@@ -375,6 +375,13 @@ class Axes:
         Plain numeric input (the common case) is untouched -- this is only
         ever a plain ``np.asarray(value, dtype=float)`` for it, same as
         every plotting method already did before either of these existed.
+
+        A bare string is ordinarily categorical -- but once this axis is
+        already date-flavored (from earlier datetime-like data), a string
+        here is resolved as a date instead, matching what
+        :meth:`set_xlim`/``set_ylim`` already do for a string bound. Without
+        this, ``ax.plot(dates, y); ax.axvline("2024-03-01")`` would silently
+        mint a one-off category instead of marking March 2024.
         """
         from .dates import is_datetime_like, to_days
 
@@ -385,9 +392,18 @@ class Axes:
                 self._ydate = True
             return to_days(value)
 
+        is_date = self._xdate if axis == "x" else self._ydate
         arr = np.atleast_1d(np.asarray(value))
         is_strings = arr.dtype.kind in "US" or (
             arr.dtype == object and arr.size and isinstance(arr.reshape(-1)[0], str))
+        if is_strings and is_date:
+            try:
+                return to_days(value)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"{value!r} is a string on a date axis, but couldn't be "
+                    "parsed as a date"
+                ) from exc
         if is_strings:
             categories = self._xcategories if axis == "x" else self._ycategories
             index = self._xcategory_index if axis == "x" else self._ycategory_index
@@ -2348,7 +2364,13 @@ class Axes:
         """Draw a vertical line at data coordinate ``x`` (like matplotlib).
 
         ``x`` may be datetime-like or a string, the same as :meth:`plot`'s
-        own ``x``/``y``.
+        own ``x``/``y`` -- including on a categorical axis, where a string
+        not already among this axis' categories is added as a new one
+        (matching :meth:`plot`'s own first-seen-wins rule) rather than
+        raising. That differs from :meth:`set_xlim`, which treats an unknown
+        category string as an error instead: a limit is a boundary, not data,
+        so it never silently introduces a new category the way a real,
+        visible mark like this one does.
         """
         vl = VLine(
             float(self._as_axis_data(x, "x").reshape(-1)[0]),
@@ -2418,7 +2440,9 @@ class Axes:
         """Draw a horizontal line at data coordinate ``y`` (like matplotlib).
 
         ``y`` may be datetime-like or a string, the same as :meth:`plot`'s
-        own ``x``/``y``.
+        own ``x``/``y`` -- see :meth:`axvline`'s own docstring for what that
+        means on a categorical axis (a new string is added as a category,
+        unlike :meth:`set_ylim`, which raises instead).
         """
         hl = HLine(
             float(self._as_axis_data(y, "y").reshape(-1)[0]),
@@ -2838,6 +2862,19 @@ class Axes:
         sec._secondary_dim = "x"
         sec._xtick_side = location
         sec._subplotspec = self._subplotspec
+        # A secondary axis mirrors this axes' x-limits, so it needs whatever
+        # gives those limits meaning too -- date/categorical flavor and any
+        # declarative locator/format -- or its own ticks render as raw
+        # numbers while the primary axis right below it shows dates/
+        # categories for the identical range. Categories share the parent's
+        # own list/dict (not a copy), so later data growing the category set
+        # stays visible here too, matching "mirrors wherever it ends up."
+        sec._xdate = self._xdate
+        sec._xcategorical = self._xcategorical
+        sec._xcategories = self._xcategories
+        sec._xcategory_index = self._xcategory_index
+        sec._xlocator = self._xlocator
+        sec._xformat = self._xformat
         if label is not None:
             sec.set_xlabel(label)
         return sec
@@ -2852,6 +2889,12 @@ class Axes:
         sec._secondary_dim = "y"
         sec._ytick_side = location
         sec._subplotspec = self._subplotspec
+        sec._ydate = self._ydate
+        sec._ycategorical = self._ycategorical
+        sec._ycategories = self._ycategories
+        sec._ycategory_index = self._ycategory_index
+        sec._ylocator = self._ylocator
+        sec._yformat = self._yformat
         if label is not None:
             sec.set_ylabel(label)
         return sec
@@ -3324,31 +3367,59 @@ def _norm_axis_limits(ax, axis, lower, upper):
 
     def resolve(bound):
         # A real datetime object always resolves as a date, regardless of
-        # whether this axis has seen date data yet. A *string* only parses
-        # as a date on an axis that's already date-flavored -- otherwise
-        # "2024-01-01" would be ambiguous with a categorical axis whose
-        # category happens to be that literal string.
-        if is_datetime_like(bound) or (isinstance(bound, str) and is_date):
+        # whether this axis has seen date data yet -- but not onto an axis
+        # that's already categorical, where a date and a category position
+        # can't both mean something at once.
+        if is_datetime_like(bound):
+            if categorical:
+                raise ValueError(
+                    f"set_{axis}lim(): {bound!r} is a date, but this axis "
+                    "is categorical -- pass one of its own categories instead"
+                )
             try:
-                return float(to_days(bound).reshape(-1)[0])
+                days = float(to_days(bound).reshape(-1)[0])
             except (ValueError, TypeError) as exc:
                 raise ValueError(
                     f"set_{axis}lim(): {bound!r} could not be parsed as a "
-                    "date for this date axis"
+                    "date"
                 ) from exc
+            if axis == "x":
+                ax._xdate = True
+            else:
+                ax._ydate = True
+            return days
         if isinstance(bound, str):
-            if not categorical:
+            # A string only parses as a date on an axis that's already
+            # date-flavored -- otherwise "2024-01-01" would be ambiguous
+            # with a categorical axis whose category happens to be that
+            # literal string.
+            if is_date:
+                try:
+                    return float(to_days(bound).reshape(-1)[0])
+                except (ValueError, TypeError) as exc:
+                    raise ValueError(
+                        f"set_{axis}lim(): {bound!r} could not be parsed as "
+                        "a date for this date axis"
+                    ) from exc
+            if categorical:
+                if bound not in index:
+                    raise ValueError(
+                        f"set_{axis}lim(): {bound!r} is not one of this "
+                        f"axis' own categories: {list(index)}"
+                    )
+                return float(index[bound])
+            # Not a date or categorical axis yet -- an ordinary numeric
+            # string (e.g. from a parsed config file) still works exactly
+            # as a bare float() bound always has; only a string that isn't
+            # even a number gets the "no categories yet" error.
+            try:
+                return float(bound)
+            except ValueError:
                 raise ValueError(
                     f"set_{axis}lim(): {bound!r} is a string, but this axis "
                     "has no categories yet -- plot categorical data on it "
                     "first, or pass a number"
-                )
-            if bound not in index:
-                raise ValueError(
-                    f"set_{axis}lim(): {bound!r} is not one of this axis' "
-                    f"own categories: {list(index)}"
-                )
-            return float(index[bound])
+                ) from None
         return float(bound)
 
     return _norm_limits(lower, upper, resolve=resolve)

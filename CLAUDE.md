@@ -42,24 +42,25 @@ need rather than the whole file.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `plotpress/axes.py` | 3221 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
-| `plotpress/figure.py` | 3084 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, plus the HTML round-trip (`load_data`, `subplots_from_layout`) and the `Report` multi-figure aggregator |
-| `plotpress/_interactive.py` | 2849 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
-| `plotpress/svg.py` | 2589 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
-| `plotpress/artists.py` | 1382 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
-| `plotpress/vega.py` | 1324 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
-| `plotpress/raster.py` | 1316 | PNG backend via Pillow; PDF via svglib/reportlab |
-| `plotpress/vega_lite.py` | 1199 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
-| `plotpress/colors.py` | 498 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
-| `plotpress/qt.py` | 427 | Embed interactive figures in PyQt/PySide (`qt` extra) |
-| `plotpress/primitives.py` | 335 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
-| `plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
-| `plotpress/ticker.py` | 212 | Tick locations and label formatting (1-2-5 "nice numbers") |
-| `plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
-| `plotpress/png.py` | 93 | Minimal stdlib-only PNG encoder (`zlib`) |
-| `plotpress/style.py` | 91 | Per-figure `Style` — the replacement for `rcParams` |
-| `plotpress/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
+| `plotpress/axes.py` | 3712 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
+| `plotpress/figure.py` | 3243 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, plus the HTML round-trip (`load_data`, `subplots_from_layout`) and the `Report` multi-figure aggregator |
+| `plotpress/_interactive.py` | 3192 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
+| `plotpress/svg.py` | 2812 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `plotpress/raster.py` | 1507 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `plotpress/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
+| `plotpress/vega.py` | 1412 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
+| `plotpress/vega_lite.py` | 1284 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
+| `plotpress/colors.py` | 782 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `plotpress/fonts/` | ~590 | Bundled advance-width tables, family resolution, opt-in installed-font measurement |
+| `plotpress/primitives.py` | 493 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
+| `plotpress/qt.py` | 436 | Embed interactive figures in PyQt/PySide (`qt` extra) |
+| `plotpress/ticker.py` | 415 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
+| `plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
+| `plotpress/dates.py` | 168 | Datetime axis support: date ⟷ float-days-since-epoch conversion, calendar-aware tick locating/formatting |
+| `plotpress/style.py` | 154 | Per-figure `Style` — the replacement for `rcParams` |
+| `plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
+| `plotpress/png.py` | 120 | Minimal stdlib-only PNG encoder (`zlib`) |
+| `plotpress/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
 
 This table is a size guide, not a promise -- regenerate it (`wc -l plotpress/*.py`) whenever
 it visibly drifts rather than trusting a stale number.

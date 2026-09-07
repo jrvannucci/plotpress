@@ -501,3 +501,102 @@ def test_interactive_metadata_serializes_datetime_categorical_and_locator_flags(
     # to_html() embeds) without raising.
     html = fig.to_html()
     assert "xdate" in html
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the aggressive-audit findings fixed after 0.28.0's
+# initial release -- each of these reproduces a real bug the audit caught.
+# ---------------------------------------------------------------------------
+
+def test_set_xlim_still_accepts_plain_numeric_strings():
+    """A regression: _norm_axis_limits used to reject ANY string bound on a
+    non-categorical axis, breaking the bare float(lower)/float(upper)
+    behavior set_xlim always had for a numeric string like "0"."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    assert ax.set_xlim("0", "2") == (0.0, 2.0)
+
+
+def test_axvline_on_an_already_date_axis_parses_a_string_as_a_date():
+    fig, ax = plotpress.subplots()
+    dates = np.array(["2024-01-01", "2024-06-01"], dtype="datetime64[D]")
+    ax.plot(dates, [1, 2])
+    ax.axvline("2024-03-01")
+    assert ax._xdate is True
+    assert ax._xcategorical is False    # must not also mint a stray category
+    hl = ax.artists[-1]
+    assert hl.x == pytest.approx(float(to_days("2024-03-01")))
+
+
+def test_set_xlim_date_bound_flavors_a_fresh_axis_as_date():
+    fig, ax = plotpress.subplots()
+    ax.set_xlim(dt.date(2024, 1, 1), dt.date(2024, 6, 1))
+    assert ax._xdate is True
+    assert all("-" in l for l in ax.get_xticklabels())  # not raw day-count floats
+
+
+def test_set_xlim_date_bound_on_categorical_axis_raises():
+    fig, ax = plotpress.subplots()
+    ax.bar(["Q1", "Q2", "Q3"], [1, 2, 3])
+    with pytest.raises(ValueError, match="categorical"):
+        ax.set_xlim(dt.date(2024, 1, 1), 5)
+
+
+def test_multiple_ticks_falls_back_to_the_range_when_none_land_inside_it():
+    ticks = multiple_ticks(0.2, 0.8, np.pi)
+    assert list(ticks) == [pytest.approx(0.2), pytest.approx(0.8)]
+
+
+def test_numpy_scalar_in_a_locator_spec_does_not_crash_to_html():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlocator({"kind": "multiple", "base": np.int64(1)})
+    html = fig.to_html()   # must not raise TypeError: int64 not JSON serializable
+    assert "multiple" in html
+
+
+def test_to_days_maps_nat_to_nan_not_a_huge_finite_float():
+    arr = np.array(["2024-01-01", "NaT", "2024-01-03"], dtype="datetime64[D]")
+    days = to_days(arr)
+    assert np.isfinite(days[0]) and np.isfinite(days[2])
+    assert np.isnan(days[1])
+
+
+def test_secondary_xaxis_inherits_the_parents_date_flavor():
+    fig, ax = plotpress.subplots()
+    dates = np.array(["2024-01-01", "2024-06-01", "2024-12-01"], dtype="datetime64[D]")
+    ax.plot(dates, [1, 2, 3])
+    sec = ax.secondary_xaxis("top")
+    assert sec._xdate is True
+    assert sec._resolve_xticklabels(sec._resolve_xticks()) == \
+        ax._resolve_xticklabels(ax._resolve_xticks())
+
+
+def test_secondary_yaxis_inherits_the_parents_categorical_flavor():
+    fig, ax = plotpress.subplots()
+    ax.barh(["Q1", "Q2", "Q3"], [1, 2, 3])
+    sec = ax.secondary_yaxis("right")
+    assert sec._ycategorical is True
+    assert sec._ycategories == ["Q1", "Q2", "Q3"]
+
+
+def test_vega_export_uses_categorical_labels_not_bare_positions():
+    fig, ax = plotpress.subplots()
+    ax.bar(["Q1", "Q2", "Q3"], [10, 20, 15])
+    spec = fig.to_vega()
+    grp = spec["marks"][0]
+    x_axis = next(a for a in grp["axes"] if a["orient"] == "bottom")
+    assert x_axis["values"] == [0.0, 1.0, 2.0]
+    label_scale = next(s for s in grp["scales"] if s["name"].endswith("_labels"))
+    assert label_scale["range"] == ["Q1", "Q2", "Q3"]
+
+
+def test_vega_lite_export_uses_date_labels_not_bare_day_floats():
+    fig, ax = plotpress.subplots()
+    dates = np.array(["2024-01-01", "2024-06-01", "2024-12-01"], dtype="datetime64[D]")
+    ax.plot(dates, [1, 2, 3])
+    spec, _caveats = fig.to_vega_lite()
+    layer = spec["grid"] if spec.get("grid") is not None else spec["standalone"][0]
+    x_axis = layer["layer"][0]["encoding"]["x"]["axis"]
+    assert "labelExpr" in x_axis
+    assert "2024" in x_axis["labelExpr"]

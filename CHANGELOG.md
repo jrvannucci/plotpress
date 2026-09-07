@@ -11,6 +11,113 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+An aggressive multi-agent audit against 0.28.0's own diff (datetime axes,
+categorical axes, declarative tick locator/formatter specs), run per the
+user's request to keep auditing new functionality until clean. Verified
+every finding by direct reproduction (not just static review) before
+fixing; 12 real bugs fixed, 3 investigated and left as-is with the
+reasoning recorded below.
+
+- **`set_xlim`/`set_ylim` regressed for a plain numeric string** --
+  `set_xlim("0", "10")` (numeric strings, e.g. from a parsed config file)
+  used to work via a bare `float()` call and started raising
+  `ValueError` once string bounds gained date/category handling. A
+  numeric string now falls through to `float()` exactly as before; only a
+  string that isn't a number *and* isn't a known category still raises.
+- **A string on an axis already flavored as a date silently became a
+  stray category instead of a date** -- `ax.plot(dates, y);
+  ax.axvline("2024-03-01")` drew the line at `x=0` (1970-01-01) instead of
+  March 2024, and left the axis simultaneously date- and
+  categorical-flavored. `Axes._as_axis_data` (used by `plot`, `scatter`,
+  `axvline`/`axhline`, `set_xticks`, ...) now parses a string as a date
+  whenever the axis is already date-flavored, matching what
+  `set_xlim`/`set_ylim` already did for a string bound.
+- **`set_xlim`/`set_ylim` with a datetime bound on a brand-new axis never
+  flavored it as a date axis** -- `ax.set_xlim(date(2024,1,1),
+  date(2024,6,1))` before any data was plotted converted the bounds
+  correctly but left `get_xticklabels()` rendering raw day-count numbers
+  (`"19750"`) instead of dates.
+- **A datetime bound on a categorical axis silently produced a
+  nonsensical mixed limit** -- `ax.set_xlim(date(2024,1,1), 5)` on a
+  `bar(["Q1","Q2","Q3"], ...)` axis returned `(19723.0, 5.0)` instead of
+  raising; now raises the same way an unknown category string already did.
+- **The interactive HTML's `pi`-format tick labels could be numerically
+  wrong after a zoom/pan** -- the JS mirror (`jsPiTick`) rounded onto a
+  fixed 1/12 grid instead of doing a real continued-fraction search, so
+  e.g. a tick at `0.2*pi` rendered `"pi/6"` in the browser (`"pi/5"` in the
+  static SVG/PNG, the correct value). Reimplemented as the same
+  convergent/semiconvergent search Python's `Fraction.limit_denominator`
+  uses; verified to match Python bit-for-bit across a battery of values.
+- **The interactive HTML's raw `%`-format tick labels diverged from
+  Python's real `%`-formatting in five concrete ways** -- `%d` rounded
+  instead of truncating toward zero; the `0` zero-pad flag was ignored
+  (always space-padded); `%g`/`%G`/`%s` fell back to a bare `String(v)`,
+  discarding precision entirely; `%E` never uppercased and didn't
+  zero-pad the exponent; and a literal `%%` next to a real conversion
+  (`"%.0f%%"`, a natural percent-suffixed format) rendered as a doubled
+  `%%` instead of collapsing to one `%`. All five verified byte-for-byte
+  against Python's own `%` operator for the same inputs.
+- **A `set_xlocator({"kind": "multiple", ...})` axis could render zero
+  ticks** -- zooming/panning into a window with no multiple of `base`
+  inside it produced no tick marks, gridlines, or labels at all, in both
+  the static and interactive output. `multiple_ticks()` (and its JS
+  mirror) now fall back to the bare `[vmin, vmax]` range instead of an
+  empty result, matching every other tick function's own convention.
+- **A numpy scalar inside a `set_xlocator`/`set_xformat` spec crashed
+  `to_html()`** with `TypeError: Object of type int64 is not JSON
+  serializable`, while `to_svg()`/`save(png)` on the identical figure
+  worked fine. `_sanitize_nan` (the payload sanitizer already used for
+  NaN/Infinity) now unwraps a numpy scalar to its native Python
+  equivalent first.
+- **A missing timestamp (`numpy.datetime64("NaT")`) converted to a huge
+  but finite float instead of `NaN`** -- `to_days()` mapped `NaT`'s raw
+  `int64` encoding (numpy's minimum representable `int64`) straight
+  through, silently blowing an axis out to roughly 300,000 years in the
+  past instead of excluding the point the way a real missing value
+  should. Now maps `NaT` to `NaN`, matching matplotlib's own `date2num`.
+- **`secondary_xaxis`/`secondary_yaxis` didn't inherit the parent's
+  date/categorical/locator/format flavor** -- a secondary axis on a
+  date-flavored parent rendered raw day-count numbers along its own edge
+  while the primary axis correctly showed dates for the same range. Now
+  copies (categories by shared reference, so later growth stays visible)
+  the parent's flavor onto the secondary axis at creation time.
+- **`to_vega()`/`to_vega_lite()` didn't use the new date/categorical/
+  locator/format axis chain at all** -- `fig.to_vega()` on
+  `bar(["Q1","Q2","Q3"], ...)` exported the x-scale as plain
+  `{"type": "linear", "domain": [-0.54, 2.54]}` with no category labels
+  anywhere in the spec (SVG/raster/interactive HTML for the same figure
+  were all correct). Both exporters now bake in the resolved
+  tick positions/labels -- via the same `Axes._resolve_x/yticks()`/
+  `_resolve_x/yticklabels()` every other backend already calls -- whenever
+  an axis is categorical, date-flavored, or carries a locator/format spec.
+
+Investigated and left as-is:
+
+- A plain list of ISO date **strings** (`plot(["2024-01-01", ...], y)`,
+  with no prior date data on that axis) still plots as a categorical axis,
+  not a date axis. This matches matplotlib's own behavior (a string isn't
+  auto-parsed as a date without an explicit converter) and this feature's
+  own documented design: datetime detection is by *type*
+  (`numpy.datetime64`/`datetime.date`), not by sniffing string content --
+  changing it would risk misinterpreting a categorical string that
+  happens to look date-like (e.g. a "2024" category label).
+- `axvline("Q5")` on a categorical axis whose categories don't include
+  `"Q5"` silently adds it as a new category rather than raising. This
+  matches `plot()`'s own general first-seen-wins categorical rule --
+  `axvline`/`axhline` draw a real, visible mark, so they're a data-bearing
+  call like any other plotting method, not a boundary-setting call like
+  `set_xlim` (which does validate, since a limit isn't data and shouldn't
+  silently mint a category through a side channel). Documented explicitly
+  on both methods' docstrings so the difference isn't a surprise.
+- `ax.scatter(5, 5)` (a bare scalar, not an array) crashes at render time
+  with `IndexError: invalid index to scalar variable` regardless of
+  whether `5` is a datetime -- confirmed this predates the datetime/
+  categorical work entirely (identical crash with plain numbers before
+  this release). A pre-existing, unrelated gap in `scatter`/`plot`/
+  `errorbar`/`stem`'s bare-scalar handling, tracked separately.
+
 ### Added
 
 - **Datetime axis support** -- `plot()`/`scatter()`/`bar()`/`barh()`/
@@ -73,6 +180,8 @@ anywhere in the source.
   axis' own categories; then an explicit locator (for tick locations) or
   format (for labels) spec; then a date axis; then a log scale or the
   default "nice number" scheme.
+
+## [0.28.0] - 2026-09-07
 
 ## [0.27.1] - 2026-09-07
 

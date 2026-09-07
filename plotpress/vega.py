@@ -178,6 +178,29 @@ def _vega_has_content(spec) -> bool:
     return False
 
 
+def _resolved_custom_ticks(ax, dim):
+    """Literal ``(ticks, labels)`` to bake into the exported spec for a
+    dimension Vega's own linear-scale ticking can't reproduce on its own --
+    an explicit literal ``set_x/yticks``, a categorical axis, a date axis,
+    or a declarative locator/format spec. ``(None, None)`` for an ordinary
+    default-ticked axis, where leaving ``values``/labels unset and letting
+    Vega compute its own ticks already matches what :func:`_axis_def`'s
+    caller has always done.
+    """
+    if dim == "x":
+        explicit, categorical, is_date = ax._xticks, ax._xcategorical, ax._xdate
+        locator, fmt = ax._xlocator, ax._xformat
+    else:
+        explicit, categorical, is_date = ax._yticks, ax._ycategorical, ax._ydate
+        locator, fmt = ax._ylocator, ax._yformat
+    if explicit is None and not categorical and not is_date and locator is None and fmt is None:
+        return None, None
+    ticks = ax._resolve_xticks() if dim == "x" else ax._resolve_yticks()
+    labels = (ax._resolve_xticklabels(ticks) if dim == "x"
+             else ax._resolve_yticklabels(ticks))
+    return ticks, labels
+
+
 def _axis_def(orient, scale_name, label, grid, custom_ticks, custom_labels, scales):
     """One entry for ``_axes_to_group``'s ``axes`` list.
 
@@ -322,9 +345,11 @@ def _axes_to_group(ax, i, W, H, size_scale, st, mesh_data=False):
     # (svg.py:1001/1005). Omitting it entirely wrapped every pie (and any
     # ax.axis("off") panel) in a spurious 0..1 tick frame no to_svg() output
     # ever shows.
+    x_ticks, x_labels = _resolved_custom_ticks(ax, "x")
+    y_ticks, y_labels = _resolved_custom_ticks(ax, "y")
     axes_defs = [] if ax._axis_off else [
-        _axis_def("bottom", x_name, ax._xlabel, ax._grid, ax._xticks, ax._xticklabels, scales),
-        _axis_def("left", y_name, ax._ylabel, ax._grid, ax._yticks, ax._yticklabels, scales),
+        _axis_def("bottom", x_name, ax._xlabel, ax._grid, x_ticks, x_labels, scales),
+        _axis_def("left", y_name, ax._ylabel, ax._grid, y_ticks, y_labels, scales),
     ]
     return {
         "type": "group",

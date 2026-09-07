@@ -1265,7 +1265,10 @@ _JS_SOURCE = r"""
     var start = Math.ceil((lo - offset) / base) * base + offset;
     var out = [];
     for (var v = start; v <= hi + base * 1e-9; v += base) out.push(v);
-    return out.filter(function (v) { return v >= lo - base * 1e-6 && v <= hi + base * 1e-6; });
+    var kept = out.filter(function (v) { return v >= lo - base * 1e-6 && v <= hi + base * 1e-6; });
+    // Mirrors ticker.multiple_ticks()'s own fallback: a view with no
+    // multiple of base inside it gets the bare range instead of no ticks.
+    return kept.length ? kept : [lo, hi];
   }
   function jsApplyLocator(spec, lo, hi) {
     var kind = (spec && typeof spec === 'object') ? spec.kind : spec;
@@ -1283,13 +1286,40 @@ _JS_SOURCE = r"""
     return mant + SI_PREFIXES[String(exp3)];
   }
   function gcdInt(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { var t = b; b = a % b; a = t; } return a || 1; }
-  // Approximates v/pi as num/den with den <= maxDenominator -- exact for the
-  // common case (a multiple-of-pi locator), where v/pi is already a clean
-  // fraction; not a full continued-fraction search like Python's
-  // Fraction.limit_denominator, which this client-side fallback doesn't need.
+  // Continued-fraction search for the best num/den with den <= maxDenominator
+  // approximating x -- the same algorithm Python's Fraction.limit_denominator
+  // uses (successive convergents, then a semiconvergent check against the
+  // last one that still fits). A fixed round(x*maxDen)/maxDen grid (this
+  // function's first version) gets the wrong fraction for any x that isn't
+  // already a multiple of 1/maxDenominator -- e.g. pi/5 at maxDenominator=12
+  // rounded to pi/6 instead. This matches Python bit-for-bit on every value
+  // reachable from a "multiple of pi/k" locator.
+  function limitDenominator(x, maxDen) {
+    var sign = x < 0 ? -1 : 1;
+    x = Math.abs(x);
+    var p0 = 0, q0 = 1, p1 = 1, q1 = 0, b = x;
+    for (var iter = 0; iter < 64; iter++) {
+      var a = Math.floor(b);
+      var q2 = q0 + a * q1;
+      if (q2 > maxDen) break;
+      var p2 = p0 + a * p1;
+      p0 = p1; q0 = q1; p1 = p2; q1 = q2;
+      var frac = b - a;
+      if (frac < 1e-13) break;
+      b = 1 / frac;
+    }
+    if (q1 === 0) return [sign * p0, q0];
+    var k = Math.floor((maxDen - q0) / q1);
+    var p0k = p0 + k * p1, q0k = q0 + k * q1;
+    var candSemi = q0k > 0 ? p0k / q0k : Infinity;
+    var candLast = p1 / q1;
+    return Math.abs(candLast - x) <= Math.abs(candSemi - x)
+      ? [sign * p1, q1] : [sign * p0k, q0k];
+  }
   function jsPiTick(v, maxDenominator) {
     if (Math.abs(v) < 1e-12) return '0';
-    var num = Math.round((v / Math.PI) * maxDenominator), den = maxDenominator;
+    var frac = limitDenominator(v / Math.PI, maxDenominator);
+    var num = frac[0], den = frac[1];
     var g = gcdInt(num, den);
     num /= g; den /= g;
     if (num === 0) return '0';
@@ -1305,22 +1335,67 @@ _JS_SOURCE = r"""
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return (neg ? '-' : '') + parts.join('.');
   }
-  // A minimal single-conversion %-format mirror (%.2f, %d, $%.0f, ...) --
-  // covers the one-value-per-tick case apply_tick_format() actually needs.
+  // Python-style %g/%G: fixed-point if the exponent is in [-4, sig), else
+  // scientific with sig-1 mantissa digits -- either way trimmed of trailing
+  // zeros, mirroring what "%g" % v actually does (not just str(v)).
+  function _pyStyleG(v, sig, upper) {
+    if (v === 0) return '0';
+    var exp = Math.floor(Math.log10(Math.abs(v)));
+    var s;
+    if (exp < -4 || exp >= sig) {
+      s = v.toExponential(Math.max(0, sig - 1));
+      s = s.replace(/(\.\d*?)0+e/, '$1e').replace(/\.e/, 'e');
+      s = s.replace(/e([+-])(\d)$/, 'e$10$2');   // Python zero-pads to 2 exponent digits
+    } else {
+      s = v.toFixed(Math.max(0, sig - 1 - exp));
+      if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    }
+    return upper ? s.toUpperCase() : s;
+  }
+  // A single-conversion %-format mirror (%.2f, %d, $%.0f, "%05.2f", "%.3g",
+  // "%.0f%%", ...) -- covers the one-value-per-tick case apply_tick_format()
+  // actually needs, matching real Python %-formatting rather than a plain
+  // String(v): %d truncates toward zero (not round), 0/space/+ flags and
+  // zero-padded width are honored, %g/%G get real significant-digit
+  // formatting, %e/%E zero-pad the exponent and case it correctly, and a
+  // literal %% next to a real conversion (e.g. "%.0f%%") collapses to one
+  // "%" instead of being left untouched by the single regex match.
   function jsPrintfTick(fmt, v) {
     var m = fmt.match(/%([#0+\- ]*)(\d*)(?:\.(\d+))?([sdfeEgG%])/);
     if (!m) return String(v);
     var flags = m[1], width = m[2] ? parseInt(m[2], 10) : 0;
     var prec = m[3] !== undefined ? parseInt(m[3], 10) : null, conv = m[4];
     var out;
-    if (conv === '%') return fmt.replace('%%', '%');
-    else if (conv === 'd') out = String(Math.round(v));
-    else if (conv === 'f') out = v.toFixed(prec != null ? prec : 6);
-    else if (conv === 'e' || conv === 'E') out = v.toExponential(prec != null ? prec : 6);
-    else out = String(v);
-    if (flags.indexOf('+') >= 0 && v >= 0) out = '+' + out;
-    while (out.length < width) out = flags.indexOf('-') >= 0 ? out + ' ' : ' ' + out;
-    return fmt.replace(m[0], out);
+    if (conv === '%') {
+      out = '%';
+    } else if (conv === 'd') {
+      out = String(Math.trunc(v));
+    } else if (conv === 'f') {
+      out = v.toFixed(prec != null ? prec : 6);
+    } else if (conv === 'e' || conv === 'E') {
+      out = v.toExponential(prec != null ? prec : 6).replace(/e([+-])(\d)$/, 'e$10$2');
+      if (conv === 'E') out = out.toUpperCase();
+    } else if (conv === 'g' || conv === 'G') {
+      out = _pyStyleG(v, prec != null && prec > 0 ? prec : 6, conv === 'G');
+    } else if (conv === 's') {
+      out = prec != null ? String(v).slice(0, prec) : String(v);
+    } else {
+      out = String(v);
+    }
+    if (conv !== '%' && conv !== 's') {
+      if (flags.indexOf('+') >= 0 && v >= 0) out = '+' + out;
+      else if (flags.indexOf(' ') >= 0 && v >= 0) out = ' ' + out;
+    }
+    var zeroPad = flags.indexOf('0') >= 0 && flags.indexOf('-') < 0 && conv !== 's' && conv !== '%';
+    while (out.length < width) {
+      if (flags.indexOf('-') >= 0) out = out + ' ';
+      else if (zeroPad && "+- ".indexOf(out[0]) >= 0) out = out[0] + '0' + out.slice(1);
+      else out = (zeroPad ? '0' : ' ') + out;
+    }
+    // The regex above matches only the first conversion; a literal "%%"
+    // elsewhere in the string (a percent suffix is the common case: "%.0f%%")
+    // is untouched by that single replace, so collapse it here too.
+    return fmt.replace(m[0], out).replace(/%%/g, '%');
   }
   // Mirrors ticker.apply_tick_format(); returns null for a spec it can't
   // apply (an unknown kind, or the None a callable formatter serializes to)

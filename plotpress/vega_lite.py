@@ -84,7 +84,7 @@ from .svg import _effective_rect, _pixel_rect
 from .colors import resolve_colorbar_ticks
 from .vega import (
     _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
-    _symbol_size,
+    _resolved_custom_ticks, _symbol_size,
 )
 
 _SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
@@ -528,10 +528,12 @@ def _xy_axis(ax):
         enc["axis"] = None if ax._axis_off else a
         return enc
 
-    x_enc = axis_for(ax._xscale, ax._xinverted, ax._xticks, ax._xticklabels,
+    x_ticks, x_labels = _resolved_custom_ticks(ax, "x")
+    y_ticks, y_labels = _resolved_custom_ticks(ax, "y")
+    x_enc = axis_for(ax._xscale, ax._xinverted, x_ticks, x_labels,
                      ax._xlabel, ax._grid)
     x_enc["scale"]["domain"] = [float(xmin), float(xmax)]
-    y_enc = axis_for(ax._yscale, ax._yinverted, ax._yticks, ax._yticklabels,
+    y_enc = axis_for(ax._yscale, ax._yinverted, y_ticks, y_labels,
                      ax._ylabel, ax._grid)
     y_enc["scale"]["domain"] = [float(ymin), float(ymax)]
     return x_enc, y_enc, caveats
