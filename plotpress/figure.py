@@ -998,6 +998,17 @@ class Figure:
         if handles is not None:
             handles = list(handles)
             if labels is not None:
+                labels = list(labels)
+                if len(labels) != len(handles):
+                    # zip() truncates silently otherwise -- a caller who
+                    # gave one fewer label than handle would get a legend
+                    # where the last entry quietly keeps its old (often
+                    # unset) label instead of anything reachable from this
+                    # call, with no sign anything was wrong.
+                    raise ValueError(
+                        f"legend(): got {len(handles)} handles but "
+                        f"{len(labels)} labels -- pass one label per handle"
+                    )
                 for h, lbl in zip(handles, labels):
                     h.label = lbl
         self._figure_legend = {
@@ -1481,7 +1492,16 @@ class Figure:
                 f"(got path={path!r}, format={format!r})"
             )
         if is_buffer:
-            path.write(content)
+            # A binary buffer (BytesIO, a file opened "wb") is exactly as
+            # valid a target as a text one here -- matplotlib's own
+            # savefig(buf, format=...) doesn't distinguish, so this
+            # shouldn't either. Try text first (the common StringIO/text-
+            # mode-file case) and fall back to UTF-8 bytes on the
+            # TypeError a binary buffer's write() raises for a str.
+            try:
+                path.write(content)
+            except TypeError:
+                path.write(content.encode("utf-8"))
         else:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)

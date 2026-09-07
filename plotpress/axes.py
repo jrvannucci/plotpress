@@ -1685,8 +1685,17 @@ class Axes:
         ``edgecolors``/``linewidths`` outline each hexagon -- the standard
         look for a sparse/low-count hexbin, where separating adjacent cells
         matters more than for a dense one. ``edgecolors=None`` (default)
-        draws no outline, matching the previous behavior.
+        draws no outline, matching the previous behavior. ``linewidths`` is
+        one width for every hexagon -- unlike matplotlib's own ``hexbin``,
+        there is no per-hexagon outline width here (the collection this
+        builds on has one shared edge width, the same as ``scatter``'s own
+        ``linewidths=``).
         """
+        if linewidths is not None and not np.isscalar(linewidths):
+            raise TypeError(
+                f"hexbin(): linewidths must be a single number (one shared "
+                f"edge width for every hexagon), got {linewidths!r}"
+            )
         if gridsize <= 0:
             # A non-positive gridsize doesn't error -- it just can't tile
             # anything, so real data silently bins into zero hexagons and
@@ -2791,6 +2800,15 @@ class Axes:
         if handles is not None:
             handles = list(handles)
             if labels is not None:
+                labels = list(labels)
+                if len(labels) != len(handles):
+                    # zip() truncates silently otherwise -- see
+                    # Figure.legend()'s identical check for why that's worse
+                    # than an error here.
+                    raise ValueError(
+                        f"legend(): got {len(handles)} handles but "
+                        f"{len(labels)} labels -- pass one label per handle"
+                    )
                 for h, lbl in zip(handles, labels):
                     h.label = lbl
         self._legend_handles = handles
@@ -3212,10 +3230,20 @@ def _boundary_crossing(t, a, b, i, j):
 
     Returns ``(t_c, v_c)`` where ``v_c`` is the shared value of ``a``/``b``
     at the crossing (by construction, they're equal there).
+
+    ``frac`` is clamped to ``[0, 1]``: it only falls inside that range when
+    ``a - b`` genuinely changes sign between ``i`` and ``j`` -- guaranteed
+    when ``where`` is exactly the ``a > b`` mask, but ``where`` is only
+    documented as "``y1 > y2`` or similar", not required to be. An
+    unclamped ``frac`` for a non-crossing pair (both same sign, or the
+    caller's own ``where`` mask unrelated to ``a``/``b`` at all) would place
+    the "crossing" arbitrarily far outside the segment -- a self-intersecting
+    polygon and a wildly wrong autoscale, instead of just an imperfect edge.
     """
     da, db = a[i] - b[i], a[j] - b[j]
     denom = da - db
     frac = 0.5 if denom == 0 else da / denom
+    frac = min(1.0, max(0.0, frac))
     tc = t[i] + frac * (t[j] - t[i])
     vc = a[i] + frac * (a[j] - a[i])
     return tc, vc

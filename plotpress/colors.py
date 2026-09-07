@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import re
+import warnings
 
 import numpy as np
 
@@ -644,7 +645,22 @@ class BoundaryNorm(Normalize):
         if np.any(np.diff(boundaries) <= 0):
             raise ValueError("BoundaryNorm: boundaries must be strictly increasing")
         self.boundaries = boundaries
-        self.ncolors = (boundaries.size - 1) if ncolors is None else int(ncolors)
+        nbins = boundaries.size - 1
+        if ncolors is not None and int(ncolors) != nbins:
+            # matplotlib's BoundaryNorm spreads nbins across a *different*
+            # ncolors by quantizing into the colormap unevenly (its own
+            # "extend" machinery) -- this implementation always uses one
+            # flat color per bin, evenly spaced (see colorbar_ticks), so an
+            # ncolors that disagrees with the bin count has no effect here.
+            # Warn rather than silently ignore it, matching every other
+            # accepted-but-inert argument in this codebase.
+            warnings.warn(
+                f"BoundaryNorm(ncolors={ncolors!r}) has no effect here -- "
+                f"this implementation always uses one color per bin "
+                f"({nbins} bins from {boundaries.size} boundaries), evenly "
+                "spaced across the colormap.",
+                UserWarning, stacklevel=2)
+        self.ncolors = nbins
         super().__init__(float(boundaries[0]), float(boundaries[-1]))
 
     def autoscale_none(self, A):

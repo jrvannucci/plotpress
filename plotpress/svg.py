@@ -1605,7 +1605,12 @@ def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
 #: pattern covers '/','\\','|','-' for free; '+'/'x' need two lines of
 #: their own. Anything else is simply ignored (no hatch), rather than
 #: raising, matching how an unrecognized marker degrades gracefully too.
-_HATCH_ANGLES = {"|": 0, "-": 90, "/": -45, "\\": 45}
+#: SVG's rotate() is clockwise in this y-down coordinate space, so the base
+#: vertical line (0,0)-(0,size) needs +45 to swing right-and-down (matching
+#: '\\') and -45 to swing left-and-down (matching '/') -- the reverse of
+#: what the angle names might suggest. Verified against the raster
+#: backend's own independently-built diagonals and against matplotlib.
+_HATCH_ANGLES = {"|": 0, "-": 90, "/": 45, "\\": -45}
 _HATCH_NAMES = {"|": "v", "-": "h", "/": "fs", "\\": "bs", "+": "plus", "x": "x"}
 _HATCH_SIZE = 6.0
 
@@ -1652,7 +1657,12 @@ def _render_bars(bars: Bars, tr, ai, k, body, defs):
     hatch = getattr(bars, "hatch", None)
     fill_urls = {}
     if hatch:
-        for fill in set(bars.colors):
+        # dict.fromkeys, not set(): a plain set's iteration order depends on
+        # Python's per-process randomized string hashing, so the <defs>
+        # block (and the exact SVG bytes) would otherwise vary run to run
+        # for any hatched series with more than one color -- breaking
+        # byte-identical regeneration (golden-file tests, doc diffs).
+        for fill in dict.fromkeys(bars.colors):
             pdef = _hatch_pattern_def(hatch, fill)
             if pdef is None:
                 break   # not a hatch this library draws -- fall back to plain fill

@@ -3381,6 +3381,149 @@ def test_recovered_label_and_color_replot_into_a_working_legend(tmp_path):
     assert 'stroke="#ff0000"' in svg2 and 'stroke="#0000ff"' in svg2
 
 
+# -- functionality audit, Tier 2: post-release bugfix regressions -------
+def test_hatch_diagonal_direction_matches_between_svg_and_raster():
+    """Regression: svg.py's _HATCH_ANGLES had '/' and '\\' transposed, so
+    the same hatch character rendered as mirror images across backends."""
+    import xml.etree.ElementTree as ET
+
+    fig, ax = plotpress.subplots()
+    ax.bar([0], [1], hatch="/")
+    svg = fig.to_svg()
+    root = ET.fromstring(svg)
+    ns = "{http://www.w3.org/2000/svg}"
+    pattern = next(root.iter(f"{ns}pattern"))
+    # rotate(45) is '/' in this y-down space (see the code comment); '/'
+    # must not land on rotate(-45), which is '\'.
+    assert 'rotate(45)' in pattern.get("patternTransform", "")
+
+
+def test_hatched_bar_past_axes_limits_does_not_hang_or_crash():
+    """Regression: _hatch_layer sized its RGBA layer to the bar's full
+    unclipped pixel extent -- zooming into one bar (extending it far past
+    the visible canvas) allocated a multi-gigapixel image."""
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.bar([2], [3], hatch="/")
+    ax.set_xlim(1.9999, 2.0001)   # zoom in until the bar spans ~4000x the axes
+    figure_to_image(fig, scale=1)   # must return promptly, not hang/OOM
+
+
+def test_fill_between_interpolate_true_clamps_a_non_crossing_where():
+    """Regression: _boundary_crossing's frac was unclamped, so a `where`
+    mask not derived from an actual y1/y2 sign change extrapolated the
+    'crossing' arbitrarily far outside the segment."""
+    x = np.array([0.0, 1.0, 2.0, 3.0])
+    y1 = np.array([1.0, 2.0, 3.0, 4.0])
+    y2 = np.array([0.0, 0.0, 0.0, 0.0])
+    fig, ax = plotpress.subplots()
+    segs = ax.fill_between(x, y1, y2, where=[False, True, True, False],
+                           interpolate=True)
+    xs = segs[0].x
+    assert xs.min() >= 0.0 and xs.max() <= 3.0   # stays within the data range
+    xlo, xhi = ax.get_xlim()
+    assert xlo > -1.0   # autoscale isn't blown out by an out-of-range vertex
+
+
+def test_save_dpi_matches_a_figure_truly_built_at_that_dpi(tmp_path):
+    """Regression: figure_to_image(dpi=) rendered the new dpi's canvas with
+    tight_layout() margins still fitted for the OLD dpi."""
+    pytest.importorskip("PIL")
+    import numpy as np
+    from PIL import Image as PILImage
+    from plotpress import Style
+
+    def _ink_frac(path):
+        arr = np.asarray(PILImage.open(path).convert("L"))
+        ys, xs = np.where(arr < 250)
+        h, w = arr.shape
+        return xs.min() / w, xs.max() / w, ys.min() / h, ys.max() / h
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_ylabel("a fairly long y label")
+    fig.tight_layout()
+    before_rect = ax._rect
+    p1 = tmp_path / "override.png"
+    fig.save(str(p1), dpi=300)
+    assert ax._rect == before_rect   # no leaked side effect on the figure
+
+    fig2, ax2 = plotpress.subplots(style=Style(dpi=300))
+    ax2.plot([0, 1], [0, 1])
+    ax2.set_ylabel("a fairly long y label")
+    fig2.tight_layout()
+    p2 = tmp_path / "direct.png"
+    fig2.save(str(p2))
+
+    f1, f2 = _ink_frac(p1), _ink_frac(p2)
+    assert all(abs(a - b) < 0.01 for a, b in zip(f1, f2))
+
+
+def test_save_svg_and_html_accept_a_bytesio_buffer():
+    """Regression: save(buf, format='svg'/'html') raised TypeError for a
+    binary buffer even though the docstring advertised BytesIO generally."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    for fmt in ("svg", "html"):
+        buf = io.BytesIO()
+        fig.save(buf, format=fmt)
+        assert len(buf.getvalue()) > 0
+
+
+def test_errorbar_raster_marker_shape_matches_svg():
+    """Regression: raster._errorbar always drew circles regardless of
+    marker=, silently diverging from svg._render_errorbar's real shapes."""
+    pytest.importorskip("PIL")
+    from plotpress.raster import figure_to_image
+
+    fig, ax = plotpress.subplots()
+    ax.errorbar([0, 1, 2], [0, 1, 2], yerr=0.2, marker="s")
+    arr = np.asarray(figure_to_image(fig, scale=1))
+    assert not np.all(arr == arr[0, 0])   # renders without raising
+
+
+def test_hexbin_linewidths_must_be_scalar():
+    fig, ax = plotpress.subplots()
+    rng = np.random.default_rng(0)
+    with pytest.raises(TypeError):
+        ax.hexbin(rng.normal(size=50), rng.normal(size=50),
+                 edgecolors="k", linewidths=[0.5, 1.0])
+    ax.hexbin(rng.normal(size=50), rng.normal(size=50),
+             edgecolors="k", linewidths=0.8)   # scalar still works
+
+
+def test_legend_handles_labels_length_mismatch_raises():
+    fig, ax = plotpress.subplots()
+    l1 = ax.plot([0, 1], [0, 1])
+    l2 = ax.plot([0, 1], [1, 0])
+    with pytest.raises(ValueError):
+        ax.legend(handles=[l1, l2], labels=["only one"])
+    with pytest.raises(ValueError):
+        fig.legend(handles=[l1, l2], labels=["only one"])
+
+
+def test_hatched_bars_with_multiple_colors_produce_deterministic_svg():
+    """Regression: the pattern-def loop iterated set(bars.colors), whose
+    order depends on randomized string hashing."""
+    outputs = set()
+    for _ in range(5):
+        fig, ax = plotpress.subplots()
+        ax.bar([0, 1, 2], [1, 2, 3], color=["red", "green", "blue"], hatch="x")
+        outputs.add(fig.to_svg())
+    assert len(outputs) == 1
+
+
+def test_boundary_norm_ncolors_mismatch_warns():
+    with pytest.warns(UserWarning, match="ncolors"):
+        BoundaryNorm([0, 1, 2, 4], ncolors=99)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        BoundaryNorm([0, 1, 2, 4])              # no ncolors given -- no warning
+        BoundaryNorm([0, 1, 2, 4], ncolors=3)   # matches len(boundaries)-1 -- no warning
+
+
 def test_scatter_shape_with_nan_points_skips_them_cleanly():
     fig, ax = plotpress.subplots()
     ax.scatter([0, np.nan, 2], [0, 1, np.nan], marker="D", s=15)

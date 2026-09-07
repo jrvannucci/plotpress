@@ -27,6 +27,9 @@ from .fonts.families import HELVETICA_FILES_BOLD as _HELVETICA_METRIC_FILES_BOLD
 from .fonts.families import font_files as _font_files
 from .primitives import artist_to_prims
 from .primitives import tick_axis_edge
+from .primitives import (
+    marker_polygon, marker_shape_kind, marker_strokes, normalize_marker_shape,
+)
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
 from .primitives import Markers as PMarkers
@@ -157,6 +160,14 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main", dpi=None,
     S = max(1, int(scale))
     if dpi is not None:
         fig.style.dpi = render_dpi
+        # tight_layout() bakes pixel-sized margins into figure-fraction
+        # rects using whatever dpi was current when it last ran (see
+        # Figure.set_dpi's own "re-fit: tight_layout bakes absolute
+        # pixels" comment) -- the settle above already happened at the
+        # *old* dpi, so without forcing another one here, a tight_layout()'d
+        # figure renders the new dpi's canvas with the old dpi's margins.
+        fig._layout_dirty = True
+        fig._settle_layout()
     try:
         bg = (0, 0, 0, 0) if transparent else _rgba(fig.style.facecolor)
         canvas = PILImage.new("RGBA", (W * S, H * S), bg)
@@ -170,6 +181,13 @@ def figure_to_image(fig, scale=2, frame=0, animate_unit="main", dpi=None,
     finally:
         if dpi is not None:
             fig.style.dpi = original_dpi
+            # Symmetric with the forced re-fit above -- otherwise the
+            # figure is left with its layout fitted for the temporary
+            # render dpi even after style.dpi itself is restored, and the
+            # *next* render (at the original dpi) would be the one that's
+            # stale instead.
+            fig._layout_dirty = True
+            fig._settle_layout()
 
     if S > 1:
         canvas = canvas.resize((W, H), PILImage.LANCZOS)
@@ -433,8 +451,6 @@ def _draw_prim(p, S, draw, canvas):
         canvas.alpha_composite(im, (int(round(p.x)), int(round(p.y))))
         return
     if isinstance(p, PMarkers):
-        from .primitives import marker_polygon, marker_shape_kind, marker_strokes
-
         finite = np.isfinite(p.points).all(axis=1)
         shape = getattr(p, "shape", "o") or "o"
         if shape in ("o", "."):
@@ -823,6 +839,7 @@ def _hatch_layer(w, h, hatch, fill_rgba, S):
 def _bars(bars, tr, S, draw, canvas=None):
     hatch = getattr(bars, "hatch", None)
     hatch_ok = hatch in ("/", "\\", "|", "-", "+", "x")
+    canvas_w, canvas_h = canvas.size if canvas is not None else (0, 0)
     for i in range(len(bars.pos)):
         p, ln, th, ba = bars.pos[i], bars.length[i], bars.thickness[i], bars.base[i]
         if bars.orientation == "vertical":
@@ -834,10 +851,20 @@ def _bars(bars, tr, S, draw, canvas=None):
         box = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
         outline = _rgb(bars.edgecolor) if bars.edgecolor else None
         ow = max(1, int(round(bars.linewidth * S))) if outline else 1
-        if hatch_ok and canvas is not None and box[2] > box[0] and box[3] > box[1]:
-            layer = _hatch_layer(box[2] - box[0], box[3] - box[1], hatch,
-                                 _rgba(bars.colors[i], bars.alpha), S)
-            canvas.alpha_composite(layer, (int(round(box[0])), int(round(box[1]))))
+        if hatch_ok and canvas is not None:
+            # Clamp to the canvas before allocating: draw.rectangle() below
+            # clips for free with no extra memory, but a hatch tile is
+            # composited from its own real image, so a bar whose pixel
+            # extent runs far past the visible canvas (an ordinary result
+            # of zooming the axes limits) must not size that image to the
+            # bar's full, unclipped extent -- that's an unbounded
+            # allocation, not just wasted work.
+            cx0, cy0 = max(box[0], 0.0), max(box[1], 0.0)
+            cx1, cy1 = min(box[2], float(canvas_w)), min(box[3], float(canvas_h))
+            if cx1 > cx0 and cy1 > cy0:
+                layer = _hatch_layer(cx1 - cx0, cy1 - cy0, hatch,
+                                     _rgba(bars.colors[i], bars.alpha), S)
+                canvas.alpha_composite(layer, (int(round(cx0)), int(round(cy0))))
             if outline:
                 draw.rectangle(box, outline=outline, width=ow)
         else:
@@ -892,9 +919,20 @@ def _errorbar(eb, tr, st, S, draw):
             draw.line([a, y - cap, a, y + cap], fill=ecol, width=cw)
             draw.line([b, y - cap, b, y + cap], fill=ecol, width=cw)
     r = eb.markersize / 2.0 * st.dpi / 72.0 * S
-    for x, y in zip(xb, yb):
-        if np.isfinite(x) and np.isfinite(y):      # see svg._render_errorbar
+    shape = normalize_marker_shape(eb.marker) or "o"
+    finite_xy = [(x, y) for x, y in zip(xb, yb) if np.isfinite(x) and np.isfinite(y)]
+    if shape in ("o", "."):
+        for x, y in finite_xy:
             draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
+    elif marker_shape_kind(shape) == "stroke":
+        w = max(1, int(round(r * 0.56)))
+        for x, y in finite_xy:
+            for (ax_, ay), (bx, by) in marker_strokes(shape, r):
+                draw.line([x + ax_, y + ay, x + bx, y + by], fill=col, width=w)
+    else:
+        for x, y in finite_xy:
+            verts = [(x + dx, y + dy) for dx, dy in marker_polygon(shape, r)]
+            draw.polygon(verts, fill=col)
 
 
 def _eventplot(ev, tr, S, draw):

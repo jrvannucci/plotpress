@@ -11,6 +11,78 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-09-07
+
+A 7-angle multi-agent code review against 0.27.0's own diff (marker
+shapes, `Figure.legend` parity, HTML round-trip labels, `save()` kwargs,
+bar hatching), run per the user's own request to keep auditing until
+clean. Ten findings, nine fixed here; one (below) deliberately left as a
+smaller, safer partial fix.
+
+### Fixed
+
+- **SVG hatch `/` and `\` rendered as mirror images of the raster
+  backend** -- `_HATCH_ANGLES`' two diagonal entries were transposed
+  (SVG's `rotate()` is clockwise in its own y-down space, the reverse of
+  what the angle names suggested). The same `hatch="/"` now looks the
+  same in `.svg` and `.png`.
+- **A hatched bar zoomed past the visible axes could hang or crash** --
+  `_hatch_layer` sized its composited image to the bar's full *unclipped*
+  pixel extent (unlike the plain fill path, which Pillow clips for free);
+  a bar extending far past a narrowed `set_xlim`/`set_ylim` allocated a
+  multi-gigapixel image. Now clamped to the canvas before allocating.
+- **`fill_between`/`fill_betweenx(interpolate=True)` could extrapolate
+  wildly out of bounds** -- the crossing fraction was never clamped to
+  `[0, 1]`, which only stays in range when `where` is exactly the `y1 >
+  y2` sign mask; the docstring never required that (`"y1 > y2 or
+  similar"`). A `where` mask unrelated to an actual crossing produced a
+  self-intersecting polygon and a blown-out autoscale instead of just an
+  imperfect edge.
+- **`save(dpi=...)` rendered at the new dpi with the old dpi's layout**
+  -- for a `tight_layout()`'d figure, margins stayed fitted for whatever
+  dpi was current when layout last settled, since mutating `style.dpi`
+  never marked it dirty. Now forces a re-fit after applying the override
+  and again after restoring the original dpi, so a one-off `dpi=300`
+  render matches a figure truly built at `Style(dpi=300)`, with no
+  side effect on the figure afterward.
+- **`save(buf, format="svg"/"html")` raised `TypeError` for a `BytesIO`**
+  -- only the raster/vector formats actually accepted a binary buffer;
+  text formats now fall back to UTF-8 bytes when the buffer rejects a
+  `str`, so `BytesIO` works for every format the docstring already
+  claimed it did.
+- **Raster errorbar markers ignored `marker=` entirely** -- `svg.py`
+  learned real marker shapes in 0.27.0; `raster.py`'s errorbar renderer
+  didn't, so the same figure showed squares in the SVG and circles in the
+  PNG with no warning either way.
+- **`hexbin(linewidths=[...])` produced invalid SVG and crashed the
+  raster backend** -- the parameter forwarded straight into a
+  scalar-only field with no validation. Now raises a clear `TypeError`
+  naming the one-shared-width constraint (matching the collection this
+  builds on) instead of producing broken output.
+- **Multi-color hatched bars emitted non-deterministic SVG** -- the
+  pattern-def loop iterated a plain `set`, whose order depends on
+  Python's randomized per-process string hashing. Switched to
+  `dict.fromkeys` for a stable first-occurrence order.
+- **`BoundaryNorm(ncolors=...)` was silently a no-op** -- stored to match
+  matplotlib's constructor shape but never read. Now warns when it
+  disagrees with the bin count this implementation actually uses
+  (`len(boundaries) - 1`, always one flat color per bin) rather than
+  letting a caller believe it had an effect.
+- **`legend(handles=, labels=)` silently truncated on a length
+  mismatch** -- `zip()` dropped the surplus handles' rename with no
+  error, leaving a partial relabel in place. Both `Axes.legend()` and
+  `Figure.legend()` now raise a clear `ValueError` instead. The mutation
+  itself (`labels=` permanently rewrites each handle's own `.label`,
+  which the pre-existing `Axes.legend()` already did before 0.27.0 and
+  `Figure.legend()`'s new `handles=`/`labels=` faithfully mirrored) is
+  left as is -- fixing the storage mechanism properly is a larger,
+  separate redesign of both classes, not a safe fix under this review.
+
+~11 new regression tests in `tests/test_matplotlib_gaps.py`, one per
+fix. Verified: full pytest suite (1242 passed) and a real
+`python -m sphinx -b html -W --keep-going -j auto docs docs/_build/html`
+build, both clean.
+
 ## [0.27.0] - 2026-09-07
 
 Tier 2 of the functionality audit (see 0.26.0's Tier 1) -- a curated subset
