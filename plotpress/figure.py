@@ -1344,8 +1344,20 @@ class Figure:
         # always has); embedded, the SVG sits flush against the body's
         # edges, so real top/bottom padding takes over that job instead.
         if standalone:
-            body_style = ("body{margin:0;background:#f5f5f5;display:flex;"
-                          "justify-content:center;align-items:center;min-height:100vh}")
+            # No justify-content/align-items:center here -- centering an
+            # overflowing flex item that way is a well-known browser trap:
+            # the browser clips the *start*-side overflow from the
+            # scrollable area instead of just centering it, so a figure
+            # wider or taller than the viewport (several hundred axes, a
+            # large figsize/group_spacing) got its left/top portion pushed
+            # off-screen with no way to scroll back to it -- scrolling only
+            # ever reached further into the *end*-side overflow. `margin:
+            # auto` on the flex item itself (below) is the standard escape:
+            # it centers identically whenever there's free space to split
+            # between the two auto margins, but degrades to a plain 0 margin
+            # -- ordinary in-flow overflow, fully reachable by scrolling in
+            # either direction -- the moment the item is larger than body.
+            body_style = "body{margin:0;background:#f5f5f5;display:flex;min-height:100vh}"
             wrap_display = "inline-block"   # shrink-wrapped to the SVG's own
                                              # size, so centering centers the
                                              # figure, not an oversized box
@@ -1372,16 +1384,26 @@ class Figure:
             # its full, unscaled attribute value while its width compressed,
             # rendering every element non-uniformly squashed rather than
             # simply centered with the page free to scroll to see the rest,
-            # which is what happens with this set.
+            # which is what happens with this set. margin:auto centers it
+            # (see body_style above) without body's own justify-content/
+            # align-items.
             "#plotpress-svg{cursor:default;box-shadow:0 1px 6px rgba(0,0,0,.2);"
-            "flex-shrink:0}" if standalone
+            "flex-shrink:0;margin:auto}" if standalone
             else "#plotpress-svg{cursor:default;display:block;width:100%;height:auto}"
         )
         # A plot_frames()/pcolormesh_frames() figure wraps the SVG in a div
         # (for positioning docked sliders over it) -- position:relative in
         # both modes so a docked slider box (position:absolute inside it)
-        # anchors correctly; only whether it shrink-wraps or stretches differs.
-        wrap_style = f".plotpress-svg-wrap{{position:relative;line-height:0;display:{wrap_display}}}"
+        # anchors correctly; only whether it shrink-wraps or stretches
+        # differs. That wrap div, not the SVG, becomes body's direct flex
+        # child once it exists, so it needs the same margin:auto -- the
+        # SVG's own (above) no longer has an overflowing flex container to
+        # center within at that point.
+        wrap_style = (
+            f".plotpress-svg-wrap{{position:relative;line-height:0;"
+            f"display:{wrap_display};margin:auto}}" if standalone else
+            f".plotpress-svg-wrap{{position:relative;line-height:0;display:{wrap_display}}}"
+        )
         return (
             "<!doctype html><html><head><meta charset='utf-8'>"
             f"<style>{body_style}{svg_style}{wrap_style}</style></head><body>"

@@ -225,9 +225,20 @@ _JS_SOURCE = r"""
   });
 
   function applyZoomSize() {
-    var zoomed = zoomScale > 1;
-    document.body.classList.toggle('plotpress-zoomed', zoomed);
-    if (zoomed) {
+    // Zooming *out* (scale < 1) still needs an explicit smaller size applied
+    // -- shrinking a figure that overflows the viewport back down to where
+    // it fits is exactly the point -- so this checks "not at natural size"
+    // rather than "grown past it"; only an exact 1 clears back to the SVG's
+    // own natural width/height attributes.
+    var sized = zoomScale !== 1;
+    // The overflow/scroll CSS switch, though, only makes sense for zooming
+    // *in*: a shrunk figure is smaller than its container either way, so
+    // body's ordinary flex-centering (with margin:auto on the SVG/wrap --
+    // see Figure.to_html) already centers it correctly with no scrollbars
+    // needed; switching to block+overflow:auto here too would just drop
+    // that centering and leave it pinned to the top-left instead.
+    document.body.classList.toggle('plotpress-zoomed', zoomScale > 1);
+    if (sized) {
       svg.style.width = (naturalW * zoomScale) + 'px';
       svg.style.height = (naturalH * zoomScale) + 'px';
     } else {
@@ -248,9 +259,11 @@ _JS_SOURCE = r"""
   // unlike a per-axes data zoom that only affects whichever panel happens to
   // be under the cursor -- and so the browser's native scrollbars, not a
   // custom drag, are what reach the rest of a zoomed-in figure. Clamped to
-  // never shrink below the figure's own natural size (zooming "out" past
-  // that has nothing left to reveal) or grow past a point where scrolling
-  // further would gain nothing but more of it.
+  // 10% (a many-hundred-axes figure at its natural pixel size can be many
+  // times larger than any viewport -- "home" is a useful default, not a
+  // floor, so zooming out past it has to actually be possible to ever see
+  // the whole thing at once) through 20x (beyond that, growing further gains
+  // nothing but more scrolling).
   // The compensating scroll below can only re-anchor the cursor's point once
   // there is somewhere to scroll *to* -- while the zoomed-in figure still
   // fits inside the viewport with room to spare, there is no overflow yet
@@ -260,7 +273,7 @@ _JS_SOURCE = r"""
   // the moment "did the point stay under the cursor" starts to matter --
   // nothing is scrolled out of view yet at this stage regardless.
   function zoomTo(clientX, clientY, factor) {
-    var newScale = Math.max(1, Math.min(20, zoomScale * factor));
+    var newScale = Math.max(0.1, Math.min(20, zoomScale * factor));
     if (newScale === zoomScale) return;
     var before = svg.getBoundingClientRect();
     var fx = (clientX - before.left) / before.width;

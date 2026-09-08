@@ -494,6 +494,35 @@ def test_to_html_standalone_svg_does_not_shrink_in_the_flex_body():
     assert "flex-shrink:0" in standalone
 
 
+def test_to_html_standalone_centers_via_margin_auto_not_justify_content():
+    """Regression: standalone=True used to center the SVG with body{display:
+    flex;justify-content:center;align-items:center} -- which, for a flex
+    item *larger* than its container (a many-hundred-axes figure at its
+    natural pixel size routinely is), clips the item's start-side overflow
+    out of the scrollable area entirely in every major browser, rather than
+    just centering it. A figure wider or taller than the viewport had its
+    left/top portion pushed off-screen with literally no way to scroll back
+    to it -- scrolling only ever reached further into the *end*-side
+    overflow. margin:auto on the item itself (#plotpress-svg, or
+    .plotpress-svg-wrap once a slider figure wraps it) is the standard fix:
+    identical centering while there's free space to split between the two
+    auto margins, degrading gracefully to a plain 0 margin -- ordinary,
+    fully bidirectionally-scrollable overflow -- the moment the item is
+    bigger than body."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    standalone = fig.to_html(standalone=True)
+    # Scoped to the page's own <style> head -- the toolbar's *internal*
+    # flex layout (a menu row, a slider strip) legitimately uses
+    # align-items:center for small, never-overflowing UI chrome; only the
+    # body-level rule that used to clip an oversized figure is at issue.
+    head = standalone[standalone.index("<style>"):standalone.index("</style>")]
+    assert "justify-content:center" not in head
+    assert "align-items:center" not in head
+    assert re.search(r"#plotpress-svg\{[^}]*margin:auto", head)
+    assert re.search(r"\.plotpress-svg-wrap\{[^}]*margin:auto", head)
+
+
 def _report_entry_doc(report_html, index=0):
     """Unescape and return the Nth embedded figure's own HTML document from
     a saved Report file's srcdoc-carrying iframes, in order."""

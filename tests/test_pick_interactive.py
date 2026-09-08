@@ -1390,6 +1390,104 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
         "Reset must clear the zoomed state along with the size: %r" % out)
 
 
+def test_wheel_zoom_out_can_shrink_past_the_figures_natural_size(page, tmp_path):
+    """Regression: whole-figure zoom-out used to clamp at scale 1 (the
+    figure's own natural pixel size, aka "Home") -- fine for an ordinary
+    figure, but a many-hundred-axes figure is routinely many times larger
+    than any viewport at its natural size, and "Home" was then a floor you
+    could never zoom out past to actually see the whole thing at once.
+    Zooming out must be able to shrink the SVG below its natural size (down
+    to a 10% floor), not just back to it -- and, since a shrunk figure never
+    overflows its container, it must stay in the ordinary centered flex
+    layout rather than flipping into the zoomed-in scroll mode Home/zoom-in
+    use."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(4, 4, figsize=(9, 9))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "wheel_zoom_out_past_home.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Pan/Zoom') b.click();
+          });
+          const natural = svg.getBoundingClientRect().width;
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          for (let i = 0; i < 20; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: 300
+            }));
+          }
+          return {
+            natural: natural,
+            shrunk: svg.getBoundingClientRect().width,
+            zoomedClass: document.body.classList.contains('plotpress-zoomed'),
+          };
+        }""")
+    assert out["shrunk"] < out["natural"], (
+        "zooming out repeatedly must shrink the figure below its natural "
+        "size, not stop dead at it: %r" % out)
+    assert out["shrunk"] == pytest.approx(out["natural"] * 0.1, rel=0.02), (
+        "zoom-out should floor at 10%% of natural size: %r" % out)
+    assert not out["zoomedClass"], (
+        "a shrunk (never-overflowing) figure must stay in the ordinary "
+        "centered layout, not the zoomed-in scroll mode: %r" % out)
+
+
+def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tmp_path):
+    """Regression: standalone=True centered an oversized figure (wider or
+    taller than the viewport, at the default "Home" zoom -- unremarkable
+    once a figure has hundreds of axes) via body{display:flex;justify-
+    content:center;align-items:center}. Centering a flex item bigger than
+    its container clips the item's *start*-side overflow out of the
+    scrollable area in every major browser -- the figure's own left/top
+    portion was pushed off-screen with genuinely no way to scroll (or Ctrl/
+    Magnify-wheel-zoom-out, which used to floor at Home) back to it. Checked
+    directly against real layout geometry, not an internal flag: at Home,
+    the SVG's own top-left corner must already be at the scroll origin, and
+    the page's scrollable area must span its full natural size in both
+    axes, not just the part that happened to fit."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(4, 5, figsize=(16, 14))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "oversized_home_reachable.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          const r = svg.getBoundingClientRect();
+          return {
+            svgLeft: r.left, svgTop: r.top, svgWidth: r.width, svgHeight: r.height,
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight,
+            viewportW: window.innerWidth, viewportH: window.innerHeight,
+          };
+        }""")
+    assert out["svgWidth"] > out["viewportW"] and out["svgHeight"] > out["viewportH"], (
+        "test setup must actually produce a figure bigger than the "
+        "viewport in both axes, or this proves nothing: %r" % out)
+    assert out["svgLeft"] == 0 and out["svgTop"] == 0, (
+        "at Home, the figure's own top-left corner must sit at the scroll "
+        "origin -- not pushed left/up off-screen where scrolling can never "
+        "reach it: %r" % out)
+    assert out["scrollWidth"] == pytest.approx(out["svgWidth"], abs=1), (
+        "the page's scrollable width must span the whole figure, not just "
+        "the portion that fit before it started clipping: %r" % out)
+    assert out["scrollHeight"] == pytest.approx(out["svgHeight"], abs=1)
+
+
 def _box_zoom(page, x0, y0, x1, y1):
     """Simulate a real "Axis Zoom"-mode rubber-band drag between two SVG
     user-space pixel points -- the mechanism that now drives per-axes,

@@ -13,6 +13,31 @@ anywhere in the source.
 
 ### Fixed
 
+- **A large interactive figure (many-hundred-axes, or a wide/tall
+  `figsize`) could be pushed left/up off-screen with no way to pan or
+  zoom back to it.** `Figure.to_html(standalone=True)` centered the SVG
+  with `body{display:flex;justify-content:center;align-items:center}` --
+  which, for a flex item *bigger* than its container, every major browser
+  clips the item's start-side overflow out of the scrollable area
+  entirely, rather than just centering it. Found by playing with
+  `figsize`/`Figure.group_spacing()` on the 500-`pcolormesh` "many axes"
+  example: at its natural (Home) size the figure is several times larger
+  than any viewport, and its left/top portion was unreachable by
+  scrolling, dragging, or zooming. Fixed by centering via `margin:auto` on
+  the SVG (or its slider-figure wrapper) instead of `justify-content`/
+  `align-items:center` on `body` -- identical centering when there's free
+  space to split between the two auto margins, degrading gracefully to
+  plain, fully bidirectionally-scrollable overflow the moment the figure
+  is bigger than the viewport.
+- **Whole-figure zoom-out floored at the figure's own natural size ("Home"),
+  with no way to zoom out past it** -- unusable for the many-hundred-axes
+  case above, where "Home" is already several times larger than any
+  viewport and shrinking further is the only way to see the whole figure
+  at once. The wheel-zoom's lower clamp is now 10% of natural size instead
+  of 100%; `applyZoomSize()` now actually applies a size below natural too
+  (it previously only ever grew past 1x, silently no-opping any shrink
+  request), while correctly staying in the ordinary centered layout rather
+  than the zoomed-in scroll mode, since a shrunk figure never overflows.
 - **A bare scalar `x`/`y` (a plain number or a single `datetime.date`, not
   an array) crashed `scatter()`/`plot()`/`errorbar()`/`stem()` at render
   time** with `IndexError: invalid index to scalar variable` -- flagged as
