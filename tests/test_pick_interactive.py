@@ -1441,6 +1441,61 @@ def test_wheel_zoom_out_can_shrink_past_the_figures_natural_size(page, tmp_path)
         "centered layout, not the zoomed-in scroll mode: %r" % out)
 
 
+def test_wheel_zoom_works_over_the_page_background_once_shrunk_below_it(page, tmp_path):
+    """Regression: the wheel-zoom listener used to live on the SVG element
+    itself, so once zoomed out enough to shrink the figure below the
+    viewport, margin:auto centers a small box in a sea of page background
+    (see Figure.to_html) -- and every further wheel tick over that
+    background, which is most of the screen, was silently dead. There was
+    no way to zoom back in without first physically relocating the cursor
+    onto the now-tiny figure. The listener now lives on window (zoomTo()
+    only ever reads clientX/clientY, never the event's target), so a wheel
+    tick zooms wherever the cursor happens to be, on the figure or off it."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(4, 4, figsize=(9, 9))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "wheel_zoom_over_background.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Pan/Zoom') b.click();
+          });
+          const r0 = svg.getBoundingClientRect();
+          const cx = r0.x + r0.width / 2, cy = r0.y + r0.height / 2;
+          for (let i = 0; i < 12; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: 300
+            }));
+          }
+          const shrunk = svg.getBoundingClientRect().width;
+          // A corner of the viewport, well clear of the now-small, centered
+          // figure -- confirm it's genuinely page background, not the SVG,
+          // before treating a wheel tick there as the real regression check.
+          const bgPoint = document.elementFromPoint(5, 5);
+          bgPoint.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, clientX: 5, clientY: 5, deltaY: -300
+          }));
+          return {
+            shrunk: shrunk,
+            grew: svg.getBoundingClientRect().width,
+            bgPointIsSvg: bgPoint === svg,
+          };
+        }""")
+    assert not out["bgPointIsSvg"], (
+        "test setup must land the wheel tick on real page background, not "
+        "the SVG, or this proves nothing: %r" % out)
+    assert out["grew"] > out["shrunk"], (
+        "a wheel tick over the page background (not the shrunk figure "
+        "itself) must still zoom the whole-figure view: %r" % out)
+
+
 def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tmp_path):
     """Regression: standalone=True centered an oversized figure (wider or
     taller than the viewport, at the default "Home" zoom -- unremarkable

@@ -909,7 +909,15 @@ _JS_SOURCE = r"""
   }
 
   // ---- pan / zoom drivers ------------------------------------------------
-  svg.addEventListener('wheel', function (e) {
+  // On window, not the SVG: this is a *whole-page* gesture (zoomTo() only
+  // ever reads e.clientX/clientY, never e.target), and the SVG is exactly
+  // what shrinks out from under the cursor as soon as a zoom-out drops it
+  // below the viewport size -- margin:auto then centers a much smaller box
+  // in a sea of page background (see Figure.to_html), so a listener scoped
+  // to the SVG itself left every wheel tick over that background silently
+  // dead, with no way to zoom back in short of physically relocating the
+  // cursor onto the now-tiny figure.
+  window.addEventListener('wheel', function (e) {
     // Under Zoom, only Ctrl+wheel (or a trackpad pinch, which the browser
     // reports as a wheel event with ctrlKey already set) zooms -- a plain
     // scroll must fall through to the page's own scrolling untouched, the

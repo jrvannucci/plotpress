@@ -13,6 +13,23 @@ anywhere in the source.
 
 ### Fixed
 
+- **Wheel-zoom only responded while the cursor was directly over the
+  SVG element.** Once zoomed out far enough to shrink the figure below the
+  viewport, `margin:auto` correctly centers a small box in a sea of page
+  background (see the previous fix, below) -- but every further wheel tick
+  over that background, now most of the screen, did nothing, since the
+  listener lived on the SVG itself rather than the page. There was no way
+  to zoom back in without first physically relocating the cursor onto the
+  now-tiny figure -- reported as needing to move the cursor to a specific
+  corner to zoom back in. The listener now lives on `window` instead of
+  `#plotpress-svg` (`zoomTo()` only ever reads the event's `clientX`/
+  `clientY`, never its target), so a wheel tick zooms wherever the cursor
+  happens to be, on the figure or off it.
+
+## [0.28.3] - 2026-09-08
+
+### Fixed
+
 - **A large interactive figure (many-hundred-axes, or a wide/tall
   `figsize`) could be pushed left/up off-screen with no way to pan or
   zoom back to it.** `Figure.to_html(standalone=True)` centered the SVG
