@@ -38,6 +38,11 @@ anywhere in the source.
   (it previously only ever grew past 1x, silently no-opping any shrink
   request), while correctly staying in the ordinary centered layout rather
   than the zoomed-in scroll mode, since a shrunk figure never overflows.
+
+## [0.28.2] - 2026-09-07
+
+### Fixed
+
 - **A bare scalar `x`/`y` (a plain number or a single `datetime.date`, not
   an array) crashed `scatter()`/`plot()`/`errorbar()`/`stem()` at render
   time** with `IndexError: invalid index to scalar variable` -- flagged as
