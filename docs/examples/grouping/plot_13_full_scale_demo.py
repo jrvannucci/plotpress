@@ -105,3 +105,5 @@ top_panel, _bottom_panel = found["axes"]
 for side in top_panel.spines:
     top_panel.spines[side].set_color("#e91e8c")
     top_panel.spines[side].set_linewidth(2.5)
+print(f"Group 137's top panel is {top_panel.get_title()!r} -- confirming the "
+     "magenta-bordered one above is the one actually found by title.")
