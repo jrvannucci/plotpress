@@ -18,9 +18,15 @@ anywhere in the source.
   colorbar** -- reported as "looks terrible," correctly: colorbars were
   slivers, titles unreadable, and groups nearly touching. Retuned
   `figsize` from `NCOLS/NROWS * 1.1` to `* 1.6` and `group_spacing` from
-  `wspace=10, hspace=28` to `wspace=22, hspace=44` -- real, visible gaps
-  between groups and legible decorations throughout, still well under a
-  second to build (474ms).
+  `wspace=10, hspace=28` to `wspace=60, hspace=44`. `wspace` needed
+  roughly triple `hspace` (not the same value): 25 columns against 10
+  row-pairs means each column is already much narrower than each
+  row-pair is tall, so the same pixel gap reads as visibly thinner
+  between columns than between rows -- confirmed by cropping in on the
+  first pass's `wspace=22`, which still looked cramped column-to-column
+  even though every gap was, in fact, non-zero. Real, visible gaps
+  between groups and legible decorations throughout now, still well
+  under a second to build (438ms).
 
 ## [0.29.0] - 2026-09-08
 

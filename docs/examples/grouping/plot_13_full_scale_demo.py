@@ -79,7 +79,7 @@ for col in range(NCOLS):
             ax.tick_params(labelsize=5)
             fig.colorbar(mesh, ax=ax, fraction=0.08)
 
-fig.group_spacing(wspace=22, hspace=44)
+fig.group_spacing(wspace=60, hspace=44)
 fig.suptitle("500 grouped pcolormesh panels")
 fig.supxlabel("global x")
 fig.supylabel("global y")
