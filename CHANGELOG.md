@@ -13,6 +13,13 @@ anywhere in the source.
 
 ### Changed
 
+- **`plot_13_full_scale_demo` now also demonstrates finding one axes by
+  its group's title alone**, via `Figure.get_groups()` -- not by
+  remembering which of the figure's 1000 total axes it is, or which
+  `(row, col)` of the `GroupLayout`-resolved shared grid it landed on.
+  `next(g for g in fig.get_groups() if g["title"] == "Group 137")["axes"]`
+  finds that pair; its top panel gets a magenta border, styled entirely
+  after the fact from nothing but that string.
 - **`plot_13_full_scale_demo`'s `figsize` and `group_spacing()` were too
   tight for 500 panels each carrying a title, tick numbers, and its own
   colorbar** -- reported as "looks terrible," correctly: colorbars were

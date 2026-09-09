@@ -36,6 +36,14 @@ cleanly at a normal glance, not just under a magnifier. ``figsize`` scales
 generously per panel (not the tighter ratio a plainer grid could get away
 with) and ``group_spacing`` reserves visible, uncrowded gaps between
 groups rather than the bare minimum ``tight_layout()`` would allow.
+
+Finally, :meth:`~plotpress.figure.Figure.get_groups` finds one specific
+panel by its group's *title* alone -- not by remembering which of this
+figure's 1000 total axes (500 panels + 500 colorbars) it is, or which
+``(row, col)`` of the shared super-grid :class:`~plotpress.figure.GroupLayout`
+resolved that pair to. The magenta-bordered panel below was never touched
+during the build loop above; it is found and styled afterward, from
+nothing but the string ``"Group 137"``.
 """
 import numpy as np
 import plotpress
@@ -84,3 +92,16 @@ fig.suptitle("500 grouped pcolormesh panels")
 fig.supxlabel("global x")
 fig.supylabel("global y")
 fig.tight_layout()
+
+# Address one axes within a group by its group's title, not its global
+# position: fig.get_groups() looks up any group by the title given when
+# it was created. A group's own axes list keeps the row-major order its
+# shape was built in (see GroupLayout.add()), so this 2x1 pair's [0]/[1]
+# are simply its top/bottom panel -- the same indexing already used to
+# plot into it above, without knowing which of the figure's 1000 axes
+# either one actually is.
+found = next(g for g in fig.get_groups() if g["title"] == "Group 137")
+top_panel, _bottom_panel = found["axes"]
+for side in top_panel.spines:
+    top_panel.spines[side].set_color("#e91e8c")
+    top_panel.spines[side].set_linewidth(2.5)
