@@ -3279,3 +3279,71 @@ def test_no_custom_menu_created_when_no_custom_tools_are_added(page, tmp_path):
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
     assert _menu_labels(page) == ["Axes", "Point Picking", "Annotate", "File"]
+
+
+def test_embedded_zoomed_out_figure_centers_in_its_iframe(page, tmp_path):
+    """Regression: standalone=False's body has no flex/margin:auto centering
+    at all -- unlike standalone, it doesn't need it normally, since the SVG
+    just stretches to fill the iframe at width:100%/height:auto. But
+    applyZoomSize() gives it an explicit *pixel* width/height the moment the
+    figure is zoomed at all, and a plain block box with no margin sits flush
+    at the top-left of its container -- so zooming out inside the very
+    <iframe> embedding _interactive_embed() (docs/conf.py) and every
+    application-gallery doc page use left the shrunk figure pinned to the
+    top-left corner with the rest of the iframe empty, exactly as reported
+    against the live gravity-anomaly example page. centerShrunkFigure() now
+    computes and applies the centering margin directly (covering both
+    standalone and embedded uniformly), so this must center within the
+    space actually available -- the iframe's own size, minus the top
+    padding reserved for the toolbar (see _toolbar_clearance), not the
+    iframe's full height including that reserved strip.
+    """
+    import numpy as np
+    import plotpress
+
+    fig, ax = plotpress.subplots(figsize=(6.0, 4.0))
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    inner_path = tmp_path / "embedded_inner.html"
+    inner_path.write_text(fig.to_html(interactive=True, standalone=False),
+                          encoding="utf-8")
+    outer_path = tmp_path / "embedded_outer.html"
+    outer_path.write_text(
+        '<!doctype html><html><body style="margin:0">'
+        '<iframe src="embedded_inner.html" width="700" height="500" '
+        'style="border:0"></iframe></body></html>',
+        encoding="utf-8")
+    page.goto(outer_path.as_uri())
+
+    frame = page.frames[1]   # frames[0] is the outer page itself
+    out = frame.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent.trim() === 'Pan/Zoom') b.click();
+          });
+          const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+          for (let i = 0; i < 14; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: 300
+            }));
+          }
+          const r = svg.getBoundingClientRect();
+          const topPad = parseFloat(getComputedStyle(document.body).paddingTop);
+          const botPad = parseFloat(getComputedStyle(document.body).paddingBottom);
+          const expectedLeft = (window.innerWidth - r.width) / 2;
+          const expectedTop = topPad + (window.innerHeight - topPad - botPad - r.height) / 2;
+          return {
+            width: r.width, height: r.height, left: r.left, top: r.top,
+            iframeW: window.innerWidth, iframeH: window.innerHeight,
+            expectedLeft, expectedTop,
+          };
+        }""")
+    assert out["width"] < out["iframeW"] and out["height"] < out["iframeH"], (
+        "test setup must actually shrink the figure below the iframe's own "
+        "size, or this proves nothing: %r" % out)
+    assert out["left"] == pytest.approx(out["expectedLeft"], abs=1.0), (
+        "a shrunk embedded figure must center horizontally in its iframe, "
+        "not sit flush at the left edge: %r" % out)
+    assert out["top"] == pytest.approx(out["expectedTop"], abs=1.0), (
+        "a shrunk embedded figure must center vertically in the space below "
+        "the toolbar, not sit flush at the top: %r" % out)

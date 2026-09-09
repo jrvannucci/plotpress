@@ -222,7 +222,39 @@ _JS_SOURCE = r"""
       naturalW = svg.getBoundingClientRect().width;
       naturalH = svg.getBoundingClientRect().height;
     }
+    centerShrunkFigure();
   });
+
+  // Center a shrunk-below-container figure explicitly, rather than leaning
+  // on CSS auto-margin alone. Standalone's body{display:flex} + margin:auto
+  // (see Figure.to_html) already centers it correctly on its own -- but an
+  // *embedded* figure (an <iframe>, e.g. every application-gallery doc page)
+  // has no such rule: its body is plain block flow with the SVG stretching
+  // to width:100% by default, so the instant applyZoomSize() below gives it
+  // an explicit pixel size smaller than the iframe, a plain block box with
+  // no margin just sits flush at the top-left with the rest of the iframe
+  // sitting empty. Computing the centering margin here covers both cases
+  // uniformly (and is a no-op for standalone, where it just re-derives what
+  // the CSS rule there already produces) -- document.documentElement's own
+  // client size is "the available space" in either context, since this
+  // script runs inside whichever document actually contains the figure.
+  function centerShrunkFigure() {
+    var target = wrap || svg;
+    // Embedded's body reserves real top/bottom padding for the toolbar (see
+    // _toolbar_clearance in Figure.to_html) rather than the pure flex slack
+    // standalone centers within -- excluding it here keeps a shrunk figure
+    // centered in the space actually left *below* the toolbar, not in the
+    // full iframe height including the strip the toolbar already occupies.
+    var bodyStyle = getComputedStyle(document.body);
+    var vPad = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    var cw = document.documentElement.clientWidth;
+    var ch = document.documentElement.clientHeight - vPad;
+    var r = target.getBoundingClientRect();
+    target.style.marginLeft = target.style.marginRight =
+      r.width < cw ? ((cw - r.width) / 2) + 'px' : '';
+    target.style.marginTop = target.style.marginBottom =
+      r.height < ch ? ((ch - r.height) / 2) + 'px' : '';
+  }
 
   function applyZoomSize() {
     // Zooming *out* (scale < 1) still needs an explicit smaller size applied
@@ -244,6 +276,7 @@ _JS_SOURCE = r"""
     } else {
       svg.style.width = ''; svg.style.height = '';
     }
+    centerShrunkFigure();
     // Every pin's own 1/zoomScale compensation (see layoutPin) has to be
     // refreshed here too, not just when a pin is first dropped or moved --
     // otherwise a pin placed *before* this zoom change keeps whatever

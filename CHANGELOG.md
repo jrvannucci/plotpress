@@ -13,6 +13,27 @@ anywhere in the source.
 
 ### Fixed
 
+- **A zoomed-out figure embedded in an `<iframe>` (every application-gallery
+  doc page, or any `Figure.to_html(standalone=False)` embed) stayed pinned
+  to the top-left corner of the iframe, with the rest of it empty.**
+  Reported against the live gravity-anomaly example page. Unlike
+  `standalone=True`, embedded's `body` has no flex/`margin:auto` centering
+  at all -- normally none is needed, since the SVG just stretches to fill
+  the iframe at `width:100%`/`height:auto`. But the moment the figure is
+  zoomed at all, `applyZoomSize()` gives it an explicit *pixel* size, and a
+  plain block box with no margin sits flush at its container's top-left
+  once that size is smaller than the container. A new `centerShrunkFigure()`
+  now computes and applies the centering margin directly whenever the
+  figure is smaller than its container, covering both standalone (where
+  it's a no-op -- CSS was already centering it) and embedded (where it
+  wasn't) uniformly, correctly excluding the top padding reserved for the
+  toolbar so a shrunk figure centers in the space actually left below it,
+  not the iframe's full height.
+
+## [0.28.4] - 2026-09-08
+
+### Fixed
+
 - **Wheel-zoom only responded while the cursor was directly over the
   SVG element.** Once zoomed out far enough to shrink the figure below the
   viewport, `margin:auto` correctly centers a small box in a sea of page
