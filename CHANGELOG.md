@@ -11,6 +11,19 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Changed
+
+- **`plot_13_full_scale_demo`'s `figsize` and `group_spacing()` were too
+  tight for 500 panels each carrying a title, tick numbers, and its own
+  colorbar** -- reported as "looks terrible," correctly: colorbars were
+  slivers, titles unreadable, and groups nearly touching. Retuned
+  `figsize` from `NCOLS/NROWS * 1.1` to `* 1.6` and `group_spacing` from
+  `wspace=10, hspace=28` to `wspace=22, hspace=44` -- real, visible gaps
+  between groups and legible decorations throughout, still well under a
+  second to build (474ms).
+
+## [0.29.0] - 2026-09-08
+
 ### Added
 
 - **`GroupLayout` / `Figure.get_groups()` / `plotpress.subplots_from_groups()`
@@ -53,12 +66,14 @@ anywhere in the source.
 
   Two existing grouping-gallery examples (`plot_07_four_quadrants_all_positions`,
   `plot_13_full_scale_demo`) now build with this instead of manual
-  `axes[r0:r1, c0:c1]` slicing -- verified byte-identical rendered output
-  to the manual version in both cases. Two new examples:
-  `plot_14_irregular_group_shapes` (four different mask shapes: a ring,
-  an L, a diagonal, a plus) and `plot_15_dashboard_mixed_shapes_and_masks`
-  (six groups, three different plain shapes plus a checkerboard mask,
-  sharing one outer grid).
+  `axes[r0:r1, c0:c1]` slicing -- `plot_07`'s rendered output is verified
+  byte-identical to the manual version; `plot_13`'s own `figsize`/
+  `group_spacing` were separately retuned (see `Unreleased`, below) rather
+  than kept byte-identical to a manual version that was itself too
+  cramped to read. Two new examples: `plot_14_irregular_group_shapes`
+  (four different mask shapes: a ring, an L, a diagonal, a plus) and
+  `plot_15_dashboard_mixed_shapes_and_masks` (six groups, three different
+  plain shapes plus a checkerboard mask, sharing one outer grid).
 
 ## [0.28.6] - 2026-09-08
 

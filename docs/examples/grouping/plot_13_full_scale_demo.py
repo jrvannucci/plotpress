@@ -28,6 +28,14 @@ once, but each panel's own 0/0.5/1 stays readable at a glance rather than
 only appearing at the true grid edges. Building all 500 panels, their
 colorbars, and every group box still takes well under a second -- see the
 :ref:`scale gallery <scale_gallery>` for what happens well past this size.
+
+500 panels each carrying a title, tick numbers, and its own colorbar need
+real room per panel to stay legible, not just per-group separation -- an
+SVG never loses resolution zooming in, but the figure should still read
+cleanly at a normal glance, not just under a magnifier. ``figsize`` scales
+generously per panel (not the tighter ratio a plainer grid could get away
+with) and ``group_spacing`` reserves visible, uncrowded gaps between
+groups rather than the bare minimum ``tight_layout()`` would allow.
 """
 import numpy as np
 import plotpress
@@ -46,7 +54,7 @@ for col in range(NCOLS):
         layout.add(row_pair, col, 2, 1, title=f"Group {group_idx}",
                   color=color, linewidth=1.0, fontsize=5)
 
-fig, axes = plotpress.subplots_from_groups(layout, figsize=(NCOLS * 1.1, NROWS * 1.1))
+fig, axes = plotpress.subplots_from_groups(layout, figsize=(NCOLS * 1.6, NROWS * 1.6))
 
 x_edges = np.linspace(0, 1, MESH_N + 1)
 # A smooth Gaussian-plus-ripple field per panel (the same shape as the
@@ -67,11 +75,11 @@ for col in range(NCOLS):
             z = (np.exp(-((Xc - cx) ** 2 + (Yc - cy) ** 2) / 4)
                  + 0.3 * np.sin(freq * Xc) * np.cos(freq * Yc))
             mesh = ax.pcolormesh(x_edges, x_edges, z, cmap="viridis")
-            ax.set_title(f"panel {r}–{col}", fontsize=5)
-            ax.tick_params(labelsize=4)
+            ax.set_title(f"panel {r}–{col}", fontsize=6)
+            ax.tick_params(labelsize=5)
             fig.colorbar(mesh, ax=ax, fraction=0.08)
 
-fig.group_spacing(wspace=10, hspace=28)
+fig.group_spacing(wspace=22, hspace=44)
 fig.suptitle("500 grouped pcolormesh panels")
 fig.supxlabel("global x")
 fig.supylabel("global y")
