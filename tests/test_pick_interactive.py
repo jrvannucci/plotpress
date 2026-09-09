@@ -3347,3 +3347,82 @@ def test_embedded_zoomed_out_figure_centers_in_its_iframe(page, tmp_path):
     assert out["top"] == pytest.approx(out["expectedTop"], abs=1.0), (
         "a shrunk embedded figure must center vertically in the space below "
         "the toolbar, not sit flush at the top: %r" % out)
+
+
+def test_embedded_zoomed_out_slider_figure_also_centers(page, tmp_path):
+    """Regression: the fix above measured *target* (wrap if a plot_frames()/
+    pcolormesh_frames() figure's docked-slider wrap div exists, else the SVG
+    itself) to decide the centering margin -- but embedded's wrap div is
+    plain display:block with no width of its own (see Figure.to_html), so
+    ordinary CSS block layout keeps it filling its full container width no
+    matter how small the SVG inside has shrunk. Reading *that* width was
+    circular: it reports "not shrunk yet" forever, clearing the margin right
+    back to 0 every time -- so any animated/slider figure embedded in an
+    iframe (still stuck exactly as reported, even after the first fix)
+    never actually centered when zoomed out, only ever sitting flush left
+    while its height still correctly centered (wrap's *height* does shrink
+    to fit its content in block flow, unlike width -- so this bug was
+    horizontal-only, easy to miss if only checking one axis). The margin
+    calculation now always measures the SVG's own box, wrapped or not."""
+    import numpy as np
+    import plotpress
+
+    fig, ax = plotpress.subplots(figsize=(7.0, 4.0))
+    x = np.linspace(0.0, 10.0, 50)
+    Y = np.array([np.sin(x + t) for t in np.linspace(0.0, 3.0, 5)])
+    ax.plot_frames(x, Y)
+    inner_path = tmp_path / "embedded_slider_inner.html"
+    inner_path.write_text(fig.to_html(interactive=True, standalone=False),
+                          encoding="utf-8")
+    outer_path = tmp_path / "embedded_slider_outer.html"
+    outer_path.write_text(
+        '<!doctype html><html><body style="margin:0">'
+        '<iframe src="embedded_slider_inner.html" width="850" height="640" '
+        'style="border:0"></iframe></body></html>',
+        encoding="utf-8")
+    page.goto(outer_path.as_uri())
+
+    frame = page.frames[1]
+    out = frame.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          const wrap = document.querySelector('.plotpress-svg-wrap');
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent.trim() === 'Pan/Zoom') b.click();
+          });
+          const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+          for (let i = 0; i < 13; i++) {
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: 300
+            }));
+          }
+          const r = svg.getBoundingClientRect();
+          const topPad = parseFloat(getComputedStyle(document.body).paddingTop);
+          const botPad = parseFloat(getComputedStyle(document.body).paddingBottom);
+          const expectedLeft = (window.innerWidth - r.width) / 2;
+          const expectedTop = topPad + (window.innerHeight - topPad - botPad - r.height) / 2;
+          return {
+            hasWrap: !!wrap,
+            wrapWidth: wrap ? wrap.getBoundingClientRect().width : null,
+            svgWidth: r.width, svgHeight: r.height,
+            left: r.left, top: r.top,
+            iframeW: window.innerWidth, iframeH: window.innerHeight,
+            expectedLeft, expectedTop,
+          };
+        }""")
+    assert out["hasWrap"], (
+        "test setup must actually produce a docked-slider wrap div, or "
+        "this proves nothing: %r" % out)
+    assert out["svgWidth"] < out["iframeW"], (
+        "test setup must actually shrink the figure below the iframe's own "
+        "size, or this proves nothing: %r" % out)
+    assert out["wrapWidth"] == pytest.approx(out["svgWidth"], abs=1.0), (
+        "the wrap div must shrink to the SVG's own width once a real "
+        "centering margin is applied, not stay stuck at the iframe's full "
+        "width: %r" % out)
+    assert out["left"] == pytest.approx(out["expectedLeft"], abs=1.0), (
+        "a shrunk embedded slider figure must center horizontally, not sit "
+        "flush at the left edge while only its height centers: %r" % out)
+    assert out["top"] == pytest.approx(out["expectedTop"], abs=1.0), (
+        "a shrunk embedded slider figure must center vertically in the "
+        "space below the toolbar: %r" % out)

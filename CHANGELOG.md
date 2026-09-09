@@ -13,6 +13,24 @@ anywhere in the source.
 
 ### Fixed
 
+- **An embedded animated/slider figure (`plot_frames()`/
+  `pcolormesh_frames()`) still didn't center when zoomed out, even after
+  the fix below.** That fix measured *target* -- the docked-slider wrap div
+  when one exists -- to decide the centering margin, but embedded's wrap is
+  plain `display:block` with no width of its own: ordinary CSS block layout
+  keeps it filling its full container width no matter how small the SVG
+  inside has shrunk, so reading *its* width was circular (it always
+  reports "not shrunk yet," clearing the margin right back to 0 every
+  time). Horizontal-only, easy to miss -- the wrap's *height* does shrink
+  to fit its content in block flow, so vertical centering already worked,
+  which is exactly the "stuck at the left, but not the very top" shape
+  this was reported as after the fix below first shipped. The margin
+  calculation now always measures the SVG's own box, wrapped or not.
+
+## [0.28.5] - 2026-09-08
+
+### Fixed
+
 - **A zoomed-out figure embedded in an `<iframe>` (every application-gallery
   doc page, or any `Figure.to_html(standalone=False)` embed) stayed pinned
   to the top-left corner of the iframe, with the rest of it empty.**

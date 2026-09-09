@@ -249,7 +249,15 @@ _JS_SOURCE = r"""
     var vPad = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
     var cw = document.documentElement.clientWidth;
     var ch = document.documentElement.clientHeight - vPad;
-    var r = target.getBoundingClientRect();
+    // Measure the SVG's own box, not target's: a docked-slider figure's wrap
+    // div is display:block with no width of its own (see Figure.to_html), so
+    // plain CSS block layout keeps it filling its full container width no
+    // matter how small the SVG inside has shrunk -- reading *its* width here
+    // is circular (clearing the margin because it "isn't shrunk" is exactly
+    // what keeps it un-shrunk next time). The SVG's own rendered size, driven
+    // directly by applyZoomSize()'s explicit style.width/height, is always
+    // the true figure size, wrapped or not.
+    var r = svg.getBoundingClientRect();
     target.style.marginLeft = target.style.marginRight =
       r.width < cw ? ((cw - r.width) / 2) + 'px' : '';
     target.style.marginTop = target.style.marginBottom =
