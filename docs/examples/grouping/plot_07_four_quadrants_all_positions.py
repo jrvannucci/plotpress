@@ -2,13 +2,17 @@
 All four title positions at once
 ===================================
 
-A 4x4 grid split into four 2x2 quadrants, each its own group -- and each
-using the one ``title_position`` that actually faces an outer edge from
-where it sits: top-left ("top"), top-right ("right"), bottom-left
-("left"), bottom-right ("bottom"). All four reach a true edge of the
-figure, so ``tight_layout()`` reserves *outer* margin for every one of
-them automatically -- including a left/right title's own rendered
-*width*, not just a top/bottom title's height.
+A 2x2 arrangement of four 2x2 quadrants, each its own group -- built with
+:class:`~plotpress.figure.GroupLayout` instead of hand-slicing a flat 4x4
+grid (``axes[0:2, 0:2]`` and friends): describe each quadrant's own shape
+once, and :func:`~plotpress.figure.subplots_from_groups` works out the
+combined grid and every axes' real position itself. Each quadrant uses the
+one ``title_position`` that actually faces an outer edge from where it sits:
+top-left ("top"), top-right ("right"), bottom-left ("left"), bottom-right
+("bottom"). All four reach a true edge of the figure, so ``tight_layout()``
+reserves *outer* margin for every one of them automatically -- including a
+left/right title's own rendered *width*, not just a top/bottom title's
+height.
 
 That reservation only ever applies to the figure's own outer edges,
 though: the boundary between the top two quadrants and the bottom two is
@@ -29,20 +33,22 @@ x = np.linspace(0, 6, 13)
 y = np.linspace(0, 6, 13)
 X, Y = np.meshgrid(x, y)
 
-fig, axes = plotpress.subplots(4, 4, figsize=(10, 9))
-for r in range(4):
-    for c in range(4):
-        Z = np.sin(X * 0.6 + r) * np.cos(Y * 0.6 + c) + 0.05 * rng.standard_normal(X.shape)
-        axes[r, c].pcolormesh(x, y, Z, cmap="cividis", vmin=-1.2, vmax=1.2)
-        axes[r, c].tick_params(labelsize=6)
+layout = plotpress.GroupLayout(2, 2)
+layout.add(0, 0, 2, 2, title="Top-left", title_position="top", color="#d62728")
+layout.add(0, 1, 2, 2, title="Top-right", title_position="right", color="#1f77b4")
+layout.add(1, 0, 2, 2, title="Bottom-left", title_position="left", color="#2ca02c")
+layout.add(1, 1, 2, 2, title="Bottom-right", title_position="bottom", color="#9467bd")
 
-fig.group("Top-left", list(axes[0:2, 0:2].ravel()), title_position="top",
-         color="#d62728")
-fig.group("Top-right", list(axes[0:2, 2:4].ravel()), title_position="right",
-         color="#1f77b4")
-fig.group("Bottom-left", list(axes[2:4, 0:2].ravel()), title_position="left",
-         color="#2ca02c")
-fig.group("Bottom-right", list(axes[2:4, 2:4].ravel()), title_position="bottom",
-         color="#9467bd")
+fig, axes = plotpress.subplots_from_groups(layout, figsize=(10, 9))
+for outer_r in range(2):
+    for outer_c in range(2):
+        for r in range(2):
+            for c in range(2):
+                ax = axes[outer_r, outer_c][r, c]
+                Z = (np.sin(X * 0.6 + r) * np.cos(Y * 0.6 + c)
+                     + 0.05 * rng.standard_normal(X.shape))
+                ax.pcolormesh(x, y, Z, cmap="cividis", vmin=-1.2, vmax=1.2)
+                ax.tick_params(labelsize=6)
+
 fig.group_spacing(wspace=24.0, hspace=24.0)
 fig.tight_layout()

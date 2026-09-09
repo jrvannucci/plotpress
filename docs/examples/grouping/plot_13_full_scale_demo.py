@@ -2,11 +2,17 @@
 500 panels, 250 groups, each with its own colorbar
 ======================================================
 
-The flagship case for everything the grouping gallery covers at once: a
-20x25 grid (500 ``pcolormesh`` panels), paired top-to-bottom into 250
-groups -- each pair its own group, each panel its own colorbar, and each
-group's box cycling through four accent colors so a reader can tell
-neighboring groups apart at a glance without reading every title.
+The flagship case for everything the grouping gallery covers at once: 25
+columns of 10 stacked row-pairs (500 ``pcolormesh`` panels total), each
+pair its own group, each panel its own colorbar, and each group's box
+cycling through four accent colors so a reader can tell neighboring groups
+apart at a glance without reading every title.
+
+Built with :class:`~plotpress.figure.GroupLayout`: a 10x25 outer
+arrangement of groups, each one a plain 2x1 (two rows, one column) inner
+shape -- the row-pair itself. That's the whole layout description; nothing
+here computes which of the 500 flat-grid cells a given pair actually
+occupies the way indexing into one big ``axes[r][col]`` array used to.
 
 This is also what motivated :func:`~plotpress.figure.Figure.group`'s
 ``max()``-not-``+=`` outer-margin fix: 25 of these 250 groups (one per
@@ -28,10 +34,19 @@ import plotpress
 
 GROUP_COLORS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]  # blue/red/green/purple
 
-NROWS, NCOLS = 20, 25   # 500 panels, 250 top/bottom groups
-MESH_N = 20              # 20x20 mesh per panel
+NROWS, NCOLS = 20, 25     # 500 panels, 250 top/bottom groups
+N_PAIRS = NROWS // 2      # 10 row-pairs per column -> the outer grid's own rows
+MESH_N = 20               # 20x20 mesh per panel
 
-fig, axes = plotpress.subplots(NROWS, NCOLS, figsize=(NCOLS * 1.1, NROWS * 1.1))
+layout = plotpress.GroupLayout(N_PAIRS, NCOLS)
+for col in range(NCOLS):
+    for row_pair in range(N_PAIRS):
+        group_idx = col * N_PAIRS + row_pair
+        color = GROUP_COLORS[group_idx % len(GROUP_COLORS)]
+        layout.add(row_pair, col, 2, 1, title=f"Group {group_idx}",
+                  color=color, linewidth=1.0, fontsize=5)
+
+fig, axes = plotpress.subplots_from_groups(layout, figsize=(NCOLS * 1.1, NROWS * 1.1))
 
 x_edges = np.linspace(0, 1, MESH_N + 1)
 # A smooth Gaussian-plus-ripple field per panel (the same shape as the
@@ -41,14 +56,11 @@ x_edges = np.linspace(0, 1, MESH_N + 1)
 g = np.linspace(-3, 3, MESH_N)
 Xc, Yc = np.meshgrid(g, g)
 
-group_idx = 0
 for col in range(NCOLS):
-    for row_pair in range(NROWS // 2):
+    for row_pair in range(N_PAIRS):
         top_row, bot_row = row_pair * 2, row_pair * 2 + 1
-        color = GROUP_COLORS[group_idx % len(GROUP_COLORS)]
-        pair_axes = []
-        for r in (top_row, bot_row):
-            ax = axes[r][col]
+        for within_pair, r in enumerate((top_row, bot_row)):
+            ax = axes[row_pair, col][within_pair]
             cx = 1.6 * np.sin(0.6 * col + 0.3 * r)
             cy = 1.6 * np.cos(0.5 * row_pair - 0.4 * col)
             freq = 1.3 + 0.15 * (r % 3)
@@ -58,10 +70,6 @@ for col in range(NCOLS):
             ax.set_title(f"panel {r}–{col}", fontsize=5)
             ax.tick_params(labelsize=4)
             fig.colorbar(mesh, ax=ax, fraction=0.08)
-            pair_axes.append(ax)
-        fig.group(f"Group {group_idx}", pair_axes, color=color, linewidth=1.0,
-                 fontsize=5)
-        group_idx += 1
 
 fig.group_spacing(wspace=10, hspace=28)
 fig.suptitle("500 grouped pcolormesh panels")

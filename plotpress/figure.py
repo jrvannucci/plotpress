@@ -143,6 +143,273 @@ class GridSpec:
         return SubplotSpec(self.nrows, self.ncols, r0, r1, c0, c1)
 
 
+def _squeeze_grid(grid, nrows, ncols):
+    """``subplots()``'s own squeeze rule -- a bare ``Axes`` for a 1x1 grid, a
+    flat 1-D array for a single row/column, otherwise the 2-D array
+    untouched. Shared with :meth:`GroupLayout._build` so both squeeze
+    identically rather than keeping two copies of this in sync by hand.
+    """
+    if nrows == 1 and ncols == 1:
+        return grid[0, 0]
+    if nrows == 1 or ncols == 1:
+        return grid.ravel()
+    return grid
+
+
+class GroupLayout:
+    """Describes an outer grid of *groups*, each its own inner grid of axes
+    -- so a figure like "four quadrants, each its own 2x2 cluster of plots"
+    can be built by describing that shape directly, instead of hand-deriving
+    which cells of one big flat grid each quadrant's axes actually occupy::
+
+        layout = plotpress.GroupLayout(2, 2)
+        layout.add(0, 0, 2, 2, title="Group (0,0)")
+        layout.add(0, 1, 2, 2, title="Group (0,1)")
+        layout.add(1, 0, 2, 2, title="Group (1,0)")
+        layout.add(1, 1, 2, 2, title="Group (1,1)")
+        fig, axes = plotpress.subplots_from_groups(layout, figsize=(12, 10))
+        axes[0, 0][1, 1].plot(x, y)   # group (0,0)'s own bottom-right axes
+
+    Every group may have a *different* inner shape -- there is no
+    requirement that they match. Internally this is resolved onto one
+    plain, flat grid (the least common multiple of every group's own
+    row/column count, times this layout's own outer shape) with each
+    group's axes as ordinary, non-overlapping ``SubplotSpec`` spans within
+    it -- so once built, the figure is completely ordinary: every axes has
+    one flat ``_subplotspec`` in one shared grid, exactly like
+    :func:`~plotpress.figure.subplots`/:meth:`Figure.add_gridspec` already
+    produce. :meth:`~plotpress.figure.Figure.tight_layout`,
+    :meth:`~plotpress.figure.Figure.align_xlabels`/``align_ylabels``,
+    ``Figure.to_vega``/``to_vega_lite``, and twin/secondary axes all keep
+    working completely unmodified -- none of them ever finds out the
+    figure was built this way.
+
+    Only one level of grouping -- a group cannot itself contain groups.
+    Every group also occupies exactly one outer cell (no outer row/column
+    spans yet); pass a taller/wider inner shape instead if a group should
+    take up more of the figure than its neighbors.
+
+    Keep every group's row count sharing a small common multiple with its
+    neighbors' (and likewise for columns): the shared grid's own size is
+    the *least common multiple* of every group's own row/column count, so
+    mixing incompatible shapes -- a 5-row group alongside 2-row and 3-row
+    ones, say -- can need a far finer shared grid than any of them alone
+    would suggest (``lcm(5, 2, 3) = 30``). Past about 40 rows or columns,
+    ``tight_layout()``'s own cell-size floor (each cell needs at least 2%
+    of the figure's width/height, an ordinary-grid safeguard that was
+    never tuned for a resolution this fine) can silently drop *every*
+    row/column gap -- including :meth:`~plotpress.figure.Figure.
+    group_spacing`'s own deliberate reservation between groups -- to keep
+    cells from shrinking to nothing, which reads as groups overlapping
+    rather than a sizing problem. :func:`subplots_from_groups` warns when
+    this happens; prefer shapes like 2, 4, and 8 over 2, 3, and 5 to avoid
+    it in the first place.
+    """
+
+    def __init__(self, nrows: int, ncols: int):
+        if nrows < 1 or ncols < 1:
+            raise ValueError(
+                f"GroupLayout(): nrows and ncols must both be >= 1, got "
+                f"{nrows!r}, {ncols!r}"
+            )
+        self.nrows, self.ncols = nrows, ncols
+        self._cells = {}   # (row, col) -> dict; see add()
+
+    def add(self, row: int, col: int, nrows: int = None, ncols: int = None,
+            mask=None, title: str = None, linestyle="--", color="black",
+            linewidth=1.5, title_position="top", pad=8.0, fontsize=None):
+        """Place a group at outer cell ``(row, col)`` with an ``nrows`` x
+        ``ncols`` inner grid of axes. Returns ``self`` so calls can chain.
+
+        ``mask``, if given, is an ``nrows`` x ``ncols`` array-like of
+        truthy/falsy values marking which inner cells actually get an axes
+        -- falsy means no axes there, for an irregular (L-shaped, a hole in
+        the middle) group instead of a plain rectangle. ``nrows``/``ncols``
+        are then optional, inferred from ``mask``'s own shape; give both
+        and they're checked against it instead.
+
+        ``title`` and the styling kwargs (``linestyle``/``color``/
+        ``linewidth``/``title_position``/``pad``/``fontsize``) match
+        :meth:`Figure.group` exactly -- passed straight through to it once
+        this group's real axes exist. ``title=None`` places the axes with
+        no box/title drawn around them at all.
+        """
+        if not (0 <= row < self.nrows and 0 <= col < self.ncols):
+            raise ValueError(
+                f"GroupLayout.add(): ({row}, {col}) is outside this "
+                f"layout's own {self.nrows}x{self.ncols} outer grid"
+            )
+        if (row, col) in self._cells:
+            raise ValueError(
+                f"GroupLayout.add(): outer cell ({row}, {col}) already has "
+                "a group -- each outer cell holds exactly one"
+            )
+        if mask is None:
+            if not (nrows and ncols and nrows >= 1 and ncols >= 1):
+                raise ValueError(
+                    "GroupLayout.add(): pass nrows/ncols (both >= 1), or a "
+                    "mask to infer them from"
+                )
+            mask_arr = np.ones((nrows, ncols), dtype=bool)
+        else:
+            mask_arr = np.asarray(mask, dtype=bool)
+            if mask_arr.ndim != 2:
+                raise ValueError(
+                    "GroupLayout.add(): mask must be 2-D, got shape "
+                    f"{mask_arr.shape!r}"
+                )
+            if nrows is not None and nrows != mask_arr.shape[0]:
+                raise ValueError(
+                    f"GroupLayout.add(): nrows={nrows} doesn't match mask's "
+                    f"own {mask_arr.shape[0]} rows"
+                )
+            if ncols is not None and ncols != mask_arr.shape[1]:
+                raise ValueError(
+                    f"GroupLayout.add(): ncols={ncols} doesn't match mask's "
+                    f"own {mask_arr.shape[1]} columns"
+                )
+        if not mask_arr.any():
+            raise ValueError(
+                f"GroupLayout.add(): ({row}, {col})'s mask has no present "
+                "cells -- a group needs at least one axes"
+            )
+        self._cells[row, col] = {
+            "mask": mask_arr, "title": title,
+            "linestyle": normalize_linestyle(linestyle, "GroupLayout.add", stacklevel=3),
+            "color": color, "linewidth": float(linewidth),
+            "title_position": title_position, "pad": _normalize_pad(pad),
+            "fontsize": fontsize,
+        }
+        return self
+
+    def _build(self, fig, squeeze=True, sharex=False, sharey=False, projection=None):
+        """Resolve every group onto one flat super-grid and create its real
+        axes -- see the class docstring for the shape of the returned
+        array. Called by :func:`subplots_from_groups`; not meant to be
+        called directly (it needs a fresh, empty ``fig`` to place into).
+        """
+        if not self._cells:
+            raise ValueError(
+                "GroupLayout has no groups -- call add() at least once "
+                "before building a figure from it"
+            )
+        Lr = math.lcm(*(c["mask"].shape[0] for c in self._cells.values()))
+        Lc = math.lcm(*(c["mask"].shape[1] for c in self._cells.values()))
+        super_nrows, super_ncols = self.nrows * Lr, self.ncols * Lc
+        # _fit_cells' own floor (each cell needs at least 2% of the figure's
+        # width/height) silently drops *every* row/column gap -- including
+        # group_spacing()'s own deliberate reservation between groups, not
+        # just the ordinary tick-label one -- once a dimension has more
+        # cells than that floor can possibly fit at once (1/0.02 = 50).
+        # Groups with very different row/column counts (e.g. 5 and 3, whose
+        # LCM is 15) reach that resolution with innocuous-looking shapes far
+        # more easily than a plain subplots() grid ever does, so this is
+        # worth a clear warning rather than a silently ungapped, overlapping
+        # -looking figure -- exactly what motivated this warning.
+        if super_nrows > 40 or super_ncols > 40:
+            warnings.warn(
+                f"subplots_from_groups(): this layout's groups need a shared "
+                f"{super_nrows}x{super_ncols} grid to resolve their different "
+                "row/column counts as clean spans -- past about 40 rows or "
+                "columns, tight_layout() may drop every group_spacing() gap "
+                "(and even the ordinary tick-label one) to keep cells from "
+                "shrinking to nothing, which looks like groups overlapping. "
+                "Prefer inner shapes whose row counts share a small common "
+                "multiple (and likewise for columns) -- e.g. 2, 4, and 8 "
+                "instead of 2, 3, and 5.",
+                UserWarning, stacklevel=3)
+
+        axes_grid = np.full((self.nrows, self.ncols), None, dtype=object)
+        for (row, col), spec in self._cells.items():
+            mask = spec["mask"]
+            inr, inc = mask.shape
+            row_scale, col_scale = Lr // inr, Lc // inc
+            # Last-present-cell-per-column/row, for sharex/sharey's own
+            # "hide every inner tick label but the outer edge" behavior
+            # (mirrors Figure.subplots()) generalized to an irregular mask:
+            # the edge is whichever present cell is actually last in that
+            # column/row, not necessarily the mask's own last index.
+            last_row_per_col = {c: max(r for r in range(inr) if mask[r, c])
+                                for c in range(inc) if mask[:, c].any()}
+            first_col_per_row = {r: min(c for c in range(inc) if mask[r, c])
+                                 for r in range(inr) if mask[r, :].any()}
+            inner = np.full((inr, inc), None, dtype=object)
+            group_axes = []
+            for r in range(inr):
+                for c in range(inc):
+                    if not mask[r, c]:
+                        continue
+                    sr0 = row * Lr + r * row_scale
+                    sr1 = row * Lr + (r + 1) * row_scale - 1
+                    sc0 = col * Lc + c * col_scale
+                    sc1 = col * Lc + (c + 1) * col_scale - 1
+                    ss = SubplotSpec(super_nrows, super_ncols, sr0, sr1, sc0, sc1)
+                    ax = fig.add_subplot(ss, projection=projection)
+                    inner[r, c] = ax
+                    group_axes.append(ax)
+            if sharex:
+                for r in range(inr):
+                    for c in range(inc):
+                        if inner[r, c] is None:
+                            continue
+                        inner[r, c]._sharex_group = group_axes
+                        if r != last_row_per_col[c]:
+                            inner[r, c].set_xticklabels([])
+            if sharey:
+                for r in range(inr):
+                    for c in range(inc):
+                        if inner[r, c] is None:
+                            continue
+                        inner[r, c]._sharey_group = group_axes
+                        if c != first_col_per_row[r]:
+                            inner[r, c].set_yticklabels([])
+            if spec["title"] is not None:
+                fig.group(spec["title"], group_axes, linestyle=spec["linestyle"],
+                         color=spec["color"], linewidth=spec["linewidth"],
+                         title_position=spec["title_position"], pad=spec["pad"],
+                         fontsize=spec["fontsize"])
+            axes_grid[row, col] = _squeeze_grid(inner, inr, inc) if squeeze else inner
+        return axes_grid
+
+
+def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style = None,
+                         facecolor=None, squeeze=True, sharex=False, sharey=False,
+                         projection=None):
+    """Build a figure from a :class:`GroupLayout` -- see there for how to
+    describe the outer/inner grid shapes. Mirrors :func:`subplots`'s own
+    signature and creates a fresh, independent ``Figure`` the same way.
+
+    Returns ``(fig, axes)``: ``axes`` is shaped like ``layout``'s own outer
+    grid (a bare value for a 1x1 layout, a 1-D array for a single outer
+    row/column, otherwise 2-D), and each present cell holds that group's
+    own inner axes array -- whatever :func:`subplots` itself would return
+    for that group's shape. An outer cell with no group registered is
+    ``None``. ``sharex``/``sharey`` link limits *within* each group only
+    (every group is its own independent cluster, the same as calling
+    :func:`subplots` separately for each one) -- not across the whole
+    figure.
+
+    Call :meth:`Figure.tight_layout`/:meth:`Figure.group_spacing` on the
+    returned figure afterward exactly as you would for any other grid; a
+    group's own box comes from an ordinary :meth:`Figure.group` call this
+    makes internally, so it works the same way in every respect --
+    including :meth:`Figure.get_groups` reading it back later.
+
+    Round-tripping a figure built this way through :func:`load_data`/
+    :func:`subplots_from_layout` recovers every axes and group correctly,
+    but -- since a group's own cells are spans on the shared grid, not
+    single non-spanning ones -- ``axes`` on the way back is
+    :func:`subplots_from_layout`'s own flat-list fallback, not reconstructed
+    back into this same nested shape.
+    """
+    fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
+    axes = layout._build(fig, squeeze=squeeze, sharex=sharex, sharey=sharey,
+                         projection=projection)
+    if squeeze:
+        axes = _squeeze_grid(axes, layout.nrows, layout.ncols)
+    return fig, axes
+
+
 def _axes_class(projection):
     """Resolve a ``projection`` name to its Axes class."""
     if projection in (None, "rectilinear"):
@@ -295,6 +562,23 @@ class Figure:
         })
         self._layout_dirty = True
         return self
+
+    def get_groups(self) -> list:
+        """This figure's registered groups (see :meth:`group`), each as
+        ``{"title": str, "axes": [Axes, ...], "linestyle": str, "color": str,
+        "linewidth": float, "title_position": str, "pad": (l, r, t, b),
+        "fontsize": float | None}``.
+
+        A snapshot, not a live view -- mutating the returned list or its
+        dicts doesn't affect this figure. Read it to find which axes already
+        belong to a named group before combining it with another or
+        extending it, or to answer "what groups does this figure have" for
+        one you didn't build yourself. Works identically whether a group
+        came from a direct :meth:`group` call, :func:`subplots_from_groups`
+        (which calls :meth:`group` internally, once per group), or both
+        mixed in one figure.
+        """
+        return [dict(g, axes=list(g["axes"])) for g in self._groups]
 
     def group_spacing(self, wspace=None, hspace=None):
         """Reserve extra pixels between subplots for :meth:`group` boxes,
@@ -546,13 +830,7 @@ class Figure:
                     if c != 0:                    # hide labels off the left column
                         grid[r, c].set_yticklabels([])
 
-        if not squeeze:
-            return grid
-        if nrows == 1 and ncols == 1:
-            return grid[0, 0]
-        if nrows == 1 or ncols == 1:
-            return grid.ravel()
-        return grid
+        return _squeeze_grid(grid, nrows, ncols) if squeeze else grid
 
     def tight_layout(self, pad=0.02):
         """Auto-fit subplot margins so ticks/labels/titles never overflow.

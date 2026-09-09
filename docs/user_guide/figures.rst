@@ -29,6 +29,79 @@ Methods on the figure:
 ``fig.subplots(nrows=1, ncols=1, squeeze=True)``
     Fill the figure with a grid of axes.
 
+Grouping axes
+-------------
+
+``fig.group(title, axes, linestyle="--", color="black", linewidth=1.5, title_position="top", pad=8.0, fontsize=None)``
+    Draw a labeled box around a set of axes -- e.g. a cluster of related
+    panels in a larger grid. The box is the tight bounding rectangle of
+    their individual positions, expanded to also clear each axes' own
+    tick labels, axis labels, and title. ``title_position`` is one of
+    ``"top"``/``"bottom"``/``"left"``/``"right"``, placing ``title`` just
+    outside that edge of the box. Several groups may be added to one
+    figure; call before ``tight_layout()`` so it can reserve outer margin
+    for a title facing the figure's own edge.
+
+``fig.group_spacing(wspace=None, hspace=None)``
+    Reserve extra pixels between subplots for ``group()`` boxes, on top of
+    whatever ``tight_layout()`` already sizes from tick labels alone --
+    only at the interior row/column boundaries that actually border a
+    group's own bounding box, not every gap alike.
+
+``fig.get_groups()``
+    This figure's registered groups, each as ``{"title", "axes", ...the
+    same styling kwargs group() took}`` -- a snapshot, not a live view.
+    Read it to find which axes already belong to a named group before
+    combining it with another, or to inspect a figure you didn't build
+    yourself.
+
+    .. code-block:: python
+
+       fig, axes = plotpress.subplots(2, 2)
+       fig.group("Left pair", [axes[0, 0], axes[1, 0]])
+       fig.group("Right pair", [axes[0, 1], axes[1, 1]])
+       for g in fig.get_groups():
+           print(g["title"], len(g["axes"]))
+
+``plotpress.GroupLayout(nrows, ncols)`` / ``plotpress.subplots_from_groups(layout, figsize=(6.4, 4.8), ...)``
+    Build a figure as an outer grid of *groups*, each its own inner grid
+    of axes -- for a layout like "four quadrants, each its own 2x2
+    cluster of plots" without hand-deriving which cells of one big flat
+    grid each quadrant's axes actually occupy. ``layout.add(row, col,
+    nrows, ncols, title=None, mask=None, **group_kwargs)`` places one
+    group at outer cell ``(row, col)``; every group may have a
+    *different* inner shape. ``mask`` (an ``nrows`` x ``ncols``
+    array-like of truthy/falsy values) marks which inner cells actually
+    get an axes -- an irregular group (an L-shape, a ring with a hole)
+    instead of a plain rectangle, with no axes created for a falsy cell.
+
+    .. code-block:: python
+
+       layout = plotpress.GroupLayout(2, 2)
+       layout.add(0, 0, 2, 2, title="Group (0,0)")
+       layout.add(0, 1, 2, 2, title="Group (0,1)")
+       layout.add(1, 0, 2, 2, title="Group (1,0)")
+       layout.add(1, 1, 2, 2, title="Group (1,1)")
+       fig, axes = plotpress.subplots_from_groups(layout, figsize=(12, 10))
+       axes[0, 0][1, 1].plot(x, y)   # group (0,0)'s own bottom-right axes
+
+    Internally this resolves onto one plain, flat grid -- the least
+    common multiple of every group's own row/column count, times the
+    outer shape -- with each group's axes as ordinary ``SubplotSpec``
+    spans within it. The figure is completely ordinary once built:
+    ``tight_layout()``, ``align_xlabels``/``align_ylabels``,
+    ``to_vega``/``to_vega_lite``, and twin/secondary axes all work
+    unmodified. Keep every group's row count sharing a small common
+    multiple with its neighbors' (and likewise for columns) -- mixing
+    incompatible shapes (5 rows alongside 2 and 3) can need a far finer
+    shared grid than any one of them suggests, which past about 40 rows
+    or columns can make ``tight_layout()`` drop every gap, including
+    ``group_spacing()``'s own reservation, to keep cells from shrinking
+    to nothing -- :func:`~plotpress.figure.subplots_from_groups` warns
+    when this happens. See :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes`
+    and :doc:`/auto_examples/grouping/plot_15_dashboard_mixed_shapes_and_masks`
+    for worked examples.
+
 Colorbars
 ---------
 

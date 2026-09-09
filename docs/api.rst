@@ -11,6 +11,8 @@ Top level
    Figure
    subplots
    subplots_from_layout
+   subplots_from_groups
+   GroupLayout
    Report
    load_data
    load_data_xarray

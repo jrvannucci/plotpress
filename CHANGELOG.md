@@ -11,6 +11,57 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **`GroupLayout` / `Figure.get_groups()` / `plotpress.subplots_from_groups()`
+  -- build a figure as an outer grid of *groups*, each its own inner grid
+  of axes, without hand-deriving which cells of one big flat grid each
+  group's axes actually occupy.** `layout = plotpress.GroupLayout(nrows,
+  ncols); layout.add(row, col, inner_nrows, inner_ncols, title=...)`
+  places one group per outer cell -- every group may have a *different*
+  inner shape. `mask` (an `nrows` x `ncols` array-like of truthy/falsy
+  values) marks which inner cells actually get an axes, for an irregular
+  group -- an L-shape, a ring with a hole, a checkerboard -- instead of a
+  plain rectangle, with no axes created for a falsy cell. `fig, axes =
+  plotpress.subplots_from_groups(layout, figsize=...)` builds the figure;
+  `axes` is shaped like the layout's own outer grid, each cell holding
+  that group's own inner axes array.
+
+  Internally this resolves onto one plain, flat grid -- the least common
+  multiple of every group's own row/column count, times the outer shape
+  -- with each group's axes as ordinary, non-overlapping `SubplotSpec`
+  spans within it. The figure is completely ordinary once built: nothing
+  about `tight_layout()`, `subplots_adjust()`, `align_xlabels()`/
+  `align_ylabels()`, twin/secondary axes, or `to_vega()`/`to_vega_lite()`
+  changed to support this -- every axes just has one flat `SubplotSpec`
+  in one shared grid, exactly like `add_gridspec()` already produces
+  today.
+
+  `Figure.get_groups()` is a new, general accessor -- not specific to
+  `GroupLayout` -- returning this figure's registered groups (title, axes,
+  styling), a gap in `Figure.group()`'s own API since it was added: there
+  was no way to read back what `group()` had recorded.
+
+  Mixing groups whose row/column counts don't share a small common
+  multiple (5 alongside 2 and 3, say) can need a far finer shared grid
+  than any one of them suggests, which past about 40 rows or columns can
+  make `tight_layout()` drop every gap -- including `group_spacing()`'s
+  own reservation between groups -- to keep cells from shrinking to
+  nothing; `subplots_from_groups()` now warns when this happens (found,
+  with a screenshot showing groups rendering as overlapping, while
+  building the dashboard example below).
+
+  Two existing grouping-gallery examples (`plot_07_four_quadrants_all_positions`,
+  `plot_13_full_scale_demo`) now build with this instead of manual
+  `axes[r0:r1, c0:c1]` slicing -- verified byte-identical rendered output
+  to the manual version in both cases. Two new examples:
+  `plot_14_irregular_group_shapes` (four different mask shapes: a ring,
+  an L, a diagonal, a plus) and `plot_15_dashboard_mixed_shapes_and_masks`
+  (six groups, three different plain shapes plus a checkerboard mask,
+  sharing one outer grid).
+
+## [0.28.6] - 2026-09-08
+
 ### Fixed
 
 - **An embedded animated/slider figure (`plot_frames()`/
