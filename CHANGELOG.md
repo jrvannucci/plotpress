@@ -11,6 +11,10 @@ anywhere in the source.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.30.2] - 2026-09-09
+
 ### Added
 
 - **A dedicated example for finding a group or axes again by title, id, or
