@@ -119,6 +119,17 @@ Ticks and labels
 ``set_xlabel(label)`` / ``set_ylabel(label)`` / ``set_title(title)``
     Axis labels and the per-axes title.
 
+``set_id(id)`` / ``get_id()``
+    A plain, undrawn identifier for this axes -- distinct from
+    ``set_title()``, which is drawn on the plot and may legitimately
+    repeat across several axes. Unlike a title, ``id`` must be unique
+    across this axes' whole figure: raises if another axes already has
+    it. Pass ``None`` to clear it. Exists for later retrieval via
+    ``fig.get_ax(id=...)`` or (inside a group) ``group.get_ax(id=...)``
+    -- see :doc:`figures` for both, and
+    :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for a
+    worked example.
+
 Grid, legend, visibility
 ------------------------
 

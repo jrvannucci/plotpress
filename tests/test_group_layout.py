@@ -503,3 +503,69 @@ def test_figure_remove_group_needs_exactly_one_selector():
         fig.remove_group()
     with pytest.raises(ValueError, match="pass exactly one"):
         fig.remove_group(group=g, title="Group (0,0)")
+
+
+# ---------------------------------------------------------------------------
+# Regressions found auditing this feature after it shipped.
+# ---------------------------------------------------------------------------
+
+def test_cla_releases_the_axes_own_id_not_just_resets_it():
+    """cla()/clear() re-runs __init__, which resets _id to None the same as
+    every other attribute -- but the *figure's* own _id_index doesn't know
+    that on its own. Without releasing it explicitly, another axes trying
+    to claim the freed id was incorrectly blocked by a stale entry
+    pointing at an axes that no longer has that id at all."""
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].set_id("x")
+    axes[0].cla()
+    assert axes[0].get_id() is None
+    assert "x" not in fig._id_index
+    axes[1].set_id("x")   # must not raise
+    assert axes[1].get_id() == "x"
+
+
+def test_removing_every_axes_in_a_group_drops_the_group_instead_of_crashing():
+    """A group's box is the bounding rectangle of its own axes -- with zero
+    axes left (each removed individually via Axes.remove(), not through
+    Figure.remove_group()), rendering has nothing to bound and used to
+    raise ValueError: min() iterable argument is empty. The group is now
+    dropped entirely the moment its last axes leaves, the same outcome
+    Figure.remove_group() already produces deliberately."""
+    layout = GroupLayout(1, 1)
+    layout.add_group(0, 0, 1, 2, title="G")
+    fig, axes = plotpress.subplots_from_groups(layout, figsize=(6, 3))
+    for ax in list(axes):
+        ax.remove()
+    assert fig.get_groups() == []
+    fig.tight_layout()
+    fig.to_svg()   # must not raise
+
+
+def test_adopt_axes_updates_group_membership_not_just_id_index():
+    """adopt_axes() already re-registered a replaced axes' id (see
+    above) but left every group referencing the pre-adoption object
+    untouched -- a group built (unusually) before dispatching an axes to
+    a worker kept pointing at the orphaned original after the merge."""
+    import pickle
+    fig, axes = plotpress.subplots(1, 2)
+    fig.group("mygroup", list(axes), id="gid1")
+    worker_copy = pickle.loads(pickle.dumps(axes[1]))
+    worker_copy.set_title("worker-title")
+    fig.adopt_axes(worker_copy)
+
+    g = fig.get_group(id="gid1")
+    assert axes[1] not in g.flat_axes()
+    assert worker_copy in g.flat_axes()
+    assert g.get_ax(title="worker-title") is worker_copy
+
+
+def test_removing_one_axes_from_a_two_group_shared_axes_can_empty_the_other():
+    """Axes.remove() drops the axes from every group it belongs to, not
+    just one -- an axes shared between two groups (unusual, but not
+    prevented) leaving the figure empties both."""
+    fig, axes = plotpress.subplots(2, 2)
+    fig.group("A", [axes[0, 0], axes[0, 1]])
+    fig.group("B", [axes[0, 1], axes[1, 1]])
+    axes[0, 1].remove()
+    assert [g.title for g in fig.get_groups()] == ["A", "B"]
+    assert fig.get_group(title="B").flat_axes() == [axes[1, 1]]

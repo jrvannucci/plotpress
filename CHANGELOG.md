@@ -11,6 +11,70 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Axes.cla()`/`clear()` left a stale entry in the figure's own id index**
+  (added in 0.30.0): it resets `_id` to `None` like every other attribute
+  when it re-runs the constructor, but never told the figure -- so another
+  axes trying to claim the id this one just gave up was incorrectly
+  blocked by an entry still pointing at the now-blank axes. `cla()` now
+  releases its own id first, the same way `Axes.remove()` already does.
+- **Removing every axes in a group (one at a time, via `Axes.remove()`,
+  not `Figure.remove_group()`) crashed rendering** with `ValueError:
+  min() iterable argument is empty` -- a group's box is the bounding
+  rectangle of its own axes, and there was nothing left to bound but the
+  group stayed registered anyway. A group is now dropped entirely the
+  moment its last axes leaves, matching what `Figure.remove_group()`
+  already does deliberately. Found auditing 0.30.0's own id/group
+  bookkeeping for exactly this kind of state-goes-stale gap.
+- **`Figure.adopt_axes()` re-registered a replaced axes' id but never
+  updated group membership** -- an axes crossing a `joblib`/
+  `multiprocessing` boundary that belonged to a group (built, unusually,
+  before dispatch rather than after) left that group's flat axes list and
+  `GroupLayout`-built `(row, col)` grid still pointing at the orphaned
+  pre-adoption object. `adopt_axes()` now updates every group referencing
+  the replaced axes in place, the same way it already did for the id
+  index.
+
+### Changed
+
+- **Documented, rather than silently dropped: an axes'/group's own `id`
+  doesn't survive `load_data()`/`subplots_from_layout()`'s HTML round
+  trip** -- `layout_metadata()`'s and `subplots_from_layout()`'s own
+  docstrings now list it alongside the other known, deliberate gaps
+  (colorbars, a custom `Style`, tick overrides, twin/secondary/inset
+  axes) instead of it just quietly vanishing with no signal at all.
+- **`Figure.get_ax(row=, col=)`'s docstring now calls out the
+  twin/secondary case**: a `twinx`/`twiny`/`secondary_xaxis`/
+  `secondary_yaxis` copies its parent's own `(row, col)` verbatim, so a
+  lookup that reaches one reaches both -- give the twin its own `id` to
+  address it unambiguously.
+- **`GroupLayout.add_group()`'s `mask=` docs now warn about a real numpy
+  footgun**: a mask read back as strings (e.g. from a CSV column) casts
+  every non-empty string -- `"False"` included -- to `True`.
+- **`Figure.group()`'s own docstring now explains its leading-underscore
+  `_outer_row`/`_outer_col`/`_axes_grid` kwargs** (`GroupLayout`'s own
+  bookkeeping, not meant to be passed directly) and what goes wrong
+  (`get_group(row=, col=)` ambiguity) if they're given by hand with
+  coordinates that collide with a real `GroupLayout`.
+- `Figure.get_groups()`'s own docstring no longer claims a manually-built
+  group's `Group.axes` is always live -- it's a fresh copy for one built
+  by a direct `group()` call (no inherent shape to share by reference),
+  and only actually shares state with the figure for a `GroupLayout`
+  -built one.
+- Added `:doc:` links to a worked example from `Figure.get_ax`,
+  `Figure.remove_group`, `GroupLayout.remove_group`, and
+  `Group.flat_axes` (already present on their siblings, missed in
+  0.30.0's own pass), and a `docs/user_guide/axes.rst` entry for
+  `Axes.set_id`/`get_id` (general, group-independent axes methods that
+  were previously only documented under the grouping guide).
+- CHANGELOG: filed 0.30.0's own entries under their own release heading
+  (`## [Unreleased]` was never renamed at release time) and regenerated
+  CLAUDE.md's module-map line counts for `figure.py`/`axes.py`/
+  `_interactive.py`, which had visibly drifted.
+
+## [0.30.0] - 2026-09-09
+
 ### Added
 
 - **Find a group or an axes by title or id, not global position** --

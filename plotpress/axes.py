@@ -2341,9 +2341,13 @@ class Axes:
         it belonged to -- both that group's flat axes list and, for a
         :class:`~plotpress.figure.GroupLayout`-built one, its own inner
         ``(row, col)`` grid -- so neither keeps a stale reference to a
-        detached axes. Colorbar/legend space this axes' neighbors ceded to
-        it is not automatically reclaimed; call ``tight_layout()`` again
-        for that.
+        detached axes. A group left with no axes at all this way is dropped
+        entirely (there is nothing left for its box to bound); one axes
+        shared between two groups (an unusual but not prevented case) comes
+        out of both, which can empty -- and so drop -- a group whose title
+        was never passed to this call. Colorbar/legend space this axes'
+        neighbors ceded to it is not automatically reclaimed; call
+        ``tight_layout()`` again for that.
         """
         if self in self.figure.axes:
             self.figure.axes.remove(self)
@@ -2354,6 +2358,7 @@ class Axes:
                 g["axes"].remove(self)
             if g["axes_grid"] is not None:
                 g["axes_grid"][g["axes_grid"] == self] = None
+        self.figure._groups = [g for g in self.figure._groups if g["axes"]]
         if self._sharex_group is not None and self in self._sharex_group:
             self._sharex_group.remove(self)
         if self._sharey_group is not None and self in self._sharey_group:
@@ -2368,7 +2373,12 @@ class Axes:
         would otherwise just drop the reference and leave the group missing
         its own member -- a cleared axes contributing no data is autoscale-
         neutral, but it would still receive a shared explicit limit from a
-        sibling's ``set_xlim``/``set_ylim``.
+        sibling's ``set_xlim``/``set_ylim``. Also releases this axes' own
+        id (see :meth:`set_id`) first -- the constructor resets ``self._id``
+        to ``None`` same as every other attribute, which without this would
+        leave the *figure's* own id index still pointing at this (now
+        blank) axes, incorrectly blocking another axes from claiming the
+        id this one just gave up.
 
         Re-runs the constructor (so a subclass like ``PolarAxes`` resets its
         own extra state too) without duplicating the attribute
@@ -2379,6 +2389,9 @@ class Axes:
             self._sharex_group.remove(self)
         if self._sharey_group is not None and self in self._sharey_group:
             self._sharey_group.remove(self)
+        if (self.figure is not None and self._id is not None
+                and self.figure._id_index.get(self._id) is self):
+            del self.figure._id_index[self._id]
         subplotspec = self._subplotspec
         type(self).__init__(self, self.figure, self._rect)
         self._subplotspec = subplotspec

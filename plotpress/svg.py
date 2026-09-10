@@ -451,8 +451,13 @@ def layout_metadata(fig, idx_of=None):
     colorbars (need their mappable, which doesn't exist until the data is
     replotted), a custom :class:`~plotpress.Style` (colors/fonts/dpi -- a
     figure-wide concern, not a per-axes one), tick_params()/explicit tick
-    overrides, and twin/secondary/inset axes (each needs its *parent*
-    axes to already exist, so they can't be grid cells of their own).
+    overrides, twin/secondary/inset axes (each needs its *parent*
+    axes to already exist, so they can't be grid cells of their own), and
+    an axes' or group's own ``id`` (see
+    :meth:`~plotpress.axes.Axes.set_id`/:meth:`~plotpress.figure.Figure.group`)
+    -- silently, with no warning, unlike the member-loss case above: call
+    :meth:`~plotpress.axes.Axes.set_id`/pass ``id=`` again yourself after
+    replotting into the rebuilt figure if a lookup depends on it.
     ``"legend"`` is captured but never auto-applied here either, for a
     narrower reason: :meth:`Axes.legend` draws from already-plotted,
     labeled artists, none of which exist yet on a freshly rebuilt axes --

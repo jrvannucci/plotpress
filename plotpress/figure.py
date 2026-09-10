@@ -229,7 +229,10 @@ class GroupLayout:
         separately:
 
         - ``mask``, an ``nrows`` x ``ncols`` array-like of truthy/falsy
-          values -- falsy means no axes there.
+          values -- falsy means no axes there. Pass real booleans/ints, not
+          strings: ``numpy`` casts a non-empty string to ``True``
+          regardless of its content (``"False"`` included), so a mask read
+          back from text (a CSV column, say) needs converting first.
         - ``axes_ids``, an array-like of the same shape, ``str | None`` --
           a non-``None`` entry means an axes *and* sets its id (see
           :meth:`~plotpress.axes.Axes.set_id`) in one step, mosaic-style.
@@ -329,7 +332,9 @@ class GroupLayout:
         :func:`subplots_from_groups` builds anything, so that cell simply
         has no group (and no axes) at all. Raises if there's no group
         there. To remove a group from an already-built figure instead, see
-        :meth:`Figure.remove_group`.
+        :meth:`Figure.remove_group`. See
+        :doc:`/auto_examples/grouping/plot_16_axes_titles_and_ordinary_lookup`
+        for a worked example.
         """
         if (row, col) not in self._cells:
             raise ValueError(
@@ -544,6 +549,8 @@ class Group:
         of whether :attr:`axes` itself is shaped (a ``(row, col)`` array,
         ``None`` for an absent cell skipped) or already flat (a manually
         built :meth:`~plotpress.figure.Figure.group` with no grid shape).
+        See :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes`
+        for a worked example.
         """
         if isinstance(self.axes, np.ndarray):
             return [a for a in self.axes.ravel().tolist() if a is not None]
@@ -704,6 +711,13 @@ class Figure:
         """Draw a labeled box around a set of axes -- e.g. a cluster of
         related panels in a larger grid.
 
+        The leading-underscore ``_outer_row``/``_outer_col``/``_axes_grid``
+        are for :class:`GroupLayout` to record a group's own outer
+        position and inner grid shape -- not meant to be passed directly;
+        doing so with coordinates that collide with a real
+        :class:`GroupLayout`'s own can make :meth:`get_group`'s
+        ``row=``/``col=`` lookup ambiguous between the two.
+
         ``id`` is a second, exact-match way to find this group again later
         via :meth:`get_group`, alongside ``title`` -- unlike an axes' own
         ``id`` (see :meth:`Axes.set_id`), a group's ``id`` is not required
@@ -748,18 +762,20 @@ class Figure:
         """This figure's registered groups (see :meth:`group`), each as a
         :class:`Group`.
 
-        A snapshot, not a live view -- removing an axes afterward (see
-        :meth:`Axes.remove`) does update the ``Group`` object already
-        handed back here (both share the same underlying axes list/grid),
-        but building a new list of ``Group`` objects at a later
-        ``get_groups()`` call doesn't retroactively change one already
-        held from an earlier call. Read it to find which axes already
-        belong to a named group before combining it with another or
-        extending it, or to answer "what groups does this figure have" for
-        one you didn't build yourself. Works identically whether a group
-        came from a direct :meth:`group` call, :func:`subplots_from_groups`
-        (which calls :meth:`group` internally, once per group), or both
-        mixed in one figure.
+        A snapshot for a group with no inherent grid shape (a direct
+        :meth:`group` call) -- its ``Group.axes`` is a fresh list copy, so
+        removing an axes afterward (see :meth:`Axes.remove`) never changes
+        a ``Group`` already handed back here. For a :class:`GroupLayout`
+        -built group, ``Group.axes`` *is* the shared underlying ``(row,
+        col)`` grid, so a later removal does show up in one already held
+        -- re-call :meth:`get_group`/:meth:`get_groups` instead of holding
+        onto a stale reference if that distinction matters. Read it to
+        find which axes already belong to a named group before combining
+        it with another or extending it, or to answer "what groups does
+        this figure have" for one you didn't build yourself. Works
+        identically whether a group came from a direct :meth:`group` call,
+        :func:`subplots_from_groups` (which calls :meth:`group` internally,
+        once per group), or both mixed in one figure.
         """
         return [Group(g) for g in self._groups]
 
@@ -800,6 +816,8 @@ class Figure:
         :meth:`get_group` does -- exactly one of the three. Leaves a blank
         rectangle where the group was, the same as :meth:`Axes.remove`
         leaves a gap rather than reflowing the rest of the grid to fill it.
+        See :doc:`/auto_examples/grouping/plot_15_dashboard_mixed_shapes_and_masks`
+        for a worked example.
         """
         given = [group is not None, title is not None, id is not None]
         if sum(given) != 1:
@@ -821,11 +839,20 @@ class Figure:
         use :meth:`Group.get_ax` for that instead), ``title`` (see
         :meth:`Axes.set_title`), or ``id`` (see :meth:`Axes.set_id`).
 
+        A ``twinx``/``twiny``/``secondary_xaxis``/``secondary_yaxis`` copies
+        its parent's own ``(row, col)`` verbatim (they overlay the same
+        cell), so a ``row=``/``col=`` lookup that reaches one reaches both
+        -- give the twin its own ``id`` if it needs to be found
+        unambiguously this way.
+
         Raises if no axes matches, or -- unless ``many=True`` -- if more
         than one does (impossible for ``id``, which is unique per figure by
-        construction; titles may legitimately repeat). ``many=True``
+        construction; titles may legitimately repeat, and a twin/secondary
+        pair at one ``row=``/``col=`` counts as two). ``many=True``
         returns every match as a list instead (even a single one, so the
-        return type doesn't depend on how many happened to match).
+        return type doesn't depend on how many happened to match). See
+        :doc:`/auto_examples/grouping/plot_16_axes_titles_and_ordinary_lookup`
+        for the plain-grid ``row=``/``col=`` case worked through.
         """
         kind, key = _resolve_lookup_key(row, col, title, id, "get_ax")
         if kind == "rowcol":
@@ -1058,7 +1085,14 @@ class Figure:
         *this* figure's own id index here -- the worker's own figure never
         knew about this one's other axes, so a collision between two
         workers' independently-chosen ids is only ever catchable at the
-        merge point, which is exactly this method.
+        merge point, which is exactly this method. If the axes being
+        replaced already belonged to a :meth:`group` (built, unusually,
+        *before* dispatching it to a worker rather than after, the order
+        the rest of this docstring recommends), every group referencing it
+        -- its flat list and, for a :class:`GroupLayout`-built one, its own
+        ``(row, col)`` grid -- is updated in place to reference the newly
+        adopted axes instead, so a lookup through it doesn't keep pointing
+        at the orphaned pre-adoption object.
         """
         ax.figure = self
         if ax._subplotspec is None:
@@ -1079,6 +1113,12 @@ class Figure:
                 if ax._id is not None:
                     self._id_index[ax._id] = ax
                 self.axes[i] = ax
+                for g in self._groups:
+                    idx = [j for j, a in enumerate(g["axes"]) if a is existing]
+                    for j in idx:
+                        g["axes"][j] = ax
+                    if g["axes_grid"] is not None:
+                        g["axes_grid"][g["axes_grid"] == existing] = ax
                 return ax
         raise ValueError(
             "adopt_axes(): no existing axes in this figure occupies "
@@ -2837,7 +2877,10 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
     color come back the same way. Not carried over (real gaps, not
     oversights -- see :func:`plotpress.svg.layout_metadata`'s own
     docstring for why): colorbars, tick_params()/explicit tick overrides,
-    twin/secondary/inset axes, and a custom ``Style``. An axes that had a
+    twin/secondary/inset axes, a custom ``Style``, and any axes' or
+    group's own ``id`` (see :meth:`~plotpress.axes.Axes.set_id`) --
+    silently, so re-apply one yourself after replotting if a later
+    ``get_ax``/``get_group`` lookup depends on it. An axes that had a
     :meth:`~Axes.legend` is recorded too, but never auto-applied -- a
     legend draws from already-plotted, labeled artists, none of which
     exist on a freshly rebuilt axes yet; call
