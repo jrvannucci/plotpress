@@ -128,14 +128,16 @@ artifact (git-ignored). Don't hand-edit it or add a literal to `__init__.py`.
 
 ## Repo gotchas
 
-- **`docs/` is 382 tracked files, 303 of them gallery scripts** under `applications/`
-  (165), `examples/` (123), and `scale/` (15). Scope searches to `plotpress/` or
+- **`docs/` is ~397 tracked files, 336 of them gallery scripts** under `applications/`
+  (165), `examples/` (106), `figure_layout/` (32, incl. its `grouping/` section),
+  `live_streaming/` (18), and `scale/` (15). Scope searches to `plotpress/` or
   `tests/` unless the gallery is genuinely the subject.
 - **`docs/_build/` is ~370 MB** of generated HTML, and `examples/*.svg|html|png|pdf`
   are generated outputs. All git-ignored; never read them to answer a question
   about behavior — read the script that produced them.
-- **`docs/auto_examples/`, `auto_scale/`, `auto_applications/`** are written by
-  sphinx-gallery at build time. Edit the source scripts, not the generated pages.
+- **`docs/auto_examples/`, `auto_figure_layout/`, `auto_scale/`,
+  `auto_live_streaming/`, `auto_applications/`** are written by sphinx-gallery at
+  build time. Edit the source scripts, not the generated pages.
 
 ## Releasing
 

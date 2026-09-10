@@ -140,9 +140,12 @@ Grouping axes
     or columns can make ``tight_layout()`` drop every gap, including
     ``group_spacing()``'s own reservation, to keep cells from shrinking
     to nothing -- :func:`~plotpress.figure.subplots_from_groups` warns
-    when this happens. See :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes`
-    and :doc:`/auto_examples/grouping/plot_15_dashboard_mixed_shapes_and_masks`
-    for worked examples.
+    when this happens. See :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes`
+    and :doc:`/auto_figure_layout/grouping/plot_15_dashboard_mixed_shapes_and_masks`
+    for worked examples, and
+    :doc:`/auto_figure_layout/grouping/plot_18_two_ways_to_build_the_same_grouped_figure`
+    for the same figure built both with ``GroupLayout`` and by hand with
+    ``subplots()`` + ``Axes.remove()`` + ``fig.group()``.
 
 Colorbars
 ---------

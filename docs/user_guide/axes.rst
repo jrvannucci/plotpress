@@ -127,7 +127,7 @@ Ticks and labels
     it. Pass ``None`` to clear it. Exists for later retrieval via
     ``fig.get_ax(id=...)`` or (inside a group) ``group.get_ax(id=...)``
     -- see :doc:`figures` for both, and
-    :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for a
+    :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes` for a
     worked example.
 
 Grid, legend, visibility

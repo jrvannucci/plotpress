@@ -192,10 +192,12 @@ kinds of figures scientists actually build:
   as self-contained looping GIFs.
 - **Large figures** -- built to keep object and output-node counts under
   control, so a very large multi-panel figure stays practical; see the
-  :doc:`/auto_examples/grouping/plot_13_full_scale_demo` example (500
+  :doc:`/auto_figure_layout/grouping/plot_13_full_scale_demo` example (500
   ``pcolormesh`` panels across 250 grouped, individually colorbar'd pairs).
 
 See the :ref:`example gallery <gallery>` for a figure per plot type,
+:ref:`figure layout <figure_layout_gallery>` for assembling the figure
+itself -- sizing, margins, spans, and grouping panels --
 :ref:`large-scale figures <scale_gallery>` for build-time and file-size
 comparisons against matplotlib, :ref:`live streaming <live_streaming_gallery>`
 for watching data update in a Qt window as it's collected, and
@@ -290,6 +292,7 @@ Explore it in a browser. Share the file. Archive it. Load it again.
    :caption: Examples
 
    auto_examples/index
+   auto_figure_layout/index
    auto_scale/index
 
 .. toctree::

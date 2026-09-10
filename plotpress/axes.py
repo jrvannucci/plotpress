@@ -3174,7 +3174,7 @@ class Axes:
         across this axes' whole figure -- raises if another axes already
         has it. Pass ``None`` to clear it, always allowed regardless of
         what else in the figure already has an id. See
-        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes` for
         a worked example, including the collision case.
         """
         fig = self.figure

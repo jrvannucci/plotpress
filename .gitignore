@@ -38,6 +38,7 @@ ENV/
 # Sphinx docs build output (regenerate with sphinx-build; gallery is auto-built)
 docs/_build/
 docs/auto_examples/
+docs/auto_figure_layout/
 docs/auto_applications/
 docs/auto_scale/
 docs/auto_live_streaming/

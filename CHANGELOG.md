@@ -11,7 +11,27 @@ anywhere in the source.
 
 ## [Unreleased]
 
-(nothing yet)
+### Changed
+
+- **The `figure_layout` and `grouping` example subsections are now their
+  own top-level gallery, "Figure layout"** (`docs/figure_layout/`, built to
+  `auto_figure_layout/`), instead of two subsections buried in the
+  plot-type reference. Everything about assembling the figure itself --
+  sizing, margins, spans, figure text, a multi-figure `Report`, and (its
+  own section) grouping axes -- now sits together, where a reader
+  comparing layout strategies can find it. Live-doc URLs move with it:
+  `auto_examples/grouping/plot_*.html` -> `auto_figure_layout/grouping/plot_*.html`,
+  and `auto_examples/figure_layout/plot_*.html` -> `auto_figure_layout/plot_*.html`.
+
+### Added
+
+- **`docs/figure_layout/grouping/plot_18_two_ways_to_build_the_same_grouped_figure.py`**
+  -- one target figure (a 2x4 grid with a corner removed, split into a
+  full 2x2 group and an L-shaped one) built twice: once declaratively with
+  `GroupLayout` + `subplots_from_groups()`, once imperatively with
+  `subplots()` + `Axes.remove()` + `fig.group()`, asserting the two
+  results have the same structure. Shows that `GroupLayout` is a
+  convenience over the same imperative core, not a separate mechanism.
 
 ## [0.30.2] - 2026-09-09
 

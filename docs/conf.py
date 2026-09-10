@@ -108,6 +108,7 @@ _GIF_DIR = os.path.join(_DOCS_DIR, "_static", "gifs")
 # pattern, not any one static frame.
 _VEGA_ROOTS = (
     os.path.join(_DOCS_DIR, "examples"),
+    os.path.join(_DOCS_DIR, "figure_layout"),
     os.path.join(_DOCS_DIR, "applications"),
 )
 _VEGA_DIR = os.path.join(_DOCS_DIR, "_static", "vega")
@@ -811,21 +812,26 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     return rst
 
 
-# Four galleries, from four source trees. ``examples`` is the plot-type
-# reference -- one figure per method, deliberately minimal. ``scale`` is the
-# large-figure gallery, where build time and file size are the subject rather
-# than a footnote, so its examples are slow by design and belong off the
-# reference page. ``live_streaming`` is a feature deep-dive -- every example
-# animates an acquisition sequence a real ``plotpress.qt.LiveArtist`` would
-# show updating live, first as abstract patterns, then as specific lab
-# instruments -- and gets its own gallery rather than a subsection of
-# ``examples`` because both halves would otherwise crowd out the plot-type
-# reference they'd sit alongside. ``applications`` is the real-application
-# gallery, grouped by field, where the point is the reasoning that leads to
-# the figure rather than the call that draws it.
+# Five galleries, from five source trees. ``examples`` is the plot-type
+# reference -- one figure per method, deliberately minimal. ``figure_layout``
+# is everything about assembling the figure itself -- sizing, margins, spans,
+# figure text, and (its own section) grouping axes -- pulled out of
+# ``examples`` because a reader comparing layout strategies wants them
+# together, not scattered two subsections apart behind the plot types.
+# ``scale`` is the large-figure gallery, where build time and file size are
+# the subject rather than a footnote, so its examples are slow by design and
+# belong off the reference page. ``live_streaming`` is a feature deep-dive --
+# every example animates an acquisition sequence a real
+# ``plotpress.qt.LiveArtist`` would show updating live, first as abstract
+# patterns, then as specific lab instruments -- and gets its own gallery
+# rather than a subsection of ``examples`` because both halves would
+# otherwise crowd out the plot-type reference they'd sit alongside.
+# ``applications`` is the real-application gallery, grouped by field, where
+# the point is the reasoning that leads to the figure rather than the call
+# that draws it.
 sphinx_gallery_conf = {
-    "examples_dirs": ["examples", "scale", "live_streaming", "applications"],
-    "gallery_dirs": ["auto_examples", "auto_scale", "auto_live_streaming", "auto_applications"],
+    "examples_dirs": ["examples", "figure_layout", "scale", "live_streaming", "applications"],
+    "gallery_dirs": ["auto_examples", "auto_figure_layout", "auto_scale", "auto_live_streaming", "auto_applications"],
     # Order thumbnails by file name. Every example is numbered (plot_01_...)
     # precisely to fix the reading order, but sphinx-gallery defaults to sorting
     # by *code length*, which buried the line-plot introduction two thirds of
@@ -845,8 +851,7 @@ sphinx_gallery_conf = {
         "examples/multi_axes",
         "examples/animation",
         "examples/axes_features",
-        "examples/figure_layout",
-        "examples/grouping",
+        "figure_layout/grouping",
         "examples/advanced_axes",
         "examples/parallel_building",
         "examples/custom_interactivity",

@@ -56,7 +56,7 @@ point it's pinned to:
 hundreds of axes — zoom from the full grid into a handful of panels, pan,
 pick a value, remove it, pick again and drag its label, pan to a distant
 group, annotate, then back Home (the figure is
-[`docs/examples/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_examples/grouping/plot_13_full_scale_demo.html) —
+[`docs/figure_layout/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_figure_layout/grouping/plot_13_full_scale_demo.html) —
 500 `pcolormesh` panels, 250 groups, each with its own colorbar):
 
 ![Zooming from a 500-panel figure into a handful of panels, panning, picking a value, removing and re-picking it, dragging its label, panning to a distant group, annotating, then Home](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)

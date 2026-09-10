@@ -333,7 +333,7 @@ class GroupLayout:
         has no group (and no axes) at all. Raises if there's no group
         there. To remove a group from an already-built figure instead, see
         :meth:`Figure.remove_group`. See
-        :doc:`/auto_examples/grouping/plot_16_axes_titles_and_ordinary_lookup`
+        :doc:`/auto_figure_layout/grouping/plot_16_axes_titles_and_ordinary_lookup`
         for a worked example.
         """
         if (row, col) not in self._cells:
@@ -549,7 +549,7 @@ class Group:
         of whether :attr:`axes` itself is shaped (a ``(row, col)`` array,
         ``None`` for an absent cell skipped) or already flat (a manually
         built :meth:`~plotpress.figure.Figure.group` with no grid shape).
-        See :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes`
+        See :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes`
         for a worked example.
         """
         if isinstance(self.axes, np.ndarray):
@@ -563,7 +563,7 @@ class Group:
         shape, i.e. it wasn't built from a :class:`GroupLayout`), ``title``,
         or ``id``, scoped to this group's own axes only. See
         :meth:`Figure.get_ax` for the ``many=`` behavior, and
-        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes` for
         a worked example.
         """
         kind, key = _resolve_lookup_key(row, col, title, id, "get_ax")
@@ -785,7 +785,7 @@ class Figure:
         (this group's own outer position -- only groups built via
         :class:`GroupLayout` have one; see :class:`Group`), ``title``, or
         ``id``. Raises if none or more than one group matches. See
-        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        :doc:`/auto_figure_layout/grouping/plot_14_irregular_group_shapes` for
         a worked example.
         """
         kind, key = _resolve_lookup_key(row, col, title, id, "get_group")
@@ -816,7 +816,7 @@ class Figure:
         :meth:`get_group` does -- exactly one of the three. Leaves a blank
         rectangle where the group was, the same as :meth:`Axes.remove`
         leaves a gap rather than reflowing the rest of the grid to fill it.
-        See :doc:`/auto_examples/grouping/plot_15_dashboard_mixed_shapes_and_masks`
+        See :doc:`/auto_figure_layout/grouping/plot_15_dashboard_mixed_shapes_and_masks`
         for a worked example.
         """
         given = [group is not None, title is not None, id is not None]
@@ -851,7 +851,7 @@ class Figure:
         pair at one ``row=``/``col=`` counts as two). ``many=True``
         returns every match as a list instead (even a single one, so the
         return type doesn't depend on how many happened to match). See
-        :doc:`/auto_examples/grouping/plot_16_axes_titles_and_ordinary_lookup`
+        :doc:`/auto_figure_layout/grouping/plot_16_axes_titles_and_ordinary_lookup`
         for the plain-grid ``row=``/``col=`` case worked through.
         """
         kind, key = _resolve_lookup_key(row, col, title, id, "get_ax")
