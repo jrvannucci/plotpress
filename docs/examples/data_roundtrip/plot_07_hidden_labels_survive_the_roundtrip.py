@@ -15,7 +15,9 @@ its label still attached and still hidden, and in the interactive HTML a
 Point Picking **Extract** pulls each picked value out with its panel's
 ``xlabel``/``ylabel`` *and* the figure's ``supxlabel``/``supylabel``/
 ``suptitle`` alongside -- so a value lifted out of a CSV still says what
-it means.
+it means (see :doc:`/user_guide/interactivity` for the full record
+shape). The last block below prints exactly that record, built from the
+saved layout.
 
 This renders the source figure and the one rebuilt from its own saved
 HTML -- every panel's label recovered, still hidden, drawn nowhere.
@@ -73,3 +75,24 @@ for name in CHANNELS:
 svg = rebuilt_fig.to_svg()
 assert "potential (uV)" in svg          # once, as the shared supylabel
 assert svg.count("time (s)") == 1       # once, as the shared supxlabel
+
+# ---------------------------------------------------------------------------
+# The same context the interactive HTML's Point Picking **Extract** attaches
+# to every picked record -- assembled here from the saved layout to show
+# exactly which fields ride along. In the browser you'd click a point in the
+# top-left panel and hit Extract; the CSV row / JSON dict carries:
+# ---------------------------------------------------------------------------
+top_left = layout["axes"][0]
+example_record = {
+    "axes": 0,
+    "axes_title": top_left["title"],          # "Fz"
+    "kind": "points", "index": 42,
+    "x": 0.164, "y": 0.71,                    # the picked data value
+    "xlabel": top_left["xlabel"],             # "time (s)" -- hidden on the plot
+    "ylabel": top_left["ylabel"],             # "potential (uV)" -- also hidden
+    "supxlabel": layout["supxlabel"]["text"],
+    "supylabel": layout["supylabel"]["text"],
+    "suptitle": layout["suptitle"]["text"],
+}
+for k, v in example_record.items():
+    print(f"  {k:11} {v!r}")

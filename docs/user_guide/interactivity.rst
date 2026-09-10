@@ -237,10 +237,31 @@ Extracting markers to Python
 The **Extract** button (in the Point Picking menu) opens a panel to
 copy/download the current Point Picking markers -- not Annotation notes,
 which have nothing to "extract" in the same sense a picked data value does
--- as **CSV or JSON**. Each record is a dict, e.g.::
+-- as **CSV or JSON**. Each record is a dict: the picked value itself
+(``x``/``y``, plus ``z``/``c``/any ``values=`` dimension), ``axes`` and
+``kind``, and then every piece of labelling context that axes and figure
+carry, so a row lifted out of the file still says what it means::
 
-    {"axes": 0, "axes_title": "axes 0", "kind": "mesh", "x": 0.95, "y": 1.05, "z": 0.397}
-    {"axes": 0, "axes_title": "axes 0", "kind": "points", "index": 3, "x": 3.5, "y": 0.36}
+    {"axes": 4, "kind": "points", "index": 42, "x": 0.164, "y": 0.71,
+     "axes_title": "Fz",
+     "xlabel": "time (s)", "ylabel": "potential (uV)",
+     "supxlabel": "time (s)", "supylabel": "potential (uV)",
+     "suptitle": "EEG montage",
+     "group": "frontal"}
+
+``axes_title`` is that panel's own title (a generated ``"axes N"`` when it
+has none). ``xlabel``/``ylabel`` are that axes' own axis labels **even
+when hidden** -- a label set with ``ax.set_xlabel(..., visible=False)`` is
+drawn nowhere but is exactly the name an export wants. ``supxlabel``/
+``supylabel``/``suptitle`` are the figure's shared labels (present only
+when set) -- the fallback for a grid that labels its axes once instead of
+per panel. ``zlabel`` is any colorbar's title; ``group`` is any
+:meth:`~plotpress.figure.Figure.group` box the axes sits in; and any
+:meth:`~plotpress.axes.Axes.set_pick_context` keys ride along too. See
+:doc:`../auto_examples/axes_features/plot_25_hidden_axis_labels` and
+:doc:`../auto_examples/data_roundtrip/plot_07_hidden_labels_survive_the_roundtrip`
+for a grid built exactly this way -- shared labels drawn once, per-panel
+labels hidden but still carried into every extracted record.
 
 For a blocking "pick session" that hands the markers straight back to the
 kernel, use the native window:

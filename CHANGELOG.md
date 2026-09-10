@@ -13,6 +13,20 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.31.1] - 2026-09-10
+
+### Changed
+
+- Documented what a Point Picking **Extract** record actually contains --
+  the "Extracting markers to Python" section of the interactivity guide
+  now shows a realistic multi-field record (picked value plus
+  `axes_title`/`xlabel`/`ylabel`/`supxlabel`/`supylabel`/`suptitle`/
+  `group` and any `set_pick_context` keys) and spells out that a hidden
+  label and the figure's shared labels both ride along. The new
+  `plot_07_hidden_labels_survive_the_roundtrip` example now prints that
+  exact record, assembled from the saved layout, and both new 0.31.0
+  examples cross-link the guide.
+
 ## [0.31.0] - 2026-09-10
 
 ### Added

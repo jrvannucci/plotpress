@@ -6,10 +6,11 @@ Hidden axis labels (stored, not drawn)
 -- or ``set_xlabel_visible(False)`` / ``set_ylabel_visible(False)`` to
 toggle without retyping the text -- store an axis label without drawing
 it and without reserving any margin for it. ``get_xlabel()`` still
-returns the text, :meth:`~plotpress.figure.Figure.print_layout_summary`
-still lists it (marked ``(hidden)``), the ``load_data()`` layout
-round-trip still carries it, and a picked point's **Extract** record
-still reports it.
+returns the text, ``ax.print_summary()`` still lists it (marked
+``(hidden)``), the ``load_data()`` layout round-trip still carries it,
+and a picked point's **Extract** record in the interactive HTML still
+reports it (see :doc:`/user_guide/interactivity` for what an Extract
+record contains).
 
 The use for it: a dense grid where a per-panel label on every axes would
 be clutter, so the figure shows one shared
@@ -18,7 +19,7 @@ be clutter, so the figure shows one shared
 axes should still *know* what its x and y mean, for anyone who later
 pulls the data back out. See
 :doc:`/auto_examples/data_roundtrip/plot_07_hidden_labels_survive_the_roundtrip`
-for that payoff.
+for that payoff, with a worked Extract record.
 """
 import numpy as np
 import plotpress
