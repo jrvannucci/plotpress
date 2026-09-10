@@ -11,6 +11,35 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **A dedicated example for finding a group or axes again by title, id, or
+  position**: `docs/examples/grouping/plot_17_finding_groups_and_axes_again.py`
+  -- the whole lookup API (`Figure.get_group`/`get_ax`, `Group.get_ax`,
+  `Axes.set_id`/`get_id`, `many=True`, `Figure.remove_group`) as its own
+  headline subject rather than a coda tacked onto examples about mask
+  shapes, title positions, or a dashboard. 0.30.0 only ever demonstrated
+  this API as one piece of a bigger example whose gallery title pointed
+  at something else, so it had no entry a reader skimming the gallery
+  index would recognize as being about lookup at all.
+
+### Fixed
+
+- **`plot_13_full_scale_demo`'s own docstring named the wrong method**:
+  it credited `Figure.get_groups()` (the list-returning one) with finding
+  "Group 137", when the code actually calls `Figure.get_group()` (the
+  singular lookup one) followed by `Group.get_ax()`. Corrected, and
+  cross-referenced against the new dedicated example.
+
+### Changed
+
+- Cross-referenced `plot_17_finding_groups_and_axes_again` from every
+  other grouping example that touches the lookup API in passing
+  (`plot_07`, `plot_13`, `plot_14`, `plot_15`, `plot_16`), so a reader
+  who lands on any of them can find the dedicated rundown.
+
+## [0.30.1] - 2026-09-09
+
 ### Fixed
 
 - **`Axes.cla()`/`clear()` left a stale entry in the figure's own id index**

@@ -24,7 +24,9 @@ names that axes in one step, mosaic-style -- demonstrated below alongside
 every other way to find a group or an axes again afterward: by the
 group's title or id, by an axes' inner ``(row, col)`` position within its
 group, by an axes' own id, and (since titles may legitimately repeat,
-unlike ids) collecting every axes that shares one via ``many=True``.
+unlike ids) collecting every axes that shares one via ``many=True``. See
+:doc:`plot_17_finding_groups_and_axes_again` for this whole lookup API
+gathered on its own, without the mask shapes as a distraction.
 """
 import numpy as np
 import plotpress

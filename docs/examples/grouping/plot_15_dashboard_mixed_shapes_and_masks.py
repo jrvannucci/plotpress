@@ -25,6 +25,11 @@ literal 5-wide group here would force a much finer shared grid than a
 4-wide one) can blow that resolution up far past what a dense grid can
 actually afford -- see :class:`~plotpress.figure.GroupLayout`'s own
 docstring for what happens past that point.
+
+Dismissing "Alerts" below uses :meth:`~plotpress.figure.Figure.remove_group`
+-- see
+:doc:`plot_17_finding_groups_and_axes_again` for every way to find a
+group or axes again, gathered in one place.
 """
 import numpy as np
 import plotpress

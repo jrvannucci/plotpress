@@ -22,7 +22,10 @@ post-build sibling.
 -- a plain axes' own position in an ordinary
 :func:`~plotpress.figure.subplots` grid, shown last specifically to
 contrast with :meth:`~plotpress.figure.Group.get_ax`'s *inner* position
-used everywhere else in this gallery.
+used everywhere else in this gallery. See
+:doc:`plot_17_finding_groups_and_axes_again` for the rest of the lookup
+API -- ``get_group``, ``id=``, ``many=True`` -- as its own dedicated
+example.
 """
 import numpy as np
 import plotpress

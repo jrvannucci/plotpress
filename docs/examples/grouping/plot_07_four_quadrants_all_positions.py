@@ -24,6 +24,10 @@ the row seam, and likewise left/right at the column seam.
 ``group_spacing(wspace=..., hspace=...)`` gives every box room on every
 side, interior boundaries included, without discarding the outer-edge
 margins ``tight_layout()`` already reserved for all four titles above.
+
+Finding a quadrant again afterward by its outer position is one piece of
+a larger lookup API -- see :doc:`plot_17_finding_groups_and_axes_again`
+for the rest of it (by title, by id, ``many=True``) in one place.
 """
 import numpy as np
 import plotpress

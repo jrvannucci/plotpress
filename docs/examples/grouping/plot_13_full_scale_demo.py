@@ -37,13 +37,16 @@ generously per panel (not the tighter ratio a plainer grid could get away
 with) and ``group_spacing`` reserves visible, uncrowded gaps between
 groups rather than the bare minimum ``tight_layout()`` would allow.
 
-Finally, :meth:`~plotpress.figure.Figure.get_groups` finds one specific
-panel by its group's *title* alone -- not by remembering which of this
-figure's 1000 total axes (500 panels + 500 colorbars) it is, or which
-``(row, col)`` of the shared super-grid :class:`~plotpress.figure.GroupLayout`
-resolved that pair to. The magenta-bordered panel below was never touched
-during the build loop above; it is found and styled afterward, from
-nothing but the string ``"Group 137"``.
+Finally, :meth:`~plotpress.figure.Figure.get_group` finds one specific
+group by its *title* alone, and its own :meth:`~plotpress.figure.Group.get_ax`
+reaches one particular panel inside it by inner position -- not by
+remembering which of this figure's 1000 total axes (500 panels + 500
+colorbars) it is, or which ``(row, col)`` of the shared super-grid
+:class:`~plotpress.figure.GroupLayout` resolved that pair to. The
+magenta-bordered panel below was never touched during the build loop
+above; it is found and styled afterward, from nothing but the string
+``"Group 137"``. See :doc:`plot_17_finding_groups_and_axes_again` for
+this lookup API gathered in one dedicated example.
 """
 import numpy as np
 import plotpress
