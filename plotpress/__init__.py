@@ -27,6 +27,42 @@ Example
 """
 
 import importlib
+from typing import TYPE_CHECKING
+
+# Re-exports are resolved lazily at runtime through ``__getattr__`` below (see
+# ``_LAZY_ATTRS``), which a static type checker can't follow. Spelling them out
+# again here -- only ever seen by the checker, never executed -- gives Pylance/
+# mypy the real classes and signatures for ``plotpress.subplots``,
+# ``plotpress.Figure``, and the rest, with autocomplete and go-to-definition
+# intact. Keep this list and ``_LAZY_ATTRS``/``__all__`` in step.
+if TYPE_CHECKING:
+    from .colors import (
+        BoundaryNorm,
+        LogNorm,
+        Normalize,
+        PowerNorm,
+        SymLogNorm,
+        TwoSlopeNorm,
+        available_colormaps,
+        get_cmap,
+        make_cmap,
+        make_listed_cmap,
+        register_cmap,
+        to_hex,
+    )
+    from .figure import (
+        Figure,
+        Group,
+        GroupLayout,
+        Report,
+        load_data,
+        load_data_xarray,
+        select_panel,
+        subplots,
+        subplots_from_groups,
+        subplots_from_layout,
+    )
+    from .style import Style, named_cycle
 
 # name -> (submodule, attribute). Every one of these pulls in NumPy
 # transitively (through .colors or .figure), which is most of what

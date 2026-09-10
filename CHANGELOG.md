@@ -13,6 +13,21 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.31.3] - 2026-09-10
+
+### Fixed
+
+- **Pylance / pyright / mypy now resolve the top-level namespace** --
+  `plotpress.subplots`, `plotpress.Figure`, `plotpress.GroupLayout`, and
+  every other re-export are loaded lazily through `__getattr__` (so a bare
+  `import plotpress` stays NumPy-free), which a static checker can't
+  follow: it saw `plotpress.subplots` as an unknown attribute, with no
+  autocomplete, hover, or go-to-definition. A `TYPE_CHECKING` block in
+  `plotpress/__init__.py` now re-declares each name statically (never
+  executed at runtime), and a PEP 561 `py.typed` marker ships in the
+  wheel so downstream projects' type checkers pick up plotpress's inline
+  annotations instead of falling back to `Any`.
+
 ## [0.31.2] - 2026-09-10
 
 ### Fixed

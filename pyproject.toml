@@ -144,4 +144,8 @@ file = "plotpress/_version.py"
 include = ["plotpress*"]
 
 [tool.setuptools.package-data]
-plotpress = ["fonts/*.py"]
+# py.typed: PEP 561 marker -- tells a downstream project's type checker that
+# plotpress ships type information (the inline annotations plus the
+# TYPE_CHECKING re-exports in __init__.py), so `import plotpress` resolves
+# instead of falling back to Any.
+plotpress = ["fonts/*.py", "py.typed"]
