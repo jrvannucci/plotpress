@@ -10,6 +10,12 @@ interactive HTML** — the HTML carrying a full pan/zoom, point-picking, and
 annotation toolbar. **No global state**, either — a `Figure` owns its own
 axes and its own `Style`.
 
+📖 **[Documentation](https://jrvannucci.github.io/plotpress/)** &nbsp;·&nbsp;
+[User guide](https://jrvannucci.github.io/plotpress/user_guide/plotting.html) &nbsp;·&nbsp;
+[API reference](https://jrvannucci.github.io/plotpress/api.html) &nbsp;·&nbsp;
+[Example gallery](https://jrvannucci.github.io/plotpress/auto_examples/index.html) &nbsp;·&nbsp;
+[Real applications](https://jrvannucci.github.io/plotpress/auto_applications/index.html)
+
 ```python
 import plotpress
 import numpy as np

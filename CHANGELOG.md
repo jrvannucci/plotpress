@@ -11,7 +11,11 @@ anywhere in the source.
 
 ## [Unreleased]
 
-(nothing yet)
+### Changed
+
+- README: added a documentation links row near the top (User guide / API
+  reference / galleries), and set the GitHub repo's own homepage field to
+  the docs site so it shows in the "About" sidebar. No code change.
 
 ## [0.31.3] - 2026-09-10
 
