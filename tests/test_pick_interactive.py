@@ -220,6 +220,78 @@ def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path)
         (diameter_before, diameter_after, svg_width_after / svg_width_before))
 
 
+def test_marker_shrinks_with_the_figure_when_zoomed_out(page, tmp_path):
+    """The other half of the Magnify-zoom marker rule: zooming *in*
+    counter-scales a pin so it stays a constant on-screen size (the test
+    above), but zooming *out* -- shrinking the whole figure to fit or to see
+    every panel at once -- must let the pin and its label box shrink right
+    along with it. A pin frozen at constant screen size while the figure
+    collapses around it swells to cover several panels, the opposite of what
+    zooming out is for. It should be sized to the figure, not to the zoom."""
+    import numpy as np
+    import plotpress
+    from pick_cases import px
+
+    fig, axes = plotpress.subplots(4, 4, figsize=(9, 9))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "marker_shrinks_on_zoom_out.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 5, 1.0, 1.0)
+    _click_mode(page, "Point Picking", ux, uy)
+
+    def probe():
+        return page.evaluate(
+            """() => {
+              const svg = document.getElementById('plotpress-svg');
+              const pin = document.querySelector('.plotpress-pin');
+              const dot = pin.querySelector('circle').getBoundingClientRect();
+              const box = pin.querySelector('rect').getBoundingClientRect();
+              const ax = +pin.dataset.anchorX, ay = +pin.dataset.anchorY;
+              const p = svg.createSVGPoint(); p.x = ax; p.y = ay;
+              const scr = p.matrixTransform(svg.getScreenCTM());
+              return {
+                svgW: svg.getBoundingClientRect().width,
+                dotW: dot.width, boxW: box.width,
+                dotCx: dot.x + dot.width / 2, dotCy: dot.y + dot.height / 2,
+                anchorX: scr.x, anchorY: scr.y,
+              };
+            }""")
+
+    before = probe()
+    page.evaluate(
+        """() => document.querySelectorAll('.plotpress-toolbar button')
+             .forEach(b => { if (b.textContent === 'Pan/Zoom') b.click(); })""")
+    page.evaluate(
+        """() => {
+          const svg = document.getElementById('plotpress-svg');
+          const r = svg.getBoundingClientRect();
+          const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          for (let i = 0; i < 12; i++)
+            svg.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true, cancelable: true, clientX: cx, clientY: cy, deltaY: 300}));
+        }""")
+    after = probe()
+
+    shrink = after["svgW"] / before["svgW"]
+    assert shrink < 0.7, (
+        "the fixture must actually shrink substantially: %.0f -> %.0f"
+        % (before["svgW"], after["svgW"]))
+    # the dot and the label box both scale down roughly in step with the figure
+    assert after["dotW"] == pytest.approx(before["dotW"] * shrink, rel=0.15), (
+        "the pin dot must shrink with the figure on zoom-out: %.2f -> %.2f "
+        "(figure %.2fx)" % (before["dotW"], after["dotW"], shrink))
+    assert after["boxW"] == pytest.approx(before["boxW"] * shrink, rel=0.15), (
+        "the pin's label box must shrink with the figure on zoom-out: "
+        "%.2f -> %.2f (figure %.2fx)" % (before["boxW"], after["boxW"], shrink))
+    # and it stays glued to its data point
+    assert abs(after["dotCx"] - after["anchorX"]) < 3 and \
+           abs(after["dotCy"] - after["anchorY"]) < 3, (
+        "the pin must stay on its data point through the zoom-out: %r" % after)
+
+
 def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
     """binary_pick_data's float16 tier (chosen only at low enough
     pick_precision for a bounded-range mesh -- see figure._fits_float16) has

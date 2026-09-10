@@ -13,6 +13,21 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.31.2] - 2026-09-10
+
+### Fixed
+
+- **Interactive HTML: a Point Picking pin / Annotation note stayed frozen
+  at a constant on-screen size when the whole figure was zoomed *out***,
+  so a pin swelled to cover several panels as the figure shrank around
+  it. The constant-size counter-scale is what a zoom-*in* wants (a pin
+  shouldn't balloon into a blob over the cell it points at), but on the
+  way out a pin should shrink with the figure it belongs to -- sized to
+  the figure, not to the zoom. The counter-scale denominator is now
+  clamped at 1 (`pinScale()`), so zoom-in is unchanged and zoom-out lets
+  pins, label boxes, and leader arrows scale down in step with the
+  figure. The pin drag math tracks the same factor.
+
 ## [0.31.1] - 2026-09-10
 
 ### Changed

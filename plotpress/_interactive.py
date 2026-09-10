@@ -192,7 +192,7 @@ _JS_SOURCE = r"""
   var view = vb.slice();
   var zoomScale = 1;
   // The SVG's own on-page CSS size at zoomScale 1 -- the baseline zoomTo()
-  // scales from, and what a pin's own 1/zoomScale compensation (see
+  // scales from, and what a pin's own pinScale() compensation (see
   // layoutPin) assumes applyZoomSize is scaling up from. Read once, now: by
   // the time this script runs (placed right after the SVG in the
   // document), the browser has already laid it out, so this reflects its
@@ -285,7 +285,7 @@ _JS_SOURCE = r"""
       svg.style.width = ''; svg.style.height = '';
     }
     centerShrunkFigure();
-    // Every pin's own 1/zoomScale compensation (see layoutPin) has to be
+    // Every pin's own pinScale() compensation (see layoutPin) has to be
     // refreshed here too, not just when a pin is first dropped or moved --
     // otherwise a pin placed *before* this zoom change keeps whatever
     // scale factor it was born with, drifting out of sync with pins
@@ -2028,17 +2028,18 @@ _JS_SOURCE = r"""
 
   // Local, origin-relative coordinates -- (0,0) is the pin's own anchor --
   // plus a group-level transform (translate to the anchor, scale by
-  // 1/zoomScale) instead of baking px/py straight into each child. Whole-
-  // figure zoom (see applyZoomSize) grows the *entire* SVG's rendered CSS
-  // size uniformly, which would otherwise carry a pin's fixed viewBox-unit
-  // radius up right along with the data -- readable as "8px" at rest and a
-  // 50px+ blob covering the very mesh cell it's pointing at eight ticks of
-  // Magnify later, the opposite of what zooming in is for. The 1/zoomScale
-  // factor cancels that growth out, so a pin renders at the same on-screen
-  // size at any zoom level; updatePinTransform() (called from
-  // applyZoomSize() for every existing pin, not just the one being laid
-  // out here) is what keeps that true as zoomScale changes after the pin
-  // already exists.
+  // pinScale()) instead of baking px/py straight into each child. Whole-
+  // figure zoom (see applyZoomSize) grows or shrinks the *entire* SVG's
+  // rendered CSS size uniformly, which would otherwise carry a pin's fixed
+  // viewBox-unit radius up right along with the data -- readable as "8px" at
+  // rest and a 50px+ blob covering the very mesh cell it points at eight
+  // ticks of Magnify later. pinScale() cancels that on the way *in* (a pin
+  // stays constant on-screen size), and deliberately does not on the way
+  // *out* (a pin shrinks with the figure it belongs to, rather than swelling
+  // to cover several panels) -- see pinScale's own comment. updatePinTransform()
+  // (called from applyZoomSize() for every existing pin, not just the one
+  // being laid out here) keeps that current as zoomScale changes after the
+  // pin already exists.
   function layoutPin(g, px, py, label) {
     var fs = 11, padx = 5, pady = 3;
     var bw = label.length * fs * 0.55 + padx * 2, bh = fs + pady * 2;
@@ -2105,9 +2106,20 @@ _JS_SOURCE = r"""
     arrow.setAttribute('x2', lx * k); arrow.setAttribute('y2', ly * k);
   }
 
+  // A pin/note group's own scale factor under whole-figure zoom. Zooming
+  // *in* (zoomScale > 1) counter-scales by 1/zoomScale so a pin stays a
+  // constant on-screen size instead of ballooning into a blob over the very
+  // cell it points at. Zooming *out* (zoomScale < 1) does NOT counter-scale:
+  // there the whole figure is shrinking to fit, and a pin/label frozen at
+  // constant screen size would instead swell to cover multiple panels --
+  // it should shrink right along with the figure it belongs to. Clamping
+  // the denominator at 1 gives constant-screen-size on the way in and
+  // sized-to-the-figure on the way out.
+  function pinScale() { return 1 / Math.max(1, zoomScale); }
+
   function updatePinTransform(g) {
     g.setAttribute('transform', 'translate(' + g.dataset.anchorX + ',' +
-      g.dataset.anchorY + ') scale(' + (1 / zoomScale) + ')');
+      g.dataset.anchorY + ') scale(' + pinScale() + ')');
   }
 
   // The selected dot draws a bit larger than its resting size -- scaled from
@@ -2220,12 +2232,11 @@ _JS_SOURCE = r"""
   // stays exactly on the data point/cell it represents) -- converts the
   // mouse's on-screen pixel delta into the box's *local* coordinate space
   // (see layoutPin's own comment on that space): a local unit there is
-  // 1/zoomScale user-space units (the group's own scale(1/zoomScale)
-  // keeps a pin's on-screen size constant under whole-figure zoom), and a
-  // user-space unit is 1/pxPerUser() screen pixels -- so a screen delta
-  // needs multiplying by zoomScale and dividing by pxPerUser() to land in
-  // local units, the exact inverse of what rendering does to local
-  // coordinates to put them on screen.
+  // pinScale() user-space units (the group's own scale(pinScale()) transform),
+  // and a user-space unit is 1/pxPerUser() screen pixels -- so a screen delta
+  // needs dividing by pinScale() and by pxPerUser() to land in local units,
+  // the exact inverse of what rendering does to local coordinates to put them
+  // on screen.
   function startBoxDrag(g, ev) {
     ev.stopPropagation(); ev.preventDefault();
     selectPin(g);
@@ -2234,7 +2245,7 @@ _JS_SOURCE = r"""
     var bx0 = +rect.getAttribute('x'), by0 = +rect.getAttribute('y');
     var text = g.querySelector('text');
     function onMove(e) {
-      var k = zoomScale / pxPerUser();
+      var k = 1 / (pinScale() * pxPerUser());
       g.dataset.boxDx = bx0 + (e.clientX - startX) * k;
       g.dataset.boxDy = by0 + (e.clientY - startY) * k;
       layoutPin(g, +g.dataset.anchorX, +g.dataset.anchorY, text.textContent);
