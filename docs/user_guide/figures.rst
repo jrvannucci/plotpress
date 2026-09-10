@@ -32,15 +32,17 @@ Methods on the figure:
 Grouping axes
 -------------
 
-``fig.group(title, axes, linestyle="--", color="black", linewidth=1.5, title_position="top", pad=8.0, fontsize=None)``
+``fig.group(title, axes, id=None, linestyle="--", color="black", linewidth=1.5, title_position="top", pad=8.0, fontsize=None)``
     Draw a labeled box around a set of axes -- e.g. a cluster of related
     panels in a larger grid. The box is the tight bounding rectangle of
     their individual positions, expanded to also clear each axes' own
     tick labels, axis labels, and title. ``title_position`` is one of
     ``"top"``/``"bottom"``/``"left"``/``"right"``, placing ``title`` just
-    outside that edge of the box. Several groups may be added to one
-    figure; call before ``tight_layout()`` so it can reserve outer margin
-    for a title facing the figure's own edge.
+    outside that edge of the box. ``id`` is a second, exact-match way to
+    find the group again besides its title -- unlike an axes' own id (see
+    below), a group's id isn't required to be unique. Several groups may
+    be added to one figure; call before ``tight_layout()`` so it can
+    reserve outer margin for a title facing the figure's own edge.
 
 ``fig.group_spacing(wspace=None, hspace=None)``
     Reserve extra pixels between subplots for ``group()`` boxes, on top of
@@ -48,12 +50,17 @@ Grouping axes
     only at the interior row/column boundaries that actually border a
     group's own bounding box, not every gap alike.
 
-``fig.get_groups()``
-    This figure's registered groups, each as ``{"title", "axes", ...the
-    same styling kwargs group() took}`` -- a snapshot, not a live view.
-    Read it to find which axes already belong to a named group before
-    combining it with another, or to inspect a figure you didn't build
-    yourself.
+``fig.get_groups()`` / ``fig.get_group(row=None, col=None, title=None, id=None)``
+    ``get_groups()`` is every registered group as a
+    :class:`~plotpress.figure.Group` (``.title``, ``.id``, ``.axes``,
+    ``.outer_row``/``.outer_col``, the same styling ``group()`` took) --
+    a snapshot, not a live view. ``get_group()`` finds the *one* matching
+    exactly one of: ``(row, col)`` together (a group's own position in its
+    :class:`~plotpress.figure.GroupLayout` outer grid -- see below;
+    ``None`` for a plain manual ``group()`` call), ``title``, or ``id`` --
+    raising if none or more than one matches. Read either to find which
+    axes already belong to a named group before combining it with
+    another, or to inspect a figure you didn't build yourself.
 
     .. code-block:: python
 
@@ -61,27 +68,62 @@ Grouping axes
        fig.group("Left pair", [axes[0, 0], axes[1, 0]])
        fig.group("Right pair", [axes[0, 1], axes[1, 1]])
        for g in fig.get_groups():
-           print(g["title"], len(g["axes"]))
+           print(g.title, len(g.axes))
+       left = fig.get_group(title="Left pair")
+
+``fig.get_ax(row=None, col=None, title=None, id=None, many=False)`` / ``group.get_ax(row=None, col=None, title=None, id=None, many=False)``
+    Find one axes by exactly one of ``(row, col)``, ``title``, or ``id``
+    -- ``fig.get_ax()``'s row/col is a *plain, ungrouped* axes' own grid
+    position (use ``group.get_ax()`` for an axes inside a group instead);
+    ``group.get_ax()``'s row/col is that group's own *inner* position
+    (raises if the group has no grid shape, i.e. it wasn't built from a
+    ``GroupLayout``). Either raises if nothing matches, or -- unless
+    ``many=True`` -- if more than one does (impossible for ``id``, unique
+    per figure by construction; titles may legitimately repeat).
+    ``many=True`` returns every match as a list instead.
+
+``ax.set_id(id)`` / ``ax.get_id()``
+    A plain, undrawn identifier for later retrieval via ``get_ax()`` --
+    distinct from ``set_title()`` (drawn on the plot, and may repeat
+    across axes). Unlike a title, an id must be unique across the whole
+    figure: raises if another axes already has it. ``None`` (the default)
+    always clears it.
+
+``fig.remove_group(group=None, title=None, id=None)``
+    Remove a group entirely: every one of its axes (via ``ax.remove()``,
+    which also frees its id and drops it from ``sharex``/``sharey``
+    groups) and the group's own box/title registration -- leaves a blank
+    rectangle rather than reflowing the rest of the grid to fill it.
 
 ``plotpress.GroupLayout(nrows, ncols)`` / ``plotpress.subplots_from_groups(layout, figsize=(6.4, 4.8), ...)``
     Build a figure as an outer grid of *groups*, each its own inner grid
     of axes -- for a layout like "four quadrants, each its own 2x2
     cluster of plots" without hand-deriving which cells of one big flat
-    grid each quadrant's axes actually occupy. ``layout.add(row, col,
-    nrows, ncols, title=None, mask=None, **group_kwargs)`` places one
-    group at outer cell ``(row, col)``; every group may have a
-    *different* inner shape. ``mask`` (an ``nrows`` x ``ncols``
-    array-like of truthy/falsy values) marks which inner cells actually
-    get an axes -- an irregular group (an L-shape, a ring with a hole)
-    instead of a plain rectangle, with no axes created for a falsy cell.
+    grid each quadrant's axes actually occupy.
+    ``layout.add_group(row, col, nrows, ncols, mask=None, axes_ids=None, axes_titles=None, title=None, id=None, **group_kwargs)``
+    places one group at outer cell ``(row, col)``; every group may have a
+    *different* inner shape, inferred from whichever of these is given:
+
+    - ``mask`` (an ``nrows`` x ``ncols`` array-like of truthy/falsy
+      values) marks which inner cells actually get an axes -- an
+      irregular group (an L-shape, a ring with a hole) instead of a
+      plain rectangle, with no axes created for a falsy cell.
+    - ``axes_ids``/``axes_titles`` (the same shape, ``str | None``) do the
+      same, mosaic-style: a non-``None`` entry both marks presence *and*
+      sets that axes' id/title in one step. Giving more than one of
+      these is fine as long as they agree on which cells are present.
+
+    ``layout.remove_group(row, col)`` drops a *planned* group before
+    building (see ``fig.remove_group()`` above for removing one from an
+    already-built figure instead).
 
     .. code-block:: python
 
        layout = plotpress.GroupLayout(2, 2)
-       layout.add(0, 0, 2, 2, title="Group (0,0)")
-       layout.add(0, 1, 2, 2, title="Group (0,1)")
-       layout.add(1, 0, 2, 2, title="Group (1,0)")
-       layout.add(1, 1, 2, 2, title="Group (1,1)")
+       layout.add_group(0, 0, 2, 2, title="Group (0,0)")
+       layout.add_group(0, 1, 2, 2, title="Group (0,1)")
+       layout.add_group(1, 0, 2, 2, title="Group (1,0)")
+       layout.add_group(1, 1, 2, 2, title="Group (1,1)")
        fig, axes = plotpress.subplots_from_groups(layout, figsize=(12, 10))
        axes[0, 0][1, 1].plot(x, y)   # group (0,0)'s own bottom-right axes
 

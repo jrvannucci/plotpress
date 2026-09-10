@@ -59,8 +59,8 @@ for col in range(NCOLS):
     for row_pair in range(N_PAIRS):
         group_idx = col * N_PAIRS + row_pair
         color = GROUP_COLORS[group_idx % len(GROUP_COLORS)]
-        layout.add(row_pair, col, 2, 1, title=f"Group {group_idx}",
-                  color=color, linewidth=1.0, fontsize=5)
+        layout.add_group(row_pair, col, 2, 1, title=f"Group {group_idx}",
+                        color=color, linewidth=1.0, fontsize=5)
 
 fig, axes = plotpress.subplots_from_groups(layout, figsize=(NCOLS * 1.6, NROWS * 1.6))
 
@@ -94,14 +94,12 @@ fig.supylabel("global y")
 fig.tight_layout()
 
 # Address one axes within a group by its group's title, not its global
-# position: fig.get_groups() looks up any group by the title given when
-# it was created. A group's own axes list keeps the row-major order its
-# shape was built in (see GroupLayout.add()), so this 2x1 pair's [0]/[1]
-# are simply its top/bottom panel -- the same indexing already used to
-# plot into it above, without knowing which of the figure's 1000 axes
-# either one actually is.
-found = next(g for g in fig.get_groups() if g["title"] == "Group 137")
-top_panel, _bottom_panel = found["axes"]
+# position: fig.get_group() finds any group by the title given when it
+# was created, and its own get_ax(row=, col=) addresses one of its axes by
+# *inner* position -- (0, 0) is simply "this pair's top panel," the same
+# indexing already used to plot into it above, without knowing which of
+# the figure's 1000 axes it actually is.
+top_panel = fig.get_group(title="Group 137").get_ax(row=0, col=0)
 for side in top_panel.spines:
     top_panel.spines[side].set_color("#e91e8c")
     top_panel.spines[side].set_linewidth(2.5)

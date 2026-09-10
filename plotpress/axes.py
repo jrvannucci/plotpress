@@ -260,6 +260,7 @@ class Axes:
         self._ylabel_x_override = None   # figure pixels; set by Figure.align_ylabels
         self._title = ""
         self._title_size = None    # None -> the style's title_size
+        self._id = None            # set by set_id(); unique per-figure, unlike title
         self._grid = False
         self._grid_axis = "both"   # grid(axis="x"|"y"|"both")
         self._grid_which = "major"  # grid(which="major"|"minor"|"both")
@@ -2335,11 +2336,24 @@ class Axes:
         Also drops it from any ``sharex``/``sharey`` group it belonged to
         (those lists are shared by reference with every sibling, so removing
         from them in place -- not reassigning -- detaches from all of them at
-        once). Colorbar/legend space this axes' neighbors ceded to it is not
-        automatically reclaimed; call ``tight_layout()`` again for that.
+        once), releases its own id (see :meth:`set_id`) so another axes may
+        reuse it, and drops it from any :meth:`~plotpress.figure.Figure.group`
+        it belonged to -- both that group's flat axes list and, for a
+        :class:`~plotpress.figure.GroupLayout`-built one, its own inner
+        ``(row, col)`` grid -- so neither keeps a stale reference to a
+        detached axes. Colorbar/legend space this axes' neighbors ceded to
+        it is not automatically reclaimed; call ``tight_layout()`` again
+        for that.
         """
         if self in self.figure.axes:
             self.figure.axes.remove(self)
+        if self._id is not None and self.figure._id_index.get(self._id) is self:
+            del self.figure._id_index[self._id]
+        for g in self.figure._groups:
+            if self in g["axes"]:
+                g["axes"].remove(self)
+            if g["axes_grid"] is not None:
+                g["axes_grid"][g["axes_grid"] == self] = None
         if self._sharex_group is not None and self in self._sharex_group:
             self._sharex_group.remove(self)
         if self._sharey_group is not None and self in self._sharey_group:
@@ -3137,6 +3151,30 @@ class Axes:
 
     def get_title(self):
         return self._title
+
+    def set_id(self, id):
+        """Set a plain, undrawn identifier for this axes -- for later
+        retrieval via :meth:`~plotpress.figure.Figure.get_ax`/
+        :meth:`~plotpress.figure.Group.get_ax`, distinct from
+        :meth:`set_title` (which is drawn on the plot, and may legitimately
+        repeat across several axes). Unlike a title, ``id`` must be unique
+        across this axes' whole figure -- raises if another axes already
+        has it. Pass ``None`` to clear it, always allowed regardless of
+        what else in the figure already has an id. See
+        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        a worked example, including the collision case.
+        """
+        fig = self.figure
+        if fig is not None:
+            fig._check_id_available(id, self)
+            if self._id is not None and fig._id_index.get(self._id) is self:
+                del fig._id_index[self._id]
+            if id is not None:
+                fig._id_index[id] = self
+        self._id = id
+
+    def get_id(self):
+        return self._id
 
     def get_xscale(self):
         return self._xscale

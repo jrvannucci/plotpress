@@ -92,6 +92,12 @@ def test_method_names_are_a_subset_of_matplotlib():
         # rule can be replayed by the interactive HTML's client-side
         # zoom/pan rebuild, which can't execute an arbitrary Python object.
         "set_xlocator", "set_ylocator", "set_xformat", "set_yformat",
+        # matplotlib's own nearest equivalent is set_label()/get_label() --
+        # an identifier that isn't necessarily drawn. plotpress spells it
+        # set_id()/get_id() instead: "label" already means something else
+        # here once GroupLayout's axes_titles=/set_title() are also in the
+        # picture, and "id" reads unambiguously as "not the display text."
+        "set_id", "get_id",
     }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")

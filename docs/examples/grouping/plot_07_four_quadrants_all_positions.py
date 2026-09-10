@@ -34,10 +34,10 @@ y = np.linspace(0, 6, 13)
 X, Y = np.meshgrid(x, y)
 
 layout = plotpress.GroupLayout(2, 2)
-layout.add(0, 0, 2, 2, title="Top-left", title_position="top", color="#d62728")
-layout.add(0, 1, 2, 2, title="Top-right", title_position="right", color="#1f77b4")
-layout.add(1, 0, 2, 2, title="Bottom-left", title_position="left", color="#2ca02c")
-layout.add(1, 1, 2, 2, title="Bottom-right", title_position="bottom", color="#9467bd")
+layout.add_group(0, 0, 2, 2, title="Top-left", title_position="top", color="#d62728")
+layout.add_group(0, 1, 2, 2, title="Top-right", title_position="right", color="#1f77b4")
+layout.add_group(1, 0, 2, 2, title="Bottom-left", title_position="left", color="#2ca02c")
+layout.add_group(1, 1, 2, 2, title="Bottom-right", title_position="bottom", color="#9467bd")
 
 fig, axes = plotpress.subplots_from_groups(layout, figsize=(10, 9))
 for outer_r in range(2):
@@ -52,3 +52,9 @@ for outer_r in range(2):
 
 fig.group_spacing(wspace=24.0, hspace=24.0)
 fig.tight_layout()
+
+# Find a group by its outer (row, col) in the layout -- not by remembering
+# which of the four it happened to be titled, or hand-slicing axes[2:4,
+# 2:4] the way it would look without GroupLayout at all.
+bottom_right = fig.get_group(row=1, col=1)
+print("bottom-right quadrant's own title:", bottom_right.title)

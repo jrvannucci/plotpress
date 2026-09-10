@@ -11,14 +11,91 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **Find a group or an axes by title or id, not global position** --
+  `Figure.get_group(row=, col=, title=, id=)` finds one registered group;
+  `Figure.get_ax(row=, col=, title=, id=, many=False)` finds one axes
+  anywhere in the figure; `Group.get_ax(row=, col=, title=, id=,
+  many=False)` finds one within a specific group by its own *inner*
+  ``(row, col)`` -- the piece that was flatly impossible before, since a
+  masked/irregular group's axes had no shape left to address once
+  `get_groups()` only ever returned a flat list. Each takes exactly one of
+  its selectors; `get_group()` always raises on more than one match,
+  while the two `get_ax()` methods accept `many=True` to collect every
+  match instead (titles may legitimately repeat; ids can't, by
+  construction, so `many=` is moot for an id lookup).
+- **`Axes.set_id(id)` / `get_id()`** -- a plain, undrawn identifier,
+  distinct from `set_title()` (drawn, and may repeat). Unlike a title, an
+  id must be unique across its whole figure: `set_id()` raises immediately
+  if another axes already has it, checked in O(1) against a new
+  `Figure._id_index`, not a scan. `Axes.remove()` now frees an axes' id
+  (and drops it from any group's axes list/grid) when it's removed, and
+  `Figure.adopt_axes()` re-validates and re-registers an id crossing a
+  `joblib`/`multiprocessing` boundary -- the one place two independently-
+  built workers' ids could otherwise collide unnoticed.
+- **`GroupLayout.add_group()` gains `axes_ids=`/`axes_titles=`** --
+  mosaic-style: a `mask`-shaped array-like of `str | None` where a
+  non-`None` entry both marks that cell present *and* sets its axes' id
+  or title in one step, instead of a `mask=` plus a follow-up loop of
+  `set_id()`/`set_title()` calls. Giving more than one of
+  `mask`/`axes_ids`/`axes_titles` is fine as long as they agree on which
+  cells are present -- raises, naming the cell, if they don't.
+- **`Figure.group()` gains `id=`** (a group's own identifier, alongside
+  its title -- unlike an axes' id, not required to be unique; `get_group()`
+  raises if more than one group shares it, the same as an ambiguous
+  title). `GroupLayout.add_group()`'s own `id=` requires `title=` too --
+  without one, the group is never registered at all, so a bare id would
+  otherwise silently do nothing.
+- **Groups can be removed** -- `GroupLayout.remove_group(row, col)` drops
+  a *planned* group before `subplots_from_groups()` builds anything;
+  `Figure.remove_group(group=None, title=None, id=None)` removes an
+  already-built one entirely (every one of its axes, via the now id/group
+  -aware `Axes.remove()`, plus its own box/title registration) -- leaving
+  a blank rectangle rather than reflowing the grid to fill it, the same
+  as `Axes.remove()` already did for one axes.
+- `plot_14_irregular_group_shapes` extended with a closing section
+  demonstrating all of the above: finding the Diagonal group by title,
+  its center cell by inner position, the same axes again by the id its
+  `axes_ids` mask gave it, the duplicate-id error, and `many=True`
+  collecting one axes per group sharing a title.
+- `plot_07_four_quadrants_all_positions` extended to also find a group by
+  its outer `(row, col)` (`fig.get_group(row=1, col=1)`), and
+  `plot_15_dashboard_mixed_shapes_and_masks` to remove one whole panel
+  after the fact (`fig.remove_group(title="Alerts")`) -- an acknowledged
+  dashboard alert dismissing its own panel, leaving a blank rectangle
+  rather than reflowing the rest of the dashboard.
+- New `plot_16_axes_titles_and_ordinary_lookup`: the three pieces of this
+  feature that didn't fit naturally into a bigger example --
+  `axes_titles=` (`axes_ids=`'s sibling, setting each mosaic cell's drawn
+  title instead of its id), `GroupLayout.remove_group()` (dropping a
+  *planned* group before anything is built, `remove_group()`'s
+  pre-`subplots_from_groups()` sibling), and `Figure.get_ax(row=, col=)`
+  on a plain, ungrouped `subplots()` grid -- contrasted deliberately
+  against `Group.get_ax()`'s *inner*-position lookup used everywhere else
+  in this gallery.
+
 ### Changed
 
+- **Breaking: `GroupLayout.add()` renamed to `add_group()`.** Reads more
+  clearly against the group's own `title=`/`id=` now sitting next to
+  `axes_ids=`/`axes_titles=` in the same call, and matches `Figure.
+  remove_group()`/`GroupLayout.remove_group()`'s naming. `0.29.0`'s
+  `.add()` no longer exists -- update any call to `.add_group()`, no
+  other argument changed.
+- **Breaking: `Figure.get_groups()`/the new `get_group()` return
+  `Group` objects, not dicts.** `g["title"]`/`g["axes"]` become
+  `g.title`/`g.axes`; `g.axes` is now the shaped `(row, col)` array a
+  `GroupLayout`-built group's own cells came from (`None` for an absent
+  one) rather than always a flat list -- use the new `g.flat_axes()` for
+  "every real axes in this group" regardless of shape. A plain manual
+  `Figure.group()` call (no inherent shape) still gets a flat list.
 - **`plot_13_full_scale_demo` now also demonstrates finding one axes by
-  its group's title alone**, via `Figure.get_groups()` -- not by
+  its group's title alone**, via `Figure.get_group()` -- not by
   remembering which of the figure's 1000 total axes it is, or which
   `(row, col)` of the `GroupLayout`-resolved shared grid it landed on.
-  `next(g for g in fig.get_groups() if g["title"] == "Group 137")["axes"]`
-  finds that pair; its top panel gets a magenta border, styled entirely
+  `fig.get_group(title="Group 137").get_ax(row=0, col=0)` finds that
+  pair's top panel directly; it gets a magenta border, styled entirely
   after the fact from nothing but that string -- and its own
   `get_title()` is printed too, confirming in text which panel that
   border actually landed on, not just by eye against the rendered figure.

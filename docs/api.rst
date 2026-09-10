@@ -13,6 +13,7 @@ Top level
    subplots_from_layout
    subplots_from_groups
    GroupLayout
+   Group
    Report
    load_data
    load_data_xarray
@@ -32,6 +33,17 @@ Figure
 .. autofunction:: plotpress.subplots
 
 .. autofunction:: plotpress.subplots_from_layout
+
+Grouping
+--------
+
+.. autofunction:: plotpress.subplots_from_groups
+
+.. autoclass:: plotpress.figure.GroupLayout
+   :members:
+
+.. autoclass:: plotpress.figure.Group
+   :members:
 
 Report
 ------

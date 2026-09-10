@@ -163,10 +163,10 @@ class GroupLayout:
     which cells of one big flat grid each quadrant's axes actually occupy::
 
         layout = plotpress.GroupLayout(2, 2)
-        layout.add(0, 0, 2, 2, title="Group (0,0)")
-        layout.add(0, 1, 2, 2, title="Group (0,1)")
-        layout.add(1, 0, 2, 2, title="Group (1,0)")
-        layout.add(1, 1, 2, 2, title="Group (1,1)")
+        layout.add_group(0, 0, 2, 2, title="Group (0,0)")
+        layout.add_group(0, 1, 2, 2, title="Group (0,1)")
+        layout.add_group(1, 0, 2, 2, title="Group (1,0)")
+        layout.add_group(1, 1, 2, 2, title="Group (1,1)")
         fig, axes = plotpress.subplots_from_groups(layout, figsize=(12, 10))
         axes[0, 0][1, 1].plot(x, y)   # group (0,0)'s own bottom-right axes
 
@@ -215,72 +215,127 @@ class GroupLayout:
         self.nrows, self.ncols = nrows, ncols
         self._cells = {}   # (row, col) -> dict; see add()
 
-    def add(self, row: int, col: int, nrows: int = None, ncols: int = None,
-            mask=None, title: str = None, linestyle="--", color="black",
-            linewidth=1.5, title_position="top", pad=8.0, fontsize=None):
+    def add_group(self, row: int, col: int, nrows: int = None, ncols: int = None,
+                 mask=None, axes_ids=None, axes_titles=None, title: str = None,
+                 id=None, linestyle="--", color="black", linewidth=1.5,
+                 title_position="top", pad=8.0, fontsize=None):
         """Place a group at outer cell ``(row, col)`` with an ``nrows`` x
         ``ncols`` inner grid of axes. Returns ``self`` so calls can chain.
 
-        ``mask``, if given, is an ``nrows`` x ``ncols`` array-like of
-        truthy/falsy values marking which inner cells actually get an axes
-        -- falsy means no axes there, for an irregular (L-shaped, a hole in
-        the middle) group instead of a plain rectangle. ``nrows``/``ncols``
-        are then optional, inferred from ``mask``'s own shape; give both
-        and they're checked against it instead.
+        Presence (which inner cells actually get an axes -- for an
+        irregular group: an L-shape, a ring, a hole in the middle, instead
+        of a plain rectangle) comes from whichever of these is given --
+        ``nrows``/``ncols`` are then inferred from it, rather than needed
+        separately:
 
-        ``title`` and the styling kwargs (``linestyle``/``color``/
+        - ``mask``, an ``nrows`` x ``ncols`` array-like of truthy/falsy
+          values -- falsy means no axes there.
+        - ``axes_ids``, an array-like of the same shape, ``str | None`` --
+          a non-``None`` entry means an axes *and* sets its id (see
+          :meth:`~plotpress.axes.Axes.set_id`) in one step, mosaic-style.
+        - ``axes_titles``, the same idea for each axes' *title* (see
+          :meth:`~plotpress.axes.Axes.set_title`) instead of its id.
+
+        Giving more than one of these is fine as long as they agree on
+        which cells are present -- raises, naming the cell, if they don't.
+        With none of them, plain ``nrows``/``ncols`` (both required then)
+        place a full rectangle with no per-axes id/title.
+
+        ``title``/``id`` and the styling kwargs (``linestyle``/``color``/
         ``linewidth``/``title_position``/``pad``/``fontsize``) match
         :meth:`Figure.group` exactly -- passed straight through to it once
-        this group's real axes exist. ``title=None`` places the axes with
-        no box/title drawn around them at all.
+        this group's real axes exist. A group is only registered (and so
+        only findable via :meth:`Figure.get_group`, including by ``id``)
+        when it has a ``title`` -- ``id`` without one raises, since it
+        would otherwise silently do nothing.
         """
         if not (0 <= row < self.nrows and 0 <= col < self.ncols):
             raise ValueError(
-                f"GroupLayout.add(): ({row}, {col}) is outside this "
+                f"GroupLayout.add_group(): ({row}, {col}) is outside this "
                 f"layout's own {self.nrows}x{self.ncols} outer grid"
             )
         if (row, col) in self._cells:
             raise ValueError(
-                f"GroupLayout.add(): outer cell ({row}, {col}) already has "
-                "a group -- each outer cell holds exactly one"
+                f"GroupLayout.add_group(): outer cell ({row}, {col}) already "
+                "has a group -- each outer cell holds exactly one"
             )
-        if mask is None:
-            if not (nrows and ncols and nrows >= 1 and ncols >= 1):
+        if id is not None and title is None:
+            raise ValueError(
+                "GroupLayout.add_group(): id= needs title= too -- a group "
+                "is only registered (and so only findable at all) when it "
+                "has a title"
+            )
+
+        ids_arr = None if axes_ids is None else np.asarray(axes_ids, dtype=object)
+        titles_arr = None if axes_titles is None else np.asarray(axes_titles, dtype=object)
+        sources = [("mask", None if mask is None else np.asarray(mask, dtype=bool)),
+                  ("axes_ids", None if ids_arr is None else ids_arr != None),   # noqa: E711
+                  ("axes_titles", None if titles_arr is None else titles_arr != None)]  # noqa: E711
+        given = [(name, m) for name, m in sources if m is not None]
+        for name, m in given:
+            if m.ndim != 2:
                 raise ValueError(
-                    "GroupLayout.add(): pass nrows/ncols (both >= 1), or a "
-                    "mask to infer them from"
+                    f"GroupLayout.add_group(): {name} must be 2-D, got "
+                    f"shape {m.shape!r}"
                 )
-            mask_arr = np.ones((nrows, ncols), dtype=bool)
-        else:
-            mask_arr = np.asarray(mask, dtype=bool)
-            if mask_arr.ndim != 2:
-                raise ValueError(
-                    "GroupLayout.add(): mask must be 2-D, got shape "
-                    f"{mask_arr.shape!r}"
-                )
+        if given:
+            first_name, mask_arr = given[0]
+            for name, m in given[1:]:
+                if m.shape != mask_arr.shape:
+                    raise ValueError(
+                        f"GroupLayout.add_group(): {name}'s shape {m.shape} "
+                        f"doesn't match {first_name}'s shape {mask_arr.shape}"
+                    )
+                if not np.array_equal(m, mask_arr):
+                    r0, c0 = map(int, np.argwhere(m != mask_arr)[0])
+                    raise ValueError(
+                        f"GroupLayout.add_group(): {name} and {first_name} "
+                        f"disagree on whether cell ({r0}, {c0}) is present"
+                    )
             if nrows is not None and nrows != mask_arr.shape[0]:
                 raise ValueError(
-                    f"GroupLayout.add(): nrows={nrows} doesn't match mask's "
-                    f"own {mask_arr.shape[0]} rows"
+                    f"GroupLayout.add_group(): nrows={nrows} doesn't match "
+                    f"{first_name}'s own {mask_arr.shape[0]} rows"
                 )
             if ncols is not None and ncols != mask_arr.shape[1]:
                 raise ValueError(
-                    f"GroupLayout.add(): ncols={ncols} doesn't match mask's "
-                    f"own {mask_arr.shape[1]} columns"
+                    f"GroupLayout.add_group(): ncols={ncols} doesn't match "
+                    f"{first_name}'s own {mask_arr.shape[1]} columns"
                 )
+        else:
+            if not (nrows and ncols and nrows >= 1 and ncols >= 1):
+                raise ValueError(
+                    "GroupLayout.add_group(): pass nrows/ncols (both >= 1), "
+                    "or a mask/axes_ids/axes_titles to infer them from"
+                )
+            mask_arr = np.ones((nrows, ncols), dtype=bool)
         if not mask_arr.any():
             raise ValueError(
-                f"GroupLayout.add(): ({row}, {col})'s mask has no present "
-                "cells -- a group needs at least one axes"
+                f"GroupLayout.add_group(): ({row}, {col})'s mask has no "
+                "present cells -- a group needs at least one axes"
             )
         self._cells[row, col] = {
-            "mask": mask_arr, "title": title,
-            "linestyle": normalize_linestyle(linestyle, "GroupLayout.add", stacklevel=3),
+            "mask": mask_arr, "axes_ids": ids_arr, "axes_titles": titles_arr,
+            "title": title, "id": id,
+            "linestyle": normalize_linestyle(linestyle, "GroupLayout.add_group", stacklevel=3),
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
         }
         return self
+
+    def remove_group(self, row: int, col: int):
+        """Remove the *planned* group at outer cell ``(row, col)`` -- before
+        :func:`subplots_from_groups` builds anything, so that cell simply
+        has no group (and no axes) at all. Raises if there's no group
+        there. To remove a group from an already-built figure instead, see
+        :meth:`Figure.remove_group`.
+        """
+        if (row, col) not in self._cells:
+            raise ValueError(
+                f"GroupLayout.remove_group(): no group at ({row}, {col})"
+            )
+        del self._cells[row, col]
 
     def _build(self, fig, squeeze=True, sharex=False, sharey=False, projection=None):
         """Resolve every group onto one flat super-grid and create its real
@@ -290,8 +345,8 @@ class GroupLayout:
         """
         if not self._cells:
             raise ValueError(
-                "GroupLayout has no groups -- call add() at least once "
-                "before building a figure from it"
+                "GroupLayout has no groups -- call add_group() at least "
+                "once before building a figure from it"
             )
         Lr = math.lcm(*(c["mask"].shape[0] for c in self._cells.values()))
         Lc = math.lcm(*(c["mask"].shape[1] for c in self._cells.values()))
@@ -345,6 +400,10 @@ class GroupLayout:
                     sc1 = col * Lc + (c + 1) * col_scale - 1
                     ss = SubplotSpec(super_nrows, super_ncols, sr0, sr1, sc0, sc1)
                     ax = fig.add_subplot(ss, projection=projection)
+                    if spec["axes_ids"] is not None and spec["axes_ids"][r, c] is not None:
+                        ax.set_id(spec["axes_ids"][r, c])
+                    if spec["axes_titles"] is not None and spec["axes_titles"][r, c] is not None:
+                        ax.set_title(spec["axes_titles"][r, c])
                     inner[r, c] = ax
                     group_axes.append(ax)
             if sharex:
@@ -364,10 +423,12 @@ class GroupLayout:
                         if c != first_col_per_row[r]:
                             inner[r, c].set_yticklabels([])
             if spec["title"] is not None:
-                fig.group(spec["title"], group_axes, linestyle=spec["linestyle"],
-                         color=spec["color"], linewidth=spec["linewidth"],
+                fig.group(spec["title"], group_axes, id=spec["id"],
+                         linestyle=spec["linestyle"], color=spec["color"],
+                         linewidth=spec["linewidth"],
                          title_position=spec["title_position"], pad=spec["pad"],
-                         fontsize=spec["fontsize"])
+                         fontsize=spec["fontsize"],
+                         _outer_row=row, _outer_col=col, _axes_grid=inner)
             axes_grid[row, col] = _squeeze_grid(inner, inr, inc) if squeeze else inner
         return axes_grid
 
@@ -410,6 +471,117 @@ def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style =
     return fig, axes
 
 
+def _resolve_lookup_key(row, col, title, id, who):
+    """Validate that exactly one of ``(row, col)`` together / ``title`` /
+    ``id`` was given for a ``get_group``/``get_ax`` style lookup, and
+    return which one as ``(kind, key)``. Checks ``is not None`` throughout
+    -- ``row=0``/``col=0`` are ordinary, valid positions, not "not given".
+    """
+    has_rowcol = row is not None or col is not None
+    if has_rowcol and (row is None or col is None):
+        raise ValueError(f"{who}(): pass both row= and col=, not just one")
+    given = [has_rowcol, title is not None, id is not None]
+    if sum(given) != 1:
+        raise ValueError(
+            f"{who}(): pass exactly one of (row= and col=), title=, or id="
+        )
+    if has_rowcol:
+        return "rowcol", (row, col)
+    if title is not None:
+        return "title", title
+    return "id", id
+
+
+def _finish_lookup(matches, who, kind, key, many):
+    """Shared not-found/ambiguous/``many=`` handling for
+    :meth:`Figure.get_ax`/:meth:`Group.get_ax` -- :meth:`Figure.get_group`
+    has its own (it never accepts ``many=``, see there for why).
+    """
+    if many:
+        return matches
+    if not matches:
+        raise ValueError(f"{who}(): no axes matches {kind}={key!r}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"{who}(): {len(matches)} axes match {kind}={key!r} -- pass "
+            "many=True to get all of them"
+        )
+    return matches[0]
+
+
+class Group:
+    """One of a figure's registered groups (see :meth:`Figure.group`/
+    :meth:`Figure.get_groups`/:meth:`Figure.get_group`) -- a read-only
+    snapshot, not something to construct directly.
+
+    ``title``/``id`` match whatever :meth:`Figure.group` (or
+    :meth:`GroupLayout.add_group`, which calls it internally) was given.
+    ``outer_row``/``outer_col`` are this group's own position in its
+    :class:`GroupLayout`'s outer grid -- ``None`` for a group built by a
+    direct :meth:`Figure.group` call, which has no such position.
+    ``axes`` is the 2-D ``(row, col)`` array :func:`subplots_from_groups`
+    itself returned for this group (``None`` for an absent cell) when
+    built from a shaped layout; otherwise (a direct :meth:`Figure.group`
+    call, with no inherent grid shape) it's a plain flat list.
+    """
+
+    def __init__(self, raw: dict):
+        self._raw = raw
+        self.title = raw["title"]
+        self.id = raw["id"]
+        self.axes = raw["axes_grid"] if raw["axes_grid"] is not None else list(raw["axes"])
+        self.outer_row = raw["outer_row"]
+        self.outer_col = raw["outer_col"]
+        self.linestyle = raw["linestyle"]
+        self.color = raw["color"]
+        self.linewidth = raw["linewidth"]
+        self.title_position = raw["title_position"]
+        self.pad = raw["pad"]
+        self.fontsize = raw["fontsize"]
+
+    def flat_axes(self):
+        """Every real axes in this group as a plain flat list, regardless
+        of whether :attr:`axes` itself is shaped (a ``(row, col)`` array,
+        ``None`` for an absent cell skipped) or already flat (a manually
+        built :meth:`~plotpress.figure.Figure.group` with no grid shape).
+        """
+        if isinstance(self.axes, np.ndarray):
+            return [a for a in self.axes.ravel().tolist() if a is not None]
+        return list(self.axes)
+
+    def get_ax(self, row: int = None, col: int = None, title: str = None,
+              id=None, many: bool = False):
+        """The axes matching exactly one of: ``(row, col)`` together (this
+        group's own *inner* position -- raises if this group has no grid
+        shape, i.e. it wasn't built from a :class:`GroupLayout`), ``title``,
+        or ``id``, scoped to this group's own axes only. See
+        :meth:`Figure.get_ax` for the ``many=`` behavior, and
+        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        a worked example.
+        """
+        kind, key = _resolve_lookup_key(row, col, title, id, "get_ax")
+        if kind == "rowcol":
+            if not isinstance(self.axes, np.ndarray):
+                raise ValueError(
+                    "get_ax(): this group has no inner grid shape (it "
+                    "wasn't built from a GroupLayout) -- use title= or id= "
+                    "instead"
+                )
+            r, c = key
+            if not (0 <= r < self.axes.shape[0] and 0 <= c < self.axes.shape[1]):
+                raise ValueError(
+                    f"get_ax(): ({r}, {c}) is outside this group's own "
+                    f"{self.axes.shape[0]}x{self.axes.shape[1]} shape"
+                )
+            ax = self.axes[r, c]
+            matches = [] if ax is None else [ax]
+        elif kind == "title":
+            matches = [ax for ax in self.flat_axes() if ax.get_title() == key]
+        else:
+            matches = [ax for ax in self.flat_axes() if ax.get_id() == key]
+        return _finish_lookup(matches, "get_ax", kind, key, many)
+
+
 def _axes_class(projection):
     """Resolve a ``projection`` name to its Axes class."""
     if projection in (None, "rectilinear"):
@@ -440,6 +612,7 @@ class Figure:
         if facecolor is not None:
             self.style.facecolor = facecolor
         self.axes: list[Axes] = []
+        self._id_index = {}         # axes id -> Axes; set by Axes.set_id()
         # Slider "units" -- each is one control bar. The global unit "main" is a
         # single bar driving all shared series; a docked unit ("ax<i>") sits
         # under one axes. Docked units may share a connection *index* so the UI
@@ -525,10 +698,17 @@ class Figure:
             "bbox": normalize_bbox(bbox),
         })
 
-    def group(self, title, axes, linestyle="--", color="black", linewidth=1.5,
-             title_position="top", pad=8.0, fontsize=None):
+    def group(self, title, axes, id=None, linestyle="--", color="black", linewidth=1.5,
+             title_position="top", pad=8.0, fontsize=None,
+             _outer_row=None, _outer_col=None, _axes_grid=None):
         """Draw a labeled box around a set of axes -- e.g. a cluster of
         related panels in a larger grid.
+
+        ``id`` is a second, exact-match way to find this group again later
+        via :meth:`get_group`, alongside ``title`` -- unlike an axes' own
+        ``id`` (see :meth:`Axes.set_id`), a group's ``id`` is not required
+        to be unique; :meth:`get_group` raises if more than one group
+        shares it, the same as it would for an ambiguous title.
 
         ``axes`` is any subset of this figure's own axes, typically adjacent
         cells in a subplot grid; the box is the tight bounding rectangle of
@@ -554,23 +734,26 @@ class Figure:
                 "title_position must be 'top', 'bottom', 'left', or 'right', "
                 f"got {title_position!r}")
         self._groups.append({
-            "title": title, "axes": list(axes),
+            "title": title, "axes": list(axes), "id": id,
             "linestyle": normalize_linestyle(linestyle, "group", stacklevel=3),
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
+            "outer_row": _outer_row, "outer_col": _outer_col, "axes_grid": _axes_grid,
         })
         self._layout_dirty = True
         return self
 
     def get_groups(self) -> list:
-        """This figure's registered groups (see :meth:`group`), each as
-        ``{"title": str, "axes": [Axes, ...], "linestyle": str, "color": str,
-        "linewidth": float, "title_position": str, "pad": (l, r, t, b),
-        "fontsize": float | None}``.
+        """This figure's registered groups (see :meth:`group`), each as a
+        :class:`Group`.
 
-        A snapshot, not a live view -- mutating the returned list or its
-        dicts doesn't affect this figure. Read it to find which axes already
+        A snapshot, not a live view -- removing an axes afterward (see
+        :meth:`Axes.remove`) does update the ``Group`` object already
+        handed back here (both share the same underlying axes list/grid),
+        but building a new list of ``Group`` objects at a later
+        ``get_groups()`` call doesn't retroactively change one already
+        held from an earlier call. Read it to find which axes already
         belong to a named group before combining it with another or
         extending it, or to answer "what groups does this figure have" for
         one you didn't build yourself. Works identically whether a group
@@ -578,7 +761,83 @@ class Figure:
         (which calls :meth:`group` internally, once per group), or both
         mixed in one figure.
         """
-        return [dict(g, axes=list(g["axes"])) for g in self._groups]
+        return [Group(g) for g in self._groups]
+
+    def get_group(self, row: int = None, col: int = None, title: str = None,
+                 id=None) -> "Group":
+        """The one group matching exactly one of: ``(row, col)`` together
+        (this group's own outer position -- only groups built via
+        :class:`GroupLayout` have one; see :class:`Group`), ``title``, or
+        ``id``. Raises if none or more than one group matches. See
+        :doc:`/auto_examples/grouping/plot_14_irregular_group_shapes` for
+        a worked example.
+        """
+        kind, key = _resolve_lookup_key(row, col, title, id, "get_group")
+        if kind == "rowcol":
+            r, c = key
+            matches = [g for g in self._groups
+                      if g["outer_row"] == r and g["outer_col"] == c]
+        elif kind == "title":
+            matches = [g for g in self._groups if g["title"] == key]
+        else:
+            matches = [g for g in self._groups if g["id"] == key]
+        if not matches:
+            raise ValueError(f"get_group(): no group matches {kind}={key!r}")
+        if len(matches) > 1:
+            raise ValueError(
+                f"get_group(): {len(matches)} groups match {kind}={key!r} "
+                "-- ambiguous"
+            )
+        return Group(matches[0])
+
+    def remove_group(self, group: "Group" = None, title: str = None, id=None):
+        """Remove a group entirely: every one of its axes (via
+        :meth:`Axes.remove`, so ``sharex``/``sharey`` links and any id stay
+        consistent) and the group's own box/title registration.
+
+        Pass the :class:`Group` object itself (from :meth:`get_groups`/
+        :meth:`get_group`), or find it by ``title``/``id`` the same way
+        :meth:`get_group` does -- exactly one of the three. Leaves a blank
+        rectangle where the group was, the same as :meth:`Axes.remove`
+        leaves a gap rather than reflowing the rest of the grid to fill it.
+        """
+        given = [group is not None, title is not None, id is not None]
+        if sum(given) != 1:
+            raise ValueError(
+                "remove_group(): pass exactly one of group=, title=, or id="
+            )
+        if group is None:
+            group = self.get_group(title=title, id=id)
+        for ax in group.flat_axes():
+            ax.remove()
+        self._groups = [g for g in self._groups if g is not group._raw]
+
+    def get_ax(self, row: int = None, col: int = None, title: str = None,
+              id=None, many: bool = False):
+        """The axes matching exactly one of: ``(row, col)`` together (this
+        axes' own position in a *plain, ungrouped* grid -- for an axes
+        inside a :class:`GroupLayout`-built group, this is that group's
+        position in the shared internal grid, not usually what you want;
+        use :meth:`Group.get_ax` for that instead), ``title`` (see
+        :meth:`Axes.set_title`), or ``id`` (see :meth:`Axes.set_id`).
+
+        Raises if no axes matches, or -- unless ``many=True`` -- if more
+        than one does (impossible for ``id``, which is unique per figure by
+        construction; titles may legitimately repeat). ``many=True``
+        returns every match as a list instead (even a single one, so the
+        return type doesn't depend on how many happened to match).
+        """
+        kind, key = _resolve_lookup_key(row, col, title, id, "get_ax")
+        if kind == "rowcol":
+            r, c = key
+            matches = [ax for ax in self.axes if ax._subplotspec is not None
+                      and ax._subplotspec.row0 == ax._subplotspec.row1 == r
+                      and ax._subplotspec.col0 == ax._subplotspec.col1 == c]
+        elif kind == "title":
+            matches = [ax for ax in self.axes if ax.get_title() == key]
+        else:
+            matches = [ax for ax in self.axes if ax.get_id() == key]
+        return _finish_lookup(matches, "get_ax", kind, key, many)
 
     def group_spacing(self, wspace=None, hspace=None):
         """Reserve extra pixels between subplots for :meth:`group` boxes,
@@ -655,6 +914,7 @@ class Figure:
         Keeps ``figsize``/``style`` -- use a new :class:`Figure` for those.
         """
         self.axes = []
+        self._id_index = {}
         self._sliders = {}
         self._slider_index_n = {}
         self._suptitle = None
@@ -743,6 +1003,19 @@ class Figure:
         """
         return GridSpec(self, nrows, ncols, **kwargs)
 
+    def _check_id_available(self, id, owner):
+        """Raise if ``id`` (an axes id, not ``None``) already belongs to a
+        different axes in this figure. Shared by :meth:`Axes.set_id` and
+        :meth:`adopt_axes` -- the two places an axes' id ever changes.
+        """
+        if id is None:
+            return
+        holder = self._id_index.get(id)
+        if holder is not None and holder is not owner:
+            raise ValueError(
+                f"{id!r} is already used by another axes in this figure"
+            )
+
     def adopt_axes(self, ax) -> Axes:
         """Merge an axes built standalone -- most commonly a copy that just
         crossed a process boundary -- into this figure, in place of
@@ -779,9 +1052,19 @@ class Figure:
         :meth:`align_xlabels`) has to run after every worker's result has
         been adopted, against the real, adopted objects -- never before
         dispatch, and never inside the worker itself.
+
+        An id set before crossing the process boundary (see
+        :meth:`Axes.set_id`) is re-validated and re-registered against
+        *this* figure's own id index here -- the worker's own figure never
+        knew about this one's other axes, so a collision between two
+        workers' independently-chosen ids is only ever catchable at the
+        merge point, which is exactly this method.
         """
         ax.figure = self
         if ax._subplotspec is None:
+            self._check_id_available(ax._id, ax)
+            if ax._id is not None:
+                self._id_index[ax._id] = ax
             self.axes.append(ax)
             return ax
         spec = ax._subplotspec
@@ -790,6 +1073,11 @@ class Figure:
             if (s is not None and s.nrows == spec.nrows and s.ncols == spec.ncols
                     and s.row0 == spec.row0 and s.row1 == spec.row1
                     and s.col0 == spec.col0 and s.col1 == spec.col1):
+                if existing._id is not None and self._id_index.get(existing._id) is existing:
+                    del self._id_index[existing._id]
+                self._check_id_available(ax._id, ax)
+                if ax._id is not None:
+                    self._id_index[ax._id] = ax
                 self.axes[i] = ax
                 return ax
         raise ValueError(

@@ -33,13 +33,13 @@ rng = np.random.default_rng(11)
 t = np.linspace(0, 4 * np.pi, 200)
 
 layout = plotpress.GroupLayout(2, 3)
-layout.add(0, 0, 2, 2, title="Engine", color="#d62728")
-layout.add(0, 1, 1, 4, title="Status lights", color="#ff7f0e")
-layout.add(0, 2, 4, 1, title="History", color="#2ca02c")
-layout.add(1, 0, 4, 4, title="Diagnostics", color="#1f77b4",
-          mask=[[1, 0, 1, 0], [0, 1, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]])
-layout.add(1, 1, 2, 1, title="Fuel / battery", color="#9467bd")
-layout.add(1, 2, 1, 1, title="Alerts", color="#8c564b")
+layout.add_group(0, 0, 2, 2, title="Engine", color="#d62728")
+layout.add_group(0, 1, 1, 4, title="Status lights", color="#ff7f0e")
+layout.add_group(0, 2, 4, 1, title="History", color="#2ca02c")
+layout.add_group(1, 0, 4, 4, title="Diagnostics", color="#1f77b4",
+                mask=[[1, 0, 1, 0], [0, 1, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]])
+layout.add_group(1, 1, 2, 1, title="Fuel / battery", color="#9467bd")
+layout.add_group(1, 2, 1, 1, title="Alerts", color="#8c564b")
 
 fig, axes = plotpress.subplots_from_groups(layout, figsize=(13, 8))
 
@@ -79,3 +79,11 @@ axes[1, 2].pie([3, 1], colors=["#8c564b", "#ecd9d0"])
 fig.group_spacing(wspace=18.0, hspace=22.0)
 fig.suptitle("Instrument dashboard: mixed group shapes and deleted axes")
 fig.tight_layout()
+
+# An acknowledged alert dismisses its whole panel -- fig.remove_group()
+# removes the group's axes (via the now id/group-aware Axes.remove()) and
+# its own box/title registration together, leaving a blank rectangle
+# rather than reflowing the rest of the dashboard to fill it (the same
+# thing Axes.remove() already does for one axes).
+fig.remove_group(title="Alerts")
+print("groups remaining:", [g.title for g in fig.get_groups()])
