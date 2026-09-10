@@ -847,7 +847,9 @@ def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
     stripped = re.sub(
         r'<script type="application/json" id="plotpress-layout">.*?</script>',
         "", text, flags=re.DOTALL)
-    assert "plotpress-layout" not in stripped   # sanity: the sub actually matched
+    # sanity: the sub actually removed the data block (the JS payload still
+    # mentions the id -- it reads that block for Extract's sup-label fallback).
+    assert 'id="plotpress-layout">' not in stripped
     p.write_text(stripped, encoding="utf-8")
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
     assert layout == {"figsize": None, "axes": {}, "groups": [], "omitted_axes": [],
@@ -1036,6 +1038,74 @@ def test_subplots_from_layout_reproduces_figure_suptitle_and_facecolor(tmp_path)
     # same way figsize= already does.
     fig3, ax3 = plotpress.subplots_from_layout(layout, facecolor="#123456")
     assert fig3.style.facecolor == "#123456"
+
+
+def test_hidden_axis_label_is_stored_but_not_drawn():
+    """set_xlabel(..., visible=False) keeps the text reachable (get_xlabel,
+    the round trip, an Extract record) without rendering it or reserving any
+    margin for it."""
+    fig, (a_shown, a_hidden) = plotpress.subplots(1, 2, figsize=(8, 3))
+    for ax in (a_shown, a_hidden):
+        ax.plot([0, 1], [0, 1])
+    a_shown.set_xlabel("Time (s)")
+    a_hidden.set_xlabel("Time (s)", visible=False)
+    a_hidden.set_ylabel("V", visible=False)
+
+    # the text still reads back
+    assert a_hidden.get_xlabel() == "Time (s)"
+    assert a_hidden.get_xlabel_visible() is False
+    assert a_hidden.get_ylabel_visible() is False
+
+    # ... but only the visible panel's label is in the SVG (one <text>, not two)
+    texts = [t.text for t in _parse(fig.to_svg()).findall(".//" + NS + "text")]
+    assert texts.count("Time (s)") == 1
+    assert "V" not in texts
+
+    # a hidden label reserves no margin: same layout as an identical figure
+    # whose second panel has no label set at all.
+    fig.tight_layout()
+    ref, (_, r_bare) = plotpress.subplots(1, 2, figsize=(8, 3))
+    for ax in ref.axes:
+        ax.plot([0, 1], [0, 1])
+    ref.axes[0].set_xlabel("Time (s)")
+    ref.tight_layout()
+    assert [round(v, 3) for v in a_hidden._rect] == [
+        round(v, 3) for v in r_bare._rect]
+
+
+def test_set_xlabel_visible_toggles_without_touching_text():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_xlabel_visible(False)
+    assert ax.get_xlabel() == "Frequency (Hz)"
+    assert "Frequency (Hz)" not in fig.to_svg()
+    ax.set_xlabel_visible(True)
+    assert "Frequency (Hz)" in fig.to_svg()
+
+
+def test_hidden_label_round_trips_through_subplots_from_layout(tmp_path):
+    fig, axes = plotpress.subplots(1, 2)
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    axes[0].set_xlabel("shown x")
+    axes[1].set_xlabel("hidden x", visible=False)
+    axes[1].set_ylabel("hidden y", visible=False)
+    p = tmp_path / "hidden_labels.html"
+    fig.save(str(p), interactive=True)
+
+    layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
+    # visibility is only recorded when a label is actually hidden
+    assert "xlabel_visible" not in layout["axes"][0]
+    assert layout["axes"][1]["xlabel_visible"] is False
+    assert layout["axes"][1]["ylabel_visible"] is False
+
+    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    assert axes2[0].get_xlabel() == "shown x" and axes2[0].get_xlabel_visible()
+    assert axes2[1].get_xlabel() == "hidden x"
+    assert axes2[1].get_xlabel_visible() is False
+    assert axes2[1].get_ylabel_visible() is False
+    assert "hidden x" not in fig2.to_svg()
 
 
 def test_subplots_from_layout_skips_decorations_absent_from_an_older_layout():

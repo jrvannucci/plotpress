@@ -182,14 +182,14 @@ def _group_axes_extra(ax, st):
     bottom = left = right = 0.0
     if not ax._axis_off:
         xdec = st.tick_size + st.tick_label_size + 4
-        if ax._xlabel:
+        if ax._shown_xlabel():
             xdec += st.label_size + 6
         if ax._xtick_side == "top":
             top += xdec
         else:
             bottom += xdec
         ydec = st.tick_size + _max_ytick_width(ax, st) + 4
-        if ax._ylabel:
+        if ax._shown_ylabel():
             ydec += st.label_size + 6
         if ax._ytick_side == "right":
             right += ydec
@@ -392,6 +392,8 @@ def axes_metadata(fig, idx_of=None):
             # Also surfaced on every extracted record, so a value pulled out
             # of context (a CSV row, a JSON dict) still carries what its x/y
             # and any color-encoded value actually mean, not just bare numbers.
+            # The raw label, not _shown_*(): a label set visible=False is drawn
+            # nowhere but is precisely the name an export still wants.
             "xlabel": ax._xlabel, "ylabel": ax._ylabel,
             "zlabel": _colorbar_label(ax, fig),
             # Which fig.group() box(es) this axes belongs to, if any -- joined
@@ -484,6 +486,11 @@ def layout_metadata(fig, idx_of=None):
             "projection": "polar" if getattr(ax, "_is_polar", False) else None,
             "title": ax._title or None, "title_size": ax._title_size,
             "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
+            # Only emitted when actually hidden -- a visible label (the common
+            # case) carries no extra key, and an old layout without these
+            # rebuilds visible, which is what it always was.
+            **({"xlabel_visible": False} if ax._xlabel and not ax._xlabel_visible else {}),
+            **({"ylabel_visible": False} if ax._ylabel and not ax._ylabel_visible else {}),
             # Always explicit, even for an originally auto-scaled axes --
             # "the same figure back" means the same rendered extent, not
             # whatever autoscale happens to recompute from however much of
@@ -2389,7 +2396,7 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
                 f'<text x="{_fmt(xr + ts + 2)}" y="{_fmt(y + fs * 0.35)}" '
                 f'text-anchor="start" font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
             )
-        if ax._ylabel:
+        if ax._shown_ylabel():
             lx = xr + ts + _max_ytick_width(ax, st) + st.label_size + 4
             cy = px_top + px_h / 2.0
             body.append(
@@ -2405,7 +2412,7 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
                 f'<text x="{_fmt(x)}" y="{_fmt(px_top - ts - 3)}" text-anchor="middle" '
                 f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
             )
-        if ax._xlabel:
+        if ax._shown_xlabel():
             body.append(
                 f'<text x="{_fmt(px_left + px_w / 2)}" y="{_fmt(px_top - ts - fs - st.label_size)}" '
                 f'text-anchor="middle" font-size="{st.label_size}" '
@@ -2495,7 +2502,7 @@ def _render_spines(ax, px_left, px_top, px_w, px_h, body):
 def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
     cx = px_left + px_w / 2.0
     ts, fs = st.tick_size, st.tick_label_size
-    if ax._xlabel and not ax._axis_off:
+    if ax._shown_xlabel() and not ax._axis_off:
         if ax._xlabel_y_override is not None:
             y = ax._xlabel_y_override
         elif ax._xtick_side == "top":
@@ -2506,7 +2513,7 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
             f'<text x="{_fmt(cx)}" y="{_fmt(y)}" text-anchor="middle" '
             f'font-size="{st.label_size}" fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
         )
-    if ax._ylabel and not ax._axis_off:
+    if ax._shown_ylabel() and not ax._axis_off:
         cy = px_top + px_h / 2.0
         if ax._ylabel_x_override is not None:
             x, angle = ax._ylabel_x_override, -90
@@ -2543,7 +2550,7 @@ def twiny_headroom(ax, st):
     h = 0.0
     if ax._xtick_side == "top" and not ax._axis_off:
         h = st.tick_size + st.tick_label_size + 4
-        if ax._xlabel:
+        if ax._shown_xlabel():
             h += st.label_size + 6
     for other in ax.figure.axes:
         is_twiny = other._twin_of is ax and other._twin_shared == "y"
@@ -2552,7 +2559,7 @@ def twiny_headroom(ax, st):
                             and other._xtick_side == "top")
         if is_twiny or is_secondary_top:
             th = st.tick_size + st.tick_label_size + 4
-            if other._xlabel:
+            if other._shown_xlabel():
                 th += st.label_size + 6
             h = max(h, th)
     return h

@@ -1222,12 +1222,12 @@ class Figure:
             if ax._twin_of is not None:
                 if ax._twin_shared == "x":                   # twinx: y on the right
                     rdec = yst.tick_size + ytw + 4
-                    if ax._ylabel:
+                    if ax._shown_ylabel():
                         rdec += st.label_size + 6
                     right_px = max(right_px, rdec)
                 else:                                        # twiny: x on the top
                     tdec = xst.tick_size + xst.tick_label_size + 4
-                    if ax._xlabel:
+                    if ax._shown_xlabel():
                         tdec += st.label_size + 6
                     twin_top_px = max(twin_top_px, tdec)
                 continue
@@ -1237,14 +1237,14 @@ class Figure:
             # into the same top/right bands a twin's opposite-side ticks use,
             # rather than the bottom/left band the default side would need.
             ldec = yst.tick_size + ytw + 4
-            if ax._ylabel:
+            if ax._shown_ylabel():
                 ldec += st.label_size + 6
             if ax._ytick_side == "right":
                 right_px = max(right_px, ldec)
             else:
                 left_px = max(left_px, ldec)
             bdec = xst.tick_size + xst.tick_label_size + 4
-            if ax._xlabel:
+            if ax._shown_xlabel():
                 bdec += st.label_size + 6
             if ax._xtick_side == "top":
                 twin_top_px = max(twin_top_px, bdec)
@@ -1488,7 +1488,7 @@ class Figure:
 
         self._align_x_axes = axes
         axlist = [a for a in (axes if axes is not None else self.axes)
-                 if a._xlabel and not a._axis_off]
+                 if a._shown_xlabel() and not a._axis_off]
         if not axlist:
             return self
         st = self.style
@@ -1525,7 +1525,7 @@ class Figure:
 
         self._align_y_axes = axes
         axlist = [a for a in (axes if axes is not None else self.axes)
-                 if a._ylabel and not a._axis_off]
+                 if a._shown_ylabel() and not a._axis_off]
         if not axlist:
             return self
         st = self.style
@@ -2565,7 +2565,10 @@ def _axes_summary_lines(ax, gaps=None):
     if ax._title:
         lines.append(f"  title:     {ax._title!r}")
     if ax._xlabel or ax._ylabel:
-        lines.append(f"  labels:    xlabel={ax._xlabel!r} ylabel={ax._ylabel!r}")
+        xh = "" if ax._xlabel_visible else " (hidden)"
+        yh = "" if ax._ylabel_visible else " (hidden)"
+        lines.append(
+            f"  labels:    xlabel={ax._xlabel!r}{xh} ylabel={ax._ylabel!r}{yh}")
     if getattr(ax, "_is_polar", False):
         lines.append("  polar:     yes")
     if gaps is not None:
@@ -2828,6 +2831,11 @@ def _apply_axes_decorations(ax, spec):
         ax.set(**bulk)
     # Not covered by .set() -- see its own docstring on the no-argument
     # toggles and multi-value setters it deliberately excludes.
+    # layout_metadata() only records these when a label is actually hidden.
+    if spec.get("xlabel_visible") is False:
+        ax.set_xlabel_visible(False)
+    if spec.get("ylabel_visible") is False:
+        ax.set_ylabel_visible(False)
     if spec.get("title") is not None:
         ax.set_title(spec["title"], size=spec.get("title_size"))
     if spec.get("axis_off"):
@@ -2872,7 +2880,9 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
     limits, scale, grid, aspect, and inverted-axis state -- exactly as
     :meth:`Figure.group` boxes and the grid shape itself already did --
     so a caller only has to replot the recovered data, never re-set a
-    single label or title by hand. The figure's own :meth:`Figure.suptitle`/
+    single label or title by hand. A label hidden with
+    ``set_xlabel(..., visible=False)`` comes back hidden (still stored,
+    still drawn nowhere). The figure's own :meth:`Figure.suptitle`/
     :meth:`~Figure.supxlabel`/:meth:`~Figure.supylabel` and background
     color come back the same way. Not carried over (real gaps, not
     oversights -- see :func:`plotpress.svg.layout_metadata`'s own

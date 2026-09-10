@@ -1223,7 +1223,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
             draw.line([xr, y, xr + ts, y], fill=col, width=tw)
             draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
                       font=font, anchor="lm")
-        if ax._ylabel:
+        if ax._shown_ylabel():
             lx = xr + ts + (_max_ytick_width(ax, st) + st.label_size + 4) * S
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                    _rgb(st.text_color), _font(st.label_size * S, st.font_family))
@@ -1233,7 +1233,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
             draw.line([x, T, x, T - ts], fill=col, width=tw)
             draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),
                       font=font, anchor="md")
-        if ax._xlabel:
+        if ax._shown_xlabel():
             draw.text((L + Wp / 2.0, T - ts - fs - st.label_size * S),
                       ax._xlabel, fill=_rgb(st.text_color),
                       font=_font(st.label_size * S, st.font_family), anchor="md")
@@ -1242,7 +1242,7 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
     cx = L + Wp / 2.0
     ts, fs = st.tick_size, st.tick_label_size
-    if ax._xlabel and not ax._axis_off:
+    if ax._shown_xlabel() and not ax._axis_off:
         # Overrides (align_xlabels) are stamped in 1x figure-pixel space, like
         # the SVG backend's -- scale to this backend's supersampled space.
         if ax._xlabel_y_override is not None:
@@ -1253,7 +1253,7 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
             y = T + Hp + (ts + fs + st.label_size + 4) * S
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
                   font=_font(st.label_size * S, st.font_family), anchor="mm")
-    if ax._ylabel and not ax._axis_off:
+    if ax._shown_ylabel() and not ax._axis_off:
         # Mirror svg._render_labels exactly: clear the *measured* tick labels.
         # Substituting the tick font size for their width put this up to ~9px
         # from where the SVG draws it, jammed against the figure edge.

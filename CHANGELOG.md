@@ -13,6 +13,37 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.31.0] - 2026-09-10
+
+### Added
+
+- **Hidden axis labels** -- `ax.set_xlabel("...", visible=False)` /
+  `set_ylabel(..., visible=False)`, plus `set_xlabel_visible()` /
+  `set_ylabel_visible()` / `get_xlabel_visible()` / `get_ylabel_visible()`
+  to toggle and query without retyping the text. A hidden label is drawn
+  nowhere and reserves no margin (`tight_layout()` packs the panel as if
+  it had none, `align_xlabels()` skips it), but is still *stored*:
+  `get_xlabel()` returns it, `print_summary()` lists it marked
+  `(hidden)`, the `load_data()` layout round-trip carries it (with a
+  `visible: false` flag, and `subplots_from_layout()` rebuilds it
+  hidden), and a Point Picking **Extract** record still reports it. For a
+  dense grid that names every panel's axes for data export but draws only
+  one shared `fig.supxlabel`/`fig.supylabel`. The `visible=` argument
+  itself is matplotlib-compatible (mpl forwards `**kwargs` to the label
+  `Text`); the flat `set_*_visible()` helpers are the plotpress addition.
+- **Point Picking Extract records now carry the figure's shared labels** --
+  `suptitle`/`supxlabel`/`supylabel` ride each record (only when the
+  figure has them), alongside the existing per-axes `xlabel`/`ylabel`, as
+  the shared-axis fallback for a grid labeled once instead of per panel.
+  The interactive HTML already embedded these in its layout block; the JS
+  just wasn't reading them. No payload increase.
+- New examples:
+  `docs/examples/axes_features/plot_25_hidden_axis_labels.py` (the
+  mechanic) and
+  `docs/examples/data_roundtrip/plot_07_hidden_labels_survive_the_roundtrip.py`
+  (a hidden-label grid saved, reloaded, and rebuilt with every label
+  intact).
+
 ## [0.30.3] - 2026-09-10
 
 ### Changed

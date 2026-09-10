@@ -414,6 +414,11 @@ _JS_SOURCE = r"""
   var META = metaEl ? expandColumnarMeta(reviveBinary(JSON.parse(metaEl.textContent))) : {};
   var styleEl = document.getElementById('plotpress-style');
   var STYLE = styleEl ? JSON.parse(styleEl.textContent) : {};
+  // The layout block is already in the page for the round-trip; Extract reads
+  // its figure-level suptitle/supxlabel/supylabel so a picked record from a
+  // grid that labels its shared axis once still says what x/y mean.
+  var layoutEl = document.getElementById('plotpress-layout');
+  var LAYOUT = layoutEl ? JSON.parse(layoutEl.textContent) : {};
 
   // CUR holds each axes' *current* limits (mutated by per-axes data zoom);
   // META stays the original. All data<->pixel math reads CUR; the artist zoom
@@ -2465,12 +2470,15 @@ _JS_SOURCE = r"""
     // record carries one. xlabel/ylabel/zlabel (zlabel from any colorbar
     // attached to this axes, shared or not) ride along too, so a value
     // pulled out of context still says what it means, not just a bare
-    // number. group is the title of whichever fig.group() box this axes
-    // sits in (joined with ", " if it's in more than one, empty if none),
-    // so a marker from a clustered panel says which cluster it came from.
-    // Any per-axes context (Axes.set_pick_context) rides along as well,
-    // without clobbering a structured field of the same name (x, y,
-    // kind, ...) that the picked data itself already set.
+    // number -- including a label set with visible=False, which is drawn
+    // nowhere but still carries here. The figure's own supxlabel/supylabel/
+    // suptitle come along after (only when set) as the shared-axis fallback.
+    // group is the title of whichever fig.group() box this axes sits in
+    // (joined with ", " if it's in more than one, empty if none), so a
+    // marker from a clustered panel says which cluster it came from. Any
+    // per-axes context (Axes.set_pick_context) rides along as well, without
+    // clobbering a structured field of the same name (x, y, kind, ...) that
+    // the picked data itself already set.
     if (rec.axes !== undefined) {
       var am = META[rec.axes];
       rec.axes_title = (am && am.title) ? am.title : ('axes ' + rec.axes);
@@ -2482,6 +2490,16 @@ _JS_SOURCE = r"""
         for (var ck in am.context) if (!(ck in rec)) rec[ck] = am.context[ck];
       }
     }
+    // Figure-level shared labels -- added only when the figure has them, so a
+    // record from a figure with none is unchanged. A per-axes xlabel/ylabel
+    // (visible or hidden) still rides alongside above; these are the fallback
+    // for a grid that carries only one shared sup-label.
+    var lx = LAYOUT.supxlabel && LAYOUT.supxlabel.text;
+    var ly = LAYOUT.supylabel && LAYOUT.supylabel.text;
+    var lt = LAYOUT.suptitle && LAYOUT.suptitle.text;
+    if (lx) rec.supxlabel = lx;
+    if (ly) rec.supylabel = ly;
+    if (lt) rec.suptitle = lt;
     return rec;
   }
 

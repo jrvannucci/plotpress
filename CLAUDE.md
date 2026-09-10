@@ -42,10 +42,10 @@ need rather than the whole file.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `plotpress/figure.py` | 3874 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, grouping (`Group`/`GroupLayout`/`subplots_from_groups`), plus the HTML round-trip (`load_data`, `subplots_from_layout`) and the `Report` multi-figure aggregator |
-| `plotpress/axes.py` | 3795 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
-| `plotpress/_interactive.py` | 3254 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
-| `plotpress/svg.py` | 2817 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `plotpress/figure.py` | 3884 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, grouping (`Group`/`GroupLayout`/`subplots_from_groups`), plus the HTML round-trip (`load_data`, `subplots_from_layout`) and the `Report` multi-figure aggregator |
+| `plotpress/axes.py` | 3840 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
+| `plotpress/_interactive.py` | 3272 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
+| `plotpress/svg.py` | 2824 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
 | `plotpress/raster.py` | 1507 | PNG backend via Pillow; PDF via svglib/reportlab |
 | `plotpress/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
 | `plotpress/vega.py` | 1412 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |

@@ -98,6 +98,15 @@ def test_method_names_are_a_subset_of_matplotlib():
         # here once GroupLayout's axes_titles=/set_title() are also in the
         # picture, and "id" reads unambiguously as "not the display text."
         "set_id", "get_id",
+        # matplotlib toggles an axis label's visibility through the label
+        # Text artist (ax.xaxis.label.set_visible(False)); plotpress has no
+        # per-artist handle, so it exposes the toggle directly. The paired
+        # set_xlabel(..., visible=False) kwarg *is* matplotlib-compatible
+        # (mpl forwards **kwargs to the Text) -- only these flat helpers are
+        # the extra. A hidden label still round-trips and still rides a
+        # picked point's Extract record.
+        "set_xlabel_visible", "set_ylabel_visible",
+        "get_xlabel_visible", "get_ylabel_visible",
     }
     unexpected = sp - mpl - intentional_extras
     plt.close("all")

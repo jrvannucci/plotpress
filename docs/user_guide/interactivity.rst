@@ -184,16 +184,23 @@ and arbitrary named dimensions attach via ``values=`` on the plotting call.
 Every picked record also carries ``axes`` (the source axes' index) and
 ``axes_title`` -- the axes' own title, or a generated ``"axes N"`` when it has
 none, so a multi-panel export always identifies its source panel by name, not
-just a bare index. ``xlabel``/``ylabel`` carry that axes' own axis labels, and
+just a bare index. ``xlabel``/``ylabel`` carry that axes' own axis labels --
+including one set with ``ax.set_xlabel(..., visible=False)``, which is drawn
+nowhere on the figure but is exactly the name an export still wants -- and
 ``zlabel`` carries the title of any colorbar attached to it (this library's
 own convention for labeling what a colorbar's scale means is
 ``fig.colorbar(mesh, ax=ax).set_title("units")``) -- a colorbar shared across
 several axes via ``fig.colorbar(mesh, ax=[a, b])`` reports the same
-``zlabel`` for each of them. ``group`` carries the title of any
-:meth:`~plotpress.figure.Figure.group` box that axes sits in -- empty when it
-belongs to none, joined with ``", "`` on the rare axes added to more than
-one. Together these mean a value pulled out of context (a CSV row, a JSON
-dict) still says what it means, not just a bare number.
+``zlabel`` for each of them. When the figure has a
+:meth:`~plotpress.figure.Figure.supxlabel`/
+:meth:`~plotpress.figure.Figure.supylabel`/
+:meth:`~plotpress.figure.Figure.suptitle`, each record also carries
+``supxlabel``/``supylabel``/``suptitle`` -- the shared-axis fallback for a
+grid that labels its axes once instead of per panel. ``group`` carries the
+title of any :meth:`~plotpress.figure.Figure.group` box that axes sits in --
+empty when it belongs to none, joined with ``", "`` on the rare axes added
+to more than one. Together these mean a value pulled out of context (a CSV
+row, a JSON dict) still says what it means, not just a bare number.
 
 :meth:`~plotpress.axes.Axes.set_pick_context` attaches further, axes-level
 key/value context that rides along on every record picked from that axes --

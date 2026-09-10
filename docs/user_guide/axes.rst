@@ -116,8 +116,22 @@ Ticks and labels
     a zoomed interactive figure using one falls back to default formatting
     for that axis instead.
 
-``set_xlabel(label)`` / ``set_ylabel(label)`` / ``set_title(title)``
-    Axis labels and the per-axes title.
+``set_xlabel(label, visible=True)`` / ``set_ylabel(label, visible=True)`` / ``set_title(title)``
+    Axis labels and the per-axes title. ``visible=False`` stores the
+    label without drawing it and without reserving any margin for it --
+    ``get_xlabel()`` still returns the text, ``print_summary()`` still
+    lists it (marked ``(hidden)``), the ``load_data()`` layout round-trip
+    still carries it, and a picked point's **Extract** record still
+    reports it. For a dense grid that names every panel's axes for later
+    data export but draws only one shared ``fig.supxlabel``/
+    ``fig.supylabel`` -- see
+    :doc:`/auto_examples/axes_features/plot_25_hidden_axis_labels`.
+
+``set_xlabel_visible(visible=True)`` / ``set_ylabel_visible(visible=True)`` / ``get_xlabel_visible()`` / ``get_ylabel_visible()``
+    Show or hide an axis label without changing its text -- the toggle
+    form of the ``visible=`` argument above. (matplotlib spells this
+    ``ax.xaxis.label.set_visible(...)``; plotpress has no per-artist
+    handle, so the toggle is a direct method.)
 
 ``set_id(id)`` / ``get_id()``
     A plain, undrawn identifier for this axes -- distinct from

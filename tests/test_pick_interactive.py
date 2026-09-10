@@ -712,6 +712,60 @@ def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
     assert row[header.index("note")] == 'comma, and "quote"'
 
 
+def test_extracted_record_carries_hidden_label_and_sup_labels(page, tmp_path):
+    """A dense grid that shows one shared sup-label instead of per-panel
+    labels can still name each panel's axes for export: set_xlabel(...,
+    visible=False) is drawn nowhere but rides the Extract record, and the
+    figure's supxlabel/supylabel come along as the shared-axis fallback."""
+    import plotpress
+    from pick_cases import px
+
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0.0, 1.0], [0.0, 1.0])
+    axes[1].plot([0.0, 1.0], [1.0, 0.0])
+    for ax in axes:
+        ax.set_xlabel("elapsed (s)", visible=False)
+        ax.set_ylabel("signal (mV)", visible=False)
+    fig.supxlabel("time")
+    fig.supylabel("amplitude")
+    fig.suptitle("Sweep 4")
+
+    path = tmp_path / "hidden_and_sup.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    # the hidden labels really are drawn nowhere
+    assert "elapsed (s)" not in path.read_text(encoding="utf-8").split(
+        "<script")[0]
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 1.0, 1.0)
+    recs = _click_mode(page, "Point Picking", ux, uy)
+    assert recs[0]["xlabel"] == "elapsed (s)"
+    assert recs[0]["ylabel"] == "signal (mV)"
+    assert recs[0]["supxlabel"] == "time"
+    assert recs[0]["supylabel"] == "amplitude"
+    assert recs[0]["suptitle"] == "Sweep 4"
+
+
+def test_extract_omits_sup_label_fields_when_the_figure_has_none(page, tmp_path):
+    """A figure with no suptitle/supxlabel/supylabel produces records with no
+    such keys at all -- the fields appear only when there's something to
+    put in them."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "no_sup.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 1.0, 1.0)
+    recs = _click_mode(page, "Point Picking", ux, uy)
+    assert "supxlabel" not in recs[0]
+    assert "supylabel" not in recs[0]
+    assert "suptitle" not in recs[0]
+
+
 def test_extracted_record_carries_group_title(page, tmp_path):
     """A picked point's record reports which fig.group() box its axes sits
     in (empty when it belongs to none), the same way it already reports

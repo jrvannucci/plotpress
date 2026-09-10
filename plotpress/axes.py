@@ -256,6 +256,12 @@ class Axes:
         self._ytick_side = "left"
         self._xlabel = ""
         self._ylabel = ""
+        # A hidden label is still stored (get_xlabel(), the HTML round-trip, and
+        # a picked point's Extract record all keep reporting it) -- it just
+        # isn't drawn and reserves no margin. For a dense grid that names every
+        # panel's axes for data export but shows only one shared sup-label.
+        self._xlabel_visible = True
+        self._ylabel_visible = True
         self._xlabel_y_override = None   # figure pixels; set by Figure.align_xlabels
         self._ylabel_x_override = None   # figure pixels; set by Figure.align_ylabels
         self._title = ""
@@ -3015,15 +3021,54 @@ class Axes:
         """
         return self._rect
 
-    def set_xlabel(self, xlabel):
-        """Set the x-axis label."""
+    def set_xlabel(self, xlabel, visible=True):
+        """Set the x-axis label. ``visible=False`` stores it without drawing
+        it -- ``get_xlabel()``, the ``load_data()`` layout round-trip, and a
+        picked point's Extract record still report it, but it isn't rendered
+        and reserves no margin (see also :meth:`set_xlabel_visible`). Passing
+        text again with the default ``visible=True`` re-shows it."""
         self._xlabel = xlabel
+        self._xlabel_visible = bool(visible)
         self.figure._layout_dirty = True
 
-    def set_ylabel(self, ylabel):
-        """Set the y-axis label."""
+    def set_ylabel(self, ylabel, visible=True):
+        """Set the y-axis label. ``visible=False`` stores it without drawing
+        it -- see :meth:`set_xlabel` and :meth:`set_ylabel_visible`."""
         self._ylabel = ylabel
+        self._ylabel_visible = bool(visible)
         self.figure._layout_dirty = True
+
+    def set_xlabel_visible(self, visible=True):
+        """Show or hide the x-axis label without changing its text. A hidden
+        label is still stored -- ``get_xlabel()``, the layout round-trip, and
+        Extract records keep reporting it -- it just isn't drawn and reserves
+        no margin."""
+        self._xlabel_visible = bool(visible)
+        self.figure._layout_dirty = True
+
+    def set_ylabel_visible(self, visible=True):
+        """Show or hide the y-axis label without changing its text -- see
+        :meth:`set_xlabel_visible`."""
+        self._ylabel_visible = bool(visible)
+        self.figure._layout_dirty = True
+
+    def get_xlabel_visible(self):
+        """Whether the x-axis label is drawn (default ``True``). ``False``
+        after ``set_xlabel(..., visible=False)`` or ``set_xlabel_visible(False)``."""
+        return self._xlabel_visible
+
+    def get_ylabel_visible(self):
+        """Whether the y-axis label is drawn (default ``True``)."""
+        return self._ylabel_visible
+
+    def _shown_xlabel(self):
+        """The x label as far as rendering and layout are concerned -- the
+        text when visible, ``""`` when hidden, so every draw/margin/alignment
+        site treats a hidden label exactly like an unset one."""
+        return self._xlabel if self._xlabel_visible else ""
+
+    def _shown_ylabel(self):
+        return self._ylabel if self._ylabel_visible else ""
 
     def set_title(self, label, size=None, fontsize=None):
         """Set this axes' title. ``size`` overrides the style's title size.
