@@ -11,6 +11,10 @@ anywhere in the source.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.30.3] - 2026-09-10
+
 ### Changed
 
 - **The `figure_layout` and `grouping` example subsections are now their
