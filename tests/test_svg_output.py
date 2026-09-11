@@ -427,6 +427,71 @@ def test_report_static_mode_embeds_figures_without_the_toolbar(tmp_path):
     assert "plotpress-svg" in out
 
 
+def test_report_entries_are_collapsible_with_a_toggle_all_button(tmp_path):
+    """Every entry gets a clickable header (chevron + label, aria-expanded)
+    and the page carries one #plotpress-report-toggle-all button -- open by
+    default, one per entry, regardless of how many figures are added."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [1, 0])
+
+    report = plotpress.Report()
+    report.add(fig1, title="First")
+    report.add(fig2, title="Second")
+    p = tmp_path / "collapsible_report.html"
+    report.save(str(p))
+    out = p.read_text(encoding="utf-8")
+
+    assert out.count('class="plotpress-report-toggle"') == 2
+    assert out.count('role="button"') == 2
+    assert out.count('aria-expanded="true"') == 2
+    assert 'aria-expanded="false"' not in out
+    assert 'class="plotpress-report-entry plotpress-collapsed"' not in out
+    assert '>Collapse All<' in out
+
+
+def test_report_collapsed_true_starts_every_entry_collapsed(tmp_path):
+    """save(collapsed=True) opens with every entry already collapsed -- the
+    entry div carries plotpress-collapsed, its header aria-expanded="false",
+    and the toggle-all button starts labeled the other way (Expand All),
+    since clicking it would expand, not collapse, everything."""
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0, 1], [0, 1])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [1, 0])
+
+    report = plotpress.Report()
+    report.add(fig1)
+    report.add(fig2)
+    p = tmp_path / "collapsed_report.html"
+    report.save(str(p), collapsed=True)
+    out = p.read_text(encoding="utf-8")
+
+    assert out.count("plotpress-report-entry plotpress-collapsed") == 2
+    assert out.count('aria-expanded="false"') == 2
+    assert 'aria-expanded="true"' not in out
+    assert '>Expand All<' in out
+    assert '>Collapse All<' not in out
+
+
+def test_load_data_still_recovers_title_and_details_from_a_collapsible_report(tmp_path):
+    """Regression: the collapsible-header markup nests <h2> one level deeper
+    (inside .plotpress-report-toggle > .plotpress-report-heading) than it
+    used to -- load_data()'s own regex over each split chunk must still find
+    it and the details paragraph regardless."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    report = plotpress.Report()
+    report.add(fig, title="Batch A", details="Baseline run.")
+    p = tmp_path / "report_roundtrip.html"
+    report.save(str(p), collapsed=True)
+
+    entry = plotpress.load_data(str(p))["Batch A"]
+    assert entry["title"] == "Batch A"
+    assert entry["details"] == "Baseline run."
+
+
 def test_toolbar_clearance_reserves_space_only_when_interactive():
     from plotpress.figure import _toolbar_clearance
 

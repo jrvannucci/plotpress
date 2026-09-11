@@ -13,6 +13,27 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.32.3] - 2026-09-10
+
+### Added
+
+- **`Report` entries are collapsible.** A click anywhere on an entry's
+  "Figure N"/title header hides just that figure (its title and details
+  stay visible), so a report with many figures reads as a scannable
+  outline instead of a wall of plots. A **Collapse All**/**Expand All**
+  button above the first entry does the same for every entry at once,
+  relabeling itself based on whether any entry is currently expanded.
+  `Report.save(..., collapsed=True)` starts every entry collapsed
+  instead of open -- worth reaching for once a report holds enough
+  figures that opening it fully expanded gets slow to scroll through,
+  and since a collapsed figure's `loading="lazy"` iframe never even
+  loads on most browsers until a reader expands it, the file opens
+  instantly regardless of how many figures it holds. Collapsing never
+  removes the iframe from the DOM -- an already-interacted-with figure
+  (pan/zoom, picked points) is exactly as it was left when re-expanded,
+  no reload. Both keyboard (Enter/Space) and mouse operate each header;
+  `load_data()` still recovers every entry's title/details unchanged.
+
 ## [0.32.2] - 2026-09-10
 
 ### Fixed

@@ -3049,13 +3049,33 @@ _REPORT_STYLE = (
     "font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a}"
     f".plotpress-report{{max-width:{_REPORT_MAX_WIDTH}px;margin:0 auto}}"
     ".plotpress-report>h1{font-size:24px;margin:0 0 6px}"
-    ".plotpress-report-description{color:#555;margin:0 0 32px;max-width:70ch}"
+    ".plotpress-report-description{color:#555;margin:0 0 20px;max-width:70ch}"
+    # Sits between the description and the first entry regardless of whether
+    # a description was actually given -- margin-bottom on the button itself
+    # (not a wrapping div) collapses to nothing extra when it directly
+    # follows the description's own margin-bottom, so the gap above the
+    # first entry stays the same either way.
+    ".plotpress-report-toggle-all{margin:0 0 32px;padding:6px 14px;"
+    "border:1px solid #ccc;border-radius:6px;background:#fff;color:#333;"
+    "font:inherit;font-weight:600;cursor:pointer}"
+    ".plotpress-report-toggle-all:hover{background:#f0f0f0}"
     ".plotpress-report-entry{margin-bottom:44px}"
+    ".plotpress-report-toggle{display:flex;align-items:center;gap:6px;"
+    "cursor:pointer;-webkit-user-select:none;user-select:none}"
+    ".plotpress-report-chevron{display:inline-block;font-size:10px;color:#888;"
+    "transition:transform .15s;flex:none}"
+    ".plotpress-report-entry.plotpress-collapsed .plotpress-report-chevron{"
+    "transform:rotate(-90deg)}"
+    ".plotpress-report-heading{min-width:0}"
     ".plotpress-report-label{font-size:11px;font-weight:600;letter-spacing:.04em;"
     "text-transform:uppercase;color:#888;margin-bottom:4px}"
     ".plotpress-report-entry h2{font-size:18px;margin:0 0 4px}"
-    ".plotpress-report-details{color:#555;margin:0 0 14px;max-width:70ch;"
+    ".plotpress-report-details{color:#555;margin:8px 0 14px;max-width:70ch;"
     "white-space:pre-wrap}"
+    # Collapsed hides only the iframe -- the label/title/details above stay
+    # visible, so a fully collapsed report still reads as a scannable outline
+    # of what each figure is, not a bare list of "Figure N" headings.
+    ".plotpress-report-entry.plotpress-collapsed iframe{display:none}"
     # width:100% (not max-width) -- this is what actually stretches each
     # figure to fill the report's own width instead of sitting at whatever
     # fixed pixel size the figure happened to be created at.
@@ -3081,8 +3101,21 @@ _REPORT_STYLE = (
 # unloaded/placeholder document's near-zero scrollHeight would collapse its
 # still-showing initial height guess for no reason. It also skips an iframe
 # whose rendered width hasn't changed since its last fit -- on a fixed
-# aspect ratio, that means its needed height hasn't either.
-_REPORT_RESIZE_JS = (
+# aspect ratio, that means its needed height hasn't either. A collapsed
+# entry's iframe measures 0 width (display:none), so expanding it always
+# looks "changed" and re-fits -- the same reason setCollapsed() below calls
+# fit() itself on expand, rather than waiting for a resize that may never come.
+#
+# Collapsing only ever toggles a CSS class -- the iframe (and, when
+# interactive=True, its whole toolbar/pan/zoom/pick state) is never removed
+# from the DOM, so re-expanding shows it exactly as it was left, no reload.
+# A collapsed entry's loading="lazy" iframe is also a real (if
+# browser-dependent) load deferral: a display:none element has no box for the
+# browser to judge "near the viewport" against, so most engines simply never
+# fetch/parse its content until it's shown -- collapsed=True on save() (below)
+# means a report with many heavy figures can open instantly, paying the cost
+# of each one only when a reader actually expands it.
+_REPORT_SCRIPT = (
     "<script>(function(){"
     "function fit(f){"
     "var d=f.contentDocument;if(!d||!d.body||!f.dataset.loaded)return;"
@@ -3094,6 +3127,24 @@ _REPORT_RESIZE_JS = (
     "f.dataset.loaded='1';fit(f);});});"
     "var t;window.addEventListener('resize',function(){"
     "clearTimeout(t);t=setTimeout(function(){frames.forEach(fit);},120);});"
+    "function setCollapsed(entry,collapsed){"
+    "entry.classList.toggle('plotpress-collapsed',collapsed);"
+    "var h=entry.querySelector('.plotpress-report-toggle');"
+    "if(h)h.setAttribute('aria-expanded',collapsed?'false':'true');"
+    "if(!collapsed){var f=entry.querySelector('iframe');if(f)fit(f);}}"
+    "document.querySelectorAll('.plotpress-report-toggle').forEach(function(h){"
+    "h.addEventListener('click',function(){"
+    "var entry=h.closest('.plotpress-report-entry');"
+    "setCollapsed(entry,!entry.classList.contains('plotpress-collapsed'));});"
+    "h.addEventListener('keydown',function(e){"
+    "if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});});"
+    "var allBtn=document.getElementById('plotpress-report-toggle-all');"
+    "if(allBtn)allBtn.addEventListener('click',function(){"
+    "var entries=document.querySelectorAll('.plotpress-report-entry');"
+    "var anyExpanded=Array.prototype.some.call(entries,function(e){"
+    "return!e.classList.contains('plotpress-collapsed');});"
+    "entries.forEach(function(e){setCollapsed(e,anyExpanded);});"
+    "allBtn.textContent=anyExpanded?'Expand All':'Collapse All';});"
     "})();</script>"
 )
 
@@ -3145,7 +3196,8 @@ class Report:
 
     def save(self, path: str, interactive: bool = True,
              pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
-             pick_max_points: int = 20000, binary_pick_data: bool = True) -> str:
+             pick_max_points: int = 20000, binary_pick_data: bool = True,
+             collapsed: bool = False) -> str:
         """Write every added figure, in order, to one self-contained HTML file.
 
         ``interactive`` and the ``pick_*``/``binary_pick_data`` arguments are
@@ -3153,6 +3205,16 @@ class Report:
         what they mean. Every figure in the report shares the same settings;
         call :meth:`Figure.to_html` directly (and write the file yourself) for
         a mix of interactive and static figures on one page.
+
+        Every entry is collapsible: a click anywhere on its "Figure N"/title
+        header hides just that entry's figure, leaving its title and details
+        visible -- a long report reads as a scannable outline instead of a
+        wall of figures. A **Collapse All**/**Expand All** button above the
+        first entry does the same for every one at once. ``collapsed=True``
+        starts every entry collapsed instead of open -- worth it for a report
+        with many figures: a collapsed figure's ``loading="lazy"`` iframe
+        never even loads on most browsers until a reader actually expands it,
+        so the file opens instantly regardless of how many figures it holds.
         """
         if not self._entries:
             raise ValueError("Report has no figures -- call add() at least once")
@@ -3167,6 +3229,10 @@ class Report:
         if self.description:
             parts.append('<p class="plotpress-report-description">'
                          f'{html.escape(self.description)}</p>')
+        toggle_all_label = "Expand All" if collapsed else "Collapse All"
+        parts.append(
+            f'<button type="button" id="plotpress-report-toggle-all" '
+            f'class="plotpress-report-toggle-all">{toggle_all_label}</button>')
         for n, (figure, title, details) in enumerate(self._entries, start=1):
             doc = figure.to_html(interactive=interactive,
                                  pick_precision=pick_precision,
@@ -3190,10 +3256,18 @@ class Report:
             guess_w = _REPORT_MAX_WIDTH - 2 * 16 - 2 * 1   # body padding, iframe border
             h = round(guess_w * natural_h / natural_w) + top_pad + bottom_pad
             iframe_title = html.escape(title) if title else "Figure %d" % n
-            parts.append('<div class="plotpress-report-entry">')
-            parts.append(f'<div class="plotpress-report-label">Figure {n}</div>')
+            entry_class = "plotpress-report-entry plotpress-collapsed" if collapsed \
+                else "plotpress-report-entry"
+            parts.append(f'<div class="{entry_class}">')
+            parts.append(
+                '<div class="plotpress-report-toggle" role="button" tabindex="0" '
+                f'aria-expanded="{"false" if collapsed else "true"}">'
+                '<span class="plotpress-report-chevron">&#9662;</span>'
+                '<div class="plotpress-report-heading">'
+                f'<div class="plotpress-report-label">Figure {n}</div>')
             if title:
                 parts.append(f"<h2>{html.escape(title)}</h2>")
+            parts.append('</div></div>')
             if details:
                 parts.append('<p class="plotpress-report-details">'
                              f'{html.escape(details)}</p>')
@@ -3201,7 +3275,7 @@ class Report:
                 f'<iframe srcdoc="{html.escape(doc)}" height="{h}" '
                 f'loading="lazy" title="{iframe_title}"></iframe>')
             parts.append("</div>")
-        parts.append(_REPORT_RESIZE_JS)
+        parts.append(_REPORT_SCRIPT)
         parts.append("</div></body></html>")
         content = "".join(parts)
         with open(path, "w", encoding="utf-8") as f:

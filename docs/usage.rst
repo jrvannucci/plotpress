@@ -184,9 +184,19 @@ optional title and details for each:
    report.add(fig_b, title="Batch B", details="Elevated noise floor after 14:00.")
    report.save("qa_sweep.html")
 
+Every entry is collapsible -- click its "Figure N"/title header to hide
+just that figure, or the **Collapse All**/**Expand All** button above the
+first entry to do the same for all of them at once -- so a report with many
+figures still reads as a scannable outline, not a wall of plots.
+``report.save("qa_sweep.html", collapsed=True)`` starts every entry
+collapsed instead of open, worth it once a report has enough figures that
+opening it fully expanded would be slow: a collapsed figure's own iframe
+never even loads on most browsers until a reader expands it.
+
 Below: four figures, each its own 5x10 grid of independent ``pcolormesh``
 panels -- every panel keeping its own title, axes, ticks, labels, and
-colorbar -- combined into a single scrollable report.
+colorbar -- combined into a single scrollable report. Try collapsing one,
+then Collapse All.
 
 .. include:: _static/interactive/usage_report.rst.inc
 

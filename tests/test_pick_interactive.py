@@ -3085,6 +3085,163 @@ def test_report_resize_does_not_collapse_a_not_yet_loaded_lazy_entry(page, tmp_p
         "resize touched an iframe that had not loaded yet: %r" % result)
 
 
+def test_clicking_an_entry_header_toggles_just_that_entry(page, tmp_path):
+    """A click on one entry's header (chevron + label/title) hides only that
+    entry's iframe -- the label/title/details above it, and every other
+    entry, are untouched."""
+    import plotpress
+
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0.0, 1.0], [0.0, 1.0])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0.0, 1.0], [1.0, 0.0])
+    report = plotpress.Report()
+    report.add(fig1, title="First")
+    report.add(fig2, title="Second")
+    path = tmp_path / "toggle_one.html"
+    report.save(str(path))
+    page.goto(path.as_uri())
+
+    def state():
+        return page.evaluate(
+            """() => Array.from(document.querySelectorAll('.plotpress-report-entry'))
+                 .map(e => ({
+                   collapsed: e.classList.contains('plotpress-collapsed'),
+                   ariaExpanded: e.querySelector('.plotpress-report-toggle').getAttribute('aria-expanded'),
+                   iframeHidden: getComputedStyle(e.querySelector('iframe')).display === 'none',
+                 }))""")
+
+    before = state()
+    assert not before[0]["collapsed"] and not before[1]["collapsed"]
+    assert not before[0]["iframeHidden"] and not before[1]["iframeHidden"]
+
+    page.evaluate(
+        "() => document.querySelectorAll('.plotpress-report-toggle')[0].click()")
+    after = state()
+    assert after[0]["collapsed"] and after[0]["iframeHidden"]
+    assert after[0]["ariaExpanded"] == "false"
+    # the second entry is untouched
+    assert not after[1]["collapsed"] and not after[1]["iframeHidden"]
+    assert after[1]["ariaExpanded"] == "true"
+
+    # clicking it again re-expands just that one entry
+    page.evaluate(
+        "() => document.querySelectorAll('.plotpress-report-toggle')[0].click()")
+    restored = state()
+    assert not restored[0]["collapsed"] and not restored[0]["iframeHidden"]
+
+
+def test_entry_header_responds_to_keyboard_enter_and_space(page, tmp_path):
+    """The header is a real keyboard-operable control (role=button,
+    tabindex=0), not just a mouse-only click target."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    report = plotpress.Report()
+    report.add(fig)
+    path = tmp_path / "keyboard_toggle.html"
+    report.save(str(path))
+    page.goto(path.as_uri())
+
+    header = page.query_selector(".plotpress-report-toggle")
+    header.focus()
+    page.keyboard.press("Enter")
+    assert page.evaluate(
+        "() => document.querySelector('.plotpress-report-entry')"
+        ".classList.contains('plotpress-collapsed')")
+    page.keyboard.press(" ")
+    assert not page.evaluate(
+        "() => document.querySelector('.plotpress-report-entry')"
+        ".classList.contains('plotpress-collapsed')")
+
+
+def test_collapse_all_button_toggles_every_entry_and_relabels(page, tmp_path):
+    """Collapse All collapses every entry and relabels itself Expand All;
+    clicking it again (now Expand All) expands every entry and relabels
+    back -- a live majority/any-expanded check, not a fixed one-shot flag."""
+    import plotpress
+
+    fig1, ax1 = plotpress.subplots()
+    ax1.plot([0.0, 1.0], [0.0, 1.0])
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0.0, 1.0], [1.0, 0.0])
+    report = plotpress.Report()
+    report.add(fig1)
+    report.add(fig2)
+    path = tmp_path / "collapse_all.html"
+    report.save(str(path))
+    page.goto(path.as_uri())
+
+    def collapsed_flags():
+        return page.evaluate(
+            "() => Array.from(document.querySelectorAll('.plotpress-report-entry'))"
+            ".map(e => e.classList.contains('plotpress-collapsed'))")
+
+    def button_label():
+        return page.evaluate(
+            "() => document.getElementById('plotpress-report-toggle-all').textContent")
+
+    assert button_label() == "Collapse All"
+    assert collapsed_flags() == [False, False]
+
+    page.click("#plotpress-report-toggle-all")
+    assert collapsed_flags() == [True, True]
+    assert button_label() == "Expand All"
+
+    page.click("#plotpress-report-toggle-all")
+    assert collapsed_flags() == [False, False]
+    assert button_label() == "Collapse All"
+
+    # a lone manually-collapsed entry counts as "not everything expanded"
+    # once Collapse All has cycled back to meaning "collapse" again --
+    # clicking one entry, then Collapse All, must collapse the other too.
+    page.evaluate(
+        "() => document.querySelectorAll('.plotpress-report-toggle')[0].click()")
+    assert collapsed_flags() == [True, False]
+    page.click("#plotpress-report-toggle-all")
+    assert collapsed_flags() == [True, True]
+
+
+def test_collapsed_report_expands_and_fits_a_never_loaded_iframe(page, tmp_path):
+    """save(collapsed=True): every entry opens collapsed. Expanding one for
+    the first time must both reveal and correctly size its iframe -- fit()
+    on a display:none iframe measures 0 width, so setCollapsed() has to
+    re-fit explicitly once it's actually visible, not rely on the resize
+    handler alone."""
+    import plotpress
+
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    report = plotpress.Report()
+    report.add(fig)
+    path = tmp_path / "collapsed_expand.html"
+    report.save(str(path), collapsed=True)
+    page.goto(path.as_uri())
+
+    entry_hidden = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.plotpress-report-entry iframe'))"
+        ".display === 'none'")
+    assert entry_hidden, "collapsed=True must start every entry's iframe hidden"
+
+    page.click(".plotpress-report-toggle")
+    page.wait_for_timeout(150)   # let the iframe's own load event settle
+
+    result = page.evaluate(
+        """() => {
+          const f = document.querySelector('.plotpress-report-entry iframe');
+          const svg = f.contentDocument && f.contentDocument.getElementById('plotpress-svg');
+          return {
+            visible: getComputedStyle(f).display !== 'none',
+            hasHeight: !!f.style.height,
+            svgWidth: svg ? svg.getBoundingClientRect().width : null,
+          };
+        }""")
+    assert result["visible"]
+    assert result["hasHeight"], "expanding must fit the iframe, not leave it at its guessed height"
+    assert result["svgWidth"] and result["svgWidth"] > 0
+
+
 # -- Save / Save As --------------------------------------------------------
 
 def _click_toolbar(page, label):

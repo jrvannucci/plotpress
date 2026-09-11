@@ -9,6 +9,17 @@ its own ``<iframe>`` rather than being spliced directly into the page (see
 ``plotpress.Report``'s docstring for why: an interactive figure's JS assumes
 it owns the page). Handy for a write-up covering several figures at once --
 one file to open, one file to send.
+
+Every entry is collapsible: a click on its "Figure N"/title header hides
+just that figure, leaving the title and details visible, so a report with
+many figures still reads as a scannable outline rather than a wall of
+plots -- and a **Collapse All**/**Expand All** button does the same for all
+of them at once. ``collapsed=True`` starts every entry collapsed instead of
+open, worth reaching for once a report has enough figures that opening it
+fully expanded would be slow to scroll through -- and, since a collapsed
+figure's ``loading="lazy"`` iframe never even loads on most browsers until a
+reader expands it, the file opens instantly regardless of how many figures
+it holds.
 """
 import os
 import tempfile
@@ -33,3 +44,10 @@ report.add(fig_a, title="Batch A", details="Baseline run, no anomalies.")
 report.add(fig_b, title="Batch B", details="Elevated noise floor after 14:00.")
 path = os.path.join(tempfile.gettempdir(), "plotpress_gallery_report.html")
 report.save(path)
+
+# The same report, but every entry starts collapsed -- worth it once a
+# report holds enough figures that scrolling past all of them, fully
+# rendered, gets slow.
+collapsed_path = os.path.join(tempfile.gettempdir(),
+                              "plotpress_gallery_report_collapsed.html")
+report.save(collapsed_path, collapsed=True)
