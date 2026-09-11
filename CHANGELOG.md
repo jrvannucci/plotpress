@@ -9,6 +9,21 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.32.7] - 2026-09-11
+
+### Fixed
+
+- Fixed the same interior-boundary group-box collision found in 0.32.6
+  in one more example, `data_roundtrip/plot_03_reload_preserving_groups`
+  -- "Bay A"/"Bay B" faced each other across a column boundary neither
+  title touched (both `title_position="top"`, which only reserves row
+  margin) with no `group_spacing()` call on either the source or reloaded
+  figure. Also documents that `group_spacing()` is figure-level state,
+  not part of any one group, so it does not round-trip through
+  `load_data()`/`subplots_from_layout()` and has to be re-applied on the
+  reload side exactly as it was on the source side -- the one group
+  setting in that example that genuinely doesn't come back for free.
+
 ## [0.32.6] - 2026-09-11
 
 ### Fixed
