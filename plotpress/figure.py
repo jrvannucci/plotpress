@@ -2016,10 +2016,22 @@ class Figure:
         # see _interactive.py's .plotpress-menubar/.plotpress-sliders -- so
         # nothing stops either from drawing over the SVG unless something
         # else reserves the room for them. A full viewport tall of
-        # flex-centering slack makes that a non-issue for a standalone page
-        # (the toolbar just floats over its own top-left corner, same as it
-        # always has); embedded, the SVG sits flush against the body's
-        # edges, so real top/bottom padding takes over that job instead.
+        # flex-centering slack was assumed to make that a non-issue for a
+        # standalone page (the toolbar just floats over its own top-left
+        # corner, above wherever the centered figure starts) -- true only
+        # while the figure fits inside the viewport. A sufficiently tall
+        # figsize (or, same thing, a group's own title reserving margin
+        # above the outermost row -- see Figure.group) leaves zero slack for
+        # `margin: auto` to spend, so the SVG starts flush at the very top
+        # of the page, right where the fixed toolbar already sits -- the
+        # figure's own topmost content silently renders *underneath* it.
+        # Reserving the same real top/bottom padding standalone=False
+        # already uses removes the assumption entirely: a short figure
+        # still centers, just within the viewport slice actually left below
+        # the toolbar, and a too-tall one now always starts clear of it
+        # regardless of how much (or how little) slack remains.
+        top_pad, bottom_pad = _toolbar_clearance(
+            interactive and include_default_js, len(self._sliders or {}))
         if standalone:
             # No justify-content/align-items:center here -- centering an
             # overflowing flex item that way is a well-known browser trap:
@@ -2034,13 +2046,13 @@ class Figure:
             # between the two auto margins, but degrades to a plain 0 margin
             # -- ordinary in-flow overflow, fully reachable by scrolling in
             # either direction -- the moment the item is larger than body.
-            body_style = "body{margin:0;background:#f5f5f5;display:flex;min-height:100vh}"
+            body_style = (f"body{{margin:0;background:#f5f5f5;display:flex;"
+                          f"min-height:100vh;padding:{top_pad}px 0 {bottom_pad}px;"
+                          f"box-sizing:border-box}}")
             wrap_display = "inline-block"   # shrink-wrapped to the SVG's own
                                              # size, so centering centers the
                                              # figure, not an oversized box
         else:
-            top_pad, bottom_pad = _toolbar_clearance(
-                interactive and include_default_js, len(self._sliders or {}))
             body_style = f"body{{margin:0;padding:{top_pad}px 0 {bottom_pad}px}}"
             wrap_display = "block"   # stretches to the container's full width
                                      # -- #plotpress-svg's own width:100% (below)

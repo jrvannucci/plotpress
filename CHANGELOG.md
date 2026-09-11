@@ -9,6 +9,28 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Fixed
+
+- **A sufficiently tall `figsize` saved as standalone interactive HTML hid
+  its own topmost content underneath the fixed toolbar.** `standalone=True`
+  reserved zero body padding for the toolbar, relying entirely on
+  flex-centering slack ("a full viewport tall of it keeps the toolbar from
+  overlapping the centered figure") to keep the two apart -- true only
+  while the figure actually fit inside the browser window. The moment it
+  didn't, there was no slack left for `margin: auto` to spend, so the SVG
+  started flush at the very top of the page, exactly where the
+  `position:fixed` toolbar already sits -- a `fig.group()` title facing the
+  figure's own outer top edge is the most visible symptom (its title text
+  rendered directly underneath the toolbar, invisible on load), but a
+  `suptitle` or the first row's own axes titles were equally exposed.
+  `standalone=True` now reserves the same real top/bottom body padding
+  `standalone=False` already used for this -- a short figure still centers,
+  just within the viewport slice actually left below the toolbar (and
+  above any docked slider strip), and a too-tall one now always starts
+  clear of both regardless of how much slack remains.
+
 ## [0.33.0] - 2026-09-11
 
 ### Added

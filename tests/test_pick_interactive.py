@@ -1632,9 +1632,12 @@ def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tm
     portion was pushed off-screen with genuinely no way to scroll (or Ctrl/
     Magnify-wheel-zoom-out, which used to floor at Home) back to it. Checked
     directly against real layout geometry, not an internal flag: at Home,
-    the SVG's own top-left corner must already be at the scroll origin, and
-    the page's scrollable area must span its full natural size in both
-    axes, not just the part that happened to fit."""
+    the SVG's own top-left corner must already be at the scroll origin
+    (left) / just clear of the fixed toolbar (top -- see
+    _toolbar_clearance's own body padding, reserved in standalone mode too
+    since a too-tall figure leaves no flex-centering slack for that to rely
+    on instead), and the page's scrollable area must span its full natural
+    size in both axes, not just the part that happened to fit."""
     import numpy as np
     import plotpress
 
@@ -1659,14 +1662,22 @@ def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tm
     assert out["svgWidth"] > out["viewportW"] and out["svgHeight"] > out["viewportH"], (
         "test setup must actually produce a figure bigger than the "
         "viewport in both axes, or this proves nothing: %r" % out)
-    assert out["svgLeft"] == 0 and out["svgTop"] == 0, (
+    # 41px: the toolbar's own reserved clearance (_toolbar_clearance), not
+    # scroll origin -- the SVG starting exactly there, not lower, is what
+    # proves there's no *extra*, unaccounted-for margin also pushing it
+    # down/right past that.
+    assert out["svgLeft"] == 0 and out["svgTop"] == 41, (
         "at Home, the figure's own top-left corner must sit at the scroll "
-        "origin -- not pushed left/up off-screen where scrolling can never "
-        "reach it: %r" % out)
+        "origin (left) / the toolbar's reserved clearance (top) -- not "
+        "pushed left/up off-screen where scrolling can never reach it, and "
+        "not further down/right than that either: %r" % out)
     assert out["scrollWidth"] == pytest.approx(out["svgWidth"], abs=1), (
         "the page's scrollable width must span the whole figure, not just "
         "the portion that fit before it started clipping: %r" % out)
-    assert out["scrollHeight"] == pytest.approx(out["svgHeight"], abs=1)
+    assert out["scrollHeight"] == pytest.approx(out["svgTop"] + out["svgHeight"], abs=1), (
+        "the page's scrollable height must span the toolbar clearance plus "
+        "the whole figure, not just the portion that fit before it started "
+        "clipping: %r" % out)
 
 
 def test_fit_width_scales_an_oversized_figure_to_the_viewport_width(page, tmp_path):
@@ -1738,6 +1749,42 @@ def test_fit_width_zooms_in_a_figure_narrower_than_the_viewport(page, tmp_path):
         "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
     assert after == pytest.approx(viewport_w, abs=2)
     assert after > before
+
+
+def test_tall_figure_group_title_is_not_hidden_behind_the_fixed_toolbar(page, tmp_path):
+    """Regression: standalone=True reserved zero body padding for the fixed
+    toolbar, relying entirely on flex-centering slack to keep it clear of
+    the figure -- true only while the figure fits inside the viewport. A
+    sufficiently tall figsize (here, six stacked rows) leaves no such slack:
+    the SVG starts flush at the very top of the page, exactly where the
+    toolbar already sits, and its own topmost content -- a fig.group()
+    title facing the outer edge is the most visible example, but a
+    suptitle or the first row's own axes titles are equally exposed --
+    silently rendered underneath the toolbar instead of below it."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(6, 2, figsize=(8, 20))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    fig.group("Top Group", list(axes[0, :]), title_position="top")
+    fig.tight_layout()
+    path = tmp_path / "tall_group_title.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    out = page.evaluate(
+        """() => {
+          const toolbar = document.querySelector('.plotpress-menubar');
+          const title = Array.from(document.querySelectorAll('#plotpress-svg text'))
+            .find(t => t.textContent === 'Top Group');
+          const tb = toolbar.getBoundingClientRect();
+          const tr = title.getBoundingClientRect();
+          return {toolbarBottom: tb.bottom, titleTop: tr.top, titleBottom: tr.bottom};
+        }""")
+    assert out["titleTop"] >= out["toolbarBottom"], (
+        "the group title must render entirely below the fixed toolbar, not "
+        "underneath it: %r" % out)
 
 
 def _box_zoom(page, x0, y0, x1, y1):
