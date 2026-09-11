@@ -884,6 +884,19 @@ class Figure:
         ``suptitle``/``supxlabel``/``supylabel``) and require respecifying
         all of them by hand just to widen one gap.
 
+        A title that *does* face an interior boundary (``title_position``
+        pointing into the gap rather than out to the figure's own edge) is
+        a different case, handled automatically without this method at
+        all: it always gets at least enough clearance to avoid drawing on
+        the neighboring group's own box, the same guarantee
+        :meth:`tight_layout` already gives a title facing the true outer
+        edge. Pass ``wspace``/``hspace`` here to reserve *more* than that
+        automatic minimum (room to visually separate the two boxes, not
+        just keep their titles from colliding), or when neither title
+        faces the boundary at all -- the pure box-padding collision this
+        method was originally written for, which nothing reserves for on
+        its own.
+
         Applies only to the row/column boundaries that actually sit on the
         edge of a group's bounding box -- not every interior gap alike. Two
         rows paired inside the *same* group (a group spanning them both)
@@ -1272,14 +1285,16 @@ class Figure:
         # same kind of band reserved -- otherwise it (or the box itself, for
         # a top-facing title over a titled top row) draws off the canvas or
         # over the outermost panels. A group that doesn't reach that edge
-        # (an interior cluster) has its title in a row/col gap instead, which
-        # this does not touch -- reserving hspace/wspace for one arbitrary
-        # interior group would grow it for every row/col, not just that one.
-        # Kept separate from left_px/top_px/etc. themselves: those also seed
-        # gap_w/gap_h below (the interior row/col gap), and unlike a twin's
-        # decorations -- which can genuinely sit on an interior boundary --
-        # a group's title only ever faces an *outer* edge (checked below), so
-        # it must never widen every interior gap along with it.
+        # (an interior cluster) has its title facing a row/col gap instead --
+        # handled separately below (row_hspace_title_px/col_wspace_title_px),
+        # aimed at just the one boundary that title actually faces, not
+        # folded in here: growing every row/col for one arbitrary interior
+        # group's title would be wrong the same way it would be for
+        # group_spacing() itself (see its own docstring on that). Kept
+        # separate from left_px/top_px/etc. themselves too: those also seed
+        # gap_w/gap_h below (the interior row/col gap), and a group's own
+        # margin reservation -- whichever edge it faces -- must never widen
+        # every interior gap along with it.
         group_top_px = group_bottom_px = group_left_px = group_right_px = 0.0
         # Which interior row/col boundaries actually border a group's own
         # bounding box -- group_spacing() only widens *these*, not every
@@ -1293,6 +1308,17 @@ class Figure:
         # either of them.
         col_needs_wspace = [False] * (ncols - 1)
         row_needs_hspace = [False] * (nrows - 1)
+        # A title facing an *interior* boundary (row/col > 0, i.e. NOT the
+        # figure's own outer edge -- group_top_px/etc. above already cover
+        # that case) needs exactly the same clearance group_top_px would
+        # give it, just aimed at the one boundary it actually sits next to
+        # rather than the figure's edge. Tracked per-boundary (not folded
+        # into a single flat number) for the same reason group_top_px takes
+        # a max(), not a sum(), over every group sharing one edge: several
+        # groups can face the same interior boundary from opposite sides,
+        # and it only has to be wide enough for the single largest one.
+        row_hspace_title_px = [0.0] * (nrows - 1)
+        col_wspace_title_px = [0.0] * (ncols - 1)
         for g in self._groups:
             g_specs = [ax for ax in g["axes"] if ax._subplotspec is not None]
             if not g_specs:
@@ -1347,6 +1373,36 @@ class Figure:
                 group_left_px = max(group_left_px, extent)
             elif pos == "right" and c1 == ncols - 1:
                 group_right_px = max(group_right_px, extent)
+            # The interior-boundary mirror of the four branches above: a
+            # "top" title on a group that does NOT reach row 0 sits in the
+            # gap *above* its own box instead -- i.e. right on the boundary
+            # between rows r0-1 and r0 -- so that's the one boundary that
+            # needs room for it, the same way group_top_px reserves room at
+            # the figure's own top edge. Without this, a group_spacing()
+            # value sized only for ordinary tick-label/pad clearance (its
+            # own documented job) leaves nothing for the title itself, and
+            # it draws right on top of the neighboring group's own box.
+            #
+            # max(0, extent - natural_gap_px), not the raw extent: the
+            # ordinary tick-label-driven gap (bottom_px+top_px / left_px+
+            # right_px, already computed above) may already be wider than
+            # this title needs -- a single interior-facing group with a
+            # long title in an otherwise ordinary grid, say -- and adding
+            # the *full* extent on top regardless would over-reserve and
+            # needlessly grow the figure for a title that already had
+            # plenty of room. Only the deficit, if any, gets added.
+            elif pos == "top" and r0 > 0:
+                need = max(0.0, extent - (bottom_px + top_px))
+                row_hspace_title_px[r0 - 1] = max(row_hspace_title_px[r0 - 1], need)
+            elif pos == "bottom" and r1 < nrows - 1:
+                need = max(0.0, extent - (bottom_px + top_px))
+                row_hspace_title_px[r1] = max(row_hspace_title_px[r1], need)
+            elif pos == "left" and c0 > 0:
+                need = max(0.0, extent - (left_px + right_px))
+                col_wspace_title_px[c0 - 1] = max(col_wspace_title_px[c0 - 1], need)
+            elif pos == "right" and c1 < ncols - 1:
+                need = max(0.0, extent - (left_px + right_px))
+                col_wspace_title_px[c1] = max(col_wspace_title_px[c1], need)
             if r0 > 0:
                 row_needs_hspace[r0 - 1] = True
             if r1 < nrows - 1:
@@ -1363,8 +1419,26 @@ class Figure:
         # set_size_inches()), so a repeated tight_layout() call re-derives
         # this fresh rather than compounding growth onto an already-grown
         # figsize.
-        extra_w_px = self._group_wspace * sum(col_needs_wspace) if self._group_wspace else 0.0
-        extra_h_px = self._group_hspace * sum(row_needs_hspace) if self._group_hspace else 0.0
+        # Each boundary gets the user's own explicit group_spacing() request
+        # (its established, tested meaning: exactly this many pixels added
+        # on top of the ordinary gap, whether or not a title is involved)
+        # PLUS whatever minimum an interior-facing title needs to clear the
+        # neighboring box (row_hspace_title_px/col_wspace_title_px, computed
+        # above as a deficit already net of the ordinary gap) -- additive,
+        # not max(), so group_spacing() still means something even on a
+        # boundary a title already forces open: text width is an estimate,
+        # not a measurement (see :ref:`limitations`), and the automatic
+        # minimum alone can leave a long title only a few pixels of real
+        # slack past that estimate -- group_spacing() is exactly how to ask
+        # for genuinely more room than the minimum, the same as it already
+        # was for a boundary with no title on it at all. A boundary neither
+        # a title nor group_spacing() ever touches stays at 0, unchanged.
+        col_boundary_px = [(self._group_wspace or 0.0) + title_px if needs else 0.0
+                          for needs, title_px in zip(col_needs_wspace, col_wspace_title_px)]
+        row_boundary_px = [(self._group_hspace or 0.0) + title_px if needs else 0.0
+                          for needs, title_px in zip(row_needs_hspace, row_hspace_title_px)]
+        extra_w_px = sum(col_boundary_px)
+        extra_h_px = sum(row_boundary_px)
         Wpx = Wpx0 + extra_w_px
         Hpx = Hpx0 + extra_h_px
         self.figsize = (Wpx / st.dpi, Hpx / st.dpi)
@@ -1384,18 +1458,15 @@ class Figure:
         # (see above): they never contribute to an interior gap.
         base_gap_w = (left_px + right_px) / Wpx          # interior column gap
         base_gap_h = (bottom_px + top_px) / Hpx          # interior row gap
-        # group_spacing() is the one deliberate exception: an explicit ask
-        # for more room between subplots specifically for group boxes,
-        # independent of what their tick labels alone would need -- added
-        # only to the boundaries that actually border a group (computed
-        # above), not folded into left_px/etc. above, so it never touches
-        # the outer margin those also seed.
-        gap_w_list = [base_gap_w + (self._group_wspace / Wpx
-                                   if needs and self._group_wspace else 0.0)
-                     for needs in col_needs_wspace]
-        gap_h_list = [base_gap_h + (self._group_hspace / Hpx
-                                   if needs and self._group_hspace else 0.0)
-                     for needs in row_needs_hspace]
+        # group_spacing() (or an interior title's own minimum, computed
+        # above into col_boundary_px/row_boundary_px) is the one deliberate
+        # exception: extra room between subplots specifically for group
+        # boxes, independent of what their tick labels alone would need --
+        # added only to the boundaries that actually border a group, not
+        # folded into left_px/etc. above, so it never touches the outer
+        # margin those also seed.
+        gap_w_list = [base_gap_w + px / Wpx for px in col_boundary_px]
+        gap_h_list = [base_gap_h + px / Hpx for px in row_boundary_px]
         axw, gap_w_list = _fit_cells(right - left, ncols, gap_w_list)
         axh, gap_h_list = _fit_cells(top - bottom, nrows, gap_h_list)
 

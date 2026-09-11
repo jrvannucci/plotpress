@@ -54,7 +54,7 @@ for outer_r in range(2):
                 ax.pcolormesh(x, y, Z, cmap="cividis", vmin=-1.2, vmax=1.2)
                 ax.tick_params(labelsize=6)
 
-fig.group_spacing(wspace=24.0, hspace=24.0)
+fig.group_spacing(wspace=40.0, hspace=40.0)
 fig.tight_layout()
 
 # Find a group by its outer (row, col) in the layout -- not by remembering

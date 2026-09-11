@@ -11,6 +11,15 @@ title sits just outside whichever edge ``title_position`` names.
 Six panels here split into two unrelated instrument runs -- a temperature
 sweep (top row) and a pressure sweep (bottom row) -- each grouped and
 labeled so that relationship reads at a glance instead of needing a caption.
+
+The two groups sit right on top of each other, sharing the grid's one
+interior row boundary -- neither box's title touches that shared edge, so
+:meth:`~plotpress.figure.Figure.tight_layout` never reserves any margin
+there on its own. Without :meth:`~plotpress.figure.Figure.group_spacing`,
+each box's own padding would land exactly on that boundary and the two
+dashed lines would sit flush against each other, reading as one box, not
+two -- call it whenever two groups face each other across an *interior*
+boundary like this, not just when they visibly collide.
 """
 import numpy as np
 import plotpress
@@ -33,4 +42,5 @@ for col, ax in enumerate(axes[1]):
 
 fig.group("Temperature sweep", list(axes[0]), color="#d62728", title_position="top")
 fig.group("Pressure sweep", list(axes[1]), color="#1f77b4", title_position="bottom")
+fig.group_spacing(hspace=40)
 fig.tight_layout()

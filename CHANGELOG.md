@@ -9,6 +9,52 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.32.6] - 2026-09-11
+
+### Fixed
+
+- **A `fig.group()` title facing an *interior* grid boundary could draw
+  right on top of the neighboring group's own box.** `tight_layout()`
+  already reserved margin automatically for a title facing the figure's
+  own outer edge, but a title facing an interior row/col boundary instead
+  (the common case for anything but the first/last group in a grid) got
+  nothing -- left entirely to `group_spacing()`, which is sized for
+  ordinary tick-label/padding clearance, not a title's own rendered text.
+  Several of the grouping gallery's own examples hit this without knowing
+  it: two stacked groups whose titles face each other, several groups in a
+  row each with a title on the shared edge, and a `GroupLayout`-built
+  quadrant layout all had a title's text landing on or overlapping the
+  next group's box. `tight_layout()` now reserves at least enough room for
+  an interior-facing title automatically, the same guarantee an
+  outer-facing one already had -- only for the one boundary that title
+  actually touches, never every row/col in the grid. `group_spacing()`
+  still adds real *additional* room on top of that automatic minimum, the
+  same as it always could -- useful since text width is an estimate, not
+  a measurement (see the docs' own limitations page), and the automatic
+  minimum alone can leave very little slack for a long title.
+- Fixed four of the grouping gallery's own examples that had this exact
+  collision, or box lines separated only by a handful of barely-visible
+  pixels: `plot_01_row_pairs`, `plot_03_highlight_one_panel`,
+  `plot_06_many_small_column_pairs`, and
+  `plot_07_four_quadrants_all_positions` all now reserve real, clearly
+  visible spacing between neighboring groups.
+- **The docs sidebar still lost a subsection's own entry entirely in one
+  shape 0.32.5's CSS fix didn't reach.** The same Sphinx toctree-resolution
+  artifact behind 0.32.5's fix has a second, uglier form: instead of
+  duplicating a subsection's full sibling list under the *last* entry, a
+  subsection *mid*-list can have the next one or two siblings re-attached
+  as its own bogus children -- and those siblings then have no working
+  top-level sidebar entry of their own at all (confirmed on the example
+  gallery's "Custom interactive JS" and "Seaborn-style distribution
+  plots"). This shape looks structurally identical to a genuinely nested
+  single-page TOC (e.g. the API reference's own "Figure" ->
+  "Figure()"/"subplots()"), so no CSS selector can tell them apart --
+  fixed with a small script (`docs/_static/sidebar_fix.js`) that instead
+  keys off which top-level sidebar caption an entry lives under: within a
+  gallery caption (Examples, Live plotting, Real applications), a
+  subsection's nested list is never legitimate and is dropped
+  unconditionally; elsewhere (Reference, Limitations, ...) it's left alone.
+
 ## [0.32.5] - 2026-09-10
 
 ### Changed

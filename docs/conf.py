@@ -46,6 +46,11 @@ html_static_path = ["_static"]
 # Widens the content column and lets table cells wrap; see the file for why the
 # RTD theme's defaults put a scrollbar under every wide table.
 html_css_files = ["custom.css"]
+# Prunes a Sphinx toctree-resolution artifact from the sidebar that CSS alone
+# can't catch (see the file's own comment) -- a gallery subsection's sidebar
+# entry sometimes gets one or more of its own *siblings* re-attached as if
+# they were its children.
+html_js_files = ["sidebar_fix.js"]
 
 # The sphinx-gallery scraper is a function, so the config can't be pickle-cached
 # -- that warning is benign; suppress it so CI can build with -W (warnings as

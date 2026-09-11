@@ -3329,20 +3329,85 @@ def test_group_left_right_title_reserves_width_not_a_height_allowance():
         "reserved left margin does not fit the title's own rendered width")
 
 
-def test_group_not_facing_the_outer_edge_reserves_no_margin():
+def test_group_not_facing_the_outer_edge_reserves_no_outer_margin():
     """An interior group (its title-facing edge is a row/col gap, not the
-    figure's own outer edge) is left to that existing gap -- growing the
-    whole grid's margin for it would be wrong for every other row/col."""
+    figure's own outer edge) never grows the *outer* margin -- that would be
+    wrong for every other row/col, the same reasoning group_top_px/etc.
+    already apply to a group that does reach the outer edge. Its title
+    still needs to clear the neighboring group's own box somehow (see
+    test_group_spacing_resolves_a_real_interior_boundary_collision's own
+    history -- a title drawing right on top of the next group's box is
+    exactly the bug that test was written to catch), but that's the
+    boundary's own job now, not the outer margin's -- see
+    test_interior_facing_title_gets_automatic_minimum_clearance."""
     fig1, axes1 = _grid_2x2()
     fig1.tight_layout()
-    without_group = [a._rect for a in axes1.ravel()]
+    Hpx1 = fig1.figsize[1] * fig1.style.dpi
+    outer_top_before = min(a._rect[1] for a in axes1.ravel()) * Hpx1
+    outer_bottom_before = (1 - max(a._rect[1] + a._rect[3] for a in axes1.ravel())) * Hpx1
 
     fig2, axes2 = _grid_2x2()
     # Bottom row grouped with a *top*-facing title: doesn't reach row 0.
     fig2.group("Interior", [axes2[1, 0], axes2[1, 1]], title_position="top")
     fig2.tight_layout()
-    with_group = [a._rect for a in axes2.ravel()]
-    assert with_group == without_group
+    # Compared in *pixels*, not the raw 0-1 rect fractions -- the figure
+    # itself grows to hold the new interior reservation (see
+    # test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin's
+    # own docstring on why), so a fraction measured against that taller
+    # canvas shifts even though the true pixel margin does not.
+    Hpx2 = fig2.figsize[1] * fig2.style.dpi
+    outer_top_after = min(a._rect[1] for a in axes2.ravel()) * Hpx2
+    outer_bottom_after = (1 - max(a._rect[1] + a._rect[3] for a in axes2.ravel())) * Hpx2
+    assert outer_top_after == pytest.approx(outer_top_before, abs=0.5)
+    assert outer_bottom_after == pytest.approx(outer_bottom_before, abs=0.5)
+
+
+def test_interior_facing_title_gets_automatic_minimum_clearance():
+    """Regression: a group's title facing an *interior* boundary (not the
+    figure's own outer edge) used to reserve nothing at all -- left entirely
+    to whatever ordinary tick-label-driven gap already existed there, the
+    same as a boundary with no title anywhere near it. A title is not a
+    tick label: its own text draws right where that gap is thinnest, and
+    with no group_spacing() call (a boundary neither title visibly
+    "touches" is exactly the case its own docstring says needs one) the
+    title landed drawn right on top of the neighboring group's box, not
+    merely close to it. The fix mirrors group_top_px/etc.'s own outer-edge
+    reservation, aimed at the one interior boundary the title actually
+    faces instead of the figure's edge -- automatic, unconditional, and
+    never touching any *other* boundary (see
+    test_group_spacing_does_not_widen_a_gap_interior_to_a_single_group for
+    that same one-boundary-only discipline elsewhere)."""
+    fig, axes = plotpress.subplots(2, 2, figsize=(6, 6))
+    for ax in axes.ravel():
+        ax.plot([0, 1], [0, 1])
+    fig.group("Top", list(axes[0, :]), title_position="bottom")
+    # Faces the interior boundary (r0 == 1 > 0), not the figure's own
+    # bottom edge -- exactly the case that used to get zero clearance.
+    fig.group("Bottom", list(axes[1, :]), title_position="top")
+    fig.tight_layout()
+
+    Hpx = fig.figsize[1] * fig.style.dpi
+    row_gap_px = (min(axes[0, 0]._rect[1], axes[0, 1]._rect[1])
+                 - max(axes[1, 0]._rect[1] + axes[1, 0]._rect[3],
+                        axes[1, 1]._rect[1] + axes[1, 1]._rect[3])) * Hpx
+    # Both groups' titles face this one boundary from opposite sides --
+    # each needs pad(8) + title_size*1.3 + 10 clearance of its own; the gap
+    # has to be at least the larger of the two (not both summed -- see
+    # group_top_px's own max()-not-sum() reasoning), with a little slack
+    # for the ordinary tick-label gap this is added on top of.
+    min_expected = 8.0 + fig.style.title_size * 1.3 + 10
+    assert row_gap_px >= min_expected, (
+        "an interior-facing title must get at least enough automatic "
+        "clearance to avoid drawing on the neighboring group's own box: "
+        "got %.1fpx, needed >= %.1fpx" % (row_gap_px, min_expected))
+
+    root = _parse(fig.to_svg())
+    boxes = sorted(
+        (float(r.get("y")), float(r.get("y")) + float(r.get("height")))
+        for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"
+    )
+    assert boxes[1][0] > boxes[0][1], (
+        "the two group boxes themselves must not overlap either")
 
 
 def test_group_spanning_multiple_rows_still_reserves_top_margin():
@@ -3410,7 +3475,14 @@ def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
         ax.plot([0, 1], [0, 1])
         ax.set_title("panel")
     fig1.group("Group A", list(axes1[0, :]), title_position="top")
-    fig1.group("Group B", list(axes1[1, :]), title_position="top")
+    # "bottom" on the *bottom* row faces the figure's own outer edge
+    # (group_bottom_px), not the interior boundary between the two groups
+    # -- title_position="top" here would instead face that interior
+    # boundary and pick up its own automatic minimum clearance (see
+    # test_interior_facing_title_gets_automatic_minimum_clearance),
+    # muddying what this test isolates: group_spacing()'s own contribution
+    # to a boundary neither title touches at all.
+    fig1.group("Group B", list(axes1[1, :]), title_position="bottom")
     fig1.tight_layout()
     Hpx1 = fig1.figsize[1] * fig1.style.dpi
     top_frac_before = max(ax._rect[1] + ax._rect[3] for ax in axes1.ravel())
@@ -3427,7 +3499,7 @@ def test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin():
         ax.plot([0, 1], [0, 1])
         ax.set_title("panel")
     fig2.group("Group A", list(axes2[0, :]), title_position="top")
-    fig2.group("Group B", list(axes2[1, :]), title_position="top")
+    fig2.group("Group B", list(axes2[1, :]), title_position="bottom")
     fig2.group_spacing(hspace=40.0)
     fig2.tight_layout()
     Hpx2 = fig2.figsize[1] * fig2.style.dpi
@@ -3458,13 +3530,20 @@ def test_group_spacing_does_not_widen_a_gap_interior_to_a_single_group():
     plain tight_layout() would put them; only the seam facing its neighbor
     (rows 1-2) needs the reserved room. Reported after group_spacing()
     widened every row gap uniformly, needlessly separating panels meant to
-    read as one paired unit (see plot_05_many_small_row_pairs)."""
+    read as one paired unit (see plot_05_many_small_row_pairs).
+
+    Pair B's title faces "bottom" -- its own outer edge (row 3 is the
+    grid's last row) -- rather than "top", which would instead face the
+    interior boundary this test measures and pick up its own automatic
+    minimum clearance on top of group_spacing()'s (see
+    test_interior_facing_title_gets_automatic_minimum_clearance),
+    confounding the exact pixel count this test checks for."""
     def build(hspace):
         fig, axes = plotpress.subplots(4, 1, figsize=(4, 12))
         for ax in axes:
             ax.plot([0, 1], [0, 1])
         fig.group("Pair A", [axes[0], axes[1]], title_position="top")
-        fig.group("Pair B", [axes[2], axes[3]], title_position="top")
+        fig.group("Pair B", [axes[2], axes[3]], title_position="bottom")
         if hspace:
             fig.group_spacing(hspace=hspace)
         fig.tight_layout()
@@ -3515,14 +3594,24 @@ def test_group_spacing_resolves_a_real_interior_boundary_collision():
     row boundary, neither title touching it, collide with plain
     tight_layout() -- group_spacing(hspace=...) must be able to fix that
     without falling back to subplots_adjust (which would also discard the
-    automatic title/tick-label margins)."""
+    automatic title/tick-label margins).
+
+    Both titles are "left"/"right" here specifically so neither one faces
+    the row boundary at all -- a "top"/"bottom" title facing that boundary
+    now gets its own automatic minimum clearance regardless of
+    group_spacing() (see
+    test_interior_facing_title_gets_automatic_minimum_clearance), which
+    would rescue the same collision this test means to force and prove
+    nothing about group_spacing() itself. This is the genuinely
+    title-blind case its own docstring describes: pure box-padding
+    collision, with no title anywhere near the boundary to save it."""
     def build(hspace):
         fig, axes = plotpress.subplots(2, 2, figsize=(9, 7))
         for ax in axes.ravel():
             ax.plot([0, 1], [0, 1])
             ax.set_title("panel")
-        fig.group("Group A", list(axes[0, :]), title_position="top")
-        fig.group("Group B", list(axes[1, :]), title_position="top")
+        fig.group("Group A", list(axes[0, :]), title_position="left")
+        fig.group("Group B", list(axes[1, :]), title_position="left")
         if hspace:
             fig.group_spacing(hspace=hspace)
         fig.tight_layout()
