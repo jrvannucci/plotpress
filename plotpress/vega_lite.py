@@ -531,10 +531,10 @@ def _xy_axis(ax):
     x_ticks, x_labels = _resolved_custom_ticks(ax, "x")
     y_ticks, y_labels = _resolved_custom_ticks(ax, "y")
     x_enc = axis_for(ax._xscale, ax._xinverted, x_ticks, x_labels,
-                     ax._xlabel, ax._grid)
+                     ax._shown_xlabel(), ax._grid)
     x_enc["scale"]["domain"] = [float(xmin), float(xmax)]
     y_enc = axis_for(ax._yscale, ax._yinverted, y_ticks, y_labels,
-                     ax._ylabel, ax._grid)
+                     ax._shown_ylabel(), ax._grid)
     y_enc["scale"]["domain"] = [float(ymin), float(ymax)]
     return x_enc, y_enc, caveats
 

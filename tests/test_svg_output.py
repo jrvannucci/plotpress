@@ -448,6 +448,12 @@ def test_report_entries_are_collapsible_with_a_toggle_all_button(tmp_path):
     assert out.count('aria-expanded="true"') == 2
     assert 'aria-expanded="false"' not in out
     assert 'class="plotpress-report-entry plotpress-collapsed"' not in out
+    # Not collapsed at save time: each entry gets a real, live srcdoc=
+    # attribute (not the deferred data attribute a collapsed=True entry gets
+    # instead) -- ' srcdoc="', not the bare substring, so this doesn't also
+    # count _REPORT_SCRIPT's own unrelated "f.srcdoc=..." JS assignment.
+    assert out.count(' srcdoc="') == 2
+    assert "data-lazy-doc=" not in out
     assert '>Collapse All<' in out
 
 
@@ -473,6 +479,11 @@ def test_report_collapsed_true_starts_every_entry_collapsed(tmp_path):
     assert 'aria-expanded="true"' not in out
     assert '>Expand All<' in out
     assert '>Collapse All<' not in out
+    # The whole point of collapsed=True: no live srcdoc= to load/render up
+    # front -- each entry's document is parked in a data attribute instead,
+    # picked up by JS only on that entry's first expand.
+    assert out.count("data-lazy-doc=") == 2
+    assert " srcdoc=" not in out
 
 
 def test_load_data_still_recovers_title_and_details_from_a_collapsible_report(tmp_path):
@@ -490,6 +501,29 @@ def test_load_data_still_recovers_title_and_details_from_a_collapsible_report(tm
     entry = plotpress.load_data(str(p))["Batch A"]
     assert entry["title"] == "Batch A"
     assert entry["details"] == "Baseline run."
+
+
+def test_load_data_recovers_a_collapsed_entrys_deferred_document(tmp_path):
+    """Regression: a collapsed=True entry's document lives in a
+    data-lazy-doc="..." attribute, not srcdoc="..." -- load_data() has to
+    recognize that attribute by name (both at the top-level "is this even a
+    report" dispatch and per-entry) rather than accidentally keep working
+    only because the attribute name happens to still contain the substring
+    "srcdoc=", one rename away from silently breaking. Checks the actual
+    axes data comes back, not just title/details, since that's what
+    depends on the embedded document actually being found and decoded."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    ax.set_title("panel")
+    report = plotpress.Report()
+    report.add(fig, title="Batch A")
+    p = tmp_path / "collapsed_roundtrip.html"
+    report.save(str(p), collapsed=True)
+
+    entry = plotpress.load_data(str(p))["Batch A"]
+    series = entry["axes"]["panel"]["series"][0]
+    assert list(series["x"]) == [0.0, 1.0, 2.0]
+    assert list(series["y"]) == [0.0, 1.0, 4.0]
 
 
 def test_toolbar_clearance_reserves_space_only_when_interactive():

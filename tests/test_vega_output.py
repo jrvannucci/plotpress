@@ -470,6 +470,23 @@ def test_axes_title_and_labels_carry_through():
     assert group["axes"][1]["title"] == "value"
 
 
+def test_hidden_axis_label_is_omitted_not_leaked_into_the_exported_axis_title():
+    """Regression: to_vega() built each axis's title from the raw
+    ax._xlabel/_ylabel, never the visibility-aware _shown_xlabel()/
+    _shown_ylabel() every other renderer already uses -- a label set
+    visible=False (drawn nowhere in the SVG/raster/interactive output)
+    still showed up as the axis title here, the one export that missed the
+    memo. None (Vega's own "no title" value), not the hidden text."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("hidden x", visible=False)
+    ax.set_ylabel("shown y")
+    spec = fig.to_vega()
+    group = spec["marks"][0]
+    assert group["axes"][0]["title"] is None
+    assert group["axes"][1]["title"] == "shown y"
+
+
 # ---------------------------------------------------------------------------
 # _prim_to_vega's fallback path (artists routed through primitives.py's
 # shared artist_to_prims() rather than a dedicated _artist_to_vega_marks

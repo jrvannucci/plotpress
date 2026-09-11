@@ -3106,15 +3106,32 @@ _REPORT_STYLE = (
 # looks "changed" and re-fits -- the same reason setCollapsed() below calls
 # fit() itself on expand, rather than waiting for a resize that may never come.
 #
-# Collapsing only ever toggles a CSS class -- the iframe (and, when
-# interactive=True, its whole toolbar/pan/zoom/pick state) is never removed
-# from the DOM, so re-expanding shows it exactly as it was left, no reload.
-# A collapsed entry's loading="lazy" iframe is also a real (if
-# browser-dependent) load deferral: a display:none element has no box for the
-# browser to judge "near the viewport" against, so most engines simply never
-# fetch/parse its content until it's shown -- collapsed=True on save() (below)
-# means a report with many heavy figures can open instantly, paying the cost
-# of each one only when a reader actually expands it.
+# Collapsing only ever toggles a CSS class -- an already-expanded entry's
+# iframe (and, when interactive=True, its whole toolbar/pan/zoom/pick state)
+# is never removed from the DOM, so re-expanding shows it exactly as it was
+# left, no reload. A collapsed=True entry (Report.save()) is different: its
+# iframe never gets a real srcdoc attribute at all, only a data-lazy-doc
+# holding the identical escaped document -- measured directly (see the
+# collapsed-report tests in test_pick_interactive.py), a display:none
+# srcdoc iframe's own loading="lazy" does NOT defer anything in real engines;
+# a never-laid-out element has no box for a viewport-*distance* heuristic to
+# judge against, so it just loads immediately regardless of being hidden.
+# setCollapsed() below does the deferral itself: the first time an entry
+# expands, it moves data-lazy-doc onto the iframe's real .srcdoc property
+# (triggering the actual parse/render right then, not before) and deletes
+# the data attribute so the DOM isn't left holding two copies of a
+# potentially large document. This is what actually delivers "a many-figure
+# collapsed report opens instantly" -- collapsed=True alone, without this,
+# would only have hidden the figures on screen while still parsing every one
+# of them up front.
+#
+# data-lazy-doc, deliberately not e.g. data-deferred-srcdoc: load_data()'s
+# own regex (see _split_report_entries's caller) looks for the literal
+# substring ``srcdoc="`` to find each entry's embedded document -- a name
+# that happened to still *contain* that substring would keep load_data()
+# working by accident, a coincidence one future rename away from silently
+# breaking it. load_data() instead checks for this attribute by name
+# explicitly, as a real second case, not a lucky substring match.
 _REPORT_SCRIPT = (
     "<script>(function(){"
     "function fit(f){"
@@ -3131,7 +3148,10 @@ _REPORT_SCRIPT = (
     "entry.classList.toggle('plotpress-collapsed',collapsed);"
     "var h=entry.querySelector('.plotpress-report-toggle');"
     "if(h)h.setAttribute('aria-expanded',collapsed?'false':'true');"
-    "if(!collapsed){var f=entry.querySelector('iframe');if(f)fit(f);}}"
+    "if(!collapsed){var f=entry.querySelector('iframe');if(f){"
+    "if(f.dataset.lazyDoc!==undefined){"
+    "f.srcdoc=f.dataset.lazyDoc;delete f.dataset.lazyDoc;}"
+    "fit(f);}}}"
     "document.querySelectorAll('.plotpress-report-toggle').forEach(function(h){"
     "h.addEventListener('click',function(){"
     "var entry=h.closest('.plotpress-report-entry');"
@@ -3210,11 +3230,17 @@ class Report:
         header hides just that entry's figure, leaving its title and details
         visible -- a long report reads as a scannable outline instead of a
         wall of figures. A **Collapse All**/**Expand All** button above the
-        first entry does the same for every one at once. ``collapsed=True``
-        starts every entry collapsed instead of open -- worth it for a report
-        with many figures: a collapsed figure's ``loading="lazy"`` iframe
-        never even loads on most browsers until a reader actually expands it,
-        so the file opens instantly regardless of how many figures it holds.
+        first entry does the same for every one at once.
+
+        ``collapsed=True`` starts every entry collapsed instead of open, and
+        genuinely defers each one: rather than embed it as a live ``srcdoc``
+        that just sits hidden, the escaped document is parked in a plain data
+        attribute and only ever assigned to the iframe -- triggering the real
+        parse/render -- the first time a reader actually expands that entry.
+        A collapsed figure's own toolbar/pan-zoom/pick-data JS never runs
+        until then, so a report with many (or heavy) figures opens instantly
+        regardless of how many it holds, at the cost of a brief render on
+        each entry's first expand instead.
         """
         if not self._entries:
             raise ValueError("Report has no figures -- call add() at least once")
@@ -3271,9 +3297,24 @@ class Report:
             if details:
                 parts.append('<p class="plotpress-report-details">'
                              f'{html.escape(details)}</p>')
-            parts.append(
-                f'<iframe srcdoc="{html.escape(doc)}" height="{h}" '
-                f'loading="lazy" title="{iframe_title}"></iframe>')
+            if collapsed:
+                # Not srcdoc=: a display:none iframe's own loading="lazy"
+                # turned out not to defer anything in practice (see
+                # _REPORT_SCRIPT's own comment on setCollapsed) -- real
+                # engines have a viewport-*distance* heuristic to judge
+                # "near enough to load", which a never-laid-out element has
+                # no geometry for, so several just load it immediately
+                # regardless. Parking the same escaped doc in a data
+                # attribute instead means nothing is even parsed as HTML
+                # until setCollapsed()'s own JS deliberately assigns it to
+                # a real .srcdoc on that entry's first expand.
+                parts.append(
+                    f'<iframe data-lazy-doc="{html.escape(doc)}" '
+                    f'height="{h}" title="{iframe_title}"></iframe>')
+            else:
+                parts.append(
+                    f'<iframe srcdoc="{html.escape(doc)}" height="{h}" '
+                    f'loading="lazy" title="{iframe_title}"></iframe>')
             parts.append("</div>")
         parts.append(_REPORT_SCRIPT)
         parts.append("</div></body></html>")
@@ -3592,19 +3633,25 @@ def load_data(path: str, by_index: bool = False):
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
 
-    if 'srcdoc="' not in text:
+    # A Report entry saved with collapsed=True carries its document in
+    # data-lazy-doc="..." instead of a live srcdoc="..." (see _REPORT_SCRIPT's
+    # own comment on why) -- checked as a real second case by attribute name,
+    # not left to the substring coincidence of a name that simply happens to
+    # still contain "srcdoc=".
+    if 'srcdoc="' not in text and 'data-lazy-doc="' not in text:
         figures = [{"title": None, "details": None, "axes": _load_single_figure(text),
                     "layout": _load_layout(text)}]
     else:
         figures = []
         for chunk in _split_report_entries(text):
-            srcdoc_m = re.search(r'srcdoc="(.*?)"', chunk, re.DOTALL)
-            if not srcdoc_m:
+            doc_m = (re.search(r'srcdoc="(.*?)"', chunk, re.DOTALL)
+                    or re.search(r'data-lazy-doc="(.*?)"', chunk, re.DOTALL))
+            if not doc_m:
                 continue
             title_m = re.search(r"<h2>(.*?)</h2>", chunk, re.DOTALL)
             details_m = re.search(
                 r'<p class="plotpress-report-details">(.*?)</p>', chunk, re.DOTALL)
-            doc = html.unescape(srcdoc_m.group(1))
+            doc = html.unescape(doc_m.group(1))
             figures.append({
                 "title": html.unescape(title_m.group(1)) if title_m else None,
                 "details": html.unescape(details_m.group(1)) if details_m else None,

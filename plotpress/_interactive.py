@@ -2705,11 +2705,21 @@ _JS_SOURCE = r"""
         g = addAnchoredPin(anchor, +rec.data.index, rec.data.customLabel);
         // addAnchoredPin() only copies the specific fields it knows about
         // onto the fresh pin it creates -- a dragged box's own offset (see
-        // startBoxDrag) isn't one of them, so it's carried over here
-        // explicitly, the same as the free-note branch's full dataset copy
-        // below already does for its own pins.
+        // startBoxDrag) and an Annotate Point note's noteStyle (set by
+        // addPointNote *after* its own addAnchoredPin() call returns, so
+        // addAnchoredPin itself never learns about it) aren't among them,
+        // so both are carried over here explicitly, the same as the
+        // free-note branch's full dataset copy below already does for its
+        // own pins. Without this, a restored Annotate Point note fell back
+        // to boxDraggableNow()'s bare `|| 'arrow'` default -- draggable
+        // under Annotate Arrow instead of Annotate Point after every
+        // reload, though its dot/arrow/pick-locked geometry (all decided
+        // elsewhere, from data.kind) stayed correct.
         if (g && rec.data.boxDx !== undefined) {
           g.dataset.boxDx = rec.data.boxDx; g.dataset.boxDy = rec.data.boxDy;
+        }
+        if (g && rec.data.noteStyle !== undefined) {
+          g.dataset.noteStyle = rec.data.noteStyle;
         }
       } else {
         var px, py;

@@ -190,8 +190,8 @@ first entry to do the same for all of them at once -- so a report with many
 figures still reads as a scannable outline, not a wall of plots.
 ``report.save("qa_sweep.html", collapsed=True)`` starts every entry
 collapsed instead of open, worth it once a report has enough figures that
-opening it fully expanded would be slow: a collapsed figure's own iframe
-never even loads on most browsers until a reader expands it.
+opening it fully expanded would be slow: a collapsed figure's document
+isn't parsed or rendered at all until a reader actually expands it.
 
 Below: four figures, each its own 5x10 grid of independent ``pcolormesh``
 panels -- every panel keeping its own title, axes, ticks, labels, and

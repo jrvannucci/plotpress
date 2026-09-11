@@ -15,11 +15,9 @@ just that figure, leaving the title and details visible, so a report with
 many figures still reads as a scannable outline rather than a wall of
 plots -- and a **Collapse All**/**Expand All** button does the same for all
 of them at once. ``collapsed=True`` starts every entry collapsed instead of
-open, worth reaching for once a report has enough figures that opening it
-fully expanded would be slow to scroll through -- and, since a collapsed
-figure's ``loading="lazy"`` iframe never even loads on most browsers until a
-reader expands it, the file opens instantly regardless of how many figures
-it holds.
+open and genuinely defers it: a collapsed figure's document isn't parsed
+or rendered at all until a reader actually expands that entry, so the file
+opens instantly regardless of how many figures it holds.
 """
 import os
 import tempfile

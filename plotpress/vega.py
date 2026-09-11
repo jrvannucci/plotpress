@@ -348,8 +348,8 @@ def _axes_to_group(ax, i, W, H, size_scale, st, mesh_data=False):
     x_ticks, x_labels = _resolved_custom_ticks(ax, "x")
     y_ticks, y_labels = _resolved_custom_ticks(ax, "y")
     axes_defs = [] if ax._axis_off else [
-        _axis_def("bottom", x_name, ax._xlabel, ax._grid, x_ticks, x_labels, scales),
-        _axis_def("left", y_name, ax._ylabel, ax._grid, y_ticks, y_labels, scales),
+        _axis_def("bottom", x_name, ax._shown_xlabel(), ax._grid, x_ticks, x_labels, scales),
+        _axis_def("left", y_name, ax._shown_ylabel(), ax._grid, y_ticks, y_labels, scales),
     ]
     return {
         "type": "group",

@@ -3203,6 +3203,46 @@ def test_collapse_all_button_toggles_every_entry_and_relabels(page, tmp_path):
     assert collapsed_flags() == [True, True]
 
 
+def test_collapsed_report_iframe_is_genuinely_unloaded_before_first_expand(page, tmp_path):
+    """Regression: a display:none iframe's own loading="lazy" turned out not
+    to defer anything in this engine -- an early version of collapsed=True
+    parked the figure's document straight in a live srcdoc= attribute and
+    just hid the iframe with CSS, which (measured directly here) still fully
+    parsed and rendered every collapsed figure's document immediately, the
+    opposite of the "opens instantly regardless of how many figures" the
+    feature promises. save(collapsed=True) must park the document in a
+    plain data attribute instead, with no real srcdoc at all, so nothing
+    about it loads until a reader actually expands that entry."""
+    import plotpress
+
+    fig, ax = plotpress.subplots(figsize=(6, 4))
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    report = plotpress.Report()
+    report.add(fig, title="Untouched")
+    path = tmp_path / "collapsed_unloaded.html"
+    report.save(str(path), collapsed=True)
+    page.goto(path.as_uri())
+    page.wait_for_timeout(400)   # a generous real-time window for any load to fire
+
+    result = page.evaluate(
+        """() => {
+          const f = document.querySelector('.plotpress-report-entry iframe');
+          return {
+            hasSrcdocAttr: f.hasAttribute('srcdoc'),
+            hasDeferredAttr: f.dataset.lazyDoc !== undefined,
+            loadedFlag: !!f.dataset.loaded,
+            hasRenderedBody: !!(f.contentDocument && f.contentDocument.body
+              && f.contentDocument.body.innerHTML.length > 0),
+          };
+        }""")
+    assert not result["hasSrcdocAttr"], "a collapsed entry must not carry a live srcdoc yet"
+    assert result["hasDeferredAttr"], "the document must be parked in data-lazy-doc instead"
+    assert not result["loadedFlag"], "the iframe's load event must not have fired"
+    assert not result["hasRenderedBody"], (
+        "the figure's document must not be parsed/rendered before the entry is expanded: %r"
+        % result)
+
+
 def test_collapsed_report_expands_and_fits_a_never_loaded_iframe(page, tmp_path):
     """save(collapsed=True): every entry opens collapsed. Expanding one for
     the first time must both reveal and correctly size its iframe -- fit()
@@ -3374,6 +3414,84 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
                                 b.textContent === 'Show Annotations');
                    return b ? b.textContent : null; }""")
     assert toggle_label == "Show Annotations"
+
+
+def test_save_as_restores_all_three_annotate_note_styles_and_their_own_dataset_noteStyle(
+        page, tmp_path):
+    """Regression: the round trip above only ever exercised Point Picking and
+    Annotate Arrow. An Annotate Point note (data.kind set, same as a Point
+    Picking pin) is rebuilt on restore through addAnchoredPin(), which knows
+    nothing about noteStyle -- that field is set by addPointNote() itself
+    *after* its own addAnchoredPin() call returns, so restorePins() has to
+    carry it over explicitly the same way it already does for a dragged
+    box's boxDx/boxDy. Without that, a reloaded Annotate Point note fell
+    back to boxDraggableNow()'s bare ``|| 'arrow'`` default: correct
+    dot/arrow-free, pick-locked geometry, but draggable under Annotate Arrow
+    instead of Annotate Point -- a real, silent behavior change that no
+    reload of a saved file would ever surface from the picture alone."""
+    import plotpress
+    from pick_cases import px
+
+    x = [0.0, 1.0, 2.0, 3.0]
+    fig, ax = plotpress.subplots()
+    ax.plot(x, [0.0, 1.0, 4.0, 9.0], label="sq")
+    path = tmp_path / "note_styles_roundtrip.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+    page.evaluate("() => { delete window.showSaveFilePicker; }")
+
+    # Annotate Point -- locked to a real datum, rebuilt via addAnchoredPin().
+    ux, uy = px(fig, 0, x[2], 4.0)
+    _click_mode(page, "Annotate Point", ux, uy, prompt_text="point note")
+
+    box = page.eval_on_selector(
+        "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
+        "return {x: r.x, y: r.y}; }")
+
+    # Annotate Arrow -- a margin note, not locked to any datum.
+    page.once("dialog", lambda d: d.accept("arrow note"))
+    page.evaluate(
+        "() => document.querySelectorAll('.plotpress-toolbar button').forEach(b => { "
+        "if (b.textContent === 'Annotate Arrow') b.click(); })")
+    page.mouse.click(box["x"] + 5, box["y"] + 3)
+
+    # Annotate (plain) -- a figure-fixed text box, no dot/arrow.
+    page.once("dialog", lambda d: d.accept("plain note"))
+    page.evaluate(
+        "() => document.querySelectorAll('.plotpress-toolbar button').forEach(b => { "
+        "if (b.textContent === 'Annotate') b.click(); })")
+    page.mouse.click(box["x"] + 40, box["y"] + 40)
+
+    styles_before = page.evaluate(
+        "() => [...document.querySelectorAll('.plotpress-pin')]"
+        ".map(p => p.dataset.noteStyle).sort()")
+    assert styles_before == ["arrow", "plain", "point"]
+
+    with page.expect_download() as dl_info:
+        _click_toolbar(page, "Save As")
+    saved = tmp_path / "note_styles_roundtrip_saved.html"
+    dl_info.value.save_as(str(saved))
+
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(saved.as_uri())
+    assert not errors, "JS error loading the saved page: %s" % errors
+
+    styles_after = page.evaluate(
+        "() => [...document.querySelectorAll('.plotpress-pin')]"
+        ".map(p => p.dataset.noteStyle).sort()")
+    assert styles_after == ["arrow", "plain", "point"], (
+        "a note's own noteStyle must survive the save/reload round trip: %r" % styles_after)
+
+    plain_has_dot = page.evaluate(
+        "() => { const g = [...document.querySelectorAll('.plotpress-pin')]"
+        ".find(p => p.dataset.noteStyle === 'plain'); return !!g.querySelector('circle'); }")
+    assert not plain_has_dot, "a restored plain Annotate note must still have no dot"
+
+    point_kind = page.evaluate(
+        "() => { const g = [...document.querySelectorAll('.plotpress-pin')]"
+        ".find(p => p.dataset.noteStyle === 'point'); return g.dataset.kind; }")
+    assert point_kind, "a restored Annotate Point note must still resolve through data.kind"
 
 
 def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
@@ -3823,3 +3941,5 @@ def test_embedded_zoomed_out_slider_figure_also_centers(page, tmp_path):
     assert out["top"] == pytest.approx(out["expectedTop"], abs=1.0), (
         "a shrunk embedded slider figure must center vertically in the "
         "space below the toolbar: %r" % out)
+
+

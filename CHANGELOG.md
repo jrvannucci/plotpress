@@ -9,9 +9,49 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
-## [Unreleased]
+## [0.32.4] - 2026-09-10
 
-(nothing yet)
+### Fixed
+
+- **`to_vega()`/`to_vega_lite()` leaked a `visible=False` axis label into the
+  exported axis title.** Every other renderer (SVG, raster, `tight_layout`/
+  `align_xlabels`/`align_ylabels`) already gates on `_shown_xlabel()`/
+  `_shown_ylabel()`, but both Vega exporters built their axis title straight
+  from the raw `ax._xlabel`/`ax._ylabel` -- a label hidden with
+  `set_xlabel(..., visible=False)` (drawn nowhere in any other output) still
+  showed up as `axis.title`/`encoding.x.axis.title` in these two. Found by an
+  audit sweep of every raw `_xlabel`/`_ylabel` access across the codebase;
+  fixed by routing both through the same `_shown_*()` gate.
+- **`Report.save(..., collapsed=True)` didn't actually defer anything.** The
+  0.32.3 release claimed a collapsed entry's `loading="lazy"` iframe "never
+  even loads on most browsers until a reader expands it" -- measured directly
+  in a real browser, this was false: a `display:none` iframe has no box for
+  a viewport-*distance* heuristic to judge against, so several engines just
+  load it immediately regardless of being hidden, defeating the entire point
+  of `collapsed=True` for a report with many or heavy figures. A collapsed
+  entry's document is now parked in a `data-lazy-doc="..."` attribute
+  instead of a live `srcdoc="..."`, and only ever assigned to the iframe's
+  real `.srcdoc` -- triggering the actual parse/render -- on that entry's
+  first expand. `load_data()` recognizes this attribute by name (not by the
+  coincidence that an earlier draft's attribute name happened to still
+  contain the substring `srcdoc="`, which would have kept it working only
+  by accident and one rename away from silently breaking). Docstrings/docs
+  corrected to describe the real mechanism.
+- **An "Annotate Point" note lost its own style on Save/Save As.** Reloading
+  a saved interactive HTML rebuilds every point-picking-shaped pin (a real
+  Point Picking marker or an Annotate Point note -- anything with
+  `data.kind` set) through `addAnchoredPin()`, which knows nothing about
+  `noteStyle` -- that field is set by `addPointNote()` itself *after* its
+  own `addAnchoredPin()` call returns. The restored note's dot/arrow-free,
+  pick-locked geometry came back correct, but with no `noteStyle` at all it
+  fell back to `boxDraggableNow()`'s bare `|| 'arrow'` default: draggable
+  under **Annotate Arrow** instead of **Annotate Point** after every reload,
+  a silent behavior change invisible in the picture alone. `noteStyle` is
+  now carried over explicitly on restore, the same way a dragged box's own
+  `boxDx`/`boxDy` offset already was.
+
+All three found via a direct, no-subagent audit of the axis-label-visibility,
+Report-collapsing, and Annotate features shipped in 0.31.0-0.32.3.
 
 ## [0.32.3] - 2026-09-10
 

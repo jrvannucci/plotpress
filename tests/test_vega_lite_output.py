@@ -36,6 +36,23 @@ def test_single_axes_lands_in_grid_not_standalone():
     assert result["grid"]["$schema"] == "https://vega.github.io/schema/vega-lite/v5.json"
 
 
+def test_hidden_axis_label_is_omitted_not_leaked_into_the_exported_axis_title():
+    """Regression: to_vega_lite() built each encoding's axis.title from the
+    raw ax._xlabel/_ylabel, never the visibility-aware _shown_xlabel()/
+    _shown_ylabel() every other renderer already uses -- a label set
+    visible=False (drawn nowhere in the SVG/raster/interactive output)
+    still showed up as the axis title here, the one export that missed the
+    memo."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("hidden x", visible=False)
+    ax.set_ylabel("shown y")
+    result, _ = fig.to_vega_lite()
+    layer = _layers(result["grid"])[0]
+    assert layer["encoding"]["x"]["axis"]["title"] is None
+    assert layer["encoding"]["y"]["axis"]["title"] == "shown y"
+
+
 def test_line_mark_and_field_encoding():
     fig, ax = plotpress.subplots()
     ax.plot([0, 1, 2, 3], [0.0, 1.0, 4.0, 9.0])
