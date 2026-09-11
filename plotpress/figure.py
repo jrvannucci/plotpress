@@ -1436,15 +1436,17 @@ class Figure:
             # butting a neighboring group, loose on the title side -- would
             # otherwise reserve the wrong amount here).
             pad_l, pad_r, pad_t, pad_b = g["pad"]
-            # Four independent per-edge extents, not one tied to
+            # Four independent per-edge *text* extents, not one tied to
             # title_position -- a supxlabel/supylabel (below) always sits at
             # the bottom/left edge regardless of where the *title* sits, so
             # a group with title_position="bottom" *and* a supxlabel needs
             # both reserved on that same edge, stacked (the title outside
             # the box, the supxlabel inside it growing the box into the
             # title's own margin) -- additive, not a single value picked by
-            # title_position alone.
-            top_extent = bottom_extent = left_extent = right_extent = 0.0
+            # title_position alone. Deliberately *not* including pad here --
+            # see the outer-edge extents just below for why that's a
+            # separate concern, added on only there.
+            top_text = bottom_text = left_text = right_text = 0.0
             if pos in ("top", "bottom"):
                 # 1.3x size -- not 1x -- for the same reason title_px above
                 # adds a flat +8 rather than measuring real glyph ascent:
@@ -1452,22 +1454,20 @@ class Figure:
                 # fonts/), not vertical extents, so this errs generous
                 # rather than risk the title's own glyphs clipping the
                 # canvas edge.
-                side_pad = pad_t if pos == "top" else pad_b
-                title_extent = side_pad + size * 1.3 + 10
+                title_extent = size * 1.3 + 10
                 if pos == "top":
-                    top_extent += title_extent
+                    top_text += title_extent
                 else:
-                    bottom_extent += title_extent
+                    bottom_text += title_extent
             else:
                 # A left/right title runs horizontally alongside the box, not
                 # centered over it -- its own rendered *width* is what has to
                 # fit in the reserved margin here, not a height allowance.
-                side_pad = pad_l if pos == "left" else pad_r
-                title_extent = side_pad + st.text_width(g["title"], size, bold=True) + 12
+                title_extent = st.text_width(g["title"], size, bold=True) + 12
                 if pos == "left":
-                    left_extent += title_extent
+                    left_text += title_extent
                 else:
-                    right_extent += title_extent
+                    right_text += title_extent
             # supxlabel/supylabel draw *inside* the box, near its bottom/left
             # edge (see _render_groups) -- unlike the title, always that one
             # fixed edge regardless of title_position, mirroring
@@ -1478,10 +1478,27 @@ class Figure:
             # title facing that edge would.
             if g.get("supxlabel"):
                 sx_size = g.get("supxlabel_size") or st.label_size * 1.2
-                bottom_extent += sx_size * 1.2 + 10
+                bottom_text += sx_size * 1.2 + 10
             if g.get("supylabel"):
                 sy_size = g.get("supylabel_size") or st.label_size * 1.2
-                left_extent += sy_size + 10
+                left_text += sy_size + 10
+            # Outer-edge extents fold this group's own pad on that side in
+            # too, unconditionally -- interior boundaries (below) don't,
+            # left exactly as they were. _group_bbox grows the box by pad on
+            # *all four* sides regardless of where the title sits (that's
+            # the whole point of pad's own (left, right, top, bottom) shape
+            # -- tight on the side facing a neighbor, generous elsewhere),
+            # but only group_spacing() -- an explicit, separately-tuned
+            # request -- was ever meant to buy extra room at an *interior*
+            # boundary (see its own docstring); the figure's own outer edge
+            # has no such explicit knob, and nothing else was reserving pad
+            # there at all. Missing this let a group's own box run past the
+            # canvas edge outright (not just crowd something else)
+            # whenever its pad on a non-title-facing outer edge exceeded
+            # the ordinary tick-label margin that edge is otherwise sized
+            # from.
+            top_extent, bottom_extent = top_text + pad_t, bottom_text + pad_b
+            left_extent, right_extent = left_text + pad_l, right_text + pad_r
             r0 = min(ax._subplotspec.row0 for ax in g_specs)
             r1 = max(ax._subplotspec.row1 for ax in g_specs)
             c0 = min(ax._subplotspec.col0 for ax in g_specs)
@@ -1515,26 +1532,22 @@ class Figure:
             # own comment above for why); turned into an actual reserved
             # deficit, net of the ordinary gap and combined across both
             # sides of the boundary, once every group has contributed.
-            if top_extent:
-                if r0 == 0:
-                    group_top_px = max(group_top_px, top_extent)
-                else:
-                    row_below_px[r0 - 1] = max(row_below_px[r0 - 1], top_extent)
-            if bottom_extent:
-                if r1 == nrows - 1:
-                    group_bottom_px = max(group_bottom_px, bottom_extent)
-                else:
-                    row_above_px[r1] = max(row_above_px[r1], bottom_extent)
-            if left_extent:
-                if c0 == 0:
-                    group_left_px = max(group_left_px, left_extent)
-                else:
-                    col_right_px[c0 - 1] = max(col_right_px[c0 - 1], left_extent)
-            if right_extent:
-                if c1 == ncols - 1:
-                    group_right_px = max(group_right_px, right_extent)
-                else:
-                    col_left_px[c1] = max(col_left_px[c1], right_extent)
+            if r0 == 0:
+                group_top_px = max(group_top_px, top_extent)
+            elif top_text:
+                row_below_px[r0 - 1] = max(row_below_px[r0 - 1], top_text)
+            if r1 == nrows - 1:
+                group_bottom_px = max(group_bottom_px, bottom_extent)
+            elif bottom_text:
+                row_above_px[r1] = max(row_above_px[r1], bottom_text)
+            if c0 == 0:
+                group_left_px = max(group_left_px, left_extent)
+            elif left_text:
+                col_right_px[c0 - 1] = max(col_right_px[c0 - 1], left_text)
+            if c1 == ncols - 1:
+                group_right_px = max(group_right_px, right_extent)
+            elif right_text:
+                col_left_px[c1] = max(col_left_px[c1], right_text)
             if r0 > 0:
                 row_needs_hspace[r0 - 1] = True
             if r1 < nrows - 1:

@@ -3434,37 +3434,85 @@ def test_group_left_right_title_reserves_width_not_a_height_allowance():
         "reserved left margin does not fit the title's own rendered width")
 
 
-def test_group_not_facing_the_outer_edge_reserves_no_outer_margin():
-    """An interior group (its title-facing edge is a row/col gap, not the
-    figure's own outer edge) never grows the *outer* margin -- that would be
-    wrong for every other row/col, the same reasoning group_top_px/etc.
-    already apply to a group that does reach the outer edge. Its title
-    still needs to clear the neighboring group's own box somehow (see
-    test_group_spacing_resolves_a_real_interior_boundary_collision's own
-    history -- a title drawing right on top of the next group's box is
-    exactly the bug that test was written to catch), but that's the
-    boundary's own job now, not the outer margin's -- see
-    test_interior_facing_title_gets_automatic_minimum_clearance."""
+def test_group_reserves_its_own_pad_on_every_outer_edge_it_touches():
+    """Regression: a group's box grows by ``pad`` on *all four* sides
+    regardless of where its title sits (_group_bbox) -- but the outer
+    margin used to fold that in only for whichever single side the title
+    happened to face, via that side's own title-clearance formula. A group
+    whose *bounding box* still reaches an outer edge through a side the
+    title does not face (the common shape: a single-row group, so its one
+    non-title-facing side is unavoidably the figure's own edge) got nothing
+    reserved for its pad there at all -- the box's own edge (axes' natural
+    tick clearance + pad) could then land past the canvas boundary outright
+    whenever pad exceeded whatever margin the ordinary tick labels already
+    implied (the default pad=8 rarely did; a deliberately generous one, as
+    in the grouping gallery's own plot_11_unequal_padding, reliably did).
+
+    Bottom row grouped with a *top*-facing title: the title's own edge (row
+    0/row 1 boundary) is interior and reserves nothing extra here (see
+    test_interior_facing_title_gets_automatic_minimum_clearance) -- it's
+    the group's *other* edge, the figure's own outer bottom, that must now
+    carry the group's ``pad_b``, on top of the ordinary per-axes bottom
+    margin a bottom row always reserves. The outer *top* margin, which
+    this group's own box never reaches at all, must still stay untouched.
+    """
     fig1, axes1 = _grid_2x2()
     fig1.tight_layout()
     Hpx1 = fig1.figsize[1] * fig1.style.dpi
-    outer_top_before = min(a._rect[1] for a in axes1.ravel()) * Hpx1
-    outer_bottom_before = (1 - max(a._rect[1] + a._rect[3] for a in axes1.ravel())) * Hpx1
+    top_margin_before = (1 - max(a._rect[1] + a._rect[3] for a in axes1.ravel())) * Hpx1
+    bottom_margin_before = min(a._rect[1] for a in axes1.ravel()) * Hpx1
 
     fig2, axes2 = _grid_2x2()
-    # Bottom row grouped with a *top*-facing title: doesn't reach row 0.
-    fig2.group("Interior", [axes2[1, 0], axes2[1, 1]], title_position="top")
+    pad = 8.0   # Figure.group()'s own default -- named here since the math below uses it
+    fig2.group("Interior", [axes2[1, 0], axes2[1, 1]], title_position="top", pad=pad)
     fig2.tight_layout()
     # Compared in *pixels*, not the raw 0-1 rect fractions -- the figure
-    # itself grows to hold the new interior reservation (see
-    # test_group_spacing_widens_only_the_interior_gap_not_the_outer_margin's
-    # own docstring on why), so a fraction measured against that taller
-    # canvas shifts even though the true pixel margin does not.
+    # itself grows to hold the new reservation, so a fraction measured
+    # against that taller canvas shifts even though the true pixel margin
+    # does not.
     Hpx2 = fig2.figsize[1] * fig2.style.dpi
-    outer_top_after = min(a._rect[1] for a in axes2.ravel()) * Hpx2
-    outer_bottom_after = (1 - max(a._rect[1] + a._rect[3] for a in axes2.ravel())) * Hpx2
-    assert outer_top_after == pytest.approx(outer_top_before, abs=0.5)
-    assert outer_bottom_after == pytest.approx(outer_bottom_before, abs=0.5)
+    top_margin_after = (1 - max(a._rect[1] + a._rect[3] for a in axes2.ravel())) * Hpx2
+    bottom_margin_after = min(a._rect[1] for a in axes2.ravel()) * Hpx2
+
+    assert top_margin_after == pytest.approx(top_margin_before, abs=0.5), (
+        "the outer top margin, which this group's own box never reaches, "
+        "must stay untouched")
+    assert bottom_margin_after == pytest.approx(bottom_margin_before + pad, abs=0.5), (
+        "the outer bottom margin must grow by exactly this group's own "
+        "pad_b, the one side of it that does reach the outer edge")
+
+
+def test_group_pad_alone_never_runs_the_box_past_the_canvas_edge():
+    """The concrete failure test_group_reserves_its_own_pad_on_every_outer_
+    edge_it_touches guards against: plot_11_unequal_padding's own shape --
+    two groups side by side, title_position="top" on both (an *interior*
+    concern only, at the shared column boundary between them), but a
+    deliberately generous pad on the side that also happens to be the
+    figure's own outer edge. Before the fix, the left group's box (whose
+    left pad, 20px, comfortably exceeds the few pixels of ordinary
+    tick-label margin these small-labelsize axes imply) rendered at a
+    negative x -- genuinely off the left edge of the canvas, not just
+    close to it."""
+    fig, axes = _grid_2x2()
+    for ax in axes.ravel():
+        ax.tick_params(labelsize=6)
+    fig.group("Left", list(axes[:, 0]), title_position="top", color="#1f77b4",
+             pad=(20.0, 4.0, 24.0, 8.0))
+    fig.group("Right", list(axes[:, 1]), title_position="top", color="#d62728",
+             pad=(4.0, 20.0, 24.0, 8.0))
+    fig.group_spacing(wspace=10.0)
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    boxes = {b.get("stroke"): b for b in root.findall(f".//{NS}rect")
+            if b.get("fill") == "none"}
+    assert float(boxes["#1f77b4"].get("x")) >= 0, (
+        "the left group's own generous left pad must be reserved as real "
+        "canvas margin, not left for its box to run past x=0")
+    W = fig.figsize[0] * fig.style.dpi
+    right_box = boxes["#d62728"]
+    assert float(right_box.get("x")) + float(right_box.get("width")) <= W, (
+        "same check on the right group's own generous right pad")
 
 
 def test_interior_facing_title_gets_automatic_minimum_clearance():

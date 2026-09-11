@@ -9,6 +9,29 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.2] - 2026-09-11
+
+### Fixed
+
+- **A `fig.group()` box could render past the canvas edge outright** --
+  its own `pad` value grows the box by that amount on all four sides
+  regardless of where `title_position` points, but the figure's own outer
+  margin only ever reserved room for that pad on whichever single side
+  the title happened to face. A group's *other* sides still commonly
+  touch the figure's own outer edge (the ordinary shape: a single row or
+  column grouped, so its one non-title-facing side is unavoidably the
+  figure's edge) -- with nothing reserving pad there, the box's edge
+  (natural tick clearance + pad) could exceed the margin outright the
+  moment pad asked for more than the ordinary tick labels already
+  implied, which the default `pad=8` rarely did, and a deliberately
+  generous one (the grouping gallery's own
+  `figure_layout/grouping/plot_11_unequal_padding`, reported directly
+  against the published docs) reliably did. Every outer-touching side
+  now reserves its own pad unconditionally; an interior boundary is
+  unaffected -- `group_spacing()` remains the explicit, separately-tuned
+  knob for how much extra room a tight/loose pad choice needs there, by
+  design (see its own docstring).
+
 ## [0.34.1] - 2026-09-11
 
 ### Added
