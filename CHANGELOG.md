@@ -9,7 +9,7 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
-## [Unreleased]
+## [0.33.1] - 2026-09-11
 
 ### Fixed
 
