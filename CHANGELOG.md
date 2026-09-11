@@ -13,11 +13,14 @@ anywhere in the source.
 
 ### Changed
 
-- README: new banner image and slogan at the top -- *"Plot once. Share
-  anywhere. Explore everywhere."* -- replacing the old sentence tagline;
-  added a documentation links row (User guide / API reference /
-  galleries); and set the GitHub repo's own homepage field to the docs
-  site so it shows in the "About" sidebar. No code change.
+- Branding: new banner image and slogan -- *"Plot once. Share anywhere.
+  Explore everywhere."* -- at the top of the README and the docs
+  homepage, replacing the old sentence tagline; a new app-icon logo
+  (`assets/plotpress-logo.png`) wired in as the docs sidebar logo and
+  browser-tab favicon; a documentation links row in the README (User
+  guide / API reference / galleries); and the GitHub repo's homepage
+  field set to the docs site so it shows in the "About" sidebar. No code
+  change.
 
 ## [0.31.3] - 2026-09-10
 

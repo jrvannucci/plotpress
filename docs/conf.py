@@ -55,6 +55,9 @@ suppress_warnings = ["config.cache"]
 # -- HTML output (Read the Docs theme) ----------------------------------------
 html_theme = "sphinx_rtd_theme"
 html_title = f"plotpress {version}"
+# Sidebar logo + browser-tab favicon, from assets/plotpress-logo.png.
+html_logo = "_static/logo.png"
+html_favicon = "_static/favicon.png"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,

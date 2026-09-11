@@ -1,7 +1,11 @@
 plotpress
 ==========
 
-Scientific plots you can explore, share, and reuse.
+.. image:: /_static/banner.png
+   :alt: plotpress: Plot once. Share anywhere. Explore everywhere.
+   :align: center
+
+**Plot once. Share anywhere. Explore everywhere.**
 
 A **fast, dependency-light** plotting library for scientific computing, with a
 **matplotlib-shaped API** and **no compiled extension** -- so it installs
