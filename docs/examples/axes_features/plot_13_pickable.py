@@ -4,9 +4,11 @@ Restricting point picking to one axes
 
 ``set_pickable(False)`` excludes an axes from the interactive toolbar's
 **Point Picking** tool -- a click there behaves as if it missed every axes.
-**Axis Span**, **Axis Zoom**, **Pan/Zoom**, and **Annotation** are
-unaffected, so a figure can restrict picking to a single panel while every
-other tool still works everywhere. The static image below looks like an
+**Annotate Point** resolves to a datum the same way, so it respects this
+too; **Axis Span**, **Axis Zoom**, **Pan/Zoom**, **Annotate**, and
+**Annotate Arrow** are unaffected, so a figure can restrict picking to a
+single panel while every other tool still works everywhere. The static
+image below looks like an
 ordinary grid -- the effect only shows up in ``interactive=True`` output, so
 this is also a live figure in the online docs.
 """

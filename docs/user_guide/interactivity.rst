@@ -127,27 +127,42 @@ tool in one press, see the Point Picking row below).
        tool is selected. Hides every Point Picking pin without deleting any
        of them; toggling it back to "Show Points" restores them exactly as
        they were, text included. Independent of Hide Annotations below --
-       an Annotation note stays visible either way.
+       an annotation note stays visible either way.
    * - **Clear Points**
      - Removes every Point Picking pin at once, and only those -- an
-       Annotation note survives untouched.
+       annotation note survives untouched.
    * - **Extract**
      - Copy/download picked points, or return them to Python -- Point
-       Picking pins only, not Annotation notes; an Annotation note has
+       Picking pins only, not annotation notes; an annotation note has
        nothing to "extract" in the same sense a picked data value does.
-   * - **Annotation**
+   * - **Annotate**
+     - Drop a plain text box anywhere on the figure -- a caption, not a
+       callout. No dot, no leader arrow, and always pinned to a fixed
+       figure position, even dropped inside an axes. Its own box drags
+       the same way a Point Picking pin's does, while Annotate is the
+       active mode.
+   * - **Annotate Arrow**
      - Drop a user-written note anywhere on the figure, not locked to any
-       datum -- including the margins or the gap between subplots. Its own
-       box drags the same way a Point Picking pin's does, while Annotation
-       is the active mode.
+       datum, but pointing at wherever it was dropped -- a dot at that
+       spot, a draggable label box, and a leader arrow connecting the two.
+       Inside an axes it tracks that axes' data coordinate; outside one it
+       stays at its fixed figure position, the same as Annotate above.
+   * - **Annotate Point**
+     - Like Point Picking, but prompts for text and locks a user-written
+       note to that datum instead of the auto-generated readout --
+       steppable by arrow key, tracks pan/zoom, the same nearest-datum
+       resolution Point Picking itself uses. Classed as an annotation, not
+       a Point Picking marker: it survives Clear Points, Hide Points
+       leaves it visible, and it never appears in Extract's output.
    * - **Hide Annotations**
-     - The mirror of Hide Points: hides every Annotation note without
-       deleting any of them, *plus* every figure-drawn boxed callout
-       (``ax.text()``/``ax.annotate(bbox=...)``) -- a static callout reads
-       the same way on screen as a note. Toggling it back to "Show
-       Annotations" restores everything exactly as it was.
+     - The mirror of Hide Points: hides every annotation note (all three
+       Annotate tools' own) without deleting any of them, *plus* every
+       figure-drawn boxed callout (``ax.text()``/``ax.annotate(bbox=...)``)
+       -- a static callout reads the same way on screen as a note.
+       Toggling it back to "Show Annotations" restores everything exactly
+       as it was.
    * - **Clear Annotations**
-     - The mirror of Clear Points: removes every Annotation note at once,
+     - The mirror of Clear Points: removes every annotation note at once,
        and only those -- a Point Picking pin survives untouched.
    * - **Save**
      - Tries to overwrite the file this page was opened from -- pan/zoom,
@@ -219,9 +234,10 @@ for a worked example, and the live figure in :doc:`../usage`.
 
 :meth:`~plotpress.axes.Axes.set_pickable` (default ``True``) excludes an axes
 from **Point Picking** -- a click there behaves as if it missed every axes.
-**Axis Span**, **Axis Zoom**, **Pan/Zoom**, and **Annotation** are
-unaffected, so a figure can restrict picking to a single panel while every
-other tool still works everywhere:
+**Annotate Point** resolves to a datum the same way, so it respects this
+too; **Axis Span**, **Axis Zoom**, **Pan/Zoom**, **Annotate**, and
+**Annotate Arrow** are unaffected, so a figure can restrict picking to a
+single panel while every other tool still works everywhere:
 
 .. code-block:: python
 
@@ -235,7 +251,7 @@ Extracting markers to Python
 ----------------------------
 
 The **Extract** button (in the Point Picking menu) opens a panel to
-copy/download the current Point Picking markers -- not Annotation notes,
+copy/download the current Point Picking markers -- not annotation notes,
 which have nothing to "extract" in the same sense a picked data value does
 -- as **CSV or JSON**. Each record is a dict: the picked value itself
 (``x``/``y``, plus ``z``/``c``/any ``values=`` dimension), ``axes`` and
@@ -341,7 +357,7 @@ tools:
 
 ``{label, mode, onClick, onEnter, onExit, cursor}``
     A real *mode*, joining the same single-selection group as Pan/Zoom,
-    Axis Span/Zoom, Point Picking, and Annotation -- selecting it
+    Axis Span/Zoom, Point Picking, and the three Annotate tools -- selecting it
     deselects whatever else was active, and vice versa. A click on the SVG
     that no built-in mode already claims calls
     ``onClick(event, userSpacePoint)``. ``window.plotpressToData(userSpacePoint)``

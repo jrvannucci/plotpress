@@ -111,7 +111,7 @@ Point Picking menu:
   Picking pin without deleting any of them. Toggling it back to "Show
   Points" restores them exactly as they were, text included.
 * **Clear Points** -- removes every Point Picking pin at once, leaving any
-  Annotation notes untouched.
+  annotation notes untouched.
 * **Extract** -- copy/download every Point Picking pin as CSV/JSON (or hand
   them back to the kernel with ``fig.show(wait_for_extract=True)``).
 
@@ -119,14 +119,20 @@ Point Picking menu:
 
 Annotate menu:
 
-* **Annotation** -- drop a user-written note anywhere on the figure, not
-  locked to any datum -- including the margins or the gap between
-  subplots.
-* **Hide Annotations** -- the mirror of Hide Points: hides every Annotation
+* **Annotate** -- drop a plain text box anywhere on the figure: a caption,
+  not a callout. No dot, no leader arrow, always pinned to a fixed figure
+  position.
+* **Annotate Arrow** -- drop a user-written note anywhere on the figure,
+  not locked to any datum but pointing at wherever it was dropped (a dot,
+  a leader arrow) -- including the margins or the gap between subplots.
+* **Annotate Point** -- like Point Picking, but prompts for text and locks
+  a note to that datum instead of the auto-generated readout; never
+  appears in Extract's output.
+* **Hide Annotations** -- the mirror of Hide Points: hides every annotation
   note, *plus* every boxed callout the figure itself drew, without deleting
   any of them.
 * **Clear Annotations** -- the mirror of Clear Points: removes every
-  Annotation note at once, leaving any Point Picking pins untouched.
+  annotation note at once, leaving any Point Picking pins untouched.
 
 .. include:: _static/interactive/usage_hide_annotations.rst.inc
 
@@ -149,8 +155,9 @@ multi-panel export always names its source panel.
 :meth:`~plotpress.axes.Axes.set_pick_context` attaches further per-axes
 key/value context (e.g. a panel's own color) that rides along on every record
 picked from it, and :meth:`~plotpress.axes.Axes.set_pickable` excludes an
-axes from Point Picking entirely -- Axis Span, Axis Zoom, Pan/Zoom,
-and Annotation are unaffected. See :doc:`user_guide/interactivity` for the
+axes from Point Picking entirely (Annotate Point resolves the same way, so
+it respects this too) -- Axis Span, Axis Zoom, Pan/Zoom, Annotate, and
+Annotate Arrow are unaffected. See :doc:`user_guide/interactivity` for the
 full picture, and
 :doc:`auto_examples/axes_features/plot_11_spine_color_grid` for
 ``set_pick_context`` used to surface a per-panel spine color.

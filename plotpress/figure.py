@@ -2143,8 +2143,9 @@ class Figure:
         dict of values: ``x``, ``y``, any extra dims, ``axes`` (index),
         ``axes_title`` (if that axes has one), ``kind``), or an empty list if
         none were extracted. Point Picking markers only -- Extract lives
-        under the Point Picking menu and no longer includes Annotation
-        notes, which have no export of their own.
+        under the Point Picking menu and no longer includes annotation
+        notes (dropped via any of the three Annotate tools), which have no
+        export of their own.
 
         With ``wait_for_extract=True`` the call becomes an interactive point-
         picking session: the kernel blocks, the user drops markers and clicks

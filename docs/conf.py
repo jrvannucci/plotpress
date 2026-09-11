@@ -636,7 +636,7 @@ def _build_usage_demos():
     ax2.set_xlabel("x"); ax2.set_ylabel("y")
     _write_usage_demo(
         fig2, "usage_annotate",
-        "Annotation drops a user-written note anywhere on the figure, "
+        "Annotate Arrow drops a user-written note anywhere on the figure, "
         "including outside the axes -- try the peak, or the margin.")
 
     fig3, ax3 = plotpress.subplots(figsize=(6, 4))

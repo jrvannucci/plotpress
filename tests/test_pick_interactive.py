@@ -1860,7 +1860,7 @@ def test_home_and_reset_all_axes_do_not_clear_pins(page, tmp_path):
 
     markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
     assert len(markers) == 1
-    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0),
+    markers = _click_mode(page, "Annotate Arrow", *px(fig, 0, 1.0, 1.0),
                           prompt_text="stays put")
     assert len(markers) == 2
 
@@ -1971,7 +1971,7 @@ def test_clear_points_and_clear_annotations_are_independently_scoped(page, tmp_p
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
-    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0),
+    markers = _click_mode(page, "Annotate Arrow", *px(fig, 0, 1.0, 1.0),
                           prompt_text="a note")
     assert len(markers) == 2
 
@@ -2091,7 +2091,7 @@ def test_annotation_click_warns_once_when_prompt_is_blocked(page, tmp_path):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
-    _click_toolbar(page, "Annotation")
+    _click_toolbar(page, "Annotate Arrow")
     box = page.eval_on_selector(
         "#plotpress-svg", "el => { const r = el.getBoundingClientRect(); "
         "return {x: r.x, y: r.y}; }")
@@ -2101,9 +2101,9 @@ def test_annotation_click_warns_once_when_prompt_is_blocked(page, tmp_path):
     assert not errors, "a blocked prompt() must not surface as an uncaught JS error: %s" % errors
     assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 0, (
         "a blocked prompt() must add no note, the same as a cancelled one")
-    assert any("prompt" in w and "blocked" in w.lower() or "Annotation" in w
+    assert any("prompt" in w and "blocked" in w.lower() or "Annotate" in w
               for w in warnings_seen), (
-        "a developer debugging a non-functional Annotation tool needs a "
+        "a developer debugging a non-functional Annotate tool needs a "
         "console signal: %r" % warnings_seen)
     assert len(warnings_seen) == 1, (
         "the warning must fire once, not once per click: %r" % warnings_seen)
@@ -2143,7 +2143,8 @@ def test_text_selection_disabled_under_every_active_toolbar_mode(page, tmp_path)
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
-    for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotation", "Pan/Zoom"):
+    for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotate",
+                 "Annotate Arrow", "Annotate Point", "Pan/Zoom"):
         _click_toolbar(page, label)
         active = page.eval_on_selector("#plotpress-svg", "el => el.style.userSelect")
         _dblclick_toolbar(page, label)   # deselect it
@@ -2300,9 +2301,9 @@ def test_dragging_a_pins_box_repositions_it_independent_of_its_anchor(page, tmp_
 
 def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
     """A plain Point Picking pin's box drags only under Point Picking; an
-    Annotation note's box drags only under Annotation -- the same split
-    Clear Points/Clear Annotations already use, now governing which pins a
-    drag can move instead of which a Clear button removes."""
+    Annotate Arrow note's box drags only under Annotate Arrow -- the same
+    split Clear Points/Clear Annotations already use, now governing which
+    pins a drag can move instead of which a Clear button removes."""
     import plotpress
     from pick_cases import px
 
@@ -2313,7 +2314,7 @@ def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
-    markers = _click_mode(page, "Annotation", *px(fig, 0, 1.0, 1.0), prompt_text="a note")
+    markers = _click_mode(page, "Annotate Arrow", *px(fig, 0, 1.0, 1.0), prompt_text="a note")
     assert len(markers) == 2
 
     def box_pos(selector):
@@ -2324,26 +2325,137 @@ def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
     point_sel = ".plotpress-pin:not(.plotpress-note)"
     note_sel = ".plotpress-pin.plotpress-note"
 
-    # Still under Annotation (the mode _click_mode left active): the note
+    # Still under Annotate Arrow (the mode _click_mode left active): the note
     # drags, the plain pin does not.
     note_before = box_pos(note_sel)
     _drag_box(page, note_sel, 70, 50)
-    assert box_pos(note_sel) != note_before, "a note must drag under Annotation mode"
+    assert box_pos(note_sel) != note_before, "a note must drag under Annotate Arrow mode"
 
     point_before = box_pos(point_sel)
     _drag_box(page, point_sel, 70, 50)
-    assert box_pos(point_sel) == point_before, "a plain pin must NOT drag under Annotation mode"
+    assert box_pos(point_sel) == point_before, "a plain pin must NOT drag under Annotate Arrow mode"
 
-    _click_toolbar(page, "Annotation")     # off
-    _click_toolbar(page, "Point Picking")  # on
+    _click_toolbar(page, "Annotate Arrow")  # off
+    _click_toolbar(page, "Point Picking")   # on
 
     point_before2 = box_pos(point_sel)
     _drag_box(page, point_sel, 70, 50)
     assert box_pos(point_sel) != point_before2, "a plain pin must drag under Point Picking mode"
 
-    note_before2 = box_pos(note_sel)
-    _drag_box(page, note_sel, 70, 50)
-    assert box_pos(note_sel) == note_before2, "a note must NOT drag under Point Picking mode"
+
+def test_each_annotate_mode_only_drags_its_own_note_style(page, tmp_path):
+    """boxDraggableNow() now splits three ways, not two: a plain Annotate
+    box drags only under Annotate, an Annotate Arrow note only under
+    Annotate Arrow, and an Annotate Point note only under Annotate Point --
+    the noteStyle each addPlainNote/addFreeNote/addPointNote tags its own
+    pin with."""
+    import plotpress
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "drag_scoped_three_way.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Annotate", 40, 40, prompt_text="plain")
+    _click_mode(page, "Annotate Arrow", 90, 40, prompt_text="arrow")
+    _click_mode(page, "Annotate Point", 130, 130, prompt_text="point")
+    assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 3
+
+    def box_pos(selector):
+        return page.evaluate(
+            "(sel) => { const r = document.querySelector(sel).querySelector('rect'); "
+            "return [r.getAttribute('x'), r.getAttribute('y')]; }", selector)
+
+    sels = {
+        "plain": ".plotpress-pin[data-note-style='plain']",
+        "arrow": ".plotpress-pin[data-note-style='arrow']",
+        "point": ".plotpress-pin[data-note-style='point']",
+    }
+    modes = {"plain": "Annotate", "arrow": "Annotate Arrow", "point": "Annotate Point"}
+
+    for style, sel in sels.items():
+        _click_toolbar(page, modes[style])
+        for other_style, other_sel in sels.items():
+            before = box_pos(other_sel)
+            _drag_box(page, other_sel, 15, 15)
+            after = box_pos(other_sel)
+            if other_style == style:
+                assert after != before, (
+                    "a %r note must drag under its own %r mode" % (style, modes[style]))
+            else:
+                assert after == before, (
+                    "a %r note must NOT drag under %r mode" % (other_style, modes[style]))
+        _click_toolbar(page, modes[style])  # off
+
+
+def test_annotate_plain_has_no_dot_or_arrow_and_stays_figure_fixed(page, tmp_path):
+    """Annotate (note-plain) is a caption, not a callout: addPin(..., plain)
+    skips the dot and leader arrow entirely, and it always reports a fixed
+    figure pixel position -- never a data coordinate -- even when dropped
+    squarely inside an axes, unlike Annotate Arrow."""
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 10.0], [0.0, 5.0])
+    path = tmp_path / "annotate_plain.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    ux, uy = px(fig, 0, 3.0, 2.0)   # squarely inside the one axes
+    markers = _click_mode(page, "Annotate", ux, uy, prompt_text="caption")
+    assert len(markers) == 1
+    m = markers[0]
+    assert m["kind"] == "annotation" and m["text"] == "caption"
+    assert "axes" not in m and "x" not in m and "y" not in m, (
+        "a plain Annotate box must never report a data coordinate: %r" % m)
+    assert "px" in m and "py" in m
+
+    has_dot = page.evaluate(
+        "() => document.querySelector('.plotpress-pin').querySelector('circle') !== null")
+    has_arrow = page.evaluate(
+        "() => document.querySelector('.plotpress-pin').querySelector('.plotpress-pin-arrow') !== null")
+    assert not has_dot, "a plain Annotate box must have no dot"
+    assert not has_arrow, "a plain Annotate box must have no leader arrow"
+
+
+def test_annotate_point_never_appears_in_extract(page, tmp_path):
+    """Annotate Point locks a user note to a real datum (the same
+    resolution Point Picking itself uses) but is still classed as an
+    annotation, so it's excluded from Extract's own output the same as
+    every other note -- Extract returns only genuine Point Picking
+    markers."""
+    import csv as csv_mod
+    import io
+
+    import plotpress
+    from pick_cases import px
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
+    path = tmp_path / "annotate_point_extract.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    _click_mode(page, "Point Picking", *px(fig, 0, 1.0, 1.0))
+    markers = _click_mode(page, "Annotate Point", *px(fig, 0, 2.0, 4.0),
+                          prompt_text="watch this")
+    assert len(markers) == 2, "both a Point Picking pin and an Annotate Point note exist"
+    assert markers[-1]["kind"] != "annotation" or markers[-1]["text"] == "watch this"
+
+    csv_text = page.evaluate(
+        """() => {
+          document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
+            if (b.textContent === 'Extract') b.click();
+          });
+          return document.querySelector('.plotpress-extract textarea').value;
+        }""")
+    rows = list(csv_mod.reader(io.StringIO(csv_text)))
+    assert len(rows) == 2, (
+        "Extract must contain only the header row plus the one Point "
+        "Picking marker, never the Annotate Point note: %r" % rows)
+    assert "watch this" not in csv_text
 
 
 def test_dragged_box_offset_survives_pan_and_save_restore(page, tmp_path):
@@ -2644,9 +2756,8 @@ def test_pcolormesh_frames_curvilinear_pick_uses_nearest_cell_center(page, tmp_p
 
 
 def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
-    """Inside an axes, "Annotation" isn't locked to any datum, but it
-    should still report a data coordinate (and pan/zoom with that axes),
-    matching the pre-existing single "Annotate" tool's behavior."""
+    """Inside an axes, "Annotate Arrow" isn't locked to any datum, but it
+    should still report a data coordinate (and pan/zoom with that axes)."""
     import plotpress
     from pick_cases import px
 
@@ -2657,7 +2768,7 @@ def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 3.0, 2.0)
-    markers = _click_mode(page, "Annotation", ux, uy, prompt_text="mid-plot note")
+    markers = _click_mode(page, "Annotate Arrow", ux, uy, prompt_text="mid-plot note")
     assert len(markers) == 1
     m = markers[0]
     assert m["kind"] == "annotation" and m["text"] == "mid-plot note"
@@ -2671,7 +2782,7 @@ def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
 def test_annotate_free_works_outside_any_axes(page, tmp_path):
     """Regression: the original single "Annotate" tool required being inside
     an axes (``if (!a) return``), so a figure-margin caption or a note
-    between subplots was impossible. "Annotation" must work there too,
+    between subplots was impossible. "Annotate Arrow" must work there too,
     reporting a figure pixel position since no data coordinate exists."""
     import plotpress
 
@@ -2683,7 +2794,7 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
 
     # (2, 2) in SVG user space is the figure's top-left margin (see
     # test_click_on_empty_space_makes_no_stray_marker), well outside any axes.
-    markers = _click_mode(page, "Annotation", 2, 2, prompt_text="figure caption")
+    markers = _click_mode(page, "Annotate Arrow", 2, 2, prompt_text="figure caption")
     assert len(markers) == 1
     m = markers[0]
     assert m["kind"] == "annotation" and m["text"] == "figure caption"
@@ -2709,7 +2820,7 @@ def test_hide_points_and_hide_annotations_toggle_independently(page, tmp_path):
     ux0, uy0 = px(fig, 0, x[1], y[1])
     _click_mode(page, "Point Picking", ux0, uy0)
     ux1, uy1 = px(fig, 0, x[2], y[2])
-    _click_mode(page, "Annotation", ux1, uy1, prompt_text="second point")
+    _click_mode(page, "Annotate Arrow", ux1, uy1, prompt_text="second point")
     assert len(page.evaluate("() => window.plotpressGetMarkers()")) == 2
 
     def toggle_and_read(label_on, label_off):
@@ -3034,12 +3145,12 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     markers = _click_mode(page, "Point Picking", ux, uy)
     assert len(markers) == 1
 
-    markers = _click_mode(page, "Annotation", *px(fig, 0, x[1], 1.0),
+    markers = _click_mode(page, "Annotate Arrow", *px(fig, 0, x[1], 1.0),
                           prompt_text="watch me")
     assert len(markers) == 2
 
-    # Annotation in the margin, above the axes -- not locked to any datum.
-    # Annotation is already the active mode from the pin just above -- no
+    # Annotate Arrow in the margin, above the axes -- not locked to any datum.
+    # Annotate Arrow is already the active mode from the pin just above -- no
     # _click_toolbar() re-click needed, it's already selected.
     page.once("dialog", lambda d: d.accept("free note"))
     box = page.eval_on_selector(
@@ -3173,7 +3284,8 @@ def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_pair(page,
     Axes (per-axes tools -- Axis Span/Zoom, then Reset All Axes), Point
     Picking (the tool, Hide Points, Clear Points, and Extract -- Extract
     lives here because it only ever returns Point Picking markers), Annotate
-    (the tool, Hide Annotations, then Clear Annotations), and File (Save,
+    (its three tools -- Annotate, Annotate Arrow, Annotate Point -- then
+    Hide Annotations and Clear Annotations), and File (Save,
     Save As), left to right in that order."""
     import plotpress
 
@@ -3197,7 +3309,9 @@ def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_pair(page,
     assert list(by_label) == ["Axes", "Point Picking", "Annotate", "File"]
     assert by_label["Axes"] == ["Axis Span", "Axis Zoom", "Reset All Axes"]
     assert by_label["Point Picking"] == ["Point Picking", "Hide Points", "Clear Points", "Extract"]
-    assert by_label["Annotate"] == ["Annotation", "Hide Annotations", "Clear Annotations"]
+    assert by_label["Annotate"] == [
+        "Annotate", "Annotate Arrow", "Annotate Point",
+        "Hide Annotations", "Clear Annotations"]
     assert by_label["File"] == ["Save", "Save As"]
 
 

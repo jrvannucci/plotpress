@@ -354,7 +354,7 @@ def _live_update_js(svg_text, axes_index, pick_entry):
     captured once at load, not re-read from the DOM, so overwriting the
     live attribute out from under it would visually snap a panned/zoomed
     view back to home while leaving that JS state stale and now out of sync
-    with what's on screen. User-placed pins (Point Picking markers, Annotation
+    with what's on screen. User-placed pins (Point Picking markers, annotation
     notes -- all rendered as direct <svg> children tagged
     ``plotpress-pin``, never part of the server-rendered SVG) are lifted out
     before the swap and reattached after, so a live update doesn't silently

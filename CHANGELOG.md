@@ -11,6 +11,38 @@ anywhere in the source.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.32.0] - 2026-09-10
+
+### Added
+
+- **The interactive HTML's single "Annotation" tool is now three tools**,
+  in a widened Annotate menu:
+  - **Annotate** -- a plain text box anywhere on the figure: a caption,
+    not a callout. No dot, no leader arrow, and always pinned to a fixed
+    figure position, even when dropped inside an axes.
+  - **Annotate Arrow** -- the previous "Annotation" behavior, renamed: a
+    dot at wherever you clicked, a draggable label box, and a leader
+    arrow between them. Tracks that axes' data coordinate inside one,
+    stays at a fixed figure position outside one.
+  - **Annotate Point** -- reintroduced (it briefly existed pre-0.29, then
+    was folded away): locks a user-written note to the nearest actual
+    datum, the exact same resolution Point Picking's own click handler
+    uses (including its large-series geometric fallback), so it's
+    steppable by arrow key and tracks pan/zoom the same way a real Point
+    Picking pin does. Classed as an annotation, not a Point Picking
+    marker: it survives Clear Points, Hide Points leaves it visible, and
+    -- unlike a plain Point Picking pin -- it never appears in Extract's
+    output.
+
+  Each mode's own text box only drags under its own mode
+  (`boxDraggableNow` now keys off a `noteStyle` dataset flag), a saved
+  file round-trips all three via the existing pin-serialization
+  machinery, and `Axes.set_pickable(False)` is respected by Annotate
+  Point (it resolves through the same pickable-axes check Point Picking
+  uses) but not by Annotate/Annotate Arrow (unchanged from before).
+
 ### Changed
 
 - Branding: new banner image and slogan -- *"Plot once. Share anywhere.

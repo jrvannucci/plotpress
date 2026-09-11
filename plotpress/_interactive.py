@@ -80,36 +80,49 @@ could, so the selection guard isn't scoped to any one of them.
   a Save/Save As round trip, the same as everything else about the pin.
 * **Hide Points** -- hides every Point Picking pin without deleting any of
   them; toggling it back to "Show Points" brings them back exactly as they
-  were. Independent of Hide Annotations below -- an Annotation note stays
+  were. Independent of Hide Annotations below -- an annotation note stays
   visible while Hide Points is on, and vice versa.
 * **Clear Points** -- removes every Point Picking pin, and *only* those --
-  an Annotation note survives a Clear Points click untouched. Sits right
+  an annotation note survives a Clear Points click untouched. Sits right
   after Point Picking, the tool it clears. A one-shot action, not a mode.
-* **Annotation** (internal mode ``note-free``) -- drop a user-written note
-  anywhere on the figure, not locked to any datum -- including the margins
-  or the gap between subplots. Inside an axes it still tracks that axes'
-  data coordinate; outside one it just stays at its fixed figure position.
-  (A separate snap-to-nearest-datum variant, "Annotate Point," existed
-  briefly here and was removed -- Point Picking already covers snapping to
-  a datum; Annotation covers everything else, including a note dropped near
-  but not exactly on a point.) Its own box is draggable the same way a
-  Point Picking pin's is -- see above -- while Annotation is the active
-  mode, independent of a Point Picking pin's own dragging (see
-  boxDraggableNow: each kind of pin only drags under the mode that would
-  have created it).
-* **Hide Annotations** -- the mirror of Hide Points: hides every Annotation
-  note without deleting any of them, *plus* every boxed
-  ``ax.text()``/``ax.annotate(bbox=...)`` callout the figure itself drew (a
-  plain, unboxed label is not a callout in this sense and always stays
-  visible) -- a static callout reads the same way on screen as a note, and
-  is closer in spirit to one than to a picked data point. Toggling it back
-  to "Show Annotations" brings everything back exactly as it was, including
-  any text or selection state -- it only ever flips a CSS display rule,
-  never touches the underlying marker/text data.
+* **Annotate** (internal mode ``note-plain``) -- drop a plain text box
+  anywhere on the figure: a caption, not a callout. No dot, no leader
+  arrow, and always pinned to a fixed figure position -- even dropped
+  inside an axes, it never tracks that axes' data coordinate, since it
+  isn't pointing at anything for a pan/zoom to stay aligned with.
+* **Annotate Arrow** (internal mode ``note-free``) -- drop a user-written
+  note anywhere on the figure, not locked to any datum, but pointing at
+  wherever it was actually dropped: a dot at that spot, a draggable label
+  box, and a leader arrow connecting the two whenever the box isn't
+  already touching the dot. Inside an axes it tracks that axes' data
+  coordinate; outside one it stays at its fixed figure position, the same
+  as Annotate above.
+* **Annotate Point** -- like Point Picking, but prompts for text and locks
+  a user-written note to that datum instead of the auto-generated
+  readout; still steppable by arrow key and still tracks pan/zoom, using
+  the exact same nearest-datum resolution Point Picking's own click
+  handler does. Classed as an annotation, not a Point Picking marker: it
+  survives a Clear Points click, Hide Points leaves it visible, and it
+  never appears in Extract's output (Extract returns only Point Picking
+  markers -- see below), the same as every other annotation.
+
+  Each Annotate mode's own box is draggable the same way a Point Picking
+  pin's is -- see above -- while that specific mode is active, independent
+  of every other kind of pin's own dragging (see boxDraggableNow: each
+  kind of pin only drags under the mode that would have created it).
+* **Hide Annotations** -- the mirror of Hide Points: hides every annotation
+  note (from any of the three Annotate tools above) without deleting any of
+  them, *plus* every boxed ``ax.text()``/``ax.annotate(bbox=...)`` callout
+  the figure itself drew (a plain, unboxed label is not a callout in this
+  sense and always stays visible) -- a static callout reads the same way on
+  screen as a note, and is closer in spirit to one than to a picked data
+  point. Toggling it back to "Show Annotations" brings everything back
+  exactly as it was, including any text or selection state -- it only ever
+  flips a CSS display rule, never touches the underlying marker/text data.
 * **Clear Annotations** -- the mirror of Clear Points: removes every
-  Annotation note, and *only* those -- a Point Picking pin survives
-  untouched. Sits right after Annotation, the tool it clears. A one-shot
-  action, not a mode. (Escape still clears everything at once, both kinds
+  annotation note, and *only* those -- a Point Picking pin survives
+  untouched. Sits right after the three Annotate tools it clears. A
+  one-shot action, not a mode. (Escape still clears everything at once, both kinds
   -- the one place "clear all" still means literally all -- and, unlike
   either Clear button, also deselects the active tool, back to no tool
   active; see below.)
@@ -122,8 +135,9 @@ menus by what it does, not the order features were added in --
 **Axes**: Axis Span/Zoom, then Reset All Axes, the pair it undoes.
 **Point Picking**: the tool, Hide Points, Clear Points, and Extract --
 Extract lives here, not in its own menu or under Annotate, because it only
-ever returns Point Picking markers (see below). **Annotate**: the tool,
-Hide Annotations, then Clear Annotations. **File**: Save, Save As. A
+ever returns Point Picking markers (see below). **Annotate**: its three
+tools (Annotate, Annotate Arrow, Annotate Point), then Hide Annotations
+and Clear Annotations. **File**: Save, Save As. A
 caller's own custom tools get a fifth **Custom** menu, created lazily on
 first ``plotpressAddTool()`` call -- never folded into a built-in one.
 
@@ -666,7 +680,9 @@ _JS_SOURCE = r"""
     { action: 'toggle-points', label: 'Hide Points', menu: 'Point Picking', divider: true },
     { action: 'clear-points', label: 'Clear Points', menu: 'Point Picking', divider: true },
     { action: 'extract', label: 'Extract', menu: 'Point Picking', divider: true },
-    { mode: 'note-free', label: 'Annotation', menu: 'Annotate' },
+    { mode: 'note-plain', label: 'Annotate', menu: 'Annotate' },
+    { mode: 'note-free', label: 'Annotate Arrow', menu: 'Annotate' },
+    { mode: 'note-point', label: 'Annotate Point', menu: 'Annotate' },
     { action: 'toggle-annotations', label: 'Hide Annotations', menu: 'Annotate', divider: true },
     { action: 'clear-annotations', label: 'Clear Annotations', menu: 'Annotate', divider: true },
     { action: 'save', label: 'Save', menu: 'File' },
@@ -789,11 +805,12 @@ _JS_SOURCE = r"""
   // firing immediately on click, like Extract/Save. {label, mode, onClick,
   // onEnter, onExit, cursor}: a real *mode*, joining the same
   // single-selection group as Pan/Zoom, Axis Span/Zoom, Point
-  // Picking, or Annotation -- picking it deselects whatever else was active,
+  // Picking, or any Annotate tool -- picking it deselects whatever else was active,
   // and vice versa (see setMode below, and the `buttons` array/dataset.mode
   // CSS-'active' sync inside it, both of which already work for any button
   // in `buttons` generically, custom or not). Selected, a click on the SVG
-  // that no built-in mode already claims (`note-free`/`pick` -- see the
+  // that no built-in mode already claims (`note-plain`/`note-free`/
+  // `note-point`/`pick` -- see the
   // top-level click listener's own custom-mode fallback) calls
   // onClick(event, toUser(event)) -- the same svg-event-to-user-space-point
   // helper Span/Zoom/pick already build on, so a custom tool gets a real
@@ -893,11 +910,11 @@ _JS_SOURCE = r"""
       mode === 'span' ? 'grab' :
       mode === 'zoom' ? 'crosshair' :
       mode === 'magnify' ? 'zoom-in' :
-      mode === 'note-free' ? 'text' :
+      (mode === 'note-plain' || mode === 'note-free' || mode === 'note-point') ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';
     // Any active mode's own drag can sweep across text the same way
     // Magnify's whole-figure pan always could -- Span/Zoom drag across tick
-    // labels and titles, Point Picking/Annotation drag a pin's own text box
+    // labels and titles, Point Picking/Annotate drag a pin's own text box
     // across other pins' labels -- so disabling selection is scoped to
     // "some tool is selected" generally, not just Magnify specifically.
     // Inert (no mode) leaves normal text selection alone.
@@ -1106,11 +1123,12 @@ _JS_SOURCE = r"""
     }
     return null;
   }
-  // Point Picking only -- an axes with pickable=false (see
-  // Axes.set_pickable) is treated as if the click missed every axes, so a
-  // figure can restrict that tool to a single panel by disabling the rest.
-  // Axis Span, Axis Zoom, Pan/Zoom, and Annotation go through
-  // axesAt() directly and ignore this flag.
+  // Point Picking and Annotate Point (which resolves through this the same
+  // way, see resolvePickTarget/addPointNote) only -- an axes with
+  // pickable=false (see Axes.set_pickable) is treated as if the click
+  // missed every axes, so a figure can restrict picking to a single panel
+  // by disabling the rest. Axis Span, Axis Zoom, Pan/Zoom, Annotate, and
+  // Annotate Arrow go through axesAt() directly and ignore this flag.
   function pickableAxesAt(p) {
     var a = axesAt(p);
     return (a && a.m.pickable === false) ? null : a;
@@ -2043,15 +2061,17 @@ _JS_SOURCE = r"""
   function layoutPin(g, px, py, label) {
     var fs = 11, padx = 5, pady = 3;
     var bw = label.length * fs * 0.55 + padx * 2, bh = fs + pady * 2;
-    // A user-dragged box (see startBoxDrag) keeps its own chosen offset
-    // from the dot across every later re-layout (pan, zoom, arrow-key
-    // step) -- the default top-right placement only applies until the box
-    // is actually moved once.
-    var bx = g.dataset.boxDx !== undefined ? +g.dataset.boxDx : 8;
-    var by = g.dataset.boxDy !== undefined ? +g.dataset.boxDy : -bh - 4;
     var dot = g.querySelector('circle'), rect = g.querySelector('rect'),
         text = g.querySelector('text'), arrow = g.querySelector('.plotpress-pin-arrow');
-    dot.setAttribute('cx', 0); dot.setAttribute('cy', 0);
+    // A plain Annotate box (no dot, see addPin's own plain param) has no
+    // "point at the dot" to offset from -- its default position centers the
+    // box directly on the anchor instead of floating it up and to the right
+    // of a dot that doesn't exist. A user-dragged box (see startBoxDrag)
+    // keeps its own chosen offset across every later re-layout (pan, zoom,
+    // arrow-key step) regardless of which default it started from.
+    var bx = g.dataset.boxDx !== undefined ? +g.dataset.boxDx : (dot ? 8 : -bw / 2);
+    var by = g.dataset.boxDy !== undefined ? +g.dataset.boxDy : (dot ? -bh - 4 : -bh / 2);
+    if (dot) { dot.setAttribute('cx', 0); dot.setAttribute('cy', 0); }
     rect.setAttribute('x', bx); rect.setAttribute('y', by);
     rect.setAttribute('width', bw); rect.setAttribute('height', bh);
     text.setAttribute('x', bx + padx); text.setAttribute('y', by + fs + pady - 2);
@@ -2158,24 +2178,31 @@ _JS_SOURCE = r"""
     return Math.max(2.0, Math.min(3.5, Math.min(m.w, m.h) * 0.045));
   }
 
-  function addPin(px, py, label, axesKey) {
+  function addPin(px, py, label, axesKey, plain) {
     var g = document.createElementNS(SVGNS, 'g');
     g.setAttribute('class', 'plotpress-pin'); g.style.cursor = 'pointer';
     var r = pinRadius(axesKey);
     g.dataset.pinR = r;
-    var dot = document.createElementNS(SVGNS, 'circle');
-    dot.setAttribute('r', r); dot.setAttribute('fill', '#111');
-    dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', 1);
-    var arrow = document.createElementNS(SVGNS, 'line');
-    arrow.setAttribute('class', 'plotpress-pin-arrow');
-    arrow.setAttribute('stroke', '#666'); arrow.setAttribute('stroke-width', 1);
-    arrow.setAttribute('marker-end', 'url(#plotpress-pin-arrow)');
+    // A plain Annotate box (see addPlainNote) skips the dot and leader arrow
+    // entirely -- it's a caption sitting at its own position, not a callout
+    // pointing at something else. layoutPin/syncPinArrow/selectPin all
+    // already tolerate a missing dot/arrow (querySelector returns null).
+    if (!plain) {
+      var dot = document.createElementNS(SVGNS, 'circle');
+      dot.setAttribute('r', r); dot.setAttribute('fill', '#111');
+      dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', 1);
+      var arrow = document.createElementNS(SVGNS, 'line');
+      arrow.setAttribute('class', 'plotpress-pin-arrow');
+      arrow.setAttribute('stroke', '#666'); arrow.setAttribute('stroke-width', 1);
+      arrow.setAttribute('marker-end', 'url(#plotpress-pin-arrow)');
+      g.appendChild(dot); g.appendChild(arrow);
+    }
     var rect = document.createElementNS(SVGNS, 'rect');
     rect.setAttribute('rx', 3); rect.setAttribute('fill', '#111');
     rect.setAttribute('fill-opacity', 0.85);
     var text = document.createElementNS(SVGNS, 'text');
     text.setAttribute('font-size', 11); text.setAttribute('fill', '#fff');
-    g.appendChild(dot); g.appendChild(arrow); g.appendChild(rect); g.appendChild(text);
+    g.appendChild(rect); g.appendChild(text);
     layoutPin(g, px, py, label);
     // Left-click selects (arrow keys then step it); right-click deletes;
     // a left-click/drag specifically on the box (not the dot) repositions
@@ -2199,12 +2226,19 @@ _JS_SOURCE = r"""
   }
 
   // Draggable exactly when the mode that would have created this kind of
-  // pin is the active one -- a plain Point Picking pin under 'pick', every
-  // Annotation-classed pin (a free note, or a legacy "Annotate Point"
-  // restore -- see restorePins) under 'note-free'. The same split Clear
-  // Points/Clear Annotations already use (see isAnnotationPin above).
+  // pin is the active one -- a plain Point Picking pin under 'pick';
+  // otherwise whichever of the three Annotate modes its own dataset.noteStyle
+  // says built it (a saved file predating noteStyle, or one saved between
+  // this and its removal, has no such flag -- ``|| 'arrow'`` treats it as
+  // the plain "note-free" shape those older saves actually used, the closest
+  // match). The same split Clear Points/Clear Annotations already use (see
+  // isAnnotationPin above).
   function boxDraggableNow(g) {
-    return isAnnotationPin(g) ? mode === 'note-free' : mode === 'pick';
+    if (!isAnnotationPin(g)) return mode === 'pick';
+    var style = g.dataset.noteStyle || 'arrow';
+    return (style === 'plain' && mode === 'note-plain') ||
+      (style === 'point' && mode === 'note-point') ||
+      (style === 'arrow' && mode === 'note-free');
   }
 
   // Just this one pin -- O(1), not a full document sweep -- for the common
@@ -2400,10 +2434,10 @@ _JS_SOURCE = r"""
       g.dataset.ptype = anchor.ptype;
     }
     // addPin() already refreshed drag-readiness once, before the
-    // .plotpress-note class above (a legacy "Annotate Point" restore) was
-    // applied -- that class is what boxDraggableNow() itself keys its
-    // point-picking-vs-annotation split on, so it has to run again now
-    // that it's actually set.
+    // .plotpress-note class above (set for an Annotate Point pin, or one
+    // restored from a saved file) was applied -- that class is what
+    // boxDraggableNow() itself keys its point-picking-vs-annotation split
+    // on, so it has to run again now that it's actually set.
     if (text !== undefined) refreshOneDragReady(g);
     return g;
   }
@@ -2461,9 +2495,9 @@ _JS_SOURCE = r"""
         rec.axes = +pin.dataset.axes;
         rec.x = +pin.dataset.x; rec.y = +pin.dataset.y;
       } else {
-        // Dropped outside any axes (an Annotation note in the figure's
-        // margins or between panels) -- there is no data coordinate to give
-        // it, only a fixed figure pixel position.
+        // Dropped outside any axes (or an Annotate box, which is always
+        // figure-fixed) -- there is no data coordinate to give it, only a
+        // fixed figure pixel position.
         rec.px = +pin.dataset.px; rec.py = +pin.dataset.py;
       }
     } else {
@@ -2471,10 +2505,11 @@ _JS_SOURCE = r"""
       if (pin.dataset.axes !== undefined) rec.axes = +pin.dataset.axes;
       rec.x = +pin.dataset.x; rec.y = +pin.dataset.y;
     }
-    // A legacy "Annotate Point" note's user text (see the restore-a-pin
-    // comment above -- that mode no longer creates new pins, only old saved
-    // files can still carry one) rides alongside its anchor's own
-    // structured fields (x/y/z/...) set above, rather than replacing them.
+    // An Annotate Point note's user text rides alongside its anchor's own
+    // structured fields (x/y/z/...) set above, rather than replacing them --
+    // a caller reading plotpressGetMarkers() (Extract itself never sees
+    // these; see addPointNote) gets both the datum it's locked to and the
+    // note text pinned there.
     if (pin.dataset.customLabel !== undefined) rec.text = pin.dataset.customLabel;
     // Identify the source panel by name, not just its bare index -- falls
     // back to a generated name when that axes has no title set, so every
@@ -2514,7 +2549,7 @@ _JS_SOURCE = r"""
     return rec;
   }
 
-  // Every pin, Point Picking and Annotation alike -- this is the general
+  // Every pin, Point Picking and every Annotate tool alike -- this is the general
   // public query (window.plotpressGetMarkers, qt.py's LiveArtist marker
   // sync, a custom tool's own onClick logging its progress), not Extract's.
   // Extract itself is narrower -- see doExtract below.
@@ -2603,9 +2638,10 @@ _JS_SOURCE = r"""
     ta.focus(); ta.select();
   }
 
-  // Point Picking markers only, not Annotation notes -- Extract now lives
+  // Point Picking markers only, not annotation notes -- Extract now lives
   // solely under the Point Picking menu (see TOOLS above), so its own
-  // output scopes to match; an Annotation note has nothing to "extract" in
+  // output scopes to match; an annotation note (from any of the three
+  // Annotate tools, Annotate Point included) has nothing to "extract" in
   // the same sense a picked data value does. :not(.plotpress-note) is the
   // one line doing that filtering -- getMarkers() above (and every other
   // .plotpress-pin selector in this file that isn't already kind-specific,
@@ -2648,14 +2684,15 @@ _JS_SOURCE = r"""
   }
 
   // Rebuilds each pin the same way it was first created: an anchored pin
-  // (data.kind set -- Point Picking today, or a legacy Annotate Point pin
-  // restored from a page saved before that mode was removed) through
-  // addAnchoredPin(),
-  // which re-resolves its position from the *current* (already-restored)
-  // view via pinAnchor()/resolve() exactly as a fresh click would; a free
-  // annotation or the large-series geometry fallback (no data.kind) directly,
-  // converting its own saved data-space x/y through the current view when it
-  // has one, or at its saved fixed figure position when it doesn't.
+  // (data.kind set -- a plain Point Picking marker or an Annotate Point
+  // note) through addAnchoredPin(), which re-resolves its position from the
+  // *current* (already-restored) view via pinAnchor()/resolve() exactly as a
+  // fresh click would; an Annotate/Annotate Arrow note or the large-series
+  // geometry fallback (no data.kind) directly, converting its own saved
+  // data-space x/y through the current view when it has one, or at its
+  // saved fixed figure position when it doesn't -- and, for a plain
+  // Annotate box, passing noteStyle through to addPin() so it comes back
+  // with no dot/arrow, the same as when it was first dropped.
   function restorePins(saved) {
     var toSelect = null;
     saved.forEach(function (rec) {
@@ -2682,7 +2719,7 @@ _JS_SOURCE = r"""
         } else {
           px = +rec.data.px; py = +rec.data.py;
         }
-        g = addPin(px, py, rec.text, rec.data.axes);
+        g = addPin(px, py, rec.text, rec.data.axes, rec.data.noteStyle === 'plain');
         for (var k2 in rec.data) g.dataset[k2] = rec.data[k2];
       }
       if (!g) return;
@@ -2870,9 +2907,8 @@ _JS_SOURCE = r"""
   // within MESH_OVERRIDE_THRESHOLD px if the click also landed inside a mesh
   // cell -- see below -- else within POINT_THRESHOLD px, else a mesh cell,
   // else a pie wedge, else a point regardless of distance) -- kept as its
-  // own function for the pick-mode click handler's own readability (it used
-  // to also serve the now-removed "Annotate Point" mode, a second caller
-  // wanting the exact same resolution logic). Returns
+  // own function since Annotate Point (addPointNote) is a second caller
+  // wanting the exact same resolution logic. Returns
   // a steppable anchor ref; ``null`` if there's simply nothing pickable
   // there (the caller may fall back to a geometric readout); or the string
   // ``'blocked'`` for the one case that must produce nothing at all, not a
@@ -2920,43 +2956,65 @@ _JS_SOURCE = r"""
     return null;
   }
 
-  // Annotation (internal mode note-free): drop a note anywhere on the whole
-  // figure, including the margins or the gap between subplots -- not locked
-  // to any datum. Inside an axes it still tracks that axes' data coordinate
-  // (so it pans/zooms with the plot it was drawn over); outside any axes
-  // there is no data coordinate, so it just stays put at its figure pixel
-  // position, which nothing in the interactive view moves. A separate
-  // snap-to-nearest-datum variant ("Annotate Point") existed briefly here
-  // and was removed -- Point Picking already covers snapping to a datum.
-  function addFreeNote(e) {
-    var p = toUser(e);
-    // A cross-origin-equivalent embedding (an <iframe srcdoc=...>, as
-    // Report.save() uses for every entry) has its own opaque origin, and
-    // browsers silently block alert/confirm/prompt from such a frame --
-    // window.prompt() there can either return null (treated as "cancelled"
-    // below, same as a real one) or throw outright, depending on browser.
-    // Catching it keeps the latter from surfacing as an uncaught error on
-    // every click while this mode is active -- console.warn (once, not per
-    // click) gives a developer debugging "Annotation does nothing here" an
-    // actual lead, since the click itself otherwise looks identical to a
-    // user simply cancelling the prompt.
-    var text;
-    try { text = window.prompt('Annotation text:'); }
+  // Shared by all three Annotate modes. A cross-origin-equivalent embedding
+  // (an <iframe srcdoc=...>, as Report.save() uses for every entry) has its
+  // own opaque origin, and browsers silently block alert/confirm/prompt from
+  // such a frame -- window.prompt() there can either return null (treated as
+  // "cancelled", same as a real one) or throw outright, depending on
+  // browser. Catching it keeps the latter from surfacing as an uncaught
+  // error on every click while an Annotate mode is active -- console.warn
+  // (once, not per click) gives a developer debugging "Annotate does
+  // nothing here" an actual lead, since the click itself otherwise looks
+  // identical to a user simply cancelling the prompt.
+  function promptForAnnotationText() {
+    try { return window.prompt('Annotation text:'); }
     catch (err) {
-      if (!addFreeNote._warned) {
-        addFreeNote._warned = true;
+      if (!promptForAnnotationText._warned) {
+        promptForAnnotationText._warned = true;
         console.warn('plotpress: window.prompt() is blocked in this frame '
           + '(a cross-origin-equivalent embedding, e.g. Report.save()\'s '
-          + '<iframe srcdoc>) -- the Annotation tool cannot ask for text '
-          + 'here and will do nothing when clicked.');
+          + '<iframe srcdoc>) -- Annotate cannot ask for text here and '
+          + 'will do nothing when clicked.');
       }
-      return;
+      return null;
     }
+  }
+
+  // Annotate (internal mode note-plain): drop a plain text box anywhere on
+  // the figure -- a caption, not a callout. No dot, no leader arrow (see
+  // addPin's plain param), and always pinned to a fixed figure position,
+  // even when dropped inside an axes -- unlike Annotate Arrow below, it
+  // never tracks that axes' data coordinate, since it isn't pointing at
+  // anything in particular for a pan/zoom to keep it aligned with.
+  function addPlainNote(e) {
+    var text = promptForAnnotationText();
     if (!text) return;
+    var p = toUser(e);
+    var g = addPin(p.x, p.y, text, undefined, true);
+    g.classList.add('plotpress-note');
+    g.dataset.annotation = '1';
+    g.dataset.noteStyle = 'plain';
+    g.dataset.px = p.x; g.dataset.py = p.y;
+    refreshOneDragReady(g);
+  }
+
+  // Annotate Arrow (internal mode note-free): drop a note anywhere on the
+  // whole figure, including the margins or the gap between subplots -- not
+  // locked to any datum, but pointing at wherever it was actually dropped (a
+  // dot at that spot, a leader arrow to the label box). Inside an axes it
+  // still tracks that axes' data coordinate (so it pans/zooms with the plot
+  // it was drawn over); outside any axes there is no data coordinate, so it
+  // just stays put at its figure pixel position, which nothing in the
+  // interactive view moves.
+  function addFreeNote(e) {
+    var text = promptForAnnotationText();
+    if (!text) return;
+    var p = toUser(e);
     var a = axesAt(p);
     var g = addPin(p.x, p.y, text, a ? a.i : undefined);
     g.classList.add('plotpress-note');
     g.dataset.annotation = '1';
+    g.dataset.noteStyle = 'arrow';
     if (a) {
       var d = toData(a.m, p.x, p.y);
       g.dataset.x = d.x; g.dataset.y = d.y; g.dataset.axes = a.i;
@@ -2969,10 +3027,44 @@ _JS_SOURCE = r"""
     refreshOneDragReady(g);
   }
 
+  // Annotate Point: lock a user-typed note to the nearest pickable datum --
+  // the exact same resolution Point Picking's own click handler uses,
+  // including its large-series geometric fallback (see resolvePickTarget and
+  // the 'pick' branch below) -- so it's steppable by arrow key and tracks
+  // pan/zoom exactly like an ordinary Point Picking pin. Classed as an
+  // annotation (addAnchoredPin does this whenever it's given text), so it
+  // survives a Clear Points click, is unaffected by Hide Points, and never
+  // appears in Extract's output -- Extract returns only Point Picking
+  // markers (see doExtract), the same reason every other annotation is
+  // already excluded from it.
+  function addPointNote(e) {
+    var ref = resolvePickTarget(e);
+    if (ref === 'blocked') return;
+    var p = toUser(e), a = pickableAxesAt(p);
+    if (!ref && !a) return;   // nothing pickable here to lock a note to
+    var text = promptForAnnotationText();
+    if (!text) return;
+    var g;
+    if (ref) {
+      g = addAnchoredPin(ref, ref.index, text);
+    } else {
+      var v = nearestVertex(a.i, p) || p;              // large-series fallback
+      var dd = toData(a.m, v.x, v.y);
+      g = addPin(v.x, v.y, text, a.i);
+      g.classList.add('plotpress-note');
+      g.dataset.annotation = '1';
+      g.dataset.x = dd.x; g.dataset.y = dd.y; g.dataset.axes = a.i;
+      refreshOneDragReady(g);
+    }
+    if (g) g.dataset.noteStyle = 'point';
+  }
+
   svg.addEventListener('click', function (e) {
     if (moved) return;
     if (e.target.closest('.plotpress-legend') || e.target.closest('.plotpress-pin')) return;
+    if (mode === 'note-plain') { addPlainNote(e); return; }
     if (mode === 'note-free') { addFreeNote(e); return; }
+    if (mode === 'note-point') { addPointNote(e); return; }
     if (mode === 'pick') {
       var ref = resolvePickTarget(e);
       if (ref === 'blocked') return;
@@ -3187,9 +3279,9 @@ _JS_SOURCE = r"""
   // of the pins being removed -- clearing points shouldn't drop the user's
   // in-progress arrow-key selection of an annotation they were just
   // stepping through, and vice versa. .plotpress-note is the same class
-  // addFreeNote() (Annotation mode) tags every note with -- see the TOOLS
-  // comment above for why that's the reliable point/annotation split, not
-  // e.g. a pin's `kind`.
+  // all three Annotate modes (addPlainNote/addFreeNote/addPointNote) tag
+  // every note with -- see the TOOLS comment above for why that's the
+  // reliable point/annotation split, not e.g. a pin's `kind`.
   function isAnnotationPin(p) { return p.classList.contains('plotpress-note'); }
 
   function clearPointPins() {
