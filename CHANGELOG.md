@@ -13,6 +13,23 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.32.2] - 2026-09-10
+
+### Fixed
+
+- **Regression from 0.32.1: the sidebar CSS fix for the gallery-subsection
+  flood also hid whichever page was currently open.** The selector
+  targeted any top-level sidebar link whose `href` contained `#`, to catch
+  sphinx-gallery's injected subsection-anchor links -- but the *active*
+  page's own sidebar entry also renders as `href="#"` (Sphinx's shorthand
+  for "you're already here"), which matches the same substring test.
+  Navigating to any page removed that page's own entry from the sidebar
+  the instant you arrived. `:not([href="#"])` excludes exactly that one
+  value, keeping the fix scoped to real subsection anchors
+  (`...index.html#pairwise-data`, never a bare `#`). Verified by loading
+  several different pages and confirming each one's own sidebar entry
+  stays visible while on it.
+
 ## [0.32.1] - 2026-09-10
 
 ### Changed

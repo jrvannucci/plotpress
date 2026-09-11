@@ -15,8 +15,16 @@
  * left. A gallery's own subsections stay one click away, from its index
  * page's in-page thumbnails -- just not permanently occupying sidebar space
  * on every other page too.
+ *
+ * :not([href="#"]) matters: whichever page is actually open renders ITS OWN
+ * sidebar entry as a bare `href="#"` self-link (Sphinx's usual shorthand for
+ * "this is where you already are"), which also contains "#" -- the naive
+ * selector hid the very page you were standing on the instant you navigated
+ * to it. A real subsection anchor is always `something#fragment`, never a
+ * bare `#` alone, so excluding that exact value keeps the fix scoped to
+ * sphinx-gallery's injected entries only.
  */
-.wy-menu-vertical li.toctree-l1:has(> a[href*="#"]) {
+.wy-menu-vertical li.toctree-l1:has(> a[href*="#"]:not([href="#"])) {
     display: none;
 }
 
