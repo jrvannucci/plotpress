@@ -134,6 +134,9 @@ Annotate menu:
 * **Clear Annotations** -- the mirror of Clear Points: removes every
   annotation note at once, leaving any Point Picking pins untouched.
 
+A note dropped by any of the three Annotate tools can be dragged to
+reposition it under any of the three -- not just the one that created it.
+
 .. include:: _static/interactive/usage_hide_annotations.rst.inc
 
 File menu:

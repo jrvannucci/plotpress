@@ -3270,7 +3270,7 @@ class Report:
             natural_w = figure.figsize[0] * dpi
             natural_h = figure.figsize[1] * dpi
             top_pad, bottom_pad = _toolbar_clearance(interactive, len(figure._sliders or {}))
-            # A starting guess only -- the resize script (_REPORT_RESIZE_JS)
+            # A starting guess only -- the resize script (_REPORT_SCRIPT)
             # corrects this to the real rendered height right after the
             # iframe loads, once it knows how wide the reader's own browser
             # actually made it. Guessing at .plotpress-report's own max

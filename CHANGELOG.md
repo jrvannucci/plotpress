@@ -9,6 +9,39 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.32.5] - 2026-09-10
+
+### Changed
+
+- **Any Annotate note can now be dragged under any of the three Annotate
+  modes**, not just the one that created it. `boxDraggableNow()` previously
+  gated a note's drag on its own `dataset.noteStyle` matching the *specific*
+  active tool (a plain box only under Annotate, an arrow note only under
+  Annotate Arrow, a point note only under Annotate Point) -- repositioning
+  a note you dropped earlier is routine housekeeping while annotating a
+  figure, and requiring a reader to first reselect that note's exact
+  original flavor was a pointless extra step. A Point Picking pin is
+  unaffected -- still draggable only while Point Picking itself is active.
+
+### Fixed
+
+- **The docs sidebar duplicated an entire gallery's subsection list under
+  whichever subsection happened to be listed last** (e.g. "Real
+  applications" > "Finance, economics and risk" showed all 19 domain
+  categories nested underneath it again; the example gallery's own
+  "Limitations" did the same with its 14). A Sphinx toctree-resolution
+  artifact of combining sphinx-gallery's `:hidden: :includehidden:`
+  per-gallery toctree with `nested_sections` mode, not anything in this
+  project's own gallery structure -- confirmed by finding the identical
+  shape (a real-page-linked `<ul>` duplicating an anchor entry's own
+  siblings) reproduced across every multi-subsection gallery. Fixed with a
+  CSS rule targeting the one shape that is never legitimate content: a
+  subsection-anchor entry whose nested list is made of *real, separate*
+  page links (a genuinely nested reference page, like `api.html`'s own
+  section list, only ever nests further anchors on that same page).
+- A stale comment in `figure.py` still referred to `_REPORT_SCRIPT` by its
+  pre-rename name, `_REPORT_RESIZE_JS`.
+
 ## [0.32.4] - 2026-09-10
 
 ### Fixed

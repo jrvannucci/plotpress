@@ -910,7 +910,7 @@ _JS_SOURCE = r"""
       mode === 'span' ? 'grab' :
       mode === 'zoom' ? 'crosshair' :
       mode === 'magnify' ? 'zoom-in' :
-      (mode === 'note-plain' || mode === 'note-free' || mode === 'note-point') ? 'text' :
+      isAnnotateMode(mode) ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';
     // Any active mode's own drag can sweep across text the same way
     // Magnify's whole-figure pan always could -- Span/Zoom drag across tick
@@ -2225,20 +2225,28 @@ _JS_SOURCE = r"""
     return g;
   }
 
-  // Draggable exactly when the mode that would have created this kind of
-  // pin is the active one -- a plain Point Picking pin under 'pick';
-  // otherwise whichever of the three Annotate modes its own dataset.noteStyle
-  // says built it (a saved file predating noteStyle, or one saved between
-  // this and its removal, has no such flag -- ``|| 'arrow'`` treats it as
-  // the plain "note-free" shape those older saves actually used, the closest
-  // match). The same split Clear Points/Clear Annotations already use (see
-  // isAnnotationPin above).
+  // A Point Picking pin is draggable exactly under 'pick', its own creating
+  // mode -- but any annotation note is draggable under *any* of the three
+  // Annotate modes, not just its own matching one: repositioning a note you
+  // dropped earlier is routine housekeeping while annotating a figure, and
+  // making that depend on first reselecting that note's own exact flavor
+  // (plain vs. arrow vs. point) would be a pointless extra step with no
+  // upside -- nothing about *dragging* a box needs to know which flavor it
+  // is, only *creating* one does (see the click dispatch below) or
+  // *restoring* one (dataset.noteStyle still has to survive a save/reload
+  // for that, and for addPin's own dot/arrow decision -- see restorePins).
+  // The same annotation/point split Clear Points/Clear Annotations already
+  // use (see isAnnotationPin above).
   function boxDraggableNow(g) {
-    if (!isAnnotationPin(g)) return mode === 'pick';
-    var style = g.dataset.noteStyle || 'arrow';
-    return (style === 'plain' && mode === 'note-plain') ||
-      (style === 'point' && mode === 'note-point') ||
-      (style === 'arrow' && mode === 'note-free');
+    return isAnnotationPin(g) ? isAnnotateMode(mode) : mode === 'pick';
+  }
+
+  // 'note-plain'/'note-free'/'note-point' -- the three Annotate menu tools,
+  // as a group, wherever code needs "is some Annotate tool active" without
+  // caring which. Kept in one place so this and the cursor-style switch
+  // above can't quietly drift apart from each other or from TOOLS itself.
+  function isAnnotateMode(m) {
+    return m === 'note-plain' || m === 'note-free' || m === 'note-point';
   }
 
   // Just this one pin -- O(1), not a full document sweep -- for the common

@@ -28,6 +28,44 @@
     display: none;
 }
 
+/* A second, independent symptom of the same `:includehidden:` toctree above,
+ * one level deeper: whichever subsection happens to be *last* in a gallery's
+ * own `:includehidden:` list (see e.g. docs/auto_applications/index.rst's own
+ * generated toctree) gets EVERY sibling subsection re-attached underneath it
+ * a second time, as if they were its own children -- confirmed directly in
+ * the built HTML across every multi-subsection gallery (applications'
+ * "Finance, economics and risk", the example gallery's "Limitations", scale's
+ * "Where it runs out", live streaming's "Lab instrument examples", ...), each
+ * showing the *entire* sibling list nested a second time underneath. This is
+ * a Sphinx toctree-resolution artifact, not anything in this project's own
+ * gallery structure -- there is nothing in any subsection's own index.rst
+ * that lists its siblings.
+ *
+ * The rule above already hides a subsection anchor entirely when it surfaces
+ * at the top sidebar level, but here the anchor entry itself (e.g. "Finance,
+ * economics and risk") is a wanted link one level in -- only its bogus
+ * nested list needs to go. The reliable discriminator: a subsection anchor's
+ * OWN real children (if it legitimately had any) would be further anchors on
+ * that same shared index page, exactly like a genuine multi-section
+ * reference page's sidebar entries (see api.html's own "Figure" ->
+ * "Figure()"/"subplots()" nesting, which must NOT be touched by this) --
+ * never a *real, separate page* link. A nested list actually made of real
+ * page hrefs, sitting under an anchor parent, is never legitimate content;
+ * it is always this duplication artifact.
+ *
+ * !important: the theme's own `li.current > ul` rule is what actually
+ * *reveals* a nested list once a reader clicks a heading open (adding
+ * `.current`), and it outranks a plain `display: none` here on specificity
+ * -- checked directly, this fires on page load only from happening to match
+ * the theme's own default *collapsed* state, and the bogus list snaps right
+ * back open the moment the reader actually expands the entry, which is
+ * exactly when it would be seen. Only `!important` reliably wins against a
+ * class the theme itself is actively toggling on.
+ */
+.wy-menu-vertical li:has(> a[href*="#"]:not([href="#"])):has(> ul > li > a:not([href*="#"])) > ul {
+    display: none !important;
+}
+
 /* Layout tweaks over sphinx_rtd_theme, so tables fit instead of scrolling.
  *
  * Two theme defaults combine badly for this project. The content column is

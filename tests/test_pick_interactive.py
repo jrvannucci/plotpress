@@ -2343,17 +2343,23 @@ def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
     assert box_pos(point_sel) != point_before2, "a plain pin must drag under Point Picking mode"
 
 
-def test_each_annotate_mode_only_drags_its_own_note_style(page, tmp_path):
-    """boxDraggableNow() now splits three ways, not two: a plain Annotate
-    box drags only under Annotate, an Annotate Arrow note only under
-    Annotate Arrow, and an Annotate Point note only under Annotate Point --
-    the noteStyle each addPlainNote/addFreeNote/addPointNote tags its own
-    pin with."""
+def test_any_annotate_mode_drags_every_note_style(page, tmp_path):
+    """boxDraggableNow() gates an annotation note on "some Annotate tool is
+    active" (isAnnotateMode), not on that note's own noteStyle matching the
+    specific tool currently selected -- repositioning a note you dropped
+    earlier is routine housekeeping while annotating a figure, and having to
+    reselect that note's exact original flavor (plain vs. arrow vs. point)
+    first would be a pointless extra step with no upside, since dragging a
+    box never needs to know which flavor it is (only creating one, or
+    restoring one after a save/reload, does). A plain Point Picking pin is
+    the one thing still scoped to its own mode ('pick') -- that split is
+    unaffected by this."""
     import plotpress
+    from pick_cases import px
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
-    path = tmp_path / "drag_scoped_three_way.html"
+    path = tmp_path / "drag_any_annotate_mode.html"
     path.write_text(fig.to_html(interactive=True), encoding="utf-8")
     page.goto(path.as_uri())
 
@@ -2374,19 +2380,27 @@ def test_each_annotate_mode_only_drags_its_own_note_style(page, tmp_path):
     }
     modes = {"plain": "Annotate", "arrow": "Annotate Arrow", "point": "Annotate Point"}
 
-    for style, sel in sels.items():
-        _click_toolbar(page, modes[style])
-        for other_style, other_sel in sels.items():
-            before = box_pos(other_sel)
-            _drag_box(page, other_sel, 15, 15)
-            after = box_pos(other_sel)
-            if other_style == style:
-                assert after != before, (
-                    "a %r note must drag under its own %r mode" % (style, modes[style]))
-            else:
-                assert after == before, (
-                    "a %r note must NOT drag under %r mode" % (other_style, modes[style]))
-        _click_toolbar(page, modes[style])  # off
+    for active_style, active_label in modes.items():
+        _click_toolbar(page, active_label)
+        for note_style, sel in sels.items():
+            before = box_pos(sel)
+            _drag_box(page, sel, 15, 15)
+            after = box_pos(sel)
+            assert after != before, (
+                "a %r note must drag under %r mode too, not just its own" %
+                (note_style, active_label))
+        _click_toolbar(page, active_label)  # off
+
+    # A plain Point Picking pin is unaffected -- still scoped to 'pick' only.
+    ux, uy = px(fig, 0, 2.0, 4.0)
+    _click_mode(page, "Point Picking", ux, uy)
+    pick_sel = ".plotpress-pin:not(.plotpress-note)"
+    _click_toolbar(page, "Annotate")
+    before = box_pos(pick_sel)
+    _drag_box(page, pick_sel, 15, 15)
+    after = box_pos(pick_sel)
+    assert after == before, "a Point Picking pin must not drag under an Annotate mode"
+    _click_toolbar(page, "Annotate")  # off
 
 
 def test_annotate_plain_has_no_dot_or_arrow_and_stays_figure_fixed(page, tmp_path):

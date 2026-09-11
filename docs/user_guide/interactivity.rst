@@ -138,9 +138,7 @@ tool in one press, see the Point Picking row below).
    * - **Annotate**
      - Drop a plain text box anywhere on the figure -- a caption, not a
        callout. No dot, no leader arrow, and always pinned to a fixed
-       figure position, even dropped inside an axes. Its own box drags
-       the same way a Point Picking pin's does, while Annotate is the
-       active mode.
+       figure position, even dropped inside an axes.
    * - **Annotate Arrow**
      - Drop a user-written note anywhere on the figure, not locked to any
        datum, but pointing at wherever it was dropped -- a dot at that
@@ -175,6 +173,13 @@ tool in one press, see the Point Picking row below).
      - The same, but always downloads a new, equally self-contained HTML
        file rather than trying to overwrite the original. Reopening it
        resumes this exact session, not just what was originally plotted.
+
+Any note's own box -- dropped by any of the three Annotate tools above --
+drags to reposition it while *any* of the three is the active mode, not
+just the one that created it: repositioning a note is routine housekeeping
+while annotating a figure, not something that should require first
+reselecting its exact original flavor. A Point Picking pin, by contrast,
+only drags while Point Picking itself is active.
 
 ``window.plotpressGetMarkers()`` (see below) returns every pin and
 annotation, unlike Extract -- it's the general programmatic query a custom
