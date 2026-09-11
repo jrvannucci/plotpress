@@ -219,7 +219,8 @@ class GroupLayout:
                  mask=None, axes_ids=None, axes_titles=None, title: str = None,
                  id=None, linestyle="--", color="black", linewidth=1.5,
                  title_position="top", pad=8.0, fontsize=None,
-                 supxlabel=None, supylabel=None, supxlabel_size=None, supylabel_size=None):
+                 supxlabel=None, supylabel=None, supxlabel_size=None, supylabel_size=None,
+                 visible=True):
         """Place a group at outer cell ``(row, col)`` with an ``nrows`` x
         ``ncols`` inner grid of axes. Returns ``self`` so calls can chain.
 
@@ -247,7 +248,7 @@ class GroupLayout:
 
         ``title``/``id`` and the styling kwargs (``linestyle``/``color``/
         ``linewidth``/``title_position``/``pad``/``fontsize``/``supxlabel``/
-        ``supylabel``/``supxlabel_size``/``supylabel_size``) match
+        ``supylabel``/``supxlabel_size``/``supylabel_size``/``visible``) match
         :meth:`Figure.group` exactly -- passed straight through to it once
         this group's real axes exist. A group is only registered (and so
         only findable via :meth:`Figure.get_group`, including by ``id``)
@@ -328,6 +329,7 @@ class GroupLayout:
             "fontsize": fontsize,
             "supxlabel": supxlabel, "supylabel": supylabel,
             "supxlabel_size": supxlabel_size, "supylabel_size": supylabel_size,
+            "visible": visible,
         }
         return self
 
@@ -440,6 +442,7 @@ class GroupLayout:
                          supxlabel=spec["supxlabel"], supylabel=spec["supylabel"],
                          supxlabel_size=spec["supxlabel_size"],
                          supylabel_size=spec["supylabel_size"],
+                         visible=spec["visible"],
                          _outer_row=row, _outer_col=col, _axes_grid=inner)
             axes_grid[row, col] = _squeeze_grid(inner, inr, inc) if squeeze else inner
         return axes_grid
@@ -554,6 +557,11 @@ class Group:
         self.supylabel = raw["supylabel"]
         self.supxlabel_size = raw["supxlabel_size"]
         self.supylabel_size = raw["supylabel_size"]
+        # A snapshot, like every other attribute here -- toggling visibility
+        # afterward goes through Figure.set_group_visible(), not by setting
+        # this attribute directly (which wouldn't touch the raw dict
+        # rendering actually reads). See that method's own docstring.
+        self.visible = raw["visible"]
 
     def flat_axes(self):
         """Every real axes in this group as a plain flat list, regardless
@@ -719,7 +727,7 @@ class Figure:
     def group(self, title, axes, id=None, linestyle="--", color="black", linewidth=1.5,
              title_position="top", pad=8.0, fontsize=None,
              supxlabel=None, supylabel=None, supxlabel_size=None, supylabel_size=None,
-             _outer_row=None, _outer_col=None, _axes_grid=None):
+             visible=True, _outer_row=None, _outer_col=None, _axes_grid=None):
         """Draw a labeled box around a set of axes -- e.g. a cluster of
         related panels in a larger grid.
 
@@ -766,6 +774,15 @@ class Figure:
         ``Figure.supxlabel``/``supylabel``'s own default) independently of
         ``fontsize`` (which only ever sizes ``title``).
 
+        ``visible=False`` hides the box, title, and any supxlabel/supylabel
+        without forgetting any of it -- :meth:`Figure.set_group_visible`
+        flips it back later by the same ``title``/``id``/:class:`Group`
+        lookup :meth:`remove_group` uses. The same convention as
+        :meth:`Axes.set_visible`: a hidden group still reserves its own
+        margin in :meth:`tight_layout`, so toggling it doesn't reflow
+        anything else -- unlike :meth:`remove_group`, which really does
+        delete it (axes included).
+
         Returns ``self`` for chaining; several groups may be added to one
         figure.
         """
@@ -786,6 +803,7 @@ class Figure:
             "fontsize": fontsize,
             "supxlabel": supxlabel, "supylabel": supylabel,
             "supxlabel_size": supxlabel_size, "supylabel_size": supylabel_size,
+            "visible": bool(visible),
             "outer_row": _outer_row, "outer_col": _outer_col, "axes_grid": _axes_grid,
             # Set by Axes.remove() the moment this group's last axes leaves
             # it -- see _group_bbox's own docstring for why: with no member
@@ -867,6 +885,30 @@ class Figure:
         for ax in group.flat_axes():
             ax.remove()
         self._groups = [g for g in self._groups if g is not group._raw]
+
+    def set_group_visible(self, visible: bool, group: "Group" = None,
+                          title: str = None, id=None):
+        """Show or hide a group's box/title/supxlabel/supylabel -- the same
+        ``visible=`` :meth:`group` itself takes, settable again after the
+        fact. Pass the :class:`Group` object itself (from
+        :meth:`get_groups`/:meth:`get_group`), or find it by ``title``/
+        ``id`` the same way :meth:`get_group` does -- exactly one of the
+        three.
+
+        Unlike :meth:`remove_group`, this never touches the group's own
+        axes or deletes anything -- a hidden group still reserves its own
+        margin in :meth:`tight_layout` (the same convention
+        :meth:`Axes.set_visible` uses), so toggling it back and forth
+        doesn't reflow the rest of the grid each time.
+        """
+        given = [group is not None, title is not None, id is not None]
+        if sum(given) != 1:
+            raise ValueError(
+                "set_group_visible(): pass exactly one of group=, title=, or id="
+            )
+        if group is None:
+            group = self.get_group(title=title, id=id)
+        group._raw["visible"] = bool(visible)
 
     def get_ax(self, row: int = None, col: int = None, title: str = None,
               id=None, many: bool = False):
@@ -3163,7 +3205,8 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
                      fontsize=g.get("fontsize"),
                      supxlabel=g.get("supxlabel"), supylabel=g.get("supylabel"),
                      supxlabel_size=g.get("supxlabel_size"),
-                     supylabel_size=g.get("supylabel_size"))
+                     supylabel_size=g.get("supylabel_size"),
+                     visible=g.get("visible", True))
 
     ordered = [by_index[int(i)] for i in order]
     same_shape = len({(s["nrows"], s["ncols"]) for s in specs}) == 1

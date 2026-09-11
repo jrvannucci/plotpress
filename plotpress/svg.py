@@ -290,9 +290,18 @@ def _render_groups(fig, W, H, body):
     tick labels. tight_layout() reserves the matching margin (same
     ``* 1.2 + 10`` / ``+ 10`` extents) so the box growing here doesn't in
     turn collide with whatever is outside it.
+
+    ``visible=False`` (see :meth:`Figure.group`/:meth:`Figure.set_group_visible`)
+    skips drawing anything for a group -- box, title, supxlabel/supylabel
+    alike -- same convention as :meth:`Axes.set_visible`: tight_layout()'s
+    own margin reservation doesn't look at this flag at all, so a hidden
+    group still holds its space and toggling it back doesn't reflow
+    anything else.
     """
     st = fig.style
     for g in fig._groups:
+        if not g["visible"]:
+            continue
         x0, y0, x1, y1 = _group_bbox(fig, g, W, H)
         sx_size = g["supxlabel_size"] or st.label_size * 1.2
         sy_size = g["supylabel_size"] or st.label_size * 1.2
@@ -596,6 +605,7 @@ def layout_metadata(fig, idx_of=None):
             "pad": list(g["pad"]), "fontsize": g["fontsize"],
             "supxlabel": g["supxlabel"], "supylabel": g["supylabel"],
             "supxlabel_size": g["supxlabel_size"], "supylabel_size": g["supylabel_size"],
+            "visible": g["visible"],
         }
         for g in fig._groups
     ]

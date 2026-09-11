@@ -2,6 +2,7 @@
 
 import base64
 import inspect
+import io
 import json
 import math
 import re
@@ -878,6 +879,7 @@ def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
         "pad": [4.0, 4.0, 12.0, 4.0], "fontsize": None,
         "supxlabel": None, "supylabel": None,
         "supxlabel_size": None, "supylabel_size": None,
+        "visible": True,
     }]
 
 
@@ -3187,6 +3189,53 @@ def test_group_draws_a_box_wrapping_its_axes():
     assert any(r.get("fill") == "none" for r in rects)
     texts = [t.text for t in root.findall(f".//{NS}text")]
     assert "Left column" in texts
+
+
+def test_group_visible_false_hides_the_box_title_and_sup_labels():
+    """visible=False -- the same convention as Axes.set_visible() -- skips
+    drawing the box, title, and any supxlabel/supylabel entirely, but must
+    not remove the group from get_groups()/get_group() (it's hidden, not
+    deleted -- that's remove_group()'s job)."""
+    fig, axes = _grid_2x2()
+    fig.group("Hidden", [axes[0, 0], axes[0, 1]],
+             supxlabel="x", supylabel="y", visible=False)
+    root = _parse(fig.to_svg())
+    texts = [t.text for t in root.findall(f".//{NS}text")]
+    assert "Hidden" not in texts and "x" not in texts and "y" not in texts
+    assert not [r for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"]
+    assert fig.get_group(title="Hidden").visible is False
+    fig.save(io.BytesIO(), format="png")   # the raster backend too -- must not raise
+
+
+def test_group_visible_false_still_reserves_its_tight_layout_margin():
+    """The same convention as Axes.set_visible(): a hidden group still
+    holds its own reserved margin band, so toggling it back to visible
+    later doesn't reflow anything else -- checked by comparing the actual
+    axes rects tight_layout() produces with visible=True vs. False, which
+    must come out identical."""
+    fig1, axes1 = _grid_2x2()
+    fig1.group("G", [axes1[0, 0], axes1[0, 1]], title_position="bottom")
+    fig1.tight_layout()
+
+    fig2, axes2 = _grid_2x2()
+    fig2.group("G", [axes2[0, 0], axes2[0, 1]], title_position="bottom", visible=False)
+    fig2.tight_layout()
+
+    for a1, a2 in zip(axes1.ravel(), axes2.ravel()):
+        assert a1._rect == pytest.approx(a2._rect)
+
+
+def test_set_group_visible_toggles_an_existing_group():
+    fig, axes = _grid_2x2()
+    fig.group("G", [axes[0, 0], axes[0, 1]])
+    assert "G" in [t.text for t in _parse(fig.to_svg()).findall(f".//{NS}text")]
+
+    fig.set_group_visible(False, title="G")
+    assert "G" not in [t.text for t in _parse(fig.to_svg()).findall(f".//{NS}text")]
+    assert fig.get_group(title="G").visible is False
+
+    fig.set_group_visible(True, group=fig.get_group(title="G"))
+    assert "G" in [t.text for t in _parse(fig.to_svg()).findall(f".//{NS}text")]
 
 
 def test_group_box_bounds_the_union_of_its_axes_with_padding():

@@ -9,6 +9,22 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.1] - 2026-09-11
+
+### Added
+
+- **`Figure.group(visible=True)`** and **`Figure.set_group_visible(visible,
+  group=None, title=None, id=None)`** -- show or hide a group's box,
+  title, and any supxlabel/supylabel, the same convention
+  `Axes.set_visible` already uses: a hidden group still reserves its own
+  margin in `tight_layout()`, so toggling it doesn't reflow the rest of
+  the grid. Unlike `remove_group()`, nothing about the group -- or its
+  axes -- is deleted; `get_groups()`/`get_group()` keep finding it,
+  `Group.visible` reports the current state. `GroupLayout.add_group()`
+  takes the same kwarg, threaded through to the `Figure.group()` call it
+  makes internally, and it round-trips through `load_data()`/
+  `subplots_from_layout()` like every other group setting.
+
 ## [0.34.0] - 2026-09-11
 
 ### Added

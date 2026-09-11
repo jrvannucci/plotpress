@@ -1445,11 +1445,14 @@ def _raster_figtexts(fig, W, H, S, draw):
 
 
 def _raster_groups(fig, W, H, S, draw):
-    """The PNG counterpart of svg._render_groups, supxlabel/supylabel
-    included -- see that function's own docstring for why the box grows to
-    hold them rather than shrinking a member axes into the space."""
+    """The PNG counterpart of svg._render_groups, supxlabel/supylabel and
+    visible=False included -- see that function's own docstring for why the
+    box grows to hold them rather than shrinking a member axes into the
+    space, and why a hidden group is skipped here but not in tight_layout()."""
     st = fig.style
     for g in fig._groups:
+        if not g["visible"]:
+            continue
         x0, y0, x1, y1 = _group_bbox(fig, g, W, H, scale=S)
         sx_size = (g["supxlabel_size"] or st.label_size * 1.2) * S
         sy_size = (g["supylabel_size"] or st.label_size * 1.2) * S
