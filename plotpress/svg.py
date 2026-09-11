@@ -227,6 +227,50 @@ def _group_colorbars(g_axes, fig):
             and all(id(p) in axset for p in cax._cbar_parents)]
 
 
+def _group_bbox(fig, g, W, H, scale=1.0):
+    """This group's own bounding box in pixels -- ``(x0, y0, x1, y1)`` --
+    the tight union of its member axes' own allocated rects (each expanded
+    for its title/tick/axis labels, see _group_axes_extra) plus ``pad`` and
+    any supxlabel/supylabel inset (see _render_groups' own docstring).
+    Shared by the SVG/HTML and PNG backends (``scale`` is raster.py's own
+    supersampling factor -- ``W``/``H`` already come in pre-multiplied by it
+    there, same as every other raster.py geometry call, but the *extras*
+    below -- tick sizes, pad, label sizes -- are raw style-space numbers
+    that don't know about supersampling and need it applied explicitly;
+    SVG has no such factor, so its own call leaves this at the default 1.0),
+    and by :meth:`Axes.remove`, which needs this exact box (computed while
+    the axes is still there) to freeze into ``frozen_rect`` before
+    detaching it.
+
+    A group can outlive every one of its own axes (see :meth:`Axes.remove`:
+    removing one drops it from the group rather than the whole group, so
+    the *last* axes leaving empties ``g["axes"]`` without deleting the
+    group itself) -- with no members left to measure, ``frozen_rect`` (that
+    same box, captured in figure-fraction units at the moment the group
+    actually went empty) stands in instead, keeping the box exactly where
+    it last was rather than raising on an empty min()/max() or silently
+    vanishing.
+    """
+    st = fig.style
+    members = g["axes"] + _group_colorbars(g["axes"], fig)
+    if not members:
+        fx0, fy0, fx1, fy1 = g["frozen_rect"]
+        return fx0 * W, fy0 * H, fx1 * W, fy1 * H
+    rects = [_pixel_rect(ax, W, H) for ax in members]
+    extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
+             else _group_axes_extra(ax, st) for ax in members]
+    pad_l, pad_r, pad_t, pad_b = (v * scale for v in g["pad"])
+    sx_size = (g["supxlabel_size"] or st.label_size * 1.2) * scale
+    sy_size = (g["supylabel_size"] or st.label_size * 1.2) * scale
+    sx_extent = (sx_size * 1.2 + 10 * scale) if g["supxlabel"] else 0.0
+    sy_extent = (sy_size + 10 * scale) if g["supylabel"] else 0.0
+    x0 = min(r[0] - e[2] * scale for r, e in zip(rects, extras)) - pad_l - sy_extent
+    y0 = min(r[1] - e[0] * scale for r, e in zip(rects, extras)) - pad_t
+    x1 = max(r[0] + r[2] + e[3] * scale for r, e in zip(rects, extras)) + pad_r
+    y1 = max(r[1] + r[3] + e[1] * scale for r, e in zip(rects, extras)) + pad_b + sx_extent
+    return x0, y0, x1, y1
+
+
 def _render_groups(fig, W, H, body):
     """``Figure.group()``'s labeled boxes -- one dashed (by default) rect per
     group, tightly wrapping the union of its axes' own allocated rects (each
@@ -237,18 +281,21 @@ def _render_groups(fig, W, H, body):
     with the title just outside whichever edge ``title_position`` names.
     Any colorbar belonging entirely to the group's own axes (see
     _group_colorbars) is wrapped too.
+
+    A ``supxlabel``/``supylabel`` (see :meth:`Figure.group`) draws *inside*
+    the box instead, near its bottom/left edge -- the box's own bottom/left
+    coordinate is pushed out first (mirroring how ``pad`` already does the
+    same for plain clearance) so the label gets a dedicated inset band of
+    its own rather than overlapping the member axes' last row/column of
+    tick labels. tight_layout() reserves the matching margin (same
+    ``* 1.2 + 10`` / ``+ 10`` extents) so the box growing here doesn't in
+    turn collide with whatever is outside it.
     """
     st = fig.style
     for g in fig._groups:
-        members = g["axes"] + _group_colorbars(g["axes"], fig)
-        rects = [_pixel_rect(ax, W, H) for ax in members]
-        extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
-                 else _group_axes_extra(ax, st) for ax in members]
-        pad_l, pad_r, pad_t, pad_b = g["pad"]
-        x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad_l
-        y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad_t
-        x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad_r
-        y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad_b
+        x0, y0, x1, y1 = _group_bbox(fig, g, W, H)
+        sx_size = g["supxlabel_size"] or st.label_size * 1.2
+        sy_size = g["supylabel_size"] or st.label_size * 1.2
         # linestyle="none" means an invisible box (title only, still placed
         # the same) -- like every other line-drawing method, not a solid
         # border because "none" fell through _DASH.get() unmatched.
@@ -277,6 +324,26 @@ def _render_groups(fig, W, H, body):
             f'font-size="{size}" font-weight="bold" fill="{g["color"]}">'
             f'{_esc(g["title"])}</text>'
         )
+        # Inside the box, near its bottom/left edge -- see the docstring
+        # above for why these two (unlike title) are never optional-position:
+        # they mirror Figure.supxlabel/supylabel's own always-bottom/
+        # always-left placement, just localized to this box instead of the
+        # whole canvas. Ordinary text_color, not the group's own accent
+        # color -- an axis label, not part of the box's own styling.
+        if g["supxlabel"]:
+            body.append(
+                f'<text x="{_fmt((x0 + x1) / 2)}" y="{_fmt(y1 - 6)}" '
+                f'text-anchor="middle" font-size="{sx_size}" '
+                f'fill="{st.text_color}">{_esc(g["supxlabel"])}</text>'
+            )
+        if g["supylabel"]:
+            lx, ly = x0 + sy_size + 4, (y0 + y1) / 2
+            body.append(
+                f'<text x="{_fmt(lx)}" y="{_fmt(ly)}" text-anchor="middle" '
+                f'font-size="{sy_size}" fill="{st.text_color}" '
+                f'transform="rotate(-90 {_fmt(lx)} {_fmt(ly)})">'
+                f'{_esc(g["supylabel"])}</text>'
+            )
 
 
 def _colorbar_label(ax, fig):
@@ -527,6 +594,8 @@ def layout_metadata(fig, idx_of=None):
             "linestyle": g["linestyle"], "color": g["color"],
             "linewidth": g["linewidth"], "title_position": g["title_position"],
             "pad": list(g["pad"]), "fontsize": g["fontsize"],
+            "supxlabel": g["supxlabel"], "supylabel": g["supylabel"],
+            "supxlabel_size": g["supxlabel_size"], "supylabel_size": g["supylabel_size"],
         }
         for g in fig._groups
     ]

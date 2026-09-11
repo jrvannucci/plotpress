@@ -7,6 +7,7 @@ grid, so tight_layout()/align_xlabels()/subplots_adjust()/to_vega()/
 to_vega_lite() all keep working unmodified. Several tests below exist
 specifically to pin that claim down, not just exercise the new API.
 """
+import io
 import warnings
 
 import numpy as np
@@ -524,21 +525,29 @@ def test_cla_releases_the_axes_own_id_not_just_resets_it():
     assert axes[1].get_id() == "x"
 
 
-def test_removing_every_axes_in_a_group_drops_the_group_instead_of_crashing():
-    """A group's box is the bounding rectangle of its own axes -- with zero
-    axes left (each removed individually via Axes.remove(), not through
-    Figure.remove_group()), rendering has nothing to bound and used to
-    raise ValueError: min() iterable argument is empty. The group is now
-    dropped entirely the moment its last axes leaves, the same outcome
-    Figure.remove_group() already produces deliberately."""
+def test_removing_every_axes_in_a_group_freezes_its_box_instead_of_crashing():
+    """A group's box is ordinarily the bounding rectangle of its own axes --
+    with zero axes left (each removed individually via Axes.remove(), not
+    through Figure.remove_group()), rendering has nothing left to measure
+    and used to raise ValueError: min() iterable argument is empty (an
+    earlier version instead dropped the group entirely at that point, the
+    same outcome Figure.remove_group() produces deliberately -- but that
+    silently discarded a box a caller may still want visible, e.g. a
+    labeled placeholder region while its axes are rebuilt elsewhere).
+    Axes.remove() now freezes the group's current box (figure-fraction, see
+    svg._group_bbox) the moment its last axes leaves, and rendering falls
+    back to that frozen rect instead of measuring nonexistent members."""
     layout = GroupLayout(1, 1)
     layout.add_group(0, 0, 1, 2, title="G")
     fig, axes = plotpress.subplots_from_groups(layout, figsize=(6, 3))
     for ax in list(axes):
         ax.remove()
-    assert fig.get_groups() == []
+    groups = fig.get_groups()
+    assert [g.title for g in groups] == ["G"]
+    assert groups[0].flat_axes() == []
     fig.tight_layout()
     fig.to_svg()   # must not raise
+    fig.save(io.BytesIO(), format="png")   # the raster backend too
 
 
 def test_adopt_axes_updates_group_membership_not_just_id_index():

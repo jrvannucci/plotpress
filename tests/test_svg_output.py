@@ -876,6 +876,8 @@ def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
         "title": "Top row", "axes": [0, 1, 2], "n_members": 3, "linestyle": "--",
         "color": "black", "linewidth": 1.5, "title_position": "bottom",
         "pad": [4.0, 4.0, 12.0, 4.0], "fontsize": None,
+        "supxlabel": None, "supylabel": None,
+        "supxlabel_size": None, "supylabel_size": None,
     }]
 
 
@@ -3207,6 +3209,60 @@ def test_group_box_bounds_the_union_of_its_axes_with_padding():
     assert float(box.get("y")) == pytest.approx(y0, abs=0.5)
     assert float(box.get("width")) == pytest.approx(x1 - x0, abs=0.5)
     assert float(box.get("height")) == pytest.approx(y1 - y0, abs=0.5)
+
+
+def test_group_box_freezes_in_place_once_its_last_axes_is_removed():
+    """Regression: Axes.remove() used to drop a group outright once its last
+    axes left it ("nothing left for its box to bound") -- now it freezes
+    the box's current rect (see svg._group_bbox) instead, so the box (and
+    title) keep rendering exactly where they were, not vanishing. Compares
+    the actual rendered rect right before the *last* axes leaves against
+    the rect afterward -- not the original, still-two-axes box, since
+    removing the first of the two already shrinks it to the survivor's own
+    bounds (see test_group_box_only_freezes_once_its_truly_last_axes_leaves)
+    -- the freeze itself must be pixel-identical, not merely present."""
+    fig, axes = _grid_2x2()
+    fig.group("Top row", [axes[0, 0], axes[0, 1]], pad=5.0)
+    axes[0, 0].remove()   # one left: box already shrunk to axes[0, 1] alone
+    before_svg = fig.to_svg()
+    before_box = [r for r in _parse(before_svg).findall(f".//{NS}rect")
+                 if r.get("fill") == "none"][0]
+    before = tuple(float(before_box.get(k)) for k in ("x", "y", "width", "height"))
+
+    axes[0, 1].remove()   # now zero: this is the removal that freezes it
+    assert fig.get_group(title="Top row").flat_axes() == []
+
+    after_svg = fig.to_svg()
+    after_box = [r for r in _parse(after_svg).findall(f".//{NS}rect")
+                if r.get("fill") == "none"][0]
+    after = tuple(float(after_box.get(k)) for k in ("x", "y", "width", "height"))
+    assert after == pytest.approx(before, abs=0.5)
+    assert "Top row" in [t.text for t in _parse(after_svg).findall(f".//{NS}text")]
+
+
+def test_group_box_only_freezes_once_its_truly_last_axes_leaves():
+    """A group with several axes keeps deriving its box live from whichever
+    still remain -- removing one of two shrinks the box to the survivor's
+    own bounds, not a frozen memory of the original pair. Only the removal
+    that empties the group entirely freezes anything."""
+    from plotpress.svg import _group_axes_extra, _pixel_rect
+
+    fig, axes = _grid_2x2()
+    fig.group("Top row", [axes[0, 0], axes[0, 1]])
+    fig.to_svg()   # settle layout before reading rects
+
+    axes[0, 0].remove()
+    svg = fig.to_svg()
+    box = [r for r in _parse(svg).findall(f".//{NS}rect") if r.get("fill") == "none"][0]
+
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    st = fig.style
+    r01 = _pixel_rect(axes[0, 1], W, H)
+    e01 = _group_axes_extra(axes[0, 1], st)
+    expected_x0 = r01[0] - e01[2] - 8.0   # default pad
+    expected_x1 = r01[0] + r01[2] + e01[3] + 8.0
+    assert float(box.get("x")) == pytest.approx(expected_x0, abs=0.5)
+    assert float(box.get("width")) == pytest.approx(expected_x1 - expected_x0, abs=0.5)
 
 
 def test_group_title_position_and_style():

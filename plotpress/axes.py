@@ -2349,24 +2349,32 @@ class Axes:
         it belonged to -- both that group's flat axes list and, for a
         :class:`~plotpress.figure.GroupLayout`-built one, its own inner
         ``(row, col)`` grid -- so neither keeps a stale reference to a
-        detached axes. A group left with no axes at all this way is dropped
-        entirely (there is nothing left for its box to bound); one axes
-        shared between two groups (an unusual but not prevented case) comes
-        out of both, which can empty -- and so drop -- a group whose title
-        was never passed to this call. Colorbar/legend space this axes'
-        neighbors ceded to it is not automatically reclaimed; call
-        ``tight_layout()`` again for that.
+        detached axes. A group left with no axes at all this way keeps its
+        box exactly where it last was rather than disappearing: its current
+        bounding rect is frozen (figure-fraction, so it survives a later
+        ``set_size_inches``/dpi change) the moment its last axes leaves,
+        standing in for the usual axes-derived bounds from then on -- see
+        ``svg._group_bbox``. One axes shared between two groups (an unusual
+        but not prevented case) comes out of both, freezing either that
+        empties. Colorbar/legend space this axes' neighbors ceded to it is
+        not automatically reclaimed; call ``tight_layout()`` again for that.
         """
         if self in self.figure.axes:
             self.figure.axes.remove(self)
         if self._id is not None and self.figure._id_index.get(self._id) is self:
             del self.figure._id_index[self._id]
         for g in self.figure._groups:
+            if self in g["axes"] and len(g["axes"]) == 1 and g["frozen_rect"] is None:
+                from .svg import _group_bbox
+                fig = self.figure
+                W = fig.figsize[0] * fig.style.dpi
+                H = fig.figsize[1] * fig.style.dpi
+                x0, y0, x1, y1 = _group_bbox(fig, g, W, H)
+                g["frozen_rect"] = (x0 / W, y0 / H, x1 / W, y1 / H)
             if self in g["axes"]:
                 g["axes"].remove(self)
             if g["axes_grid"] is not None:
                 g["axes_grid"][g["axes_grid"] == self] = None
-        self.figure._groups = [g for g in self.figure._groups if g["axes"]]
         if self._sharex_group is not None and self in self._sharex_group:
             self._sharex_group.remove(self)
         if self._sharey_group is not None and self in self._sharey_group:

@@ -218,7 +218,8 @@ class GroupLayout:
     def add_group(self, row: int, col: int, nrows: int = None, ncols: int = None,
                  mask=None, axes_ids=None, axes_titles=None, title: str = None,
                  id=None, linestyle="--", color="black", linewidth=1.5,
-                 title_position="top", pad=8.0, fontsize=None):
+                 title_position="top", pad=8.0, fontsize=None,
+                 supxlabel=None, supylabel=None, supxlabel_size=None, supylabel_size=None):
         """Place a group at outer cell ``(row, col)`` with an ``nrows`` x
         ``ncols`` inner grid of axes. Returns ``self`` so calls can chain.
 
@@ -245,7 +246,8 @@ class GroupLayout:
         place a full rectangle with no per-axes id/title.
 
         ``title``/``id`` and the styling kwargs (``linestyle``/``color``/
-        ``linewidth``/``title_position``/``pad``/``fontsize``) match
+        ``linewidth``/``title_position``/``pad``/``fontsize``/``supxlabel``/
+        ``supylabel``/``supxlabel_size``/``supylabel_size``) match
         :meth:`Figure.group` exactly -- passed straight through to it once
         this group's real axes exist. A group is only registered (and so
         only findable via :meth:`Figure.get_group`, including by ``id``)
@@ -324,6 +326,8 @@ class GroupLayout:
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
+            "supxlabel": supxlabel, "supylabel": supylabel,
+            "supxlabel_size": supxlabel_size, "supylabel_size": supylabel_size,
         }
         return self
 
@@ -433,6 +437,9 @@ class GroupLayout:
                          linewidth=spec["linewidth"],
                          title_position=spec["title_position"], pad=spec["pad"],
                          fontsize=spec["fontsize"],
+                         supxlabel=spec["supxlabel"], supylabel=spec["supylabel"],
+                         supxlabel_size=spec["supxlabel_size"],
+                         supylabel_size=spec["supylabel_size"],
                          _outer_row=row, _outer_col=col, _axes_grid=inner)
             axes_grid[row, col] = _squeeze_grid(inner, inr, inc) if squeeze else inner
         return axes_grid
@@ -543,6 +550,10 @@ class Group:
         self.title_position = raw["title_position"]
         self.pad = raw["pad"]
         self.fontsize = raw["fontsize"]
+        self.supxlabel = raw["supxlabel"]
+        self.supylabel = raw["supylabel"]
+        self.supxlabel_size = raw["supxlabel_size"]
+        self.supylabel_size = raw["supylabel_size"]
 
     def flat_axes(self):
         """Every real axes in this group as a plain flat list, regardless
@@ -707,6 +718,7 @@ class Figure:
 
     def group(self, title, axes, id=None, linestyle="--", color="black", linewidth=1.5,
              title_position="top", pad=8.0, fontsize=None,
+             supxlabel=None, supylabel=None, supxlabel_size=None, supylabel_size=None,
              _outer_row=None, _outer_col=None, _axes_grid=None):
         """Draw a labeled box around a set of axes -- e.g. a cluster of
         related panels in a larger grid.
@@ -735,6 +747,25 @@ class Figure:
         against a neighboring group, looser on the side carrying the title.
         ``title_position`` is one of ``"top"``/``"bottom"``/``"left"``/
         ``"right"``, placing ``title`` just outside that edge of the box.
+
+        ``supxlabel``/``supylabel`` are this group's own shared axis labels
+        -- the group-scoped equivalent of :meth:`Figure.supxlabel`/
+        :meth:`supylabel`, for a cluster of panels that all share one x/y
+        quantity so no individual axes needs its own ``set_xlabel``/
+        ``set_ylabel``. Unlike ``title``, which ``title_position`` can place
+        on any of the four sides, these always draw at a fixed edge --
+        ``supxlabel`` centered along the bottom, ``supylabel`` centered
+        along the left, rotated -- the same fixed placement
+        ``Figure.supxlabel``/``supylabel`` themselves use. The difference
+        from the figure-level version is where: these draw *inside* the
+        box, between its border and its member axes, rather than outside
+        the whole grid -- the box grows to make room for them (the same way
+        it already grows for ``pad``), rather than shrinking any axes.
+        ``supxlabel_size``/``supylabel_size`` override the default size
+        (:attr:`~plotpress.style.Style.label_size`-derived, matching
+        ``Figure.supxlabel``/``supylabel``'s own default) independently of
+        ``fontsize`` (which only ever sizes ``title``).
+
         Returns ``self`` for chaining; several groups may be added to one
         figure.
         """
@@ -753,7 +784,14 @@ class Figure:
             "color": color, "linewidth": float(linewidth),
             "title_position": title_position, "pad": _normalize_pad(pad),
             "fontsize": fontsize,
+            "supxlabel": supxlabel, "supylabel": supylabel,
+            "supxlabel_size": supxlabel_size, "supylabel_size": supylabel_size,
             "outer_row": _outer_row, "outer_col": _outer_col, "axes_grid": _axes_grid,
+            # Set by Axes.remove() the moment this group's last axes leaves
+            # it -- see _group_bbox's own docstring for why: with no member
+            # left to measure a box from, this frozen (figure-fraction)
+            # rect stands in instead of dropping the group outright.
+            "frozen_rect": None,
         })
         self._layout_dirty = True
         return self
@@ -1206,7 +1244,19 @@ class Figure:
         title_px = twin_top_px = 0.0
         for ax in specs:
             if ax._title:
-                title_px = max(title_px, (ax._title_size or st.title_size) + 8)
+                # 1.3x size, not 1x -- see the identical choice (and its own
+                # reasoning) in the group-title extent below: the bundled
+                # font metrics cover advance widths only, not vertical
+                # extent, and a flat "+8" alone reserved just enough for the
+                # title's own drawn offset from the box (_render_labels'
+                # ``px_top - 8``), with none left over for the glyphs'
+                # actual ascent above that baseline -- a title stacked over
+                # the row above's own x label (a titled, x-labeled grid is
+                # the ordinary case, not an edge case) rendered close enough
+                # to touching that a browser's own font metrics, never
+                # identical to the bundled advance-width tables to begin
+                # with, tipped it into real overlap.
+                title_px = max(title_px, (ax._title_size or st.title_size) * 1.3 + 8)
             if ax._axis_off:
                 continue
             # tick_params(labelsize=...)/(length=...) overrides this axes' own
@@ -1308,17 +1358,30 @@ class Figure:
         # either of them.
         col_needs_wspace = [False] * (ncols - 1)
         row_needs_hspace = [False] * (nrows - 1)
-        # A title facing an *interior* boundary (row/col > 0, i.e. NOT the
-        # figure's own outer edge -- group_top_px/etc. above already cover
-        # that case) needs exactly the same clearance group_top_px would
-        # give it, just aimed at the one boundary it actually sits next to
-        # rather than the figure's edge. Tracked per-boundary (not folded
-        # into a single flat number) for the same reason group_top_px takes
-        # a max(), not a sum(), over every group sharing one edge: several
-        # groups can face the same interior boundary from opposite sides,
-        # and it only has to be wide enough for the single largest one.
-        row_hspace_title_px = [0.0] * (nrows - 1)
-        col_wspace_title_px = [0.0] * (ncols - 1)
+        # A title (or supxlabel/supylabel-grown box) facing an *interior*
+        # boundary (row/col > 0, i.e. NOT the figure's own outer edge --
+        # group_top_px/etc. above already cover that case) needs exactly the
+        # same clearance group_top_px would give it, just aimed at the one
+        # boundary it actually sits next to rather than the figure's edge.
+        # Tracked as two separate arrays per boundary, not one -- "above"
+        # (a group whose bottom edge, r1, IS this boundary, pushing content
+        # down into it) and "below" (a group whose top edge, r0, is the
+        # *next* row, pushing content up into this same boundary from the
+        # other side). Two different groups can face one interior boundary
+        # from opposite sides at once (one ending a row-band with a
+        # bottom-position title just below its own box, the next starting
+        # right after with a top-position title just above its own) -- that
+        # needs both extents *added*, not maxed, since they occupy different
+        # halves of the same physical gap. Groups sharing the *same* side of
+        # one boundary (two side by side in the same row-band, say) still
+        # only need the single largest between them -- max() within each
+        # array, sum() only across the two arrays -- or a grid with many
+        # groups along one edge would accumulate every one of their extents
+        # into one ever-growing gap instead of a fixed, correctly-sized one.
+        row_above_px = [0.0] * (nrows - 1)
+        row_below_px = [0.0] * (nrows - 1)
+        col_left_px = [0.0] * (ncols - 1)
+        col_right_px = [0.0] * (ncols - 1)
         for g in self._groups:
             g_specs = [ax for ax in g["axes"] if ax._subplotspec is not None]
             if not g_specs:
@@ -1331,6 +1394,15 @@ class Figure:
             # butting a neighboring group, loose on the title side -- would
             # otherwise reserve the wrong amount here).
             pad_l, pad_r, pad_t, pad_b = g["pad"]
+            # Four independent per-edge extents, not one tied to
+            # title_position -- a supxlabel/supylabel (below) always sits at
+            # the bottom/left edge regardless of where the *title* sits, so
+            # a group with title_position="bottom" *and* a supxlabel needs
+            # both reserved on that same edge, stacked (the title outside
+            # the box, the supxlabel inside it growing the box into the
+            # title's own margin) -- additive, not a single value picked by
+            # title_position alone.
+            top_extent = bottom_extent = left_extent = right_extent = 0.0
             if pos in ("top", "bottom"):
                 # 1.3x size -- not 1x -- for the same reason title_px above
                 # adds a flat +8 rather than measuring real glyph ascent:
@@ -1339,13 +1411,35 @@ class Figure:
                 # rather than risk the title's own glyphs clipping the
                 # canvas edge.
                 side_pad = pad_t if pos == "top" else pad_b
-                extent = side_pad + size * 1.3 + 10
+                title_extent = side_pad + size * 1.3 + 10
+                if pos == "top":
+                    top_extent += title_extent
+                else:
+                    bottom_extent += title_extent
             else:
                 # A left/right title runs horizontally alongside the box, not
                 # centered over it -- its own rendered *width* is what has to
                 # fit in the reserved margin here, not a height allowance.
                 side_pad = pad_l if pos == "left" else pad_r
-                extent = side_pad + st.text_width(g["title"], size, bold=True) + 12
+                title_extent = side_pad + st.text_width(g["title"], size, bold=True) + 12
+                if pos == "left":
+                    left_extent += title_extent
+                else:
+                    right_extent += title_extent
+            # supxlabel/supylabel draw *inside* the box, near its bottom/left
+            # edge (see _render_groups) -- unlike the title, always that one
+            # fixed edge regardless of title_position, mirroring
+            # Figure.supxlabel()/supylabel() themselves (always bottom/left,
+            # no position argument). The box's own edge has to move outward
+            # to hold this new inset band without shrinking the member axes
+            # into it, so it needs the exact same margin reservation a
+            # title facing that edge would.
+            if g.get("supxlabel"):
+                sx_size = g.get("supxlabel_size") or st.label_size * 1.2
+                bottom_extent += sx_size * 1.2 + 10
+            if g.get("supylabel"):
+                sy_size = g.get("supylabel_size") or st.label_size * 1.2
+                left_extent += sy_size + 10
             r0 = min(ax._subplotspec.row0 for ax in g_specs)
             r1 = max(ax._subplotspec.row1 for ax in g_specs)
             c0 = min(ax._subplotspec.col0 for ax in g_specs)
@@ -1359,50 +1453,46 @@ class Figure:
             # max(), not +=: every group touching a given outer edge shares
             # that same margin band (they're side by side along it, not
             # stacked), so the band only has to be tall/wide enough for the
-            # single largest title reaching it -- not the sum of every
-            # group's own extent. A grid with many groups along one edge
-            # (e.g. one group per column, all title_position="top") used to
-            # accumulate every one of their extents into one ever-growing
-            # top margin, producing a band of blank space scaling with the
-            # number of columns instead of a fixed, correctly-sized one.
-            if pos == "top" and r0 == 0:
-                group_top_px = max(group_top_px, extent)
-            elif pos == "bottom" and r1 == nrows - 1:
-                group_bottom_px = max(group_bottom_px, extent)
-            elif pos == "left" and c0 == 0:
-                group_left_px = max(group_left_px, extent)
-            elif pos == "right" and c1 == ncols - 1:
-                group_right_px = max(group_right_px, extent)
-            # The interior-boundary mirror of the four branches above: a
-            # "top" title on a group that does NOT reach row 0 sits in the
-            # gap *above* its own box instead -- i.e. right on the boundary
-            # between rows r0-1 and r0 -- so that's the one boundary that
-            # needs room for it, the same way group_top_px reserves room at
-            # the figure's own top edge. Without this, a group_spacing()
-            # value sized only for ordinary tick-label/pad clearance (its
-            # own documented job) leaves nothing for the title itself, and
-            # it draws right on top of the neighboring group's own box.
-            #
-            # max(0, extent - natural_gap_px), not the raw extent: the
-            # ordinary tick-label-driven gap (bottom_px+top_px / left_px+
-            # right_px, already computed above) may already be wider than
-            # this title needs -- a single interior-facing group with a
-            # long title in an otherwise ordinary grid, say -- and adding
-            # the *full* extent on top regardless would over-reserve and
-            # needlessly grow the figure for a title that already had
-            # plenty of room. Only the deficit, if any, gets added.
-            elif pos == "top" and r0 > 0:
-                need = max(0.0, extent - (bottom_px + top_px))
-                row_hspace_title_px[r0 - 1] = max(row_hspace_title_px[r0 - 1], need)
-            elif pos == "bottom" and r1 < nrows - 1:
-                need = max(0.0, extent - (bottom_px + top_px))
-                row_hspace_title_px[r1] = max(row_hspace_title_px[r1], need)
-            elif pos == "left" and c0 > 0:
-                need = max(0.0, extent - (left_px + right_px))
-                col_wspace_title_px[c0 - 1] = max(col_wspace_title_px[c0 - 1], need)
-            elif pos == "right" and c1 < ncols - 1:
-                need = max(0.0, extent - (left_px + right_px))
-                col_wspace_title_px[c1] = max(col_wspace_title_px[c1], need)
+            # single largest one reaching it -- not the sum of every group's
+            # own extent. A grid with many groups along one edge (e.g. one
+            # group per column, all title_position="top") used to accumulate
+            # every one of their extents into one ever-growing top margin,
+            # producing a band of blank space scaling with the number of
+            # columns instead of a fixed, correctly-sized one.
+            # The interior-boundary mirror of the outer-edge branches above:
+            # a "top" title (or a supylabel-grown box, etc.) on a group that
+            # does NOT reach row 0 sits in the gap *above* its own box
+            # instead -- i.e. right on the boundary between rows r0-1 and
+            # r0 -- so that's the one boundary that needs room for it, the
+            # same way group_top_px reserves room at the figure's own top
+            # edge. Without this, a group_spacing() value sized only for
+            # ordinary tick-label/pad clearance (its own documented job)
+            # leaves nothing for the title/supxlabel itself, and it draws
+            # right on top of the neighboring group's own box. Raw extents
+            # only here (max() within the same side -- see row_above_px's
+            # own comment above for why); turned into an actual reserved
+            # deficit, net of the ordinary gap and combined across both
+            # sides of the boundary, once every group has contributed.
+            if top_extent:
+                if r0 == 0:
+                    group_top_px = max(group_top_px, top_extent)
+                else:
+                    row_below_px[r0 - 1] = max(row_below_px[r0 - 1], top_extent)
+            if bottom_extent:
+                if r1 == nrows - 1:
+                    group_bottom_px = max(group_bottom_px, bottom_extent)
+                else:
+                    row_above_px[r1] = max(row_above_px[r1], bottom_extent)
+            if left_extent:
+                if c0 == 0:
+                    group_left_px = max(group_left_px, left_extent)
+                else:
+                    col_right_px[c0 - 1] = max(col_right_px[c0 - 1], left_extent)
+            if right_extent:
+                if c1 == ncols - 1:
+                    group_right_px = max(group_right_px, right_extent)
+                else:
+                    col_left_px[c1] = max(col_left_px[c1], right_extent)
             if r0 > 0:
                 row_needs_hspace[r0 - 1] = True
             if r1 < nrows - 1:
@@ -1411,6 +1501,29 @@ class Figure:
                 col_needs_wspace[c0 - 1] = True
             if c1 < ncols - 1:
                 col_needs_wspace[c1] = True
+
+        # Now that every group has contributed its own raw extent to
+        # whichever side(s) of whichever boundary it touches, each
+        # boundary's total reservation is simply both sides added together
+        # (see row_above_px's own comment above for why sides add but
+        # same-side groups don't) -- added on top of the ordinary
+        # tick-label-driven gap (bottom_px+top_px / left_px+right_px,
+        # already baked into base_gap_h/base_gap_w below), not compared
+        # against it. A group's own box already wraps *outward* from a
+        # plain axes' own natural tick/title clearance (_group_axes_extra
+        # mirrors bottom_px/top_px's exact formulas) -- pad/supxlabel/
+        # supylabel/title reach *further* still, past where that natural
+        # clearance already ends, so the two are always stacked, never
+        # alternatives to pick the larger of. Comparing them with max()
+        # here (an earlier version of this) reserved only whichever was
+        # bigger, silently assuming the smaller one was already contained
+        # within it -- true by coincidence for a single modest title in an
+        # otherwise generously tick-labeled grid, false in general, and a
+        # supxlabel/supylabel's own extent was reliably large enough to
+        # expose it: two groups facing the same interior boundary from
+        # opposite sides landed close enough to visibly overlap.
+        row_hspace_title_px = [a + b for a, b in zip(row_above_px, row_below_px)]
+        col_wspace_title_px = [a + b for a, b in zip(col_left_px, col_right_px)]
 
         # group_spacing() grows the figure to hold its reservation instead of
         # shrinking the axes to fit it -- each boundary that actually needs
@@ -3047,7 +3160,10 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
                      color=g.get("color", "black"), linewidth=g.get("linewidth", 1.5),
                      title_position=g.get("title_position", "top"),
                      pad=tuple(g["pad"]) if g.get("pad") is not None else 8.0,
-                     fontsize=g.get("fontsize"))
+                     fontsize=g.get("fontsize"),
+                     supxlabel=g.get("supxlabel"), supylabel=g.get("supylabel"),
+                     supxlabel_size=g.get("supxlabel_size"),
+                     supylabel_size=g.get("supylabel_size"))
 
     ordered = [by_index[int(i)] for i in order]
     same_shape = len({(s["nrows"], s["ncols"]) for s in specs}) == 1

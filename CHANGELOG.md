@@ -9,6 +9,65 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Added
+
+- **`Figure.group(supxlabel=..., supylabel=...)`** -- a group's own shared
+  x/y axis label, the group-scoped equivalent of `Figure.supxlabel`/
+  `supylabel`, for a cluster of panels that all share one x/y quantity so
+  no individual axes needs its own `set_xlabel`/`set_ylabel` repeated on
+  every one of them. Unlike `title` (which `title_position` can place on
+  any of the four sides), these always draw at one fixed edge --
+  `supxlabel` centered along the bottom, `supylabel` centered along the
+  left, rotated -- mirroring the figure-level versions' own fixed
+  placement. The difference is *where*: these draw **inside** the box,
+  between its border and its member axes, rather than outside the whole
+  grid -- the box grows to make room for them (the same way it already
+  grows for `pad`), rather than shrinking any axes to fit.
+  `supxlabel_size`/`supylabel_size` override the default size
+  independently of `fontsize` (which only ever sizes `title`).
+  `GroupLayout.add_group()` takes the same four kwargs, threaded straight
+  through to the `Figure.group()` call it makes internally. New gallery
+  example: `figure_layout/grouping/plot_19_group_shared_axis_labels`.
+
+### Fixed
+
+- **A `fig.group()` title/tick-label overlap two panels deep in the same
+  column** -- an ordinary (non-group) axes title, one row below another
+  axes' own x label, could render close enough to genuinely overlap it: the
+  reserved clearance (`title_size + 8`) accounted for the title's drawn
+  *offset* from its axes box but not its own glyphs' real ascent above
+  that -- unlike the analogous group-title clearance, which already used a
+  `* 1.3` safety factor for exactly this (bundled font metrics cover
+  advance widths only, never vertical extent). Now uses the same factor.
+- **Two groups facing the same interior grid boundary from opposite sides
+  could overlap even more directly** -- title-plus-title, or (now that
+  supxlabel/supylabel exist) title-plus-supxlabel, both reaching into the
+  one shared gap between them. The margin math compared the two sides'
+  combined need against the *ordinary* tick-label gap and reserved
+  whichever was larger, silently assuming one already contained the
+  other -- true by coincidence for a single modest title in an otherwise
+  generously tick-labeled grid (why this went unnoticed through the
+  0.32.6 fix's own tests), false in general: the two sides' content
+  actually stacks, and needs *adding* on top of the ordinary gap, not
+  compared against it. A supxlabel's own extent was reliably large enough
+  to expose the gap between "usually fine" and "always correct."
+- **`Axes.remove()` dropped a `fig.group()` box entirely once its last
+  member axes left it**, `"there is nothing left for its box to
+  bound"` -- discarding a box a caller may still want visible (e.g. a
+  labeled placeholder region while its axes are being rebuilt elsewhere).
+  The group's current bounding rect is now frozen (figure-fraction, so it
+  survives a later `set_size_inches`/dpi change) the instant its last axes
+  leaves, standing in for the usual axes-derived bounds from then on --
+  the box and title keep rendering exactly where they last were instead of
+  vanishing. `get_groups()`/`get_group()` still find it; `flat_axes()`
+  reports `[]`. (The round trip through `load_data()`/
+  `subplots_from_layout()` doesn't reconstruct a group in this state --
+  there's nothing for `Figure.group()`'s own required `axes=` to rebuild
+  from on reload -- a known, documented limitation, not a regression: an
+  axes-less group didn't exist at all before this.)
+
 ## [0.33.1] - 2026-09-11
 
 ### Fixed
