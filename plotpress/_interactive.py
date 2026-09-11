@@ -60,6 +60,16 @@ could, so the selection guard isn't scoped to any one of them.
   pan/zoom live, the same machinery an Axis Span drag uses), it doesn't
   delete them; that's what Clear Points/Point Picking's own
   click-a-pin-to-remove-it are for.
+* **Fit Width** -- a one-shot snap to whatever whole-figure magnification
+  makes the figure exactly as wide as the current browser window, for a
+  figure whose natural size (standalone HTML/pop-up output only -- an
+  embedded figure, e.g. inside a Report, already CSS-scales to its
+  container) is wider than the viewport. Deliberately separate from Home
+  rather than folded into it: most figures are already narrower than the
+  viewport, and redefining Home as "fit width" would zoom *those* in past
+  their natural size by default -- a real regression for the common case to
+  fix the uncommon one. Not a persistent "always fit" mode -- like Home, it
+  fires once; resizing the window afterward doesn't re-fit automatically.
 * **Point Picking** (internal mode ``pick``) -- click a plot to pin an
   annotation of the value there; snaps to the nearest data point, else a
   free coordinate readout (arrow cursor). Click a pin to remove it, or use
@@ -127,9 +137,9 @@ could, so the selection guard isn't scoped to any one of them.
   either Clear button, also deselects the active tool, back to no tool
   active; see below.)
 
-Pan/Zoom and Home sit standalone at the bar's far left, not
-behind a menu -- the whole-figure-scoped tool reached for most, and the
-reset that undoes it, close enough at hand that a menu's extra click to get
+Pan/Zoom, Home, and Fit Width sit standalone at the bar's far left, not
+behind a menu -- the whole-figure-scoped tool reached for most, and the two
+resets that undo it, close enough at hand that a menu's extra click to get
 to them isn't worth paying every time. Everything else groups into four
 menus by what it does, not the order features were added in --
 **Axes**: Axis Span/Zoom, then Reset All Axes, the pair it undoes.
@@ -340,6 +350,27 @@ _JS_SOURCE = r"""
       (after.left + fx * after.width) - clientX,
       (after.top + fy * after.height) - clientY
     );
+  }
+
+  // Fit Width: a one-shot snap to whatever scale makes the figure's rendered
+  // width match the viewport's current width, right now -- deliberately not
+  // a persistent "always fit" mode that keeps re-fitting on every later
+  // resize (Home doesn't track resizes after being clicked either; this
+  // matches that, rather than introducing a second, different kind of
+  // whole-figure reset). Home itself stays "actual size" (zoomScale = 1,
+  // i.e. the figure's own figsize/dpi pixel size) and is left alone: most
+  // figures are already smaller than the viewport, and folding "fit width"
+  // into Home would zoom *those* in past their natural size by default,
+  // trading a real regression for the common case to fix the rare
+  // wider-than-viewport one. Same clamp as zoomTo() -- a huge multi-hundred-
+  // axes figure fitting to a narrow viewport can compute a scale below the
+  // 10% floor, and clamping there (rather than letting it go arbitrarily
+  // small) keeps every pin/tick/label from shrinking past legibility.
+  function fitWidth() {
+    var newScale = Math.max(0.1, Math.min(20, document.documentElement.clientWidth / naturalW));
+    if (newScale === zoomScale) return;
+    zoomScale = newScale;
+    applyZoomSize();
   }
 
   // Map an svg user-space point to pixels within the svg wrapper (honors the
@@ -673,6 +704,7 @@ _JS_SOURCE = r"""
   var TOOLS = [
     { mode: 'magnify', label: 'Pan/Zoom', standalone: true },
     { action: 'reset-figure', label: 'Home', standalone: true },
+    { action: 'fit-width', label: 'Fit Width', standalone: true },
     { mode: 'span', label: 'Axis Span', menu: 'Axes' },
     { mode: 'zoom', label: 'Axis Zoom', menu: 'Axes' },
     { action: 'reset-axes', label: 'Reset All Axes', menu: 'Axes', divider: true },
@@ -788,6 +820,7 @@ _JS_SOURCE = r"""
         else if (t.action === 'save') overwriteCurrentPage();
         else if (t.action === 'save-as') saveAsNewPage();
         else if (t.action === 'reset-figure') { zoomScale = 1; applyZoomSize(); }
+        else if (t.action === 'fit-width') fitWidth();
         else if (t.action === 'reset-axes') resetAxes();
         else if (t.action === 'clear-points') clearPointPins();
         else if (t.action === 'clear-annotations') clearAnnotationPins();

@@ -42,7 +42,7 @@ The toolbar
 
 A single row, spanning the full width of the window and pinned to its top
 (``position:fixed``, immune to scrolling, panning, or Pan/Zoom's own
-whole-figure zoom). Pan/Zoom and Home sit standalone at the
+whole-figure zoom). Pan/Zoom, Home, and Fit Width sit standalone at the
 far left -- whole-figure tools reached for often enough to skip a menu's
 extra click. Everything else groups into four menus by what the buttons do:
 **Axes** (Axis Span/Axis Zoom, then Reset All Axes, the pair it undoes),
@@ -96,6 +96,18 @@ tool in one press, see the Point Picking row below).
        button (this one, or Reset All Axes below) clears pins or
        annotations; that's what Clear Points/Clear Annotations below are
        for.
+   * - **Fit Width**
+     - A one-shot snap to whatever whole-figure magnification makes the
+       figure exactly as wide as the current browser window. Deliberately
+       separate from Home rather than folded into it: most figures are
+       already narrower than the viewport, and redefining Home as "fit
+       width" would zoom *those* in past their natural size by default.
+       Matters for standalone HTML/pop-up output with a large ``figsize``,
+       which otherwise opens at its natural, often-wider-than-any-window
+       pixel size -- an embedded figure (e.g. inside a
+       :class:`~plotpress.Report`) already CSS-scales to its container, so
+       there is nothing for this to do there. Like Home, fires once; a
+       later window resize doesn't trigger another automatic re-fit.
    * - **Axis Span**
      - Drag to pan a single plot's data window (log-aware).
    * - **Axis Zoom**

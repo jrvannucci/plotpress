@@ -9,6 +9,27 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Added
+
+- **A "Fit Width" toolbar button**, standalone next to Pan/Zoom and Home.
+  A large `figsize` saved as standalone interactive HTML/pop-up output
+  opens at its natural (`figsize * dpi`) pixel size -- Home's own "reset"
+  target -- which for a genuinely large figure is often much wider than
+  any browser window, leaving only a fraction of it visible until you
+  wheel-zoom out and hunt for the right stopping point. Fit Width is a
+  one-shot snap to whatever whole-figure magnification makes the figure
+  exactly as wide as the current window, in either direction (it zooms a
+  *narrower*-than-viewport figure in too, not only oversized ones out).
+  Deliberately a separate button rather than a change to Home itself: most
+  figures are already narrower than the viewport, and redefining Home as
+  "fit width" would zoom those in past their natural size by default --
+  trading a real regression for the common case to fix the uncommon one.
+  Like Home, it fires once; a later window resize doesn't trigger another
+  automatic re-fit. Only matters for standalone output -- an embedded
+  figure (e.g. inside a `Report`) already CSS-scales to its container.
+
 ## [0.32.7] - 2026-09-11
 
 ### Fixed

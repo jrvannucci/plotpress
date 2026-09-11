@@ -63,12 +63,12 @@ Interactive HTML and pop-up output carry a self-contained JavaScript toolbar
 (no external requests -- works under strict CSPs like Jupyter). Nothing is
 active until a tool is selected:
 
-The toolbar is a single menu bar. **Pan/Zoom** and **Home** sit standalone
-at the far left -- the whole-figure tool reached for most, and the reset
-that undoes it; everything else groups into four menus by what its buttons
-do: **Axes**, **Point Picking**, **Annotate**, and **File**.
+The toolbar is a single menu bar. **Pan/Zoom**, **Home**, and **Fit Width**
+sit standalone at the far left -- the whole-figure tool reached for most,
+and the two resets that undo it; everything else groups into four menus by
+what its buttons do: **Axes**, **Point Picking**, **Annotate**, and **File**.
 
-Pan/Zoom and Home:
+Pan/Zoom, Home, and Fit Width:
 
 * **Pan/Zoom** -- a plain wheel zooms the *whole figure*, centered
   on the cursor, regardless of which axes (if any) is under it -- the
@@ -89,6 +89,14 @@ Pan/Zoom and Home:
 
 * **Home** -- restores whole-figure magnification to its natural
   size; leaves every axes' own pan/zoom and every pin/annotation untouched.
+* **Fit Width** -- a one-shot snap to whatever magnification makes the
+  figure exactly as wide as the current browser window -- worth reaching
+  for on a large ``figsize`` opened as standalone HTML, which otherwise
+  opens at its natural (often much larger than any window) pixel size, with
+  only a portion visible until you zoom out or scroll. An embedded figure
+  (e.g. inside a :class:`~plotpress.Report`) already CSS-scales to its
+  container, so this only matters for standalone HTML/pop-up output.
+  Doesn't keep re-fitting on a later window resize, the same as Home.
 
 .. include:: _static/interactive/usage_pan_zoom_pick.rst.inc
 

@@ -1669,6 +1669,77 @@ def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tm
     assert out["scrollHeight"] == pytest.approx(out["svgHeight"], abs=1)
 
 
+def test_fit_width_scales_an_oversized_figure_to_the_viewport_width(page, tmp_path):
+    """Fit Width: a one-shot snap to whatever whole-figure magnification
+    makes the SVG's rendered width match the current viewport -- the
+    button added because Home (zoomScale = 1, i.e. the figure's own
+    figsize/dpi pixel size) leaves an oversized standalone figure showing
+    only a fraction of itself, with no single click to see the whole width
+    at once short of manually wheel-zooming out and hunting for the right
+    stopping point."""
+    import numpy as np
+    import plotpress
+
+    fig, axes = plotpress.subplots(4, 5, figsize=(16, 14))
+    for ax in np.asarray(axes).ravel():
+        ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
+    path = tmp_path / "fit_width_oversized.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    before = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    viewport_w = page.evaluate("() => window.innerWidth")
+    assert before > viewport_w, (
+        "test setup must actually produce a figure wider than the viewport, "
+        "or this proves nothing: svg width %r vs viewport %r" % (before, viewport_w))
+
+    _click_toolbar(page, "Fit Width")
+    after = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    assert after == pytest.approx(viewport_w, abs=2), (
+        "Fit Width must scale the figure to exactly the viewport's width: %r" % after)
+
+    # Home is unaffected by Fit Width having run -- still resets to the
+    # figure's own natural (figsize/dpi) pixel size, not the fitted one.
+    _click_toolbar(page, "Home")
+    home_width = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    assert home_width == pytest.approx(before, abs=1), (
+        "Home must still restore the figure's true natural size after Fit "
+        "Width has run, not the fitted width: %r vs natural %r" % (home_width, before))
+
+
+def test_fit_width_zooms_in_a_figure_narrower_than_the_viewport(page, tmp_path):
+    """The mirror case: a figure already narrower than the browser window
+    zooms IN to fill it -- Fit Width always matches the viewport width
+    exactly, in either direction, rather than only ever shrinking. (This is
+    also exactly why Fit Width is a separate button from Home, not a
+    replacement for it: folding this behavior into Home would zoom every
+    ordinarily-sized figure in by default.)"""
+    import plotpress
+
+    fig, ax = plotpress.subplots(figsize=(3.0, 2.5))
+    ax.plot([0.0, 1.0], [0.0, 1.0])
+    path = tmp_path / "fit_width_small.html"
+    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    page.goto(path.as_uri())
+
+    before = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    viewport_w = page.evaluate("() => window.innerWidth")
+    assert before < viewport_w, (
+        "test setup must actually produce a figure narrower than the "
+        "viewport, or this proves nothing: svg width %r vs viewport %r"
+        % (before, viewport_w))
+
+    _click_toolbar(page, "Fit Width")
+    after = page.evaluate(
+        "() => document.getElementById('plotpress-svg').getBoundingClientRect().width")
+    assert after == pytest.approx(viewport_w, abs=2)
+    assert after > before
+
+
 def _box_zoom(page, x0, y0, x1, y1):
     """Simulate a real "Axis Zoom"-mode rubber-band drag between two SVG
     user-space pixel points -- the mechanism that now drives per-axes,
@@ -3567,8 +3638,8 @@ def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_pa
     assert dl_info.value.suggested_filename.endswith(".html")
 
 
-def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_pair(page, tmp_path):
-    """Pan/Zoom and Home sit standalone at the bar's far
+def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_trio(page, tmp_path):
+    """Pan/Zoom, Home, and Fit Width sit standalone at the bar's far
     left, not behind a menu. Everything else is four menus, by scope:
     Axes (per-axes tools -- Axis Span/Zoom, then Reset All Axes), Point
     Picking (the tool, Hide Points, Clear Points, and Extract -- Extract
@@ -3587,7 +3658,7 @@ def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_pair(page,
     standalone = page.evaluate(
         "() => Array.from(document.querySelectorAll('.plotpress-standalone-group button'))"
         ".map(b => b.textContent)")
-    assert standalone == ["Pan/Zoom", "Home"]
+    assert standalone == ["Pan/Zoom", "Home", "Fit Width"]
 
     menus = page.evaluate(
         """() => Array.from(document.querySelectorAll('.plotpress-menu')).map(m => ({
