@@ -13,9 +13,11 @@ anywhere in the source.
 
 ### Changed
 
-- README: added a documentation links row near the top (User guide / API
-  reference / galleries), and set the GitHub repo's own homepage field to
-  the docs site so it shows in the "About" sidebar. No code change.
+- README: new banner image and slogan at the top -- *"Plot once. Share
+  anywhere. Explore everywhere."* -- replacing the old sentence tagline;
+  added a documentation links row (User guide / API reference /
+  galleries); and set the GitHub repo's own homepage field to the docs
+  site so it shows in the "About" sidebar. No code change.
 
 ## [0.31.3] - 2026-09-10
 

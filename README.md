@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_banner.png" alt="plotpress: Plot once. Share anywhere. Explore everywhere." width="100%">
+</p>
+
 # plotpress
 
-**Scientific plots you can explore, share, and reuse.**
+**Plot once. Share anywhere. Explore everywhere.**
 
 A **fast, dependency-light** plotting library for scientific computing, with
 a **matplotlib-shaped** API and **no compiled extension** — install it
