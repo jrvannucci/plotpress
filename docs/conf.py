@@ -82,25 +82,33 @@ html_context = {
 
 
 # -- sphinx-gallery: capture plotpress Figures as example images -------------
-# Examples that also get a *live* interactive figure on their page. Every
-# interactive figure inlines the whole JS toolbar and its own pick data (a few
-# hundred KiB each for a dense mesh), so this is opt-in rather than
-# gallery-wide: switching it on for the plot-type reference too would add
+# Examples that also get a *live* interactive figure embedded on their page.
+# Every interactive figure inlines the whole JS toolbar and its own pick data
+# (a few hundred KiB each for a dense mesh), so *embedding* is opt-in rather
+# than gallery-wide: switching it on for the plot-type reference too would add
 # megabytes of mostly-redundant payload for figures that have nothing to
 # explore. The real-application gallery is the one worth exploring, so it gets
 # live figures throughout; data_roundtrip's own point is the *data* load_data()
 # recovers, not a toolbar to play with, so its figures stay static images only.
+#
+# This governs *embedding* specifically -- a figure over
+# _LARGE_AXES_THRESHOLD gets the "open full page" link (see
+# _plotpress_scraper) regardless of which gallery it's in, embedding nothing
+# on the page itself, so it doesn't carry the payload cost this list exists
+# to avoid.
 _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 _INTERACTIVE_ROOTS = (
     os.path.join(_DOCS_DIR, "applications"),
 )
 
-# More axes than any hand-authored example currently uses (the largest
-# `docs/applications` figure has 3) -- a many-panel grid cramped into a
-# fixed-size iframe stops being a meaningful interactive experience: most
-# panels would be too small to usefully pick or zoom into. Past this, the
-# gallery page links to the full standalone HTML instead of embedding it, so
-# it opens as its own real page at full size.
+# More axes than any hand-authored example in _INTERACTIVE_ROOTS currently
+# uses (the largest `docs/applications` figure has 3) -- a many-panel grid
+# cramped into a fixed-size iframe stops being a meaningful interactive
+# experience: most panels would be too small to usefully pick or zoom into.
+# Past this, the gallery page links to the full standalone HTML instead of
+# embedding it, so it opens as its own real page at full size -- the scale
+# gallery's own 500-axes and 250-group demos, well outside
+# _INTERACTIVE_ROOTS, are exactly the figures this threshold exists for.
 _LARGE_AXES_THRESHOLD = 6
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
@@ -769,6 +777,17 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     embedded below the image, and examples under :data:`_VEGA_ROOTS` get
     links to standalone ``Figure.to_vega()`` and ``Figure.to_vega_lite()``
     render/JSON pages.
+
+    A figure over :data:`_LARGE_AXES_THRESHOLD` gets ``_interactive_embed``'s
+    "open the full page" link even *outside* :data:`_INTERACTIVE_ROOTS` --
+    that branch only ever writes the standalone file and links to it, never
+    embeds an iframe, so it doesn't carry the megabytes-of-mostly-redundant-
+    payload cost an *embedded* copy would for every ordinary-sized figure in
+    a gallery that opted out of interactivity. The scale gallery's own
+    500-axes and 250-group demos are exactly the figures this is for: too
+    large to explore as a static image, but not worth turning on full
+    interactivity for every modest example around them just to reach the
+    few that are.
     """
     from sphinx_gallery.scrapers import figure_rst
 
@@ -791,7 +810,11 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             else:
                 value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
-            if interactive:
+            # See _plotpress_scraper's own docstring: a figure this large
+            # gets the "open full page" link regardless of which gallery
+            # it's in, not just one that opted into interactivity outright.
+            n_axes = sum(1 for ax in value.axes if not ax._is_colorbar)
+            if interactive or n_axes > _LARGE_AXES_THRESHOLD:
                 embeds.append(_interactive_embed(value, path))
             if vega:
                 link = _vega_embed(value, path, block_vars["src_file"])
