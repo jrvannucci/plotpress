@@ -13,6 +13,37 @@ anywhere in the source.
 
 (nothing yet)
 
+## [0.32.1] - 2026-09-10
+
+### Changed
+
+- Docs polish: the sidebar logo is now sized to ~50% of the search-box
+  column, reading as a mark next to the project name rather than a
+  dominant banner. The docs homepage no longer repeats the banner's own
+  "Plot once. Share anywhere. Explore everywhere." as a redundant text
+  line right underneath it.
+
+### Fixed
+
+- **The sidebar nav mixed real pages with every gallery's own
+  subsections**, flattened in as siblings -- "Pairwise data",
+  "Statistical distributions", and a dozen more sat directly under
+  "Examples" alongside "Example gallery" itself, on every page, all the
+  time. This comes from sphinx-gallery's `nested_sections` mode, which
+  bakes a `:hidden: :includehidden:` toctree into each gallery's own
+  index page specifically so a theme sidebar can walk into it --
+  `:includehidden:` is a per-directive override baked into the doctree
+  at parse time, so neither `collapse_navigation` nor
+  `html_theme_options["includehidden"]` (both theme-level, applied
+  later) can undo it. Fixed with a CSS rule keyed on the one thing that
+  *is* structurally different: a subsection's sidebar link points at an
+  in-page anchor on its parent index (`...index.html#pairwise-data`),
+  where every genuine top-level page link has none. Also set
+  `collapse_navigation: True` so only the active page's own branch stays
+  expanded. A gallery's own subsections are still one click away, from
+  its index page's in-page thumbnails -- just not permanently occupying
+  sidebar space on every other page too.
+
 ## [0.32.0] - 2026-09-10
 
 ### Added

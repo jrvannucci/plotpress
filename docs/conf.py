@@ -59,7 +59,9 @@ html_title = f"plotpress {version}"
 html_logo = "_static/logo.png"
 html_favicon = "_static/favicon.png"
 html_theme_options = {
-    "collapse_navigation": False,
+    # True (the theme default): only the active page's own branch expands in
+    # the sidebar rather than every branch staying permanently open.
+    "collapse_navigation": True,
     "navigation_depth": 3,
     "prev_next_buttons_location": "bottom",
     "style_external_links": True,

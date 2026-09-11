@@ -1,3 +1,25 @@
+/* Every gallery index page (sphinx-gallery's "nested_sections" mode, the
+ * current default) carries its own `.. toctree:: :hidden: :includehidden:`
+ * pointing at each of its own subsections -- deliberately so the sidebar can
+ * walk into it, but with no way to tell "Example gallery" (a real page in
+ * docs/index.rst's own toctree) apart from "Pairwise data" (one of its
+ * subsections, injected as a sidebar-level sibling, not a child) once
+ * rendered: both become a plain `<li class="toctree-l1">`. The one thing
+ * that *is* structurally different is the link itself -- a subsection's
+ * points at an in-page anchor on its parent index (`...index.html#pairwise-
+ * data`), where every real top-level page link has none. `:includehidden:`
+ * is a per-directive override baked into the doctree at parse time (see
+ * sphinx-gallery's own generated index.rst), so neither `collapse_navigation`
+ * nor `html_theme_options["includehidden"]` -- both theme-level, applied
+ * later -- can undo it; hiding by that link shape is the reliable lever
+ * left. A gallery's own subsections stay one click away, from its index
+ * page's in-page thumbnails -- just not permanently occupying sidebar space
+ * on every other page too.
+ */
+.wy-menu-vertical li.toctree-l1:has(> a[href*="#"]) {
+    display: none;
+}
+
 /* Layout tweaks over sphinx_rtd_theme, so tables fit instead of scrolling.
  *
  * Two theme defaults combine badly for this project. The content column is
@@ -62,6 +84,16 @@
 }
 .plotpress-open-full:hover {
     background: #1a72e0;
+}
+
+/* The RTD theme sizes html_logo to fill the search-box column -- half that
+ * width reads as a mark next to the project name instead of a dominant
+ * banner at the top of the sidebar. !important: the theme's own selector
+ * (`.wy-side-nav-search > a img.logo`) outweighs this one's specificity
+ * otherwise, regardless of custom.css loading after theme.css. */
+.wy-side-nav-search img.logo {
+    width: 50% !important;
+    height: auto !important;
 }
 
 /* Below the theme's tablet breakpoint the sidebar collapses and the content

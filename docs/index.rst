@@ -5,8 +5,6 @@ plotpress
    :alt: plotpress: Plot once. Share anywhere. Explore everywhere.
    :align: center
 
-**Plot once. Share anywhere. Explore everywhere.**
-
 A **fast, dependency-light** plotting library for scientific computing, with a
 **matplotlib-shaped API** and **no compiled extension** -- so it installs
 everywhere Python does, from notebooks and scientific applications to CI
