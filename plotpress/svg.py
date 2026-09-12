@@ -177,24 +177,46 @@ def _group_axes_extra(ax, st):
     Wrapping just ax._rect (the bare plot box) would otherwise draw the
     group's edge straight through the outermost row's/column's own tick
     numbers and x/y axis labels, not just its title.
+
+    A twin (``twinx()``/``twiny()``) is a special case: unlike a secondary
+    axis (``secondary_xaxis()``/``secondary_yaxis()``, which sets its own
+    ``_xtick_side``/``_ytick_side`` explicitly, so the generic branch below
+    already handles it correctly), a twin never sets either -- svg.py's own
+    renderer draws a twinx's y-axis on the right / a twiny's x-axis on top
+    unconditionally (see ``_render_twin_ticks``/the ``is_twin`` branch in
+    ``_render_axes``), regardless of ``_ytick_side``/``_xtick_side``'s
+    inherited (and here irrelevant) default. Mirrors tight_layout()'s own
+    identical special-case for the exact same reason.
     """
     top = _group_top_clearance(ax, st)
     bottom = left = right = 0.0
-    if not ax._axis_off:
-        xdec = st.tick_size + st.tick_label_size + 4
-        if ax._shown_xlabel():
-            xdec += st.label_size + 6
-        if ax._xtick_side == "top":
-            top += xdec
-        else:
-            bottom += xdec
-        ydec = st.tick_size + _max_ytick_width(ax, st) + 4
-        if ax._shown_ylabel():
-            ydec += st.label_size + 6
-        if ax._ytick_side == "right":
-            right += ydec
-        else:
-            left += ydec
+    if ax._axis_off:
+        return top, bottom, left, right
+    if ax._twin_of is not None:
+        if ax._twin_shared == "x":                   # twinx: y-axis on the right
+            ydec = st.tick_size + _max_ytick_width(ax, st) + 4
+            if ax._shown_ylabel():
+                ydec += st.label_size + 6
+            return top, bottom, left, ydec
+        else:                                          # twiny: x-axis on top
+            xdec = st.tick_size + st.tick_label_size + 4
+            if ax._shown_xlabel():
+                xdec += st.label_size + 6
+            return top + xdec, bottom, left, right
+    xdec = st.tick_size + st.tick_label_size + 4
+    if ax._shown_xlabel():
+        xdec += st.label_size + 6
+    if ax._xtick_side == "top":
+        top += xdec
+    else:
+        bottom += xdec
+    ydec = st.tick_size + _max_ytick_width(ax, st) + 4
+    if ax._shown_ylabel():
+        ydec += st.label_size + 6
+    if ax._ytick_side == "right":
+        right += ydec
+    else:
+        left += ydec
     return top, bottom, left, right
 
 
@@ -227,6 +249,33 @@ def _group_colorbars(g_axes, fig):
             and all(id(p) in axset for p in cax._cbar_parents)]
 
 
+def _group_twins_and_secondaries(g_axes, fig):
+    """Twin (``twinx()``/``twiny()``) and secondary
+    (``secondary_xaxis()``/``secondary_yaxis()``) axes belonging to this
+    group's own member axes.
+
+    Regression: a caller naturally thinks of a twinned/secondary panel as
+    *one* panel with a second axis, not two separate axes to list
+    explicitly in ``Figure.group()``'s own ``axes=`` -- the same reason
+    ``_group_colorbars`` already auto-includes a member's own colorbar
+    rather than requiring it listed too. Left out, the overlay's own
+    decoration (drawn on the *opposite* side from its parent, the entire
+    reason it exists) was measured nowhere: it isn't ``ax._rect`` (twins/
+    secondaries share their parent's exact rect, adding no width of their
+    own there) and it wasn't counted as any member's own extra either,
+    since ``_group_axes_extra`` is only ever called per*-member*, and the
+    parent axes' own call knows nothing about a *different* Axes object
+    overlaid on it. The box could then end with a real gap on the side the
+    overlay actually draws on -- most visible, and worst, on a group's own
+    *outer*-touching edge, where (post the pad fix) that's the only thing
+    standing between the overlay's label and the canvas edge.
+    """
+    axset = set(id(a) for a in g_axes)
+    return [ax for ax in fig.axes
+            if (ax._twin_of is not None and id(ax._twin_of) in axset)
+            or (ax._secondary_of is not None and id(ax._secondary_of) in axset)]
+
+
 def _group_bbox(fig, g, W, H, scale=1.0):
     """This group's own bounding box in pixels -- ``(x0, y0, x1, y1)`` --
     the tight union of its member axes' own allocated rects (each expanded
@@ -252,7 +301,8 @@ def _group_bbox(fig, g, W, H, scale=1.0):
     vanishing.
     """
     st = fig.style
-    members = g["axes"] + _group_colorbars(g["axes"], fig)
+    members = (g["axes"] + _group_colorbars(g["axes"], fig)
+              + _group_twins_and_secondaries(g["axes"], fig))
     if not members:
         fx0, fy0, fx1, fy1 = g["frozen_rect"]
         return fx0 * W, fy0 * H, fx1 * W, fy1 * H

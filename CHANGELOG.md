@@ -9,6 +9,25 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.3] - 2026-09-11
+
+### Fixed
+
+- **A `fig.group()` box didn't account for a wrapped axes' own `twinx()`/
+  `twiny()`/`secondary_xaxis()`/`secondary_yaxis()` overlay.** A twinned
+  or secondary panel reads as "one panel, a second axis" to a caller, not
+  two separate `Axes` objects to list explicitly in `group()`'s own
+  `axes=` -- the same reason a member's own colorbar was already
+  auto-included without being listed. Left out, the overlay's own
+  decoration (drawn on the *opposite* side from its parent -- the entire
+  reason it exists) was measured nowhere: not in `ax._rect` (an overlay
+  shares its parent's exact rect, adding no width there) and not in any
+  *listed* member's own extent either. The overlay's label could then
+  render past the box's own edge outright -- worst on a group's own
+  outer-touching side, where nothing else stood between it and the
+  canvas boundary. Twin and secondary axes belonging to a group's own
+  members are now auto-included the same way colorbars already were.
+
 ## [0.34.2] - 2026-09-11
 
 ### Fixed

@@ -3924,6 +3924,66 @@ def test_group_box_wraps_a_colorbar_belonging_entirely_to_its_axes():
         "box out to wrap it")
 
 
+def test_group_box_wraps_a_twinxs_own_right_side_decoration():
+    """Regression: a twinx() shares its parent's exact rect (adding no
+    width of its own there) and draws its y-axis unconditionally on the
+    right (see svg._group_axes_extra's own comment on why this needs
+    special-casing, unlike a secondary axis) -- but the group's box was
+    built from g["axes"] alone, with no way to know a *different* Axes
+    object was overlaid on one of its members. The twin's own ylabel could
+    then render past the box's right edge entirely -- worst, and most
+    visible, when that's also the figure's own outer edge, where nothing
+    else stood between it and the canvas boundary."""
+    fig, axes = plotpress.subplots(1, 2, figsize=(9, 4))
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [0, 1])
+    twin = axes[1].twinx()
+    twin.plot([0, 1], [1, 0])
+    twin.set_ylabel("a fairly long twin label")
+    fig.group("Group", [axes[0], axes[1]], pad=(8.0, 20.0, 8.0, 8.0))
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    box = [b for b in root.findall(f".//{NS}rect") if b.get("fill") == "none"][0]
+    box_x1 = float(box.get("x")) + float(box.get("width"))
+    label = [t for t in root.findall(f".//{NS}text")
+            if t.text == "a fairly long twin label"][0]
+    # text-anchor="middle", rotated -90 -- its rendered ink runs from its
+    # own x out to roughly x + font-size, not just up to x itself.
+    label_reach = float(label.get("x")) + float(label.get("font-size"))
+    assert label_reach <= box_x1, (
+        "the twin's own ylabel must be fully inside the group's box, not "
+        "past its right edge: label reaches %r, box ends at %r"
+        % (label_reach, box_x1))
+
+
+def test_group_box_wraps_a_secondary_yaxiss_own_decoration():
+    """The same regression as test_group_box_wraps_a_twinxs_own_right_side_
+    decoration, for secondary_yaxis() instead -- a different code path
+    (secondary axes set their own _ytick_side explicitly, so
+    _group_axes_extra's generic branch already measured them correctly
+    once actually considered) but the identical root cause: never
+    auto-included as a group member in the first place, so its ylabel
+    could render past the box's edge."""
+    fig, axes = plotpress.subplots(1, 2, figsize=(9, 4))
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [0, 1])
+    axes[1].secondary_yaxis("right", label="a fairly long secondary label")
+    fig.group("Group", [axes[0], axes[1]], pad=(8.0, 20.0, 8.0, 8.0))
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    box = [b for b in root.findall(f".//{NS}rect") if b.get("fill") == "none"][0]
+    box_x1 = float(box.get("x")) + float(box.get("width"))
+    label = [t for t in root.findall(f".//{NS}text")
+            if t.text == "a fairly long secondary label"][0]
+    label_reach = float(label.get("x")) + float(label.get("font-size"))
+    assert label_reach <= box_x1, (
+        "the secondary axis' own ylabel must be fully inside the group's "
+        "box, not past its right edge: label reaches %r, box ends at %r"
+        % (label_reach, box_x1))
+
+
 def test_colorbar_title_renders_in_both_backends():
     """Regression: a colorbar axes returned early out of _render_axes/
     _raster_axes before ever reaching the title-drawing code, so
