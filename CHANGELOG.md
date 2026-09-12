@@ -9,6 +9,29 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.37.1] - 2026-09-12
+
+### Fixed
+
+- **`Figure.tight_layout(collapse="grid")` silently corrupted an unrelated
+  grid's `SubplotSpec` on a figure carrying more than one independently-
+  shaped grid** (`Figure.add_subplot()`/`subplots()` called more than once
+  on one figure, each its own grid) -- found auditing the feature that
+  just shipped it. Collapsing took `nrows`/`ncols` from whichever spec
+  happened to be first in `fig.axes` and applied the resulting compacted
+  shape to *every* grid axes on the figure, overwriting a completely
+  untouched grid's own shape with the wrong values. Specs are now grouped
+  by their own `(nrows, ncols)` first, and every step of collapsing stays
+  within one group.
+- **`Figure.to_vega()`'s group boxes didn't account for a group's own
+  `supxlabel`/`supylabel` inset**, unlike the SVG/PNG backends -- a
+  pre-existing gap surfaced by the same audit. `vega.py`'s
+  `_groups_to_vega_marks()` reimplemented `svg.py`'s `_group_bbox()`
+  instead of calling it directly; the reimplementation had already missed
+  this inset even before the fixes in 0.37.0. It now calls `_group_bbox()`
+  directly, so every future fix to that one shared implementation applies
+  to Vega export too instead of needing a second, parallel patch.
+
 ## [0.37.0] - 2026-09-12
 
 ### Added

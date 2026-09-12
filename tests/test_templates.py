@@ -228,8 +228,13 @@ def test_save_template_and_load_template_round_trip_through_a_json_file(tmp_path
     p = tmp_path / "template.json"
     fig.save_template(str(p))
 
-    text = p.read_text(encoding="utf-8")
-    assert '"series"' not in text and '"meshes"' not in text   # no plotted data at all
+    saved = json.loads(p.read_text(encoding="utf-8"))
+    # No plotted data anywhere in the file -- only structure/style keys,
+    # never a per-axes "series"/"meshes"/"pies" the way load_data()'s own
+    # payload carries.
+    assert "series" not in saved and "meshes" not in saved
+    for spec in saved["axes"].values():
+        assert "series" not in spec and "meshes" not in spec and "pies" not in spec
     loaded = plotpress.load_template(str(p))
     fig2, axes2 = plotpress.figure_from_template(loaded)
     assert len(fig2.axes) == 2

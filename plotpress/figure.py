@@ -9,7 +9,6 @@ mutable state.
 from __future__ import annotations
 
 import base64
-import dataclasses
 import html
 import json
 import math
@@ -2671,8 +2670,8 @@ def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
 
 
 def _collapse_empty_grid_rows_and_cols(fig):
-    """Shrink the shared grid to skip any row/column that is now entirely
-    empty -- every axes that used to occupy it has been
+    """Shrink each of the figure's grids to skip any row/column that is now
+    entirely empty -- every axes that used to occupy it has been
     :meth:`~plotpress.axes.Axes.remove`-d -- for
     :meth:`Figure.tight_layout`'s ``collapse="grid"``.
 
@@ -2680,7 +2679,7 @@ def _collapse_empty_grid_rows_and_cols(fig):
     (``nrows``/``ncols``/``row0``/``row1``/``col0``/``col1``); nothing else
     in the figure is indexed by row/column (``group_spacing()``'s
     ``wspace``/``hspace`` are single figure-wide values, not per-boundary),
-    so shrinking the grid is just remapping those six fields. Every unique
+    so shrinking a grid is just remapping those six fields. Every unique
     spec is mutated **in place** rather than replaced -- ``twinx()``/
     ``twiny()``/``secondary_xaxis()``/``secondary_yaxis()`` all set their
     own ``_subplotspec`` to their parent's *exact same object* (not a copy)
@@ -2688,6 +2687,21 @@ def _collapse_empty_grid_rows_and_cols(fig):
     assignments), so mutating that shared object in place keeps every twin/
     secondary correct for free -- replacing it with a new object per axes
     would silently leave any twin/secondary still pointing at the old one.
+
+    Specs are grouped by their own ``(nrows, ncols)`` first, and every step
+    below (occupancy, remapping, the new shape) runs *within* one group at
+    a time. ``Figure.add_subplot()``/``subplots()`` can be called more than
+    once on one figure, each call producing its own independently-shaped
+    grid -- without this grouping, a completely unrelated standalone axes
+    (say, its own ``1x1`` "grid") got its ``nrows``/``ncols`` silently
+    overwritten to whatever some *other*, differently-shaped grid on the
+    same figure collapsed down to, just because both grids' specs were
+    mutated by the same final ``spec.nrows, spec.ncols = new_nrows,
+    new_ncols`` line. Two independent grids that happen to share the exact
+    same shape are still pooled together here (nothing marks which cells
+    belong to which call) -- the same "one shared grid" assumption
+    :meth:`tight_layout`'s own placement math already makes elsewhere, so
+    this doesn't regress anything that worked correctly before it.
     """
     specs_axes = [ax for ax in fig.axes
                  if ax._subplotspec is not None and not ax._is_colorbar]
@@ -2696,23 +2710,27 @@ def _collapse_empty_grid_rows_and_cols(fig):
     # Dedupe by identity: a twin/secondary shares its parent's exact
     # SubplotSpec object, so mutating it once (below) is enough for both.
     unique_specs = list({id(ax._subplotspec): ax._subplotspec for ax in specs_axes}.values())
-    nrows, ncols = unique_specs[0].nrows, unique_specs[0].ncols
 
-    occupied_rows, occupied_cols = set(), set()
+    by_shape = {}
     for spec in unique_specs:
-        occupied_rows.update(range(spec.row0, spec.row1 + 1))
-        occupied_cols.update(range(spec.col0, spec.col1 + 1))
+        by_shape.setdefault((spec.nrows, spec.ncols), []).append(spec)
 
-    row_map = {old: new for new, old in enumerate(r for r in range(nrows) if r in occupied_rows)}
-    col_map = {old: new for new, old in enumerate(c for c in range(ncols) if c in occupied_cols)}
-    if len(row_map) == nrows and len(col_map) == ncols:
-        return   # every row/column is still in use -- nothing to collapse
+    for (nrows, ncols), specs in by_shape.items():
+        occupied_rows, occupied_cols = set(), set()
+        for spec in specs:
+            occupied_rows.update(range(spec.row0, spec.row1 + 1))
+            occupied_cols.update(range(spec.col0, spec.col1 + 1))
 
-    new_nrows, new_ncols = len(row_map), len(col_map)
-    for spec in unique_specs:
-        spec.row0, spec.row1 = row_map[spec.row0], row_map[spec.row1]
-        spec.col0, spec.col1 = col_map[spec.col0], col_map[spec.col1]
-        spec.nrows, spec.ncols = new_nrows, new_ncols
+        row_map = {old: new for new, old in enumerate(r for r in range(nrows) if r in occupied_rows)}
+        col_map = {old: new for new, old in enumerate(c for c in range(ncols) if c in occupied_cols)}
+        if len(row_map) == nrows and len(col_map) == ncols:
+            continue   # every row/column in this grid is still in use
+
+        new_nrows, new_ncols = len(row_map), len(col_map)
+        for spec in specs:
+            spec.row0, spec.row1 = row_map[spec.row0], row_map[spec.row1]
+            spec.col0, spec.col1 = col_map[spec.col0], col_map[spec.col1]
+            spec.nrows, spec.ncols = new_nrows, new_ncols
 
 
 def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):

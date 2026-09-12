@@ -79,9 +79,8 @@ from .primitives import PolygonBatch as PPolyBatch
 from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
 from .svg import (
-    _axes_fraction_xy, _bbox_pad, _DASH, _effective_rect, _group_axes_extra,
-    _group_colorbar_extra, _group_colorbars, _group_twins_and_secondaries,
-    _pixel_rect, leader_anchor, text_box,
+    _axes_fraction_xy, _bbox_pad, _DASH, _effective_rect, _pixel_rect,
+    leader_anchor, text_box,
 )
 from .transform import LinearTransform
 
@@ -1302,44 +1301,22 @@ def _figtexts_to_vega_marks(fig, W, H):
 
 def _groups_to_vega_marks(fig, W, H):
     """``Figure.group()``'s labeled boxes as top-level Vega ``rect``+``text``
-    marks -- a direct port of ``svg.py``'s ``_render_groups``/``_group_bbox``
-    (same box geometry, same clearance/pad math, same title placement, same
-    twin/secondary/colorbar auto-inclusion, same frozen-box-when-empty and
-    hidden-when-``visible=False`` handling) onto Vega's mark model instead
-    of raw SVG elements.
+    marks -- reuses ``svg.py``'s own :func:`~plotpress.svg._group_bbox` for
+    the box geometry itself (same clearance/pad math, same twin/secondary/
+    colorbar auto-inclusion, same frozen-box-when-empty handling, same
+    supxlabel/supylabel inset -- one shared implementation instead of a
+    second copy that could -- and, before this, did -- silently drift from
+    it), then builds Vega's own mark model (title placement, dash/stroke
+    encoding) on top of that box.
     """
+    from .svg import _group_bbox
+
     st = fig.style
     marks = []
     for gi, g in enumerate(fig._groups):
         if not g["visible"]:
             continue
-        # Mirrors svg._group_bbox(): a twin/secondary overlay is auto-
-        # included the same way a member's own colorbar already is (neither
-        # is a *listed* g["axes"] member), and a colorbar attached to one of
-        # those overlays is only found by checking against the *expanded*
-        # set, not the literal g["axes"] list alone.
-        overlays = _group_twins_and_secondaries(g["axes"], fig)
-        members = g["axes"] + overlays + _group_colorbars(g["axes"] + overlays, fig)
-        if not members:
-            # Every axes this group ever had has been Axes.remove()-d --
-            # nothing left to measure a box from. Use the same frozen,
-            # figure-fraction rect svg.py's own _group_bbox freezes at the
-            # moment the group last emptied, converted to this call's pixel
-            # space, rather than crashing on an empty min()/max() the way
-            # this function did before a group could ever end up with zero
-            # real members (Axes.remove() only grew this frozen-in-place
-            # behavior after this Vega path was first written).
-            fx0, fy0, fx1, fy1 = g["frozen_rect"]
-            x0, y0, x1, y1 = fx0 * W, fy0 * H, fx1 * W, fy1 * H
-        else:
-            rects = [_pixel_rect(ax, W, H) for ax in members]
-            extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
-                     else _group_axes_extra(ax, st) for ax in members]
-            pad_l, pad_r, pad_t, pad_b = g["pad"]
-            x0 = min(r[0] - e[2] for r, e in zip(rects, extras)) - pad_l
-            y0 = min(r[1] - e[0] for r, e in zip(rects, extras)) - pad_t
-            x1 = max(r[0] + r[2] + e[3] for r, e in zip(rects, extras)) + pad_r
-            y1 = max(r[1] + r[3] + e[1] for r, e in zip(rects, extras)) + pad_b
+        x0, y0, x1, y1 = _group_bbox(fig, g, W, H)
 
         if g["linestyle"] == "none":
             stroke_enter = {"stroke": {"value": None}}

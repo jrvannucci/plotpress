@@ -718,6 +718,38 @@ def test_collapse_grid_keeps_a_twin_aligned_with_its_surviving_parent():
     assert axes[2]._subplotspec.row0 == 1
 
 
+def test_collapse_grid_never_corrupts_an_unrelated_independently_shaped_grid():
+    """Regression, found auditing this feature: Figure.add_subplot()/
+    subplots() can be called more than once on one figure, each call
+    producing its own independently-shaped grid. Collapsing one grid's
+    empty row used to take nrows/ncols from *whichever* spec happened to
+    be first in fig.axes and apply the resulting new shape to every
+    grid axes on the figure indiscriminately -- silently overwriting a
+    completely unrelated, untouched grid's own SubplotSpec.nrows/ncols
+    with the wrong values. Specs must be grouped by their own (nrows,
+    ncols) first, and collapsing must stay within one group at a time."""
+    fig = plotpress.Figure()
+    col = [fig.add_subplot(3, 1, i) for i in (1, 2, 3)]
+    for ax in col:
+        ax.plot([0, 1], [0, 1])
+    col[1].remove()   # empty the middle row of the 3x1 grid
+
+    solo = fig.add_subplot(1, 1, 1)   # a second, unrelated 1x1 "grid"
+    solo.plot([0, 1], [1, 0])
+
+    fig.tight_layout(collapse="grid")
+
+    # The unrelated 1x1 axes must be completely untouched.
+    assert (solo._subplotspec.nrows, solo._subplotspec.ncols,
+           solo._subplotspec.row0, solo._subplotspec.col0) == (1, 1, 0, 0)
+    # The 3x1 column must still have collapsed correctly on its own.
+    remaining = [ax for ax in col if ax._subplotspec is not None and ax in fig.axes]
+    assert len(remaining) == 2
+    assert all(ax._subplotspec.nrows == 2 for ax in remaining)
+    assert sorted(ax._subplotspec.row0 for ax in remaining) == [0, 1]
+    fig.to_svg()   # must not raise
+
+
 def test_collapse_grid_discards_a_group_emptied_by_direct_axes_removal():
     """Removing a group's only axes directly (not via remove_group())
     freezes its box in place rather than deleting the group (documented,
