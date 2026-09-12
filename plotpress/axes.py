@@ -2385,6 +2385,11 @@ class Axes:
         but not prevented case) comes out of both, freezing either that
         empties. Colorbar/legend space this axes' neighbors ceded to it is
         not automatically reclaimed; call ``tight_layout()`` again for that.
+        Neither this frozen box nor the whitespace this axes' own removed
+        grid cell leaves behind shrinks on its own -- call
+        ``fig.tight_layout(collapse="grid")`` to reclaim both: it drops any
+        group left with zero members entirely and shrinks any row/column
+        of the grid that's now completely empty.
 
         Also removes (recursively, via this same method, so each gets its
         own full cleanup) any ``twinx()``/``twiny()``/``secondary_xaxis()``/

@@ -268,6 +268,55 @@ def test_group_layout_figure_exports_to_vega_and_vega_lite_as_one_grid():
     assert caveats == []
 
 
+def test_to_vega_group_marks_handle_empty_hidden_and_twin_cases():
+    """_groups_to_vega_marks() is a "direct port" of svg.py's own group-box
+    rendering (its own docstring), but never got three fixes svg.py already
+    has: skipping a visible=False group, falling back to the frozen rect
+    for a group with zero real members left (a bare min()/max() over an
+    empty list previously crashed outright -- found by exercising this via
+    the new tight_layout(collapse=...) gallery example), and auto-including
+    a member's own twin/secondary overlay (and any colorbar attached to
+    one) the same way svg._group_bbox does."""
+    # Empty group (frozen_rect) must not crash and must use the frozen box.
+    fig, axes = plotpress.subplots(1, 2)
+    for ax in axes:
+        ax.plot([0, 1], [0, 1])
+    fig.group("G", [axes[0]])
+    axes[0].remove()
+    fig.tight_layout()   # collapse=None -- group freezes, doesn't disappear
+    spec = fig.to_vega()   # must not raise
+    [rect] = [m for m in spec["marks"] if m["name"] == "group0"]
+    fx0, fy0, fx1, fy1 = fig.get_groups()[0]._raw["frozen_rect"]
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    assert rect["encode"]["enter"]["x"]["value"] == round(fx0 * W, 2)
+    assert rect["encode"]["enter"]["y"]["value"] == round(fy0 * H, 2)
+
+    # visible=False must be skipped entirely, same as the SVG backend.
+    fig2, ax2 = plotpress.subplots()
+    ax2.plot([0, 1], [0, 1])
+    fig2.group("Hidden", [ax2], visible=False)
+    spec2 = fig2.to_vega()
+    assert not any(m["name"].startswith("group") for m in spec2["marks"])
+
+    # A twin's own decoration widens the box, same as svg.py's own fix.
+    fig3, ax3 = plotpress.subplots()
+    ax3.plot([0, 1], [0, 1])
+    twin = ax3.twinx()
+    twin.plot([0, 1], [1, 0])
+    twin.set_ylabel("twin")
+    fig3.group("G3", [ax3])
+    fig3.tight_layout()
+    fig4, ax4 = plotpress.subplots()
+    ax4.plot([0, 1], [0, 1])
+    fig4.group("G4", [ax4])
+    fig4.tight_layout()
+    width_with_twin = [m for m in fig3.to_vega()["marks"]
+                       if m["name"] == "group0"][0]["encode"]["enter"]["width"]["value"]
+    width_without_twin = [m for m in fig4.to_vega()["marks"]
+                          if m["name"] == "group0"][0]["encode"]["enter"]["width"]["value"]
+    assert width_with_twin > width_without_twin
+
+
 def test_incompatible_shapes_warn_and_still_leave_gaps_at_modest_scale():
     """Regression: mixing shapes whose LCM pushes the shared grid past
     tight_layout()'s cell-size floor (~40 rows/cols) used to silently zero
@@ -599,3 +648,118 @@ def test_removing_one_axes_from_a_two_group_shared_axes_can_empty_the_other():
     axes[0, 1].remove()
     assert [g.title for g in fig.get_groups()] == ["A", "B"]
     assert fig.get_group(title="B").flat_axes() == [axes[1, 1]]
+
+
+# ---------------------------------------------------------------------------
+# tight_layout(collapse="grid"/"tight"): reclaiming whitespace from removed
+# axes/groups.
+# ---------------------------------------------------------------------------
+
+def _specs(axes):
+    return [(s.nrows, s.ncols, s.row0, s.row1, s.col0, s.col1)
+           for s in (ax._subplotspec for ax in axes)]
+
+
+def test_collapse_grid_is_a_noop_for_a_single_gap_inside_a_full_row():
+    """A single removed cell inside an otherwise-populated row/column is
+    not a fully-empty row/column -- collapse="grid" must never move a
+    surviving axes relative to its siblings for this case."""
+    fig, axes = plotpress.subplots(2, 2)
+    axes[0, 0].remove()
+    before = _specs([axes[0, 1], axes[1, 0], axes[1, 1]])
+    fig.tight_layout(collapse="grid")
+    after = _specs([axes[0, 1], axes[1, 0], axes[1, 1]])
+    assert before == after == [(2, 2, 0, 0, 1, 1), (2, 2, 1, 1, 0, 0), (2, 2, 1, 1, 1, 1)]
+
+
+def test_collapse_grid_shrinks_a_fully_emptied_row():
+    fig, axes = plotpress.subplots(3, 3)
+    for ax in list(axes[1, :]):
+        ax.remove()
+    fig.tight_layout(collapse="grid")
+    remaining = [ax for ax in fig.axes if ax._subplotspec is not None]
+    assert len(remaining) == 6
+    specs = sorted(_specs(remaining))
+    assert specs == [
+        (2, 3, 0, 0, 0, 0), (2, 3, 0, 0, 1, 1), (2, 3, 0, 0, 2, 2),
+        (2, 3, 1, 1, 0, 0), (2, 3, 1, 1, 1, 1), (2, 3, 1, 1, 2, 2),
+    ]
+    # The two surviving rows keep their original relative order (the row
+    # that was originally last is still last after the middle one is gone).
+    assert axes[0, 0]._subplotspec.row0 == 0
+    assert axes[2, 0]._subplotspec.row0 == 1
+
+
+def test_collapse_grid_shrinks_a_fully_emptied_column():
+    fig, axes = plotpress.subplots(2, 3)
+    for ax in list(axes[:, 1]):
+        ax.remove()
+    fig.tight_layout(collapse="grid")
+    remaining = [ax for ax in fig.axes if ax._subplotspec is not None]
+    specs = sorted(_specs(remaining))
+    assert specs == [
+        (2, 2, 0, 0, 0, 0), (2, 2, 0, 0, 1, 1),
+        (2, 2, 1, 1, 0, 0), (2, 2, 1, 1, 1, 1),
+    ]
+
+
+def test_collapse_grid_keeps_a_twin_aligned_with_its_surviving_parent():
+    """A twin/secondary shares its parent's exact SubplotSpec object (see
+    twinx()'s own assignment) -- collapse="grid" mutates that object in
+    place rather than replacing it, so the twin must stay correctly
+    aligned with its parent even when a *different* row's removal is what
+    triggers the collapse."""
+    fig, axes = plotpress.subplots(3, 1)
+    twin = axes[2].twinx()
+    axes[1].remove()
+    fig.tight_layout(collapse="grid")
+    assert twin._subplotspec is axes[2]._subplotspec
+    assert axes[2]._subplotspec.nrows == 2
+    assert axes[2]._subplotspec.row0 == 1
+
+
+def test_collapse_grid_discards_a_group_emptied_by_direct_axes_removal():
+    """Removing a group's only axes directly (not via remove_group())
+    freezes its box in place rather than deleting the group (documented,
+    deliberate -- see Axes.remove()'s own docstring). collapse="grid"
+    is what actually reclaims that space by dropping the now-empty group
+    entirely."""
+    fig, axes = plotpress.subplots(1, 2)
+    fig.group("G", [axes[0]])
+    axes[0].remove()
+    assert [g.title for g in fig.get_groups()] == ["G"]   # frozen, not gone
+
+    fig.tight_layout(collapse="grid")
+    assert fig.get_groups() == []
+
+
+def test_collapse_none_default_leaves_frozen_groups_and_gaps_alone():
+    """The default collapse=None must reproduce exactly today's behavior --
+    a regression guard so grid/group collapsing stays strictly opt-in."""
+    fig, axes = plotpress.subplots(2, 2)
+    fig.group("G", [axes[0, 0]])
+    axes[0, 0].remove()
+    fig.tight_layout()   # collapse=None
+    assert [g.title for g in fig.get_groups()] == ["G"]
+    remaining = [ax for ax in fig.axes if ax._subplotspec is not None]
+    assert all(ax._subplotspec.nrows == 2 and ax._subplotspec.ncols == 2
+              for ax in remaining)
+
+
+def test_collapse_invalid_value_raises_value_error():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="collapse must be None, 'grid', or 'tight'"):
+        fig.tight_layout(collapse="bogus")
+
+
+def test_collapse_tight_raises_not_implemented_for_now():
+    fig, ax = plotpress.subplots()
+    with pytest.raises(NotImplementedError, match="collapse='grid'"):
+        fig.tight_layout(collapse="tight")
+
+
+def test_tight_layout_pad_still_works_alongside_collapse():
+    fig, axes = plotpress.subplots(2, 2)
+    axes[0, 0].remove()
+    fig.tight_layout(pad=0.05, collapse="grid")
+    fig.to_svg()   # must not raise

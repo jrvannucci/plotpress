@@ -872,8 +872,10 @@ class Figure:
         :meth:`get_group`), or find it by ``title``/``id`` the same way
         :meth:`get_group` does -- exactly one of the three. Leaves a blank
         rectangle where the group was, the same as :meth:`Axes.remove`
-        leaves a gap rather than reflowing the rest of the grid to fill it.
-        See :doc:`/auto_figure_layout/grouping/plot_15_dashboard_mixed_shapes_and_masks`
+        leaves a gap rather than reflowing the rest of the grid to fill it
+        -- call ``fig.tight_layout(collapse="grid")`` afterward to shrink
+        away any row/column that removal left completely empty. See
+        :doc:`/auto_figure_layout/grouping/plot_15_dashboard_mixed_shapes_and_masks`
         for a worked example.
         """
         given = [group is not None, title is not None, id is not None]
@@ -1254,7 +1256,7 @@ class Figure:
 
         return _squeeze_grid(grid, nrows, ncols) if squeeze else grid
 
-    def tight_layout(self, pad=0.02):
+    def tight_layout(self, pad=0.02, collapse=None):
         """Auto-fit subplot margins so ticks/labels/titles never overflow.
 
         Measures each axes' decorations with the bundled font metrics and
@@ -1263,7 +1265,54 @@ class Figure:
         Also safe to call *before* the titles and axis labels exist: the fit is
         re-applied at render time if any of them change (see
         :meth:`_settle_layout`).
+
+        ``collapse`` reclaims whitespace :meth:`~plotpress.axes.Axes.remove`/
+        :meth:`remove_group` leave behind, since neither reflows the grid on
+        its own -- a removed axes' row/column keeps its ``nrows``/``ncols``
+        exactly as it was (nothing else in the figure knows it's gone), and
+        an emptied group's box freezes in its last position rather than
+        disappearing (see :meth:`~plotpress.axes.Axes.remove`'s own
+        docstring). Three values:
+
+        - ``None`` (default): unchanged -- nothing collapses.
+        - ``"grid"``: shrink any row/column of the grid that is now
+          *entirely* empty (every axes that used to occupy it has been
+          removed). A surviving axes never moves relative to its siblings --
+          only whole empty rows/columns disappear, never a single gap inside
+          an otherwise-populated one. Also drops any :meth:`group` whose
+          members have all been removed, reclaiming the space its frozen
+          box was holding.
+        - ``"tight"``: pack groups and axes as close together as possible
+          without breaking groupings -- not yet implemented (raises
+          ``NotImplementedError``). Unlike ``"grid"``, this needs a real
+          packing algorithm: a :meth:`group` can hold arbitrary,
+          non-contiguous axes with no rectangular shape to pack, and a
+          :class:`GroupLayout` group's cells share one grid with every
+          other group, so packing one tighter can shift another's rows/
+          columns too. Use ``"grid"`` for the well-defined subset of this
+          in the meantime.
         """
+        if collapse == "tight":
+            raise NotImplementedError(
+                "tight_layout(collapse='tight') isn't built yet -- packing "
+                "groups and axes as tightly as possible without breaking "
+                "groupings needs its own dedicated algorithm (a group() can "
+                "hold arbitrary, non-contiguous axes with no rectangular "
+                "shape to pack, and a GroupLayout group's cells share one "
+                "grid with every other group, so packing one tighter can "
+                "shift another's rows/columns too). Use collapse='grid' for "
+                "the well-defined subset of this in the meantime: shrinking "
+                "any row/column that's now entirely empty."
+            )
+        if collapse == "grid":
+            _collapse_empty_grid_rows_and_cols(self)
+            self._groups = [g for g in self._groups if g["axes"]]
+        elif collapse is not None:
+            raise ValueError(
+                "tight_layout(): collapse must be None, 'grid', or 'tight', "
+                f"got {collapse!r}"
+            )
+
         self._tight_pad = float(pad)
         self._layout_dirty = False
 
@@ -2619,6 +2668,51 @@ def _sweep_stale_tempfiles(directory, max_age=_TEMP_MAX_AGE):
                 os.unlink(path)
         except OSError:
             pass          # vanished, or belongs to another user -- not ours to fix
+
+
+def _collapse_empty_grid_rows_and_cols(fig):
+    """Shrink the shared grid to skip any row/column that is now entirely
+    empty -- every axes that used to occupy it has been
+    :meth:`~plotpress.axes.Axes.remove`-d -- for
+    :meth:`Figure.tight_layout`'s ``collapse="grid"``.
+
+    A grid axes' position lives entirely in its own :class:`SubplotSpec`
+    (``nrows``/``ncols``/``row0``/``row1``/``col0``/``col1``); nothing else
+    in the figure is indexed by row/column (``group_spacing()``'s
+    ``wspace``/``hspace`` are single figure-wide values, not per-boundary),
+    so shrinking the grid is just remapping those six fields. Every unique
+    spec is mutated **in place** rather than replaced -- ``twinx()``/
+    ``twiny()``/``secondary_xaxis()``/``secondary_yaxis()`` all set their
+    own ``_subplotspec`` to their parent's *exact same object* (not a copy)
+    specifically to "stay aligned through tight_layout()" (see their own
+    assignments), so mutating that shared object in place keeps every twin/
+    secondary correct for free -- replacing it with a new object per axes
+    would silently leave any twin/secondary still pointing at the old one.
+    """
+    specs_axes = [ax for ax in fig.axes
+                 if ax._subplotspec is not None and not ax._is_colorbar]
+    if not specs_axes:
+        return
+    # Dedupe by identity: a twin/secondary shares its parent's exact
+    # SubplotSpec object, so mutating it once (below) is enough for both.
+    unique_specs = list({id(ax._subplotspec): ax._subplotspec for ax in specs_axes}.values())
+    nrows, ncols = unique_specs[0].nrows, unique_specs[0].ncols
+
+    occupied_rows, occupied_cols = set(), set()
+    for spec in unique_specs:
+        occupied_rows.update(range(spec.row0, spec.row1 + 1))
+        occupied_cols.update(range(spec.col0, spec.col1 + 1))
+
+    row_map = {old: new for new, old in enumerate(r for r in range(nrows) if r in occupied_rows)}
+    col_map = {old: new for new, old in enumerate(c for c in range(ncols) if c in occupied_cols)}
+    if len(row_map) == nrows and len(col_map) == ncols:
+        return   # every row/column is still in use -- nothing to collapse
+
+    new_nrows, new_ncols = len(row_map), len(col_map)
+    for spec in unique_specs:
+        spec.row0, spec.row1 = row_map[spec.row0], row_map[spec.row1]
+        spec.col0, spec.col1 = col_map[spec.col0], col_map[spec.col1]
+        spec.nrows, spec.ncols = new_nrows, new_ncols
 
 
 def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):

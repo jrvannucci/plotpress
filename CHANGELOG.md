@@ -9,6 +9,44 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.37.0] - 2026-09-12
+
+### Added
+
+- **`Figure.tight_layout(collapse="grid")`** -- reclaims whitespace left
+  behind by `Axes.remove()`/`Figure.remove_group()`, neither of which
+  reflows the grid on its own: a removed axes' row/column keeps its
+  original `nrows`/`ncols` (nothing else in the figure knows it's gone),
+  and a group emptied by removing its axes directly freezes its box in
+  its last position rather than disappearing (documented, deliberate --
+  see `Axes.remove()`'s own docstring). `collapse="grid"` shrinks any
+  row/column of the grid that is now *entirely* empty and drops any group
+  left with zero members -- a surviving axes never moves relative to its
+  siblings, only whole empty rows/columns disappear. `collapse="tight"`
+  (pack groups and axes as close together as possible without breaking
+  groupings, including closing a single gap inside an otherwise-populated
+  row/column) is a real, harder packing problem -- a `group()` can hold
+  arbitrary, non-contiguous axes with no rectangular shape to pack, and a
+  `GroupLayout` group's cells share one grid with every other group -- and
+  is deliberately not built yet: it raises `NotImplementedError` rather
+  than guessing at a packing algorithm, with its own dedicated design
+  planned as a follow-up. The default `collapse=None` is unchanged from
+  today's behavior.
+
+### Fixed
+
+- **`Figure.to_vega()` crashed on a figure with a `group()` box left with
+  zero members** (`Axes.remove()`'s own documented freeze-in-place
+  behavior for an emptied group -- surfaced while building the
+  `collapse="grid"` gallery example above, itself unrelated to the crash).
+  `vega.py`'s `_groups_to_vega_marks()` calls itself "a direct port of
+  svg.py's own `_render_groups`", but never actually got three fixes that
+  function already has: falling back to the frozen box instead of a bare
+  `min()`/`max()` over an empty list, skipping a `visible=False` group
+  entirely, and auto-including a member's own twin/secondary overlay (and
+  any colorbar attached to one) in the box the same way
+  `svg._group_bbox` already does. All three now match.
+
 ## [0.36.0] - 2026-09-12
 
 ### Changed
