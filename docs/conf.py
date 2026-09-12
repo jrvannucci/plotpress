@@ -82,33 +82,17 @@ html_context = {
 
 
 # -- sphinx-gallery: capture plotpress Figures as example images -------------
-# Examples that also get a *live* interactive figure embedded on their page.
-# Every interactive figure inlines the whole JS toolbar and its own pick data
-# (a few hundred KiB each for a dense mesh), so *embedding* is opt-in rather
-# than gallery-wide: switching it on for the plot-type reference too would add
-# megabytes of mostly-redundant payload for figures that have nothing to
-# explore. The real-application gallery is the one worth exploring, so it gets
-# live figures throughout; data_roundtrip's own point is the *data* load_data()
-# recovers, not a toolbar to play with, so its figures stay static images only.
-#
-# This governs *embedding* specifically -- a figure over
-# _LARGE_AXES_THRESHOLD gets the "open full page" link (see
-# _plotpress_scraper) regardless of which gallery it's in, embedding nothing
-# on the page itself, so it doesn't carry the payload cost this list exists
-# to avoid.
+# Every example figure, across every gallery, gets a *live* interactive copy
+# on its page (see _plotpress_scraper) -- embedded directly for an
+# ordinary-sized figure, or linked to its own full page for one too large to
+# usefully explore in a fixed-size iframe.
 _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
-_INTERACTIVE_ROOTS = (
-    os.path.join(_DOCS_DIR, "applications"),
-)
 
-# More axes than any hand-authored example in _INTERACTIVE_ROOTS currently
-# uses (the largest `docs/applications` figure has 3) -- a many-panel grid
-# cramped into a fixed-size iframe stops being a meaningful interactive
-# experience: most panels would be too small to usefully pick or zoom into.
-# Past this, the gallery page links to the full standalone HTML instead of
-# embedding it, so it opens as its own real page at full size -- the scale
-# gallery's own 500-axes and 250-group demos, well outside
-# _INTERACTIVE_ROOTS, are exactly the figures this threshold exists for.
+# More axes than a fixed-size iframe stays meaningfully interactive at --
+# most panels would be too small to usefully pick or zoom into. Past this,
+# the gallery page links to the full standalone HTML instead of embedding
+# it, so it opens as its own real page at full size -- the scale gallery's
+# own 500-axes and 250-group demos are exactly the figures this exists for.
 _LARGE_AXES_THRESHOLD = 6
 
 _INTERACTIVE_DIR = os.path.join(_DOCS_DIR, "_static", "interactive")
@@ -179,13 +163,32 @@ def _write_wheel_zoom_gif(fig, name, cursor_frac, **kwargs):
                    append_images=frames[1:], duration=90, loop=0)
 
 
-def _wants_interactive(src_file):
-    """True if this example lives under a gallery configured for live figures."""
-    ap = os.path.abspath(src_file)
-    return any(ap.startswith(root + os.sep) for root in _INTERACTIVE_ROOTS)
+def _static_prefix(src_file):
+    """"../" repeated the right number of times to reach ``docs/_static/``
+    from wherever *this* example's own generated page ends up.
+
+    Regression: every embed link in this file (_interactive_embed,
+    _vega_embed, _vega_lite_embed) used to hardcode ``"../../"``, on the
+    assumption that a gallery page always sits two levels below the HTML
+    root -- true for a gallery organized into subsections
+    (``auto_applications/<section>/plot_XX.html``,
+    ``auto_figure_layout/grouping/plot_XX.html``), but not for a flat
+    top-level one (``auto_scale/plot_XX.html``, one level below) --
+    exactly the shape :data:`_LARGE_AXES_THRESHOLD` was extended to reach.
+    A hardcoded depth silently produces a link one level short of the site
+    root instead of an error, which is what actually shipped: a "working"
+    href that resolves to a real (wrong) URL one directory up from the
+    site itself. Sphinx-gallery mirrors the source tree exactly, one
+    subdirectory per level (only ever renaming the top one with an "auto_"
+    prefix), so the source path's own depth below ``docs/`` -- counted
+    here, not assumed -- always matches the generated page's.
+    """
+    rel = os.path.relpath(src_file, _DOCS_DIR)
+    depth = len(rel.split(os.sep)) - 1
+    return "../" * depth
 
 
-def _interactive_embed(fig, image_path):
+def _interactive_embed(fig, image_path, src_file):
     """Write ``fig`` as self-contained interactive HTML; return an RST raw block.
 
     The standalone file is always written -- a large figure's link (below)
@@ -212,10 +215,7 @@ def _interactive_embed(fig, image_path):
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
         fh.write(fig.to_html(interactive=True, standalone=False))
 
-    # Example pages are built at auto_applications/<section>/ (or
-    # auto_examples/<section>/), two levels below the HTML root _static sits
-    # in, in both galleries this function serves.
-    src = "../../_static/interactive/" + name
+    src = _static_prefix(src_file) + "_static/interactive/" + name
     n_axes = sum(1 for ax in fig.axes if not ax._is_colorbar)
     if n_axes > _LARGE_AXES_THRESHOLD:
         return "\n".join([
@@ -387,10 +387,7 @@ def _vega_embed(fig, image_path, src_file):
     with open(os.path.join(_VEGA_DIR, name + ".html"), "w", encoding="utf-8") as fh:
         fh.write(page)
 
-    # Example pages are built at auto_applications/<section>/ (or
-    # auto_examples/<section>/), two levels below the HTML root _static
-    # sits in -- same relative depth _interactive_embed()'s src uses.
-    src = "../../_static/vega/" + name + ".html"
+    src = _static_prefix(src_file) + "_static/vega/" + name + ".html"
     return "\n".join([
         ".. raw:: html",
         "",
@@ -549,7 +546,7 @@ def _vega_lite_embed(fig, image_path, src_file):
     with open(os.path.join(_VEGA_LITE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
         fh.write(page)
 
-    src = "../../_static/vega_lite/" + name + ".html"
+    src = _static_prefix(src_file) + "_static/vega_lite/" + name + ".html"
     return "\n".join([
         ".. raw:: html",
         "",
@@ -772,28 +769,17 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     animated GIF instead of a static PNG -- sphinx-gallery's own thumbnailer
     (``sphinx_gallery.gen_rst.save_thumbnail``) copies a ``.gif`` byte for byte
     rather than re-encoding it, so both the gallery page's image and its
-    thumbnail play the animation rather than freezing on frame 0. Examples in
-    :data:`INTERACTIVE_SECTIONS` additionally get a live interactive copy
-    embedded below the image, and examples under :data:`_VEGA_ROOTS` get
-    links to standalone ``Figure.to_vega()`` and ``Figure.to_vega_lite()``
-    render/JSON pages.
-
-    A figure over :data:`_LARGE_AXES_THRESHOLD` gets ``_interactive_embed``'s
-    "open the full page" link even *outside* :data:`_INTERACTIVE_ROOTS` --
-    that branch only ever writes the standalone file and links to it, never
-    embeds an iframe, so it doesn't carry the megabytes-of-mostly-redundant-
-    payload cost an *embedded* copy would for every ordinary-sized figure in
-    a gallery that opted out of interactivity. The scale gallery's own
-    500-axes and 250-group demos are exactly the figures this is for: too
-    large to explore as a static image, but not worth turning on full
-    interactivity for every modest example around them just to reach the
-    few that are.
+    thumbnail play the animation rather than freezing on frame 0. Every
+    figure also gets a live interactive copy (see ``_interactive_embed``) --
+    embedded below the image if it's ordinary-sized, linked to its own full
+    page (past :data:`_LARGE_AXES_THRESHOLD` axes) otherwise -- and examples
+    under :data:`_VEGA_ROOTS` additionally get links to standalone
+    ``Figure.to_vega()`` and ``Figure.to_vega_lite()`` render/JSON pages.
     """
     from sphinx_gallery.scrapers import figure_rst
 
     it = block_vars["image_path_iterator"]
     seen = block_vars.setdefault("_plotpress_seen", set())
-    interactive = _wants_interactive(block_vars["src_file"])
     vega = _wants_vega(block_vars["src_file"])
     paths, embeds = [], []
     for value in list(block_vars["example_globals"].values()):
@@ -810,12 +796,11 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             else:
                 value.save(path, scale=2)      # PNG via plotpress.raster
             paths.append(path)
-            # See _plotpress_scraper's own docstring: a figure this large
-            # gets the "open full page" link regardless of which gallery
-            # it's in, not just one that opted into interactivity outright.
-            n_axes = sum(1 for ax in value.axes if not ax._is_colorbar)
-            if interactive or n_axes > _LARGE_AXES_THRESHOLD:
-                embeds.append(_interactive_embed(value, path))
+            # Every figure gets a live interactive copy -- embedded if it's
+            # small enough for a fixed-size iframe to still be worth
+            # exploring, linked to its own full page otherwise (see
+            # _interactive_embed's own docstring for the threshold).
+            embeds.append(_interactive_embed(value, path, block_vars["src_file"]))
             if vega:
                 link = _vega_embed(value, path, block_vars["src_file"])
                 if link:
