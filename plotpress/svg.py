@@ -301,8 +301,13 @@ def _group_bbox(fig, g, W, H, scale=1.0):
     vanishing.
     """
     st = fig.style
-    members = (g["axes"] + _group_colorbars(g["axes"], fig)
-              + _group_twins_and_secondaries(g["axes"], fig))
+    # Colorbars are looked up against g["axes"] *plus* any auto-included
+    # twin/secondary -- fig.colorbar(mesh, ax=some_twin) is exactly as valid
+    # as attaching one to the plain axes it overlays, and a colorbar found
+    # only by checking the caller's own literal axes= list would otherwise
+    # never be discovered when its actual parent is the twin instead.
+    overlays = _group_twins_and_secondaries(g["axes"], fig)
+    members = g["axes"] + overlays + _group_colorbars(g["axes"] + overlays, fig)
     if not members:
         fx0, fy0, fx1, fy1 = g["frozen_rect"]
         return fx0 * W, fy0 * H, fx1 * W, fy1 * H

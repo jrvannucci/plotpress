@@ -3984,6 +3984,36 @@ def test_group_box_wraps_a_secondary_yaxiss_own_decoration():
         % (label_reach, box_x1))
 
 
+def test_group_box_wraps_a_colorbar_attached_to_an_auto_included_twin():
+    """Regression, one layer deeper than the two tests above: a colorbar
+    parented on a twin (``fig.colorbar(mesh, ax=some_twin)``) is exactly as
+    valid as one parented on a plain axes, but _group_colorbars looked it up
+    against g["axes"] alone -- the twin itself is only ever auto-included
+    (see _group_twins_and_secondaries), never actually *listed* there, so a
+    colorbar whose real parent is the twin was never found, and its own
+    tick labels rendered past the box's edge the same way the earlier two
+    regressions did for the overlay's ylabel directly."""
+    import numpy as np
+
+    fig, axes = plotpress.subplots(1, 2, figsize=(9, 4))
+    axes[0].plot([0, 1], [0, 1])
+    mesh = axes[1].pcolormesh(np.arange(25, dtype=float).reshape(5, 5))
+    twin = axes[1].twinx()
+    fig.colorbar(mesh, ax=twin)
+    fig.group("Group", [axes[0], axes[1]], pad=(8.0, 20.0, 8.0, 8.0))
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    box = [b for b in root.findall(f".//{NS}rect") if b.get("fill") == "none"][0]
+    box_x1 = float(box.get("x")) + float(box.get("width"))
+    cbar_image = root.findall(f".//{NS}image")[0]   # the colorbar's own gradient strip
+    image_x1 = float(cbar_image.get("x")) + float(cbar_image.get("width"))
+    assert image_x1 <= box_x1, (
+        "a colorbar attached to an auto-included twin must be fully inside "
+        "the group's box, not past its right edge: colorbar reaches %r, "
+        "box ends at %r" % (image_x1, box_x1))
+
+
 def test_colorbar_title_renders_in_both_backends():
     """Regression: a colorbar axes returned early out of _render_axes/
     _raster_axes before ever reaching the title-drawing code, so

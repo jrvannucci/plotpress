@@ -9,6 +9,20 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.4] - 2026-09-11
+
+### Fixed
+
+- **A `fig.group()` box didn't wrap a colorbar attached to an auto-included
+  twin/secondary axis.** `_group_colorbars` looked a member's own colorbar
+  up against the group's literal `axes=` list -- but a twin/secondary is
+  itself only ever *auto*-included there (0.34.3), never actually listed,
+  so `fig.colorbar(mesh, ax=some_twin)` -- exactly as valid as attaching
+  one to a plain axes -- went unfound, and its own tick labels could
+  render past the box's edge the same way the overlay's own label did
+  before 0.34.3. One layer deeper in the same fix: colorbar lookup now
+  checks against the group's members *plus* its auto-included overlays.
+
 ## [0.34.3] - 2026-09-11
 
 ### Fixed
