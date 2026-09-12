@@ -657,6 +657,40 @@ def test_axes_remove_also_removes_its_own_twin_and_secondary():
     fig.to_svg()   # no orphan left to render, must not raise either
 
 
+def test_axes_remove_drops_it_from_a_colorbars_parents_and_removes_the_bar_too():
+    """Regression, the colorbar analogue of the twin/secondary test above:
+    fig.colorbar()'s bar re-derives its own position from its parents'
+    *current* rects every tight_layout() call (_layout_colorbar), so a
+    parent removed without being dropped from _cbar_parents would keep
+    contributing a frozen, no-longer-updating rect to that math forever
+    -- and if it was the bar's only parent, the bar itself is left
+    floating with no plot beside it to explain it, the exact same orphan
+    shape as an un-cleaned-up twin. Checked for both a single-parent bar
+    (removing its one parent must remove the bar too) and a shared,
+    two-parent bar (removing one parent must only shrink the list, since
+    the bar is still meaningful for the parent left behind)."""
+    import numpy as np
+
+    fig, axes = plotpress.subplots(1, 2)
+    mesh = axes[0].pcolormesh(np.arange(25, dtype=float).reshape(5, 5))
+    cbar = fig.colorbar(mesh, ax=axes[0])
+    axes[1].plot([0, 1], [0, 1])
+    axes[0].remove()
+    assert cbar not in fig.axes
+    fig.tight_layout()
+    fig.to_svg()   # no orphan left to render, must not raise either
+
+    fig2, axes2 = plotpress.subplots(1, 2)
+    mesh2 = axes2[0].pcolormesh(np.arange(25, dtype=float).reshape(5, 5))
+    cbar2 = fig2.colorbar(mesh2, ax=[axes2[0], axes2[1]])
+    axes2[1].plot([0, 1], [0, 1])
+    axes2[1].remove()
+    assert cbar2 in fig2.axes
+    assert cbar2._cbar_parents == [axes2[0]]
+    fig2.tight_layout()
+    fig2.to_svg()
+
+
 def test_axes_cla_resets_state_but_keeps_position():
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])

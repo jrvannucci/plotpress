@@ -9,6 +9,22 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.6] - 2026-09-11
+
+### Fixed
+
+- **`Axes.remove()` left a stale, no-longer-reflowing parent in a colorbar's
+  own `_cbar_parents` -- and left the colorbar itself behind entirely when
+  that was its only parent.** `fig.colorbar()`'s bar re-derives its position
+  from its parents' *current* rects every `tight_layout()` call, so a
+  removed parent kept contributing a frozen rect to that math forever, and
+  a colorbar built for a single axes was left floating with no plot beside
+  it once that axes was removed -- the same orphan shape 0.34.5 fixed for a
+  removed axes' own twin/secondary, one lifecycle case deeper. A colorbar
+  can span several axes at once, so removing one parent now only shrinks
+  its list; removing the last one removes the colorbar too (recursively,
+  through this same method).
+
 ## [0.34.5] - 2026-09-11
 
 ### Fixed

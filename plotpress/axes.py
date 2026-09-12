@@ -2371,10 +2371,26 @@ class Axes:
         longer part of the figure, and (a twin especially) no spine/box of
         its own to visually anchor it -- just a lone data trace and a
         stray column of tick labels floating with nothing around them.
+
+        Also drops this axes from the ``_cbar_parents`` of any colorbar
+        (:meth:`~plotpress.figure.Figure.colorbar`) built against it --
+        ``_layout_colorbar`` re-derives the bar's position from its
+        parents' *current* rects every time, so a stale parent would
+        otherwise keep contributing a frozen, no-longer-updating rect to
+        that math indefinitely. A colorbar can span several axes at once,
+        so removing one parent only shrinks the list; removing the last
+        one removes the colorbar too (recursively, via this same method)
+        rather than leaving it floating with no plot left to explain it.
         """
         for dep in [ax for ax in self.figure.axes
                    if ax._twin_of is self or ax._secondary_of is self]:
             dep.remove()
+        for cax in [ax for ax in self.figure.axes
+                   if ax._is_colorbar and ax._cbar_parents
+                   and self in ax._cbar_parents]:
+            cax._cbar_parents = [p for p in cax._cbar_parents if p is not self]
+            if not cax._cbar_parents:
+                cax.remove()
         if self in self.figure.axes:
             self.figure.axes.remove(self)
         if self._id is not None and self.figure._id_index.get(self._id) is self:
