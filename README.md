@@ -101,11 +101,11 @@ shares, and where a format gets its own dedicated path instead.
 ## Reading a figure back out of HTML
 
 A plot doesn't have to be a dead image. The interactive HTML above isn't a
-one-way trip: it embeds the plotted data and the figure's own layout as JSON
-alongside the SVG, so a later process — with none of the Python objects that
-built it still around — can read a figure back out and rebuild it. The
-figure becomes a portable representation of the data it displays, not just a
-picture of it:
+one-way trip: it embeds the plotted data and the figure's own structure and
+styling as JSON alongside the SVG, so a later process — with none of the
+Python objects that built it still around — can read a figure back out and
+rebuild it. The figure becomes a portable representation of the data it
+displays, not just a picture of it:
 
 ```
 a saved .html (Figure.save(path, interactive=True))
@@ -118,26 +118,27 @@ a saved .html (Figure.save(path, interactive=True))
                           |
            +--------------+--------------+
            ▼                             ▼
-       "layout"                       "axes"
-   (grid shape, each            (recovered series/
-axes' own decorations,        mesh/pie data per axes,
-  groups, sup-title)              keyed by title)
+      "template"                      "axes"
+  (grid shape, spines,           (recovered series/
+ tick overrides, groups,       mesh/pie data per axes,
+  overlays, Style, ...)            keyed by title)
 
            |
            ▼
-       plotpress.subplots_from_html(layout)
-       rebuilds the grid and every axes' own
-     decorations -- not the plotted data itself
+    plotpress.figure_from_template(template)
+     rebuilds the grid, every axes' own
+ decorations/styling, and its overlays --
+       not the plotted data itself
                          |
                          ▼
-     a new, already-labeled Figure -- ready for
+     a new, already-styled Figure -- ready for
      the caller to replot the recovered "axes"
                    data back into
 ```
 
-A freeform `Figure.add_axes()` rect, an inset, or a colorbar axes has no grid
-cell to rebuild from — its index is listed in `layout["omitted_axes"]`
-instead of silently vanishing. See the
+A freeform `Figure.add_axes()` rect has no grid cell to rebuild from — its
+index is listed in `template["omitted_axes"]` instead of silently
+vanishing. See the
 [full API and worked examples](https://jrvannucci.github.io/plotpress/usage.html#reading-html-data)
 for the round trip end to end.
 
@@ -145,17 +146,19 @@ For the common case of a *uniform* grid — every axes its own single
 `pcolormesh` or line series, all the same shape — `plotpress.load_data_xarray()`
 skips the title-keyed dict above entirely and reads the same file straight
 into one `xarray.Dataset` indexed by row/column instead, with the recovered
-layout still available under `ds.attrs["layout"]` for
-`plotpress.subplots_from_html()`. See the
+template still available under `ds.attrs["template"]` for
+`plotpress.figure_from_template()`. See the
 [data round-trip example](https://jrvannucci.github.io/plotpress/auto_examples/data_roundtrip/index.html)
 for both paths worked through end to end.
 
-That same structure/decoration capture also builds **reusable, data-free
-templates**: `Figure.to_template()`/`save_template()` snapshot a figure's
-grid, group boxes, spine colors, tick overrides, ids, twin/secondary/inset
-overlays, and its own `Style` — with no plotted data in it at all — so a
-layout worth building once can be reused across many future plots via
-`plotpress.load_template()`/`plotpress.figure_from_template()`. See the
+`"template"` above is the exact same dict `Figure.to_template()`/
+`save_template()` produce directly, with no HTML export or plotted data
+involved at all — a figure's grid, group boxes, spine colors, tick
+overrides, ids, twin/secondary/inset overlays, and its own `Style`, with
+**no plotted data in it at all** — so a layout worth building once can be
+reused across many future plots via `plotpress.load_template()`/
+`plotpress.figure_from_template()`, the identical function this data
+round-trip itself uses. See the
 [templates example](https://jrvannucci.github.io/plotpress/auto_examples/templates/index.html).
 
 ## What makes it different

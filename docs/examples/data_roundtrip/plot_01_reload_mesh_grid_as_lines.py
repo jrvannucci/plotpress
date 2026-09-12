@@ -22,10 +22,10 @@ is exactly the ``(x, y)`` pair ``ax.plot()`` expects -- no re-deriving the
 grid from the mesh's edges or extent by hand.
 
 The destination figure also no longer needs to hand-know it was a 5x6
-grid, or re-type each panel's own title: ``load_data()``'s ``"layout"``
+grid, or re-type each panel's own title: ``load_data()``'s ``"template"``
 entry carries the source figure's grid shape, every axes' own title/label/
 limit/scale (and any :meth:`plotpress.Figure.group` boxes), and
-:func:`plotpress.subplots_from_html` rebuilds an equivalent,
+:func:`plotpress.figure_from_template` rebuilds an equivalent,
 already-labeled figure from it -- ready to replot the recovered data into,
 with nothing decorative left to re-apply by hand.
 """
@@ -65,17 +65,17 @@ axes_data = fig_entry["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # Slice every panel's mesh along x at the same fixed row -- one 1-D line per
-# panel, replotted into a *rebuilt* 5x6 grid: subplots_from_html() reads
-# the source figure's own grid shape back out of fig_entry["layout"], so
+# panel, replotted into a *rebuilt* 5x6 grid: figure_from_template() reads
+# the source figure's own grid shape back out of fig_entry["template"], so
 # nothing here has to already know it was 5x6 -- and each rebuilt panel
 # already carries its own title (fontsize included), with no set_title()
 # call needed on this side at all. tick_params() is a real, documented
-# exception -- see subplots_from_html()'s own docstring -- so it's the
+# exception -- see figure_from_template()'s own docstring -- so it's the
 # one decoration still re-applied by hand below.
 # ---------------------------------------------------------------------------
 ROW = 5   # a fixed y index, the same across every panel
 
-fig, axes = plotpress.subplots_from_html(fig_entry["layout"])
+fig, axes = plotpress.figure_from_template(fig_entry["template"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     ax.plot(mesh["x"], mesh["z"][ROW, :], color="C0")

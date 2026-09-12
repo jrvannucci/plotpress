@@ -73,27 +73,28 @@ still be read back with Python::
                                        │
                         ┌──────────────┴──────────────┐
                         ▼                             ▼
-                    "layout"                       "axes"
-                (grid shape, each            (recovered series/
-             axes' own decorations,        mesh/pie data per axes,
-               groups, sup-title)              keyed by title)
+                   "template"                      "axes"
+              (grid shape, spines,           (recovered series/
+             tick overrides, groups,       mesh/pie data per axes,
+              overlays, Style, ...)            keyed by title)
 
                         │
                         ▼
-                    plotpress.subplots_from_html(layout)
-                    rebuilds the grid and every axes' own
-                  decorations -- not the plotted data itself
+                 plotpress.figure_from_template(template)
+                  rebuilds the grid, every axes' own
+              decorations/styling, and its overlays --
+                    not the plotted data itself
                                       │
                                       ▼
-                  a new, already-labeled Figure -- ready for
+                  a new, already-styled Figure -- ready for
                   the caller to replot the recovered "axes"
                                 data back into
 
 The figure becomes more than an image -- it becomes a portable
 representation of the data it displays, ready to inspect, transform, or
-replot. A freeform :meth:`~plotpress.figure.Figure.add_axes` rect, an
-inset, or a colorbar axes has no grid cell to rebuild from -- its index is
-listed in ``layout["omitted_axes"]`` instead of silently vanishing. See
+replot. A freeform :meth:`~plotpress.figure.Figure.add_axes` rect has no
+grid cell to rebuild from -- its index is listed in
+``template["omitted_axes"]`` instead of silently vanishing. See
 :ref:`reading-html-data` for the full API and
 :doc:`/auto_examples/data_roundtrip/index` for worked examples.
 
@@ -101,21 +102,23 @@ For the common case of a *uniform* grid -- every axes its own single
 ``pcolormesh`` or line series, all the same shape --
 :func:`~plotpress.load_data_xarray` skips the title-keyed dict above
 entirely and reads the same file straight into one ``xarray.Dataset``
-indexed by row/column instead, with the recovered ``layout`` still
-available under ``ds.attrs["layout"]`` for
-:func:`~plotpress.subplots_from_html`. See
+indexed by row/column instead, with the recovered ``template`` still
+available under ``ds.attrs["template"]`` for
+:func:`~plotpress.figure_from_template`. See
 :doc:`/auto_examples/data_roundtrip/index` for both paths worked through
 end to end.
 
-That same structure/decoration capture also powers a second, unrelated
-use case: :meth:`~plotpress.figure.Figure.to_template`/``save_template``
-snapshot a figure's grid, group boxes, spine colors, tick overrides, ids,
-twin/secondary/inset overlays, and its own :class:`~plotpress.style.Style`
--- **with no plotted data in it at all** -- so a layout worth building once
-(derived from a dataset's own metadata, say) can be reused as a template
-across many future plots via :func:`~plotpress.load_template`/
-:func:`~plotpress.figure_from_template`. See
-:doc:`/auto_examples/templates/index` for a worked example.
+``"template"`` above is the exact same dict
+:meth:`~plotpress.figure.Figure.to_template`/``save_template`` produce
+directly, with no HTML export or plotted data involved at all: a figure's
+grid, group boxes, spine colors, tick overrides, ids, twin/secondary/inset
+overlays, and its own :class:`~plotpress.style.Style`, snapshotted with
+**no plotted data in it at all** -- so a layout worth building once
+(derived from a dataset's own metadata, say) can be reused across many
+future plots via :func:`~plotpress.load_template`/
+:func:`~plotpress.figure_from_template`, the identical function this data
+round-trip itself uses. See :doc:`/auto_examples/templates/index` for a
+worked example.
 
 Built for scientific Python
 ------------------------------

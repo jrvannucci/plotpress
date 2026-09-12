@@ -21,8 +21,8 @@ by row/column position, never by name).
 This example loads a saved grid back this way, computes each panel's
 deviation from the grid-wide mean field -- one broadcast subtraction
 across all 30 panels at once -- and replots the *whole* grid of anomalies
-into a figure rebuilt from ``ds.attrs["layout"]`` (the same dict
-``load_data()`` returns under ``"layout"``, reachable straight off the
+into a figure rebuilt from ``ds.attrs["template"]`` (the same dict
+``load_data()`` returns under ``"template"``, reachable straight off the
 ``Dataset`` -- no second, separate ``load_data()`` call just to get it),
 so every panel's title/labels/limits come back already applied, not
 re-typed by hand. A small before/after figure in the middle pictures that
@@ -86,11 +86,11 @@ ax_after.set_title("after: anomaly", fontsize=9)
 fig_arrow.tight_layout()
 
 # Replot: rebuild the same 5x6 grid, groups, and every axes' own title/
-# labels/limits from ds.attrs["layout"] -- only the mesh data itself (and
-# tick_params, one of the few things a layout deliberately doesn't carry --
-# see subplots_from_html()'s own docstring) needs setting by hand below.
+# labels/limits from ds.attrs["template"] -- only the mesh data itself (and
+# tick_params, one of the few things a template deliberately doesn't carry --
+# see figure_from_template()'s own docstring) needs setting by hand below.
 nrows, ncols = ds.sizes["row"], ds.sizes["col"]
-fig2, axes2 = plotpress.subplots_from_html(ds.attrs["layout"], figsize=(16, 9))
+fig2, axes2 = plotpress.figure_from_template(ds.attrs["template"], figsize=(16, 9))
 for r in range(nrows):
     for c in range(ncols):
         ax = axes2[r, c]

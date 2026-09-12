@@ -2,11 +2,11 @@
 Reload a grouped dashboard, preserving its group boxes
 ========================================================
 
-A figure's :meth:`plotpress.Figure.group` boxes are layout, not data --
+A figure's :meth:`plotpress.Figure.group` boxes are template, not data --
 ``load_data()`` alone never returns them, since its per-axes dicts only
 carry what got plotted, not how the grid around it was organized. That
-information lives in the ``"layout"`` entry :func:`plotpress.load_data`
-also returns, next to ``"axes"``: :func:`plotpress.subplots_from_html`
+information lives in the ``"template"`` entry :func:`plotpress.load_data`
+also returns, next to ``"axes"``: :func:`plotpress.figure_from_template`
 reads it back and re-creates the exact same grid *and* the same
 :meth:`~plotpress.Figure.group` boxes (title, color, and ``pad`` included),
 so a rebuilt dashboard groups its panels the same way the source did
@@ -58,15 +58,15 @@ axes_data = fig_entry["axes"]    # keyed by each panel's own title
 
 # ---------------------------------------------------------------------------
 # Rebuild the same 2x4 grid AND both group boxes from the source figure's
-# recorded layout, then replot each sensor's recovered trace, offset and
+# recorded template, then replot each sensor's recovered trace, offset and
 # recolored -- the grouping itself needs no re-declaring.
 # ---------------------------------------------------------------------------
-fig, axes = plotpress.subplots_from_html(fig_entry["layout"])
+fig, axes = plotpress.figure_from_template(fig_entry["template"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     s = axes_data[f"sensor {i}"]["series"][0]
     ax.plot(s["x"], s["y"] + 2.0, color="C3")
 # group_spacing() is figure-level state, not part of any one group -- it
-# does not round-trip through the saved layout and has to be re-applied
+# does not round-trip through the saved template and has to be re-applied
 # here exactly as it was on the source figure above.
 fig.group_spacing(wspace=30.0)
 fig.tight_layout()

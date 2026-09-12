@@ -62,7 +62,6 @@ if TYPE_CHECKING:
         select_panel,
         subplots,
         subplots_from_groups,
-        subplots_from_html,
     )
     from .style import Style, named_cycle
 
@@ -74,7 +73,6 @@ if TYPE_CHECKING:
 _LAZY_ATTRS = {
     "Figure": (".figure", "Figure"),
     "subplots": (".figure", "subplots"),
-    "subplots_from_html": (".figure", "subplots_from_html"),
     "subplots_from_groups": (".figure", "subplots_from_groups"),
     "GroupLayout": (".figure", "GroupLayout"),
     "Group": (".figure", "Group"),
@@ -144,7 +142,6 @@ __version__ = _detect_version()
 __all__ = [
     "Figure",
     "subplots",
-    "subplots_from_html",
     "subplots_from_groups",
     "GroupLayout",
     "Group",

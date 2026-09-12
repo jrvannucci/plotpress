@@ -9,15 +9,15 @@ draws only one shared :meth:`~plotpress.figure.Figure.supxlabel`/
 :doc:`/auto_examples/axes_features/plot_25_hidden_axis_labels`).
 
 The hidden labels aren't just cosmetic-free -- they're *recorded*.
-``load_data()``'s ``"layout"`` carries each one (plus a ``visible: false``
-flag), :func:`plotpress.subplots_from_html` rebuilds every panel with
+``load_data()``'s ``"template"`` carries each one (plus a ``visible: false``
+flag), :func:`plotpress.figure_from_template` rebuilds every panel with
 its label still attached and still hidden, and in the interactive HTML a
 Point Picking **Extract** pulls each picked value out with its panel's
 ``xlabel``/``ylabel`` *and* the figure's ``supxlabel``/``supylabel``/
 ``suptitle`` alongside -- so a value lifted out of a CSV still says what
 it means (see :doc:`/user_guide/interactivity` for the full record
 shape). The last block below prints exactly that record, built from the
-saved layout.
+saved template.
 
 This renders the source figure and the one rebuilt from its own saved
 HTML -- every panel's label recovered, still hidden, drawn nowhere.
@@ -49,13 +49,13 @@ path = os.path.join(tempfile.gettempdir(), "plotpress_hidden_labels_roundtrip.ht
 fig.save(path, interactive=True)
 
 # ---------------------------------------------------------------------------
-# Load it back. subplots_from_html() has already re-attached every hidden
+# Load it back. figure_from_template() has already re-attached every hidden
 # label by the time this loop starts -- nothing below re-types one.
 # ---------------------------------------------------------------------------
 entry = plotpress.load_data(path)["Figure 1"]
-layout, axes_data = entry["layout"], entry["axes"]
+template, axes_data = entry["template"], entry["axes"]
 
-rebuilt_fig, rebuilt_axes = plotpress.subplots_from_html(layout)
+rebuilt_fig, rebuilt_axes = plotpress.figure_from_template(template)
 for ax, name in zip(np.asarray(rebuilt_axes).ravel(), CHANNELS):
     s = axes_data[name]["series"][0]
     ax.plot(s["x"], s["y"])
@@ -66,7 +66,7 @@ rebuilt_fig.tight_layout()
 one = rebuilt_fig.get_ax(row=1, col=0)
 print("rebuilt panel label:", repr(one.get_xlabel()),
       "visible:", one.get_xlabel_visible())
-print("layout recorded visibility:", layout["axes"][2].get("xlabel_visible"))
+print("template recorded visibility:", template["axes"][2].get("xlabel_visible"))
 
 for name in CHANNELS:
     ax = rebuilt_fig.get_ax(title=name)
@@ -78,11 +78,11 @@ assert svg.count("time (s)") == 1       # once, as the shared supxlabel
 
 # ---------------------------------------------------------------------------
 # The same context the interactive HTML's Point Picking **Extract** attaches
-# to every picked record -- assembled here from the saved layout to show
+# to every picked record -- assembled here from the saved template to show
 # exactly which fields ride along. In the browser you'd click a point in the
 # top-left panel and hit Extract; the CSV row / JSON dict carries:
 # ---------------------------------------------------------------------------
-top_left = layout["axes"][0]
+top_left = template["axes"][0]
 example_record = {
     "axes": 0,
     "axes_title": top_left["title"],          # "Fz"
@@ -90,9 +90,9 @@ example_record = {
     "x": 0.164, "y": 0.71,                    # the picked data value
     "xlabel": top_left["xlabel"],             # "time (s)" -- hidden on the plot
     "ylabel": top_left["ylabel"],             # "potential (uV)" -- also hidden
-    "supxlabel": layout["supxlabel"]["text"],
-    "supylabel": layout["supylabel"]["text"],
-    "suptitle": layout["suptitle"]["text"],
+    "supxlabel": template["supxlabel"]["text"],
+    "supylabel": template["supylabel"]["text"],
+    "suptitle": template["suptitle"]["text"],
 }
 for k, v in example_record.items():
     print(f"  {k:11} {v!r}")

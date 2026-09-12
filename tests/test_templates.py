@@ -1,6 +1,8 @@
-"""Figure.to_template()/figure_from_template(): reusable, data-free layout
-snapshots -- the twin/secondary/spine/tick/style/id/colorbar coverage the
-plain HTML data round-trip (subplots_from_html) deliberately leaves out."""
+"""Figure.to_template()/figure_from_template(): reusable, data-free
+template snapshots -- twin/secondary/spine/tick/style/id/colorbar
+coverage, built standalone with no HTML export or plotted data involved.
+(The HTML data round-trip -- load_data()/figure_from_template() -- uses
+this exact same shape; see test_svg_output.py for that side.)"""
 
 import json
 import warnings
@@ -202,9 +204,9 @@ def test_to_template_round_trips_style():
 
 
 def test_figure_from_template_tolerates_a_template_missing_new_keys():
-    """A hand-built or pre-existing dict lacking style/overlays/insets/
-    colorbars (e.g. a plain subplots_from_html-style "layout" dict) must
-    still work -- every new field is optional, not required."""
+    """A hand-built or older-file dict lacking style/overlays/insets/
+    colorbars (e.g. one saved before these fields existed) must still
+    work -- every new field is optional, not required."""
     fig, ax = plotpress.subplots(1, 2)
     ax[0].plot([0, 1], [0, 1])
     ax[1].plot([0, 1], [1, 0])

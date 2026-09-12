@@ -9,6 +9,35 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.36.0] - 2026-09-12
+
+### Changed
+
+- **`load_data()`'s per-figure dict key is renamed `"layout"` -> `"template"`,
+  and its value is now the same full template shape `Figure.to_template()`
+  produces** -- spine colors, tick overrides, ids, twin/secondary/inset
+  overlays, colorbar styling, and this figure's own `Style` now survive an
+  ordinary interactive HTML round-trip too, not just an explicit
+  `to_template()`/`save_template()`. Previously this round-trip
+  (`plotpress.svg.layout_metadata()`, embedded by `to_html()`) was
+  deliberately narrower than `to_template()`'s own capture, to avoid
+  growing every HTML export's payload with fields most `load_data()`
+  callers never asked for -- in practice those fields are small (spine
+  colors, tick overrides, a flat `Style`) next to what `to_html()` already
+  embeds (pick payloads, mesh grids), so unifying them closes a real gap
+  at a modest cost. `load_data_xarray()`'s `ds.attrs["layout"]` is
+  similarly renamed to `ds.attrs["template"]`. The embedded HTML tag
+  itself keeps its original `id="plotpress-layout"`, so every
+  already-saved file on disk still loads correctly -- only the Python-facing
+  dict key and its content changed, not the wire format.
+- **`subplots_from_html()` is removed.** With `load_data()`'s payload now
+  template-shaped, it did the same job as `figure_from_template()`
+  (introduced in 0.35.0) -- keeping both was the exact "two names for the
+  same thing" problem the "layout" renames this release and last both
+  exist to fix. `figure_from_template()` is now the one function that
+  rebuilds a figure from either a standalone template or one recovered
+  from `load_data()`, no compatibility alias.
+
 ## [0.35.0] - 2026-09-11
 
 ### Added

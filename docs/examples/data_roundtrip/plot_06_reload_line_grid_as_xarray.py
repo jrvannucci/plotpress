@@ -15,8 +15,8 @@ its own damped oscillation at a different frequency -- standing in for a
 bank of channel recordings saved earlier, with none of the code that built
 them still around. This example loads it back, mean-centers every
 channel's trace in one broadcast subtraction, and replots the *whole*
-grid of centered traces into a figure rebuilt from ``ds.attrs["layout"]``
-(the same dict ``load_data()`` returns under ``"layout"``, reachable
+grid of centered traces into a figure rebuilt from ``ds.attrs["template"]``
+(the same dict ``load_data()`` returns under ``"template"``, reachable
 straight off the ``Dataset`` -- no second, separate ``load_data()`` call
 just to get it), so every channel's title/labels come back already
 applied, not re-typed by hand. A small before/after figure in the middle
@@ -80,11 +80,11 @@ ax_after.set_title("after: centered", fontsize=9)
 fig_arrow.tight_layout()
 
 # Replot: rebuild the same 3x4 grid and every axes' own title from
-# ds.attrs["layout"] -- only the trace itself (and tick_params, one of the
-# few things a layout deliberately doesn't carry -- see
-# subplots_from_html()'s own docstring) needs setting by hand below.
+# ds.attrs["template"] -- only the trace itself (and tick_params, one of the
+# few things a template deliberately doesn't carry -- see
+# figure_from_template()'s own docstring) needs setting by hand below.
 nrows, ncols = ds.sizes["row"], ds.sizes["col"]
-fig2, axes2 = plotpress.subplots_from_html(ds.attrs["layout"], figsize=(14, 7))
+fig2, axes2 = plotpress.figure_from_template(ds.attrs["template"], figsize=(14, 7))
 for r in range(nrows):
     for c in range(ncols):
         ax = axes2[r, c]

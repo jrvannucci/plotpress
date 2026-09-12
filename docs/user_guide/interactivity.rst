@@ -395,12 +395,13 @@ drops plotpress's own toolbar/pan/zoom/pick JS from the page altogether --
 raw ``#plotpress-meta``/``#plotpress-pick``/``#plotpress-style``/
 ``#plotpress-layout`` JSON payloads (still emitted, since
 ``interactive=True``) and ``#plotpress-svg`` directly, rather than extending
-what plotpress already provides. ``#plotpress-layout`` (grid shape/position
-and every decoration -- title, labels, limits, scale, ... -- of each
-subplot-grid axes, plus any ``Figure.group()`` boxes and the figure's own
-sup-title) is read by Python's own ``load_data()``/``subplots_from_html()``
-round trip, not by the bundled client JS -- no toolbar tool reads it back
-out of the page.
+what plotpress already provides. ``#plotpress-layout`` (grid shape/position,
+every decoration -- title, labels, limits, scale, ... -- spine colors, tick
+overrides, ids, twin/secondary/inset overlays, colorbar styling, and this
+figure's own ``Style``, keeping its original tag id even though it now
+carries the full template shape) is read by Python's own ``load_data()``/
+``figure_from_template()`` round trip, not by the bundled client JS -- no
+toolbar tool reads it back out of the page.
 ``binary_pick_data=False`` is worth pairing with this: the default packs
 long numeric arrays as base64 float16/32 for size, which needs plotpress's
 own decoder -- exactly what dropping the built-in JS is turning off.

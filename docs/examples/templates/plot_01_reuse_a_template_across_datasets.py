@@ -7,18 +7,18 @@ ids, spine colors, a shared group box, a twin axis for a second unit -- and
 that effort is wasted if it has to be rebuilt by hand every time a new
 dataset needs the same treatment. :meth:`plotpress.Figure.to_template`/
 :meth:`~plotpress.Figure.save_template` snapshot everything about that
-structure and styling with **no plotted data in it at all**, unlike
-:func:`plotpress.load_data`'s HTML round-trip (see
-:ref:`data_roundtrip_gallery`), which exists to recover data from an
-existing export, not to reuse a *blank* layout. :func:`plotpress.load_template`/
-:func:`plotpress.figure_from_template` read it back and rebuild that same
-blank, fully-styled figure, ready to plot fresh data into.
-
-The template below is deliberately built with things the plain HTML
-round-trip (:func:`plotpress.subplots_from_html`) never carries: each
-panel's own ``id``, distinct spine colors per side, and a ``twinx()``
-overlay -- yet it round-trips through a plain ``.json`` file on disk, with
-nothing but structure and style in it.
+structure and styling -- each panel's own ``id``, distinct spine colors per
+side, a ``twinx()`` overlay, and more -- with **no plotted data in it at
+all**, unlike :func:`plotpress.load_data`'s HTML round-trip (see
+:ref:`data_roundtrip_gallery`), which needs an actual saved, plotted figure
+to read back. A template needs no HTML export, no interactive payload, and
+no data ever having been plotted at all -- just a blank, decorated figure
+and a call to :meth:`~plotpress.Figure.save_template`, producing a plain
+``.json`` file with nothing but structure and style in it.
+:func:`plotpress.load_template`/:func:`plotpress.figure_from_template` read
+it back and rebuild that same blank, fully-styled figure, ready to plot
+fresh data into -- the identical reconstruction function the HTML
+round-trip itself uses once it has real data to replot alongside it.
 """
 import os
 import tempfile

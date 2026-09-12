@@ -6,14 +6,14 @@ A second reload scenario, this time transforming rather than slicing:
 :doc:`plot_01_reload_mesh_grid_as_lines` pulls one row out of each panel's
 mesh, but the full 2-D grid ``load_data()`` hands back supports any NumPy
 operation -- here, a 2-D FFT run over every panel at once, replotted as a
-new mesh in the same grid layout.
+new mesh in the same grid template.
 
 As in that example, the source figure is built and saved here only to have
 a self-contained file to load back from -- ``load_data()`` doesn't care
 whether the file it's reading was written a moment ago or came from an
 entirely separate run. The destination grid is rebuilt from
-``load_data()``'s own ``"layout"`` entry via
-:func:`plotpress.subplots_from_html`, rather than the caller having to
+``load_data()``'s own ``"template"`` entry via
+:func:`plotpress.figure_from_template`, rather than the caller having to
 already know it was a 5x6 grid -- or re-type each panel's own title.
 """
 import os
@@ -51,10 +51,10 @@ axes_data = fig_entry["axes"]    # keyed by each panel's own title
 # ---------------------------------------------------------------------------
 # 2-D FFT every panel's mesh, replotting the (log-scaled, zero-frequency
 # centered) magnitude spectrum as a new mesh in a rebuilt copy of the same
-# 5x6 layout -- subplots_from_html() reads the grid shape back out of
-# fig_entry["layout"] instead of it being hand-typed here.
+# 5x6 template -- figure_from_template() reads the grid shape back out of
+# fig_entry["template"] instead of it being hand-typed here.
 # ---------------------------------------------------------------------------
-fig, axes = plotpress.subplots_from_html(fig_entry["layout"])
+fig, axes = plotpress.figure_from_template(fig_entry["template"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(mesh["z"])))

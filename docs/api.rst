@@ -10,7 +10,6 @@ Top level
 
    Figure
    subplots
-   subplots_from_html
    subplots_from_groups
    GroupLayout
    Group
@@ -33,8 +32,6 @@ Figure
    :undoc-members:
 
 .. autofunction:: plotpress.subplots
-
-.. autofunction:: plotpress.subplots_from_html
 
 Grouping
 --------
