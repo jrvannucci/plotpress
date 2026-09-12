@@ -6,7 +6,7 @@ A figure's :meth:`plotpress.Figure.group` boxes are layout, not data --
 ``load_data()`` alone never returns them, since its per-axes dicts only
 carry what got plotted, not how the grid around it was organized. That
 information lives in the ``"layout"`` entry :func:`plotpress.load_data`
-also returns, next to ``"axes"``: :func:`plotpress.subplots_from_layout`
+also returns, next to ``"axes"``: :func:`plotpress.subplots_from_html`
 reads it back and re-creates the exact same grid *and* the same
 :meth:`~plotpress.Figure.group` boxes (title, color, and ``pad`` included),
 so a rebuilt dashboard groups its panels the same way the source did
@@ -61,7 +61,7 @@ axes_data = fig_entry["axes"]    # keyed by each panel's own title
 # recorded layout, then replot each sensor's recovered trace, offset and
 # recolored -- the grouping itself needs no re-declaring.
 # ---------------------------------------------------------------------------
-fig, axes = plotpress.subplots_from_layout(fig_entry["layout"])
+fig, axes = plotpress.subplots_from_html(fig_entry["layout"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     s = axes_data[f"sensor {i}"]["series"][0]
     ax.plot(s["x"], s["y"] + 2.0, color="C3")

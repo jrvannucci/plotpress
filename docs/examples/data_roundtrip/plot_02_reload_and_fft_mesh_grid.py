@@ -13,7 +13,7 @@ a self-contained file to load back from -- ``load_data()`` doesn't care
 whether the file it's reading was written a moment ago or came from an
 entirely separate run. The destination grid is rebuilt from
 ``load_data()``'s own ``"layout"`` entry via
-:func:`plotpress.subplots_from_layout`, rather than the caller having to
+:func:`plotpress.subplots_from_html`, rather than the caller having to
 already know it was a 5x6 grid -- or re-type each panel's own title.
 """
 import os
@@ -51,10 +51,10 @@ axes_data = fig_entry["axes"]    # keyed by each panel's own title
 # ---------------------------------------------------------------------------
 # 2-D FFT every panel's mesh, replotting the (log-scaled, zero-frequency
 # centered) magnitude spectrum as a new mesh in a rebuilt copy of the same
-# 5x6 layout -- subplots_from_layout() reads the grid shape back out of
+# 5x6 layout -- subplots_from_html() reads the grid shape back out of
 # fig_entry["layout"] instead of it being hand-typed here.
 # ---------------------------------------------------------------------------
-fig, axes = plotpress.subplots_from_layout(fig_entry["layout"])
+fig, axes = plotpress.subplots_from_html(fig_entry["layout"])
 for i, ax in enumerate(np.asarray(axes).ravel()):
     mesh = axes_data[f"panel {i}"]["meshes"][0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(mesh["z"])))

@@ -82,9 +82,9 @@ fig_arrow.tight_layout()
 # Replot: rebuild the same 3x4 grid and every axes' own title from
 # ds.attrs["layout"] -- only the trace itself (and tick_params, one of the
 # few things a layout deliberately doesn't carry -- see
-# subplots_from_layout()'s own docstring) needs setting by hand below.
+# subplots_from_html()'s own docstring) needs setting by hand below.
 nrows, ncols = ds.sizes["row"], ds.sizes["col"]
-fig2, axes2 = plotpress.subplots_from_layout(ds.attrs["layout"], figsize=(14, 7))
+fig2, axes2 = plotpress.subplots_from_html(ds.attrs["layout"], figsize=(14, 7))
 for r in range(nrows):
     for c in range(ncols):
         ax = axes2[r, c]

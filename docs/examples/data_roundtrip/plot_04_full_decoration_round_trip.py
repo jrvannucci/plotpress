@@ -4,7 +4,7 @@ Reload a figure's titles, labels, and axis settings, not just its data
 
 ``load_data()``'s ``"layout"`` entry carries more than grid shape: every
 axes' own title, x/y labels, limits, scale, grid, and legend settings, plus
-the figure's own suptitle -- see :func:`plotpress.subplots_from_layout`'s
+the figure's own suptitle -- see :func:`plotpress.subplots_from_html`'s
 docstring for the full list. Replotting recovered data into a rebuilt
 figure never needs a single ``set_title()``/``set_xlabel()``/``set_xlim()``
 call written by hand; only a legend (which needs labeled data to already
@@ -24,7 +24,7 @@ import plotpress
 
 
 def _build_source():
-    """A two-panel figure using most of what subplots_from_layout() now
+    """A two-panel figure using most of what subplots_from_html() now
     reproduces: title/fontsize, x/y labels, explicit limits, a log y-scale,
     a styled grid, an inverted x-axis, a per-axes facecolor, a legend, and
     a figure-wide suptitle."""
@@ -57,7 +57,7 @@ source_fig.save(path, interactive=True)
 
 # ---------------------------------------------------------------------------
 # Load it back and rebuild -- no title, label, limit, scale, or grid is
-# re-typed anywhere below; subplots_from_layout() already applied all of it
+# re-typed anywhere below; subplots_from_html() already applied all of it
 # to `left2`/`right2` by the time this loop starts. The one exception is
 # the legend: it draws from already-plotted, labeled artists, so it has to
 # be called again *after* replotting -- with the exact settings
@@ -66,7 +66,7 @@ source_fig.save(path, interactive=True)
 entry = plotpress.load_data(path)["Figure 1"]
 layout, axes_data = entry["layout"], entry["axes"]
 
-rebuilt_fig, (left2, right2) = plotpress.subplots_from_layout(layout)
+rebuilt_fig, (left2, right2) = plotpress.subplots_from_html(layout)
 
 left_series = axes_data["Bounded signal"]["series"][0]
 left2.plot(left_series["x"], left_series["y"], label="sin(x) + 2")

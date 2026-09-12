@@ -9,6 +9,59 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.35.0] - 2026-09-11
+
+### Added
+
+- **`Figure.to_template()`/`Figure.save_template()` and
+  `plotpress.load_template()`/`plotpress.figure_from_template()`** -- a
+  reusable, data-free snapshot of a figure's own structure and styling,
+  for the case the HTML data round-trip (`subplots_from_html`, see below)
+  doesn't cover: a layout expensive to derive (parsed from a dataset's own
+  metadata, say) that's worth building once and reusing across many future
+  plots, with no plotted data anywhere in it. Builds on the same grid-
+  shape/decoration capture the HTML round-trip already uses
+  (`plotpress.svg.layout_metadata`), extended with everything that
+  round-trip deliberately left out: each axes' own `id`, per-side spine
+  color/width/visibility/alpha, `tick_params()`/`tick_top()`-style
+  overrides, a `twinx()`/`twiny()`/`secondary_xaxis()`/`secondary_yaxis()`
+  overlay's own decorations, an `inset_axes()`'s own decorations and
+  bounds, which axes had a `colorbar()` attached and its styling knobs
+  (not the color mapping itself -- that needs a live mappable, so call
+  `fig.colorbar(mesh, ax=...)` yourself after replotting, the same
+  convention already used for a recovered axes' own `legend()`), and this
+  figure's own `Style` (colors/fonts/dpi). `save_template()` writes plain,
+  indented JSON -- deliberately human-readable/diffable/editable, since a
+  template is meant to be hand-tuned and checked into version control.
+
+### Changed
+
+- **`subplots_from_layout()` is renamed to `subplots_from_html()`.**
+  "layout" was already three different things in this library
+  (`GroupLayout`, `Figure.tight_layout()`, and this function's own
+  `load_data()`-sourced `"layout"` dict) and a fourth, `to_template()`'s
+  own template dict, would have made that worse rather than better. The
+  new name says what the function actually is: the counterpart that
+  rebuilds a figure from an HTML export's own embedded layout, as opposed
+  to `figure_from_template()`'s data-free template. No compatibility
+  alias -- callers should update to the new name directly.
+
+### Fixed
+
+- **`layout_metadata()` (`load_data()`'s `"layout"`/`subplots_from_html()`'s
+  input) captured a `twinx()`/`twiny()`/`secondary_xaxis()`/
+  `secondary_yaxis()` overlay as if it were a second, unrelated grid axes
+  at the exact same cell as its parent**, contradicting its own docstring
+  ("twin/secondary/inset axes ... Deliberately NOT captured"). Both kinds
+  copy their parent's own grid position verbatim (so they stay aligned
+  through `tight_layout()`), so the existing `_subplotspec is None` check
+  that already excludes a freeform `add_axes()` rect never caught them --
+  `subplots_from_html()` on a figure with a twin/secondary would then try
+  to rebuild two overlapping ordinary axes in that one cell instead of a
+  single primary axes. Now excluded the same way a freeform rect already
+  is, landing in `omitted_axes` instead. (`Figure.to_template()`, above,
+  captures a twin/secondary properly instead of dropping it.)
+
 ## [0.34.7] - 2026-09-11
 
 ### Added

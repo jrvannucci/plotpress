@@ -9,6 +9,7 @@ mutable state.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import html
 import json
 import math
@@ -472,10 +473,10 @@ def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style =
     including :meth:`Figure.get_groups` reading it back later.
 
     Round-tripping a figure built this way through :func:`load_data`/
-    :func:`subplots_from_layout` recovers every axes and group correctly,
+    :func:`subplots_from_html` recovers every axes and group correctly,
     but -- since a group's own cells are spans on the shared grid, not
     single non-spanning ones -- ``axes`` on the way back is
-    :func:`subplots_from_layout`'s own flat-list fallback, not reconstructed
+    :func:`subplots_from_html`'s own flat-list fallback, not reconstructed
     back into this same nested shape.
     """
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
@@ -2000,6 +2001,150 @@ class Figure:
         from .vega_lite import figure_to_vega_lite
         return figure_to_vega_lite(self, mesh_data=mesh_data)
 
+    def to_template(self) -> dict:
+        """A reusable, data-free snapshot of this figure's own structure
+        and styling -- grid shape, :meth:`group` boxes, every axes' own
+        decorations, spine colors, tick overrides, ids, twin/secondary/
+        inset overlays, colorbar styling, and this figure's own
+        :class:`~plotpress.style.Style` -- everything needed to rebuild an
+        identically laid-out, identically styled *blank* figure via
+        :func:`plotpress.figure_from_template`, with none of the data
+        actually plotted into it.
+
+        Meant for the case :func:`plotpress.subplots_from_html` doesn't
+        cover: a layout expensive to derive (parsed from a dataset's own
+        metadata, say) that's worth building once and reusing across many
+        future plots, entirely independent of any one plotting session or
+        HTML export -- :meth:`save_template` writes the result as plain,
+        human-editable JSON, with no plotted data anywhere in it.
+
+        Builds on the same grid-shape/decoration capture
+        :func:`plotpress.svg.layout_metadata` uses for the HTML data
+        round-trip (see its own docstring for exactly what a plain grid
+        axes' entry carries), extended with everything that round-trip
+        deliberately leaves out: each grid axes' own ``id``, per-side spine
+        color/width/visibility/alpha, and ``tick_params()``/``tick_top()``-
+        style overrides (``"axes"``, keyed the same way); a
+        ``twinx()``/``twiny()``/``secondary_xaxis()``/``secondary_yaxis()``
+        overlay's own decorations, keyed by which of this template's own
+        ``"axes"`` it overlays (``"overlays"``); an ``inset_axes()``'s own
+        decorations and bounds, keyed the same way (``"insets"``); and
+        which axes had a :meth:`colorbar` attached, with its styling knobs
+        (``"colorbars"``) -- but not the color mapping itself, which needs
+        a live mappable that doesn't exist until data is actually plotted;
+        call ``fig.colorbar(mesh, ax=...)`` yourself after replotting into
+        the rebuilt figure, using whichever of your own rebuilt axes you're
+        already plotting into for ``ax=`` rather than trying to translate
+        a colorbar entry's own ``"parents"`` indices back into one -- those
+        are this *template's* own ``"axes"``/``"overlays"`` indices (handy
+        for cross-referencing this dict by hand), not positions in
+        :func:`~plotpress.figure_from_template`'s rebuilt ``fig.axes``,
+        which can renumber relative to them once overlays/insets are
+        rebuilt after the grid. The same convention
+        :func:`plotpress.subplots_from_html` already documents for a
+        recovered axes' own :meth:`~plotpress.axes.Axes.legend`. A
+        colorbar's ``ticks``/``format`` is only carried over when it's a
+        plain JSON-safe value (a list, or a ``%``-style format string) --
+        a callable can't survive JSON, so it's dropped with a
+        ``UserWarning`` naming which colorbar lost it, the same
+        "degrade a part, not the whole" policy :meth:`to_vega`/
+        :meth:`to_vega_lite` already use for their own unmappable cases.
+
+        A twin/secondary axes never becomes a grid cell of its own here,
+        for the same reason it's excluded from ``layout_metadata()``'s
+        ``"axes"``: it needs its parent axes to already exist. Retrieving
+        one back reliably after :func:`~plotpress.figure_from_template`
+        means giving it (or checking its parent's) ``id`` before saving,
+        then looking it up again with :meth:`get_ax` -- ids round-trip
+        through a template (unlike through the plain HTML round-trip).
+        """
+        from .svg import _axes_decoration_fields, _template_axes_extra, layout_metadata
+
+        idx_of = {id(a): i for i, a in enumerate(self.axes)}
+        payload = layout_metadata(self, idx_of=idx_of)
+        for i, ax in enumerate(self.axes):
+            if i in payload["axes"]:
+                payload["axes"][i].update(_template_axes_extra(ax))
+
+        payload["style"] = dataclasses.asdict(self.style)
+
+        overlays = []
+        for i, ax in enumerate(self.axes):
+            if ax._twin_of is not None:
+                entry = {"index": i,
+                        "kind": "twinx" if ax._twin_shared == "x" else "twiny",
+                        "parent": idx_of[id(ax._twin_of)]}
+            elif ax._secondary_of is not None:
+                is_x = ax._secondary_dim == "x"
+                entry = {"index": i,
+                        "kind": "secondary_xaxis" if is_x else "secondary_yaxis",
+                        "parent": idx_of[id(ax._secondary_of)],
+                        "location": ax._xtick_side if is_x else ax._ytick_side}
+            else:
+                continue
+            entry.update(_axes_decoration_fields(ax))
+            entry.update(_template_axes_extra(ax))
+            overlays.append(entry)
+        payload["overlays"] = overlays
+
+        insets = []
+        for i, ax in enumerate(self.axes):
+            if ax._inset_parent is None:
+                continue
+            entry = {"index": i, "parent": idx_of[id(ax._inset_parent)],
+                     "bounds": list(ax._inset_bounds),
+                     "projection": "polar" if getattr(ax, "_is_polar", False) else None}
+            entry.update(_axes_decoration_fields(ax))
+            entry.update(_template_axes_extra(ax))
+            insets.append(entry)
+        payload["insets"] = insets
+
+        colorbars = []
+        for ax in self.axes:
+            if not ax._is_colorbar:
+                continue
+            entry = {"parents": [idx_of[id(p)] for p in (ax._cbar_parents or [])
+                                 if id(p) in idx_of],
+                     "fraction": ax._cbar_fraction, "pad": ax._cbar_pad,
+                     "label": ax._title or None}
+            ticks = ax._cbar_ticks
+            if ticks is None:
+                entry["ticks"] = None
+            elif isinstance(ticks, (list, tuple, np.ndarray)):
+                entry["ticks"] = [float(v) for v in ticks]
+            else:
+                entry["ticks"] = None
+                warnings.warn(
+                    "Figure.to_template(): a colorbar's ticks= was not a "
+                    "plain list -- dropped, since it can't survive JSON.",
+                    UserWarning, stacklevel=2)
+            fmt = ax._cbar_format
+            if fmt is None or isinstance(fmt, str):
+                entry["format"] = fmt
+            else:
+                entry["format"] = None
+                warnings.warn(
+                    "Figure.to_template(): a colorbar's format= is a "
+                    "callable -- dropped, since it can't survive JSON. Pass "
+                    "a %-style format string instead if this needs to "
+                    "round-trip through a template.",
+                    UserWarning, stacklevel=2)
+            colorbars.append(entry)
+        payload["colorbars"] = colorbars
+
+        return payload
+
+    def save_template(self, path) -> None:
+        """Write :meth:`to_template`'s result to ``path`` as plain,
+        indented JSON -- deliberately human-readable/diffable/editable,
+        since a template is meant to be hand-tuned and checked into
+        version control, not treated as an opaque blob. See
+        :func:`plotpress.load_template`/:func:`plotpress.figure_from_template`
+        to read it back.
+        """
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_template(), f, indent=2)
+
     def print_layout_summary(self) -> None:
         """Print a plain-English orientation to this figure's layout --
         how many axes, how they're arranged (a grid, spans, twins,
@@ -3057,12 +3202,13 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
 
 
 def _apply_axes_decorations(ax, spec):
-    """Re-apply everything ``layout_metadata()`` captured about one axes'
-    own decorations, so :func:`subplots_from_layout`'s caller never has to
-    re-set a title/label/limit/scale by hand. ``.get(...)`` throughout,
-    not direct indexing: a layout loaded from a file saved before these
-    fields existed (see ``_load_layout``'s old-file fallback) simply has
-    none of them, and every one is meant to no-op rather than raise then.
+    """Re-apply everything ``layout_metadata()``/``Figure.to_template()``
+    captured about one axes' own decorations, so :func:`subplots_from_html`/
+    :func:`figure_from_template`'s caller never has to re-set a title/label/
+    limit/scale (or, for a template, spine/tick override/id) by hand.
+    ``.get(...)`` throughout, not direct indexing: a saved dict from before
+    a given field existed simply has none of them, and every one is meant
+    to no-op rather than raise then.
 
     Routed through :meth:`Axes.set` where possible (the single-value
     setters it already validates and dispatches) rather than one direct
@@ -3099,77 +3245,62 @@ def _apply_axes_decorations(ax, spec):
     if spec.get("grid"):
         ax.grid(True, axis=spec.get("grid_axis", "both"),
                which=spec.get("grid_which", "major"), alpha=spec.get("grid_alpha"))
+    # Template-only fields (see plotpress.svg._template_axes_extra) -- never
+    # present on a plain data-roundtrip layout, so every one of these is a
+    # no-op there.
+    if spec.get("id") is not None:
+        ax.set_id(spec["id"])
+    spines = spec.get("spines")
+    if spines:
+        for side, sv in spines.items():
+            spine = ax.spines[side]
+            spine.set_color(sv.get("color"))
+            spine.set_linewidth(sv.get("linewidth"))
+            spine.set_visible(sv.get("visible", True))
+            spine.set_alpha(sv.get("alpha"))
+    if spec.get("tick_overrides"):
+        ax._tick_overrides = {"x": dict(spec["tick_overrides"].get("x") or {}),
+                              "y": dict(spec["tick_overrides"].get("y") or {})}
+    if spec.get("minor_tick_overrides"):
+        ax._minor_tick_overrides = {
+            "x": dict(spec["minor_tick_overrides"].get("x") or {}),
+            "y": dict(spec["minor_tick_overrides"].get("y") or {})}
+    if spec.get("xtick_side") is not None:
+        (ax.tick_top if spec["xtick_side"] == "top" else ax.tick_bottom)()
+    if spec.get("ytick_side") is not None:
+        (ax.tick_right if spec["ytick_side"] == "right" else ax.tick_left)()
+    if spec.get("minor_ticks_on"):
+        ax.minorticks_on()
 
 
-def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=None):
-    """Rebuild a figure with the exact axes grid and :meth:`Figure.group`
-    boxes recorded in a ``load_data()`` ``"layout"`` dict.
-
-    Lets recovered data (:func:`load_data`'s ``"series"``/``"meshes"``/
-    ``"pies"``) be replotted into a figure structurally identical to the one
-    it came from, without hand-matching ``nrows``/``ncols`` yourself the way
-    :doc:`/auto_examples/data_roundtrip/index` used to before this existed.
-
-    Returns ``(fig, axes)``. When every recorded axes is a single,
-    non-spanning cell that exactly tiles one ``nrows`` x ``ncols`` grid,
-    ``axes`` mirrors what ``plotpress.subplots(nrows, ncols)`` itself would
-    hand back -- a bare ``Axes`` for a 1x1 grid, a 1-D array for a single
-    row/column, otherwise a 2-D array indexed ``axes[row, col]``. Anything
-    else (row/column spans from ``add_gridspec``, mismatched grids across
-    axes, or no grid-placed axes at all) falls back to a flat list of axes
-    in their original save order -- still fully usable, just not
-    array-indexable by row/column.
-
-    ``figsize`` overrides ``layout["figsize"]`` (falling back to plotpress's
-    own default when a loaded layout predates that key and carries
-    ``None``). ``style`` is the same as :class:`Figure`'s own constructor --
-    it doesn't round-trip through ``layout`` at all (a custom
-    :class:`~plotpress.Style` -- colors, fonts, dpi -- is a bigger,
-    separate concern this doesn't attempt). ``facecolor`` overrides
-    ``layout["facecolor"]`` the same way ``figsize`` overrides its own key.
-
-    Every axes comes back already carrying its own title, x/y labels,
-    limits, scale, grid, aspect, and inverted-axis state -- exactly as
-    :meth:`Figure.group` boxes and the grid shape itself already did --
-    so a caller only has to replot the recovered data, never re-set a
-    single label or title by hand. A label hidden with
-    ``set_xlabel(..., visible=False)`` comes back hidden (still stored,
-    still drawn nowhere). The figure's own :meth:`Figure.suptitle`/
-    :meth:`~Figure.supxlabel`/:meth:`~Figure.supylabel` and background
-    color come back the same way. Not carried over (real gaps, not
-    oversights -- see :func:`plotpress.svg.layout_metadata`'s own
-    docstring for why): colorbars, tick_params()/explicit tick overrides,
-    twin/secondary/inset axes, a custom ``Style``, and any axes' or
-    group's own ``id`` (see :meth:`~plotpress.axes.Axes.set_id`) --
-    silently, so re-apply one yourself after replotting if a later
-    ``get_ax``/``get_group`` lookup depends on it. An axes that had a
-    :meth:`~Axes.legend` is recorded too, but never auto-applied -- a
-    legend draws from already-plotted, labeled artists, none of which
-    exist on a freshly rebuilt axes yet; call
-    ``ax.legend(**layout["axes"][i]["legend"])`` yourself once you've
-    replotted into it.
-
-    Warns (``UserWarning``) when ``layout["omitted_axes"]`` is non-empty --
-    axes the source figure placed with a freeform :meth:`Figure.add_axes`
-    rect rather than a subplot grid cell have no recorded position to
-    rebuild from, so they are simply missing from the returned figure; the
-    warning is the only signal of that, since a caller with no other axes
-    count to compare against would otherwise have no way to notice. A
-    separate warning names any :meth:`Figure.group` whose own box lost a
-    member to that same drop -- the group is still created around whichever
-    of its axes did come back, just smaller than the original.
+def _rebuild_from_layout(layout, fig, caller, explained=()):
+    """Grid axes + :meth:`Figure.group` boxes shared by
+    :func:`subplots_from_html` and :func:`figure_from_template` -- every
+    part of a ``"layout"``/template dict that isn't specific to either
+    caller. ``caller`` names the public function in this helper's own
+    warnings, since the same message otherwise couldn't tell one from the
+    other. ``explained`` is a set of ``omitted_axes`` indices the caller
+    itself is going to recover some other way -- :func:`figure_from_template`
+    passes the indices its own ``"overlays"``/``"insets"`` entries cover,
+    since those *are* rebuilt (as a twin/secondary/inset of their parent,
+    not a grid cell), so warning that they're "simply absent" the way a
+    truly lost freeform axes is would be actively wrong for them. Returns
+    ``(by_index, order, specs)``: ``by_index`` maps each saved index to its
+    rebuilt :class:`~plotpress.axes.Axes`, ``order`` is those indices
+    sorted for stable iteration, ``specs`` is each one's own spec dict in
+    that same order -- what both callers need for their own
+    squeeze-or-flat-list return-shape logic afterward.
     """
-    omitted = layout.get("omitted_axes") or []
+    omitted = [i for i in (layout.get("omitted_axes") or []) if i not in explained]
     if omitted:
         warnings.warn(
-            f"subplots_from_layout(): {len(omitted)} axes from the saved "
-            f"figure (index {omitted}) were placed with a freeform "
-            "Figure.add_axes() rect, not a subplot grid cell, and could not "
-            "be recovered -- they are simply absent from the rebuilt figure.",
-            UserWarning, stacklevel=2)
-    fig = Figure(figsize=figsize or tuple(layout.get("figsize") or (6.4, 4.8)),
-                style=style,
-                facecolor=facecolor if facecolor is not None else layout.get("facecolor"))
+            f"{caller}(): {len(omitted)} axes from the saved figure "
+            f"(index {omitted}) were placed with a freeform "
+            "Figure.add_axes() rect, or are a twinx()/twiny()/"
+            "secondary_xaxis()/secondary_yaxis() overlay of another axes, "
+            "and could not be recovered as a grid cell of their own -- they "
+            "are simply absent from the rebuilt figure.",
+            UserWarning, stacklevel=3)
     axes_specs = layout.get("axes") or {}
     order = sorted(axes_specs, key=int)
     # Each spec is looked up from `order` several times below (grid-shape
@@ -3205,13 +3336,14 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
         n_original = g.get("n_members", len(g["axes"]))
         if members and len(members) < n_original:
             warnings.warn(
-                f"subplots_from_layout(): group {g['title']!r} had "
-                f"{n_original} axes in the saved figure but only "
-                f"{len(members)} could be recovered -- the rebuilt group "
-                "box wraps fewer axes than the original.",
-                UserWarning, stacklevel=2)
+                f"{caller}(): group {g['title']!r} had {n_original} axes "
+                f"in the saved figure but only {len(members)} could be "
+                "recovered -- the rebuilt group box wraps fewer axes than "
+                "the original.",
+                UserWarning, stacklevel=3)
         if members:
-            fig.group(g["title"], members, linestyle=g.get("linestyle", "--"),
+            fig.group(g["title"], members, id=g.get("id"),
+                     linestyle=g.get("linestyle", "--"),
                      color=g.get("color", "black"), linewidth=g.get("linewidth", 1.5),
                      title_position=g.get("title_position", "top"),
                      pad=tuple(g["pad"]) if g.get("pad") is not None else 8.0,
@@ -3220,7 +3352,17 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
                      supxlabel_size=g.get("supxlabel_size"),
                      supylabel_size=g.get("supylabel_size"),
                      visible=g.get("visible", True))
+    return by_index, order, specs
 
+
+def _squeeze_layout_axes(by_index, order, specs):
+    """The ``(fig, axes)`` return shape both :func:`subplots_from_html` and
+    :func:`figure_from_template` document: a bare ``Axes``/1-D/2-D array
+    when every rebuilt axes is a single, non-spanning cell exactly tiling
+    one ``nrows`` x ``ncols`` grid (mirroring ``plotpress.subplots(nrows,
+    ncols)``'s own return, via the same :func:`_squeeze_grid` it uses), else
+    a flat list in original save order.
+    """
     ordered = [by_index[int(i)] for i in order]
     same_shape = len({(s["nrows"], s["ncols"]) for s in specs}) == 1
     single_cell = all(s["row0"] == s["row1"] and s["col0"] == s["col1"] for s in specs)
@@ -3230,12 +3372,166 @@ def subplots_from_layout(layout, figsize=None, style: Style = None, facecolor=No
             grid = np.empty((nrows, ncols), dtype=object)
             for i, s in zip(order, specs):
                 grid[s["row0"], s["col0"]] = by_index[int(i)]
-            if nrows == 1 and ncols == 1:
-                return fig, grid[0, 0]
-            if nrows == 1 or ncols == 1:
-                return fig, grid.ravel()
-            return fig, grid
-    return fig, ordered
+            return _squeeze_grid(grid, nrows, ncols)
+    return ordered
+
+
+def subplots_from_html(layout, figsize=None, style: Style = None, facecolor=None):
+    """Rebuild a figure with the exact axes grid and :meth:`Figure.group`
+    boxes recorded in a ``load_data()`` ``"layout"`` dict.
+
+    Lets recovered data (:func:`load_data`'s ``"series"``/``"meshes"``/
+    ``"pies"``) be replotted into a figure structurally identical to the one
+    it came from, without hand-matching ``nrows``/``ncols`` yourself the way
+    :doc:`/auto_examples/data_roundtrip/index` used to before this existed.
+
+    Returns ``(fig, axes)``. When every recorded axes is a single,
+    non-spanning cell that exactly tiles one ``nrows`` x ``ncols`` grid,
+    ``axes`` mirrors what ``plotpress.subplots(nrows, ncols)`` itself would
+    hand back -- a bare ``Axes`` for a 1x1 grid, a 1-D array for a single
+    row/column, otherwise a 2-D array indexed ``axes[row, col]``. Anything
+    else (row/column spans from ``add_gridspec``, mismatched grids across
+    axes, or no grid-placed axes at all) falls back to a flat list of axes
+    in their original save order -- still fully usable, just not
+    array-indexable by row/column.
+
+    ``figsize`` overrides ``layout["figsize"]`` (falling back to plotpress's
+    own default when a loaded layout predates that key and carries
+    ``None``). ``style`` is the same as :class:`Figure`'s own constructor --
+    it doesn't round-trip through ``layout`` at all (a custom
+    :class:`~plotpress.Style` -- colors, fonts, dpi -- is a bigger,
+    separate concern this doesn't attempt; see :func:`figure_from_template`
+    if that's what's actually needed). ``facecolor`` overrides
+    ``layout["facecolor"]`` the same way ``figsize`` overrides its own key.
+
+    Every axes comes back already carrying its own title, x/y labels,
+    limits, scale, grid, aspect, and inverted-axis state -- exactly as
+    :meth:`Figure.group` boxes and the grid shape itself already did --
+    so a caller only has to replot the recovered data, never re-set a
+    single label or title by hand. A label hidden with
+    ``set_xlabel(..., visible=False)`` comes back hidden (still stored,
+    still drawn nowhere). The figure's own :meth:`Figure.suptitle`/
+    :meth:`~Figure.supxlabel`/:meth:`~Figure.supylabel` and background
+    color come back the same way. A :meth:`Figure.group`'s own ``id`` (see
+    :meth:`~plotpress.figure.Figure.get_group`) round-trips too. Not
+    carried over (real gaps, not oversights -- see
+    :func:`plotpress.svg.layout_metadata`'s own docstring for why):
+    colorbars, tick_params()/explicit tick overrides, twin/secondary/inset
+    axes, a custom ``Style``, and an *axes'* own ``id`` (see
+    :meth:`~plotpress.axes.Axes.set_id`) -- silently, so re-apply one
+    yourself after replotting if a later ``get_ax`` lookup depends on it.
+    (Every one of these
+    *is* carried by :meth:`Figure.to_template`/:func:`figure_from_template`,
+    which exist for exactly this reason -- reach for those instead of this
+    function if the goal is a reusable, data-free template rather than
+    replotting data recovered from an HTML export.) An axes that had a
+    :meth:`~Axes.legend` is recorded too, but never auto-applied -- a
+    legend draws from already-plotted, labeled artists, none of which
+    exist on a freshly rebuilt axes yet; call
+    ``ax.legend(**layout["axes"][i]["legend"])`` yourself once you've
+    replotted into it.
+
+    Warns (``UserWarning``) when ``layout["omitted_axes"]`` is non-empty --
+    axes the source figure placed with a freeform :meth:`Figure.add_axes`
+    rect rather than a subplot grid cell have no recorded position to
+    rebuild from, so they are simply missing from the returned figure; the
+    warning is the only signal of that, since a caller with no other axes
+    count to compare against would otherwise have no way to notice. A
+    separate warning names any :meth:`Figure.group` whose own box lost a
+    member to that same drop -- the group is still created around whichever
+    of its axes did come back, just smaller than the original.
+    """
+    fig = Figure(figsize=figsize or tuple(layout.get("figsize") or (6.4, 4.8)),
+                style=style,
+                facecolor=facecolor if facecolor is not None else layout.get("facecolor"))
+    by_index, order, specs = _rebuild_from_layout(layout, fig, "subplots_from_html")
+    return fig, _squeeze_layout_axes(by_index, order, specs)
+
+
+def figure_from_template(template, figsize=None, style: Style = None, facecolor=None):
+    """Rebuild a blank, fully-styled figure from a :meth:`Figure.to_template`
+    snapshot: the same grid shape, :meth:`Figure.group` boxes, per-axes
+    decorations, spine colors, tick overrides, ids, twin/secondary/inset
+    overlays, and this figure's own :class:`~plotpress.style.Style` --
+    with no data plotted into any of it. Replot into the returned axes the
+    same way you would after ``plotpress.subplots(...)``.
+
+    ``figsize``/``facecolor`` override the template's own saved values, the
+    same as :func:`subplots_from_html`. ``style`` overrides
+    ``template["style"]`` outright; a template saved before ``"style"``
+    existed falls back to a fresh, default :class:`~plotpress.style.Style`
+    when no override is given, the same fallback shape ``figsize``/
+    ``facecolor`` already use for their own missing/older keys.
+
+    Returns ``(fig, axes)`` with the identical shape contract
+    :func:`subplots_from_html` documents (a bare ``Axes``/1-D/2-D array for
+    a uniform grid, else a flat list in original save order). Twins/
+    secondaries/insets are already built and attached to ``fig.axes`` but
+    are not folded into this return value -- the same way ``ax.twinx()``
+    isn't folded into ``plotpress.subplots()``'s own return either; give an
+    axes (or its parent) an ``id`` before saving the template if a lookup
+    afterward needs to find it reliably, via ``fig.get_ax(id=...)`` -- ids
+    round-trip through a template (unlike through the plain HTML round-trip
+    :func:`subplots_from_html` handles).
+
+    Colorbars are documented in ``template["colorbars"]`` (which axes had
+    one, and its ``fraction``/``pad``/``label``/``ticks``/``format``) but
+    never auto-built -- a colorbar needs a live mappable, which doesn't
+    exist until real data is plotted. Call ``fig.colorbar(mesh, ax=...)``
+    yourself once you've replotted, passing those same styling knobs back
+    if you want them preserved.
+    """
+    saved_style = template.get("style")
+    fig = Figure(figsize=figsize or tuple(template.get("figsize") or (6.4, 4.8)),
+                style=style if style is not None else (Style(**saved_style) if saved_style else None),
+                facecolor=facecolor if facecolor is not None else template.get("facecolor"))
+    explained = {e["index"] for e in template.get("overlays") or [] if "index" in e}
+    explained |= {e["index"] for e in template.get("insets") or [] if "index" in e}
+    by_index, order, specs = _rebuild_from_layout(
+        template, fig, "figure_from_template", explained=explained)
+
+    # A twin/secondary/inset's own parent can itself be another overlay --
+    # a secondary_yaxis() of a twinx(), say -- not just a grid axes, so each
+    # rebuilt overlay/inset is registered into by_index under its own
+    # original index (to_template() always visits a parent before any
+    # overlay/inset built from it, since it iterates fig.axes in creation
+    # order and nothing can be built from an axes that doesn't exist yet)
+    # so a later entry can resolve it as *its* own parent.
+    for e in template.get("overlays") or []:
+        parent = by_index.get(int(e["parent"]))
+        if parent is None:
+            warnings.warn(
+                "figure_from_template(): an overlay's parent (index "
+                f"{e['parent']}) could not be rebuilt -- this twin/"
+                "secondary is skipped too.", UserWarning, stacklevel=2)
+            continue
+        kind = e["kind"]
+        if kind == "twinx":
+            ax = parent.twinx()
+        elif kind == "twiny":
+            ax = parent.twiny()
+        elif kind == "secondary_xaxis":
+            ax = parent.secondary_xaxis(e.get("location", "top"))
+        else:
+            ax = parent.secondary_yaxis(e.get("location", "right"))
+        _apply_axes_decorations(ax, e)
+        if "index" in e:
+            by_index[int(e["index"])] = ax
+
+    for e in template.get("insets") or []:
+        parent = by_index.get(int(e["parent"]))
+        if parent is None:
+            warnings.warn(
+                "figure_from_template(): an inset's parent (index "
+                f"{e['parent']}) could not be rebuilt -- this inset is "
+                "skipped too.", UserWarning, stacklevel=2)
+            continue
+        ax = parent.inset_axes(tuple(e["bounds"]), projection=e.get("projection"))
+        _apply_axes_decorations(ax, e)
+        if "index" in e:
+            by_index[int(e["index"])] = ax
+
+    return fig, _squeeze_layout_axes(by_index, order, specs)
 
 
 def _fit_cells(avail, n, gaps, floor=0.02):
@@ -3767,6 +4063,15 @@ def _title_keyed_axes(axes):
     return _dedupe_keyed(pairs, ("axes", "axes"), stacklevel=4)
 
 
+def load_template(path: str) -> dict:
+    """Read back a :meth:`Figure.save_template` file: plain JSON, no HTML
+    parsing involved, unlike :func:`load_data`. Pass the result to
+    :func:`figure_from_template` to rebuild the figure it describes.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def load_data(path: str, by_index: bool = False):
     """Read back the plotted data embedded in a self-contained interactive
     HTML file written by :meth:`Figure.to_html`/:meth:`Figure.save` or
@@ -3803,7 +4108,7 @@ def load_data(path: str, by_index: bool = False):
     contour). Real for ``"line"``/``"scatter"``/``"stem"``/``"errorbar"``/
     ``"bar"``, which is enough to rebuild a labeled, colored legend after
     replotting recovered data -- see
-    :func:`~plotpress.figure.subplots_from_layout`.
+    :func:`~plotpress.figure.subplots_from_html`.
 
     ``"layout"`` is the figure-level structure -- grid shape/position and
     every decoration (title, labels, limits, scale, ...) of each
@@ -3837,13 +4142,13 @@ def load_data(path: str, by_index: bool = False):
          "supylabel": {"text": str, "size": float | None} | None,
          "facecolor": str}
 
-    Pass ``"layout"`` straight to :func:`subplots_from_layout` to recreate
+    Pass ``"layout"`` straight to :func:`subplots_from_html` to recreate
     the source figure's grid, every axes' own decorations, and its groups
     before replotting recovered data into it -- see
     :doc:`/auto_examples/data_roundtrip/index`. A file saved before 3-D
     support was removed can still report the literal ``"3d"`` here (this
     function only reads back whatever string was stored, it doesn't
-    validate it) -- :func:`subplots_from_layout` raises a clear "unknown
+    validate it) -- :func:`subplots_from_html` raises a clear "unknown
     projection" for that one, since it cannot rebuild an axes kind that no
     longer exists. Axes placed with a
     freeform :meth:`Figure.add_axes` rect (no grid cell) and colorbar axes
@@ -3852,7 +4157,7 @@ def load_data(path: str, by_index: bool = False):
     *original* member count, before any unrecoverable member was filtered
     out of its ``"axes"`` list, so a caller can tell a group that lost one
     apart from one that didn't. ``"legend"`` is recorded but not
-    auto-applied by ``subplots_from_layout`` -- see that function's own
+    auto-applied by ``subplots_from_html`` -- see that function's own
     docstring for why. A file saved before these keys existed loads as
     ``{"figsize": None, "axes": {}, "groups": [], "omitted_axes": [],
     "suptitle": None, "supxlabel": None, "supylabel": None, "facecolor": None}``,
@@ -3975,7 +4280,7 @@ def load_data_xarray(path: str, figure=None):
     same shared-or-per-panel choice. ``.attrs`` carries the recovered
     figure's own ``figsize`` and title, plus ``"layout"`` -- the exact same
     dict :func:`load_data` returns under that key, ready to pass straight
-    to :func:`subplots_from_layout` without a second, separate
+    to :func:`subplots_from_html` without a second, separate
     :func:`load_data` call just to get it -- ``ds.attrs["layout"]``, not a
     duplicate parse of the file.
 

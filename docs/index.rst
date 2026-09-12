@@ -80,7 +80,7 @@ still be read back with Python::
 
                         │
                         ▼
-                    plotpress.subplots_from_layout(layout)
+                    plotpress.subplots_from_html(layout)
                     rebuilds the grid and every axes' own
                   decorations -- not the plotted data itself
                                       │
@@ -103,9 +103,19 @@ For the common case of a *uniform* grid -- every axes its own single
 entirely and reads the same file straight into one ``xarray.Dataset``
 indexed by row/column instead, with the recovered ``layout`` still
 available under ``ds.attrs["layout"]`` for
-:func:`~plotpress.subplots_from_layout`. See
+:func:`~plotpress.subplots_from_html`. See
 :doc:`/auto_examples/data_roundtrip/index` for both paths worked through
 end to end.
+
+That same structure/decoration capture also powers a second, unrelated
+use case: :meth:`~plotpress.figure.Figure.to_template`/``save_template``
+snapshot a figure's grid, group boxes, spine colors, tick overrides, ids,
+twin/secondary/inset overlays, and its own :class:`~plotpress.style.Style`
+-- **with no plotted data in it at all** -- so a layout worth building once
+(derived from a dataset's own metadata, say) can be reused as a template
+across many future plots via :func:`~plotpress.load_template`/
+:func:`~plotpress.figure_from_template`. See
+:doc:`/auto_examples/templates/index` for a worked example.
 
 Built for scientific Python
 ------------------------------

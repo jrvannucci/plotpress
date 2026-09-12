@@ -554,12 +554,70 @@ def axes_metadata(fig, idx_of=None):
     return meta
 
 
+def _axes_decoration_fields(ax):
+    """One axes' own decorations (title, labels, limits, scale, grid,
+    aspect, facecolor, legend) -- no grid-shape/projection fields, since a
+    ``twinx()``/``twiny()``/``secondary_xaxis()``/``secondary_yaxis()``/
+    ``inset_axes()`` overlay is placed relative to its *parent* axes
+    (:func:`plotpress.figure.Figure.to_template`'s own ``"overlays"``/
+    ``"insets"`` entries), not as a grid cell of its own the way
+    :func:`_axes_layout_fields` below needs. Shared by both.
+    """
+    (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
+    return {
+        "title": ax._title or None, "title_size": ax._title_size,
+        "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
+        # Only emitted when actually hidden -- a visible label (the common
+        # case) carries no extra key, and an old layout without these
+        # rebuilds visible, which is what it always was.
+        **({"xlabel_visible": False} if ax._xlabel and not ax._xlabel_visible else {}),
+        **({"ylabel_visible": False} if ax._ylabel and not ax._ylabel_visible else {}),
+        # Always explicit, even for an originally auto-scaled axes --
+        # "the same figure back" means the same rendered extent, not
+        # whatever autoscale happens to recompute from however much of
+        # the original data the caller chooses to replot.
+        "xlim": [round(float(xmin), 6), round(float(xmax), 6)],
+        "ylim": [round(float(ymin), 6), round(float(ymax), 6)],
+        "xscale": ax._xscale, "yscale": ax._yscale,
+        "xinverted": bool(ax._xinverted), "yinverted": bool(ax._yinverted),
+        "grid": bool(ax._grid), "grid_alpha": ax._grid_alpha,
+        "grid_axis": ax._grid_axis, "grid_which": ax._grid_which,
+        "aspect": ax._aspect, "box_aspect": ax._box_aspect,
+        "axis_off": bool(ax._axis_off),
+        "facecolor": ax._facecolor,
+        "legend": ({
+            "loc": ax._legend_loc, "ncol": ax._legend_ncol,
+            "title": ax._legend_title, "fontsize": ax._legend_fontsize,
+            "framealpha": ax._legend_framealpha,
+        } if ax._show_legend else None),
+    }
+
+
+def _axes_layout_fields(ax):
+    """One grid axes' own grid-shape + decorations -- the part of
+    :func:`layout_metadata`'s per-axes payload shared verbatim with
+    :func:`plotpress.figure.Figure.to_template`'s own, richer capture.
+    Pulled out on its own so both can build on the same base dict instead
+    of the template code hand-duplicating this half.
+    """
+    spec = ax._subplotspec
+    return {
+        "nrows": spec.nrows, "ncols": spec.ncols,
+        "row0": spec.row0, "row1": spec.row1,
+        "col0": spec.col0, "col1": spec.col1,
+        # None for a plain Cartesian axes, so a round trip through
+        # add_subplot(..., projection=...) reproduces it exactly.
+        "projection": "polar" if getattr(ax, "_is_polar", False) else None,
+        **_axes_decoration_fields(ax),
+    }
+
+
 def layout_metadata(fig, idx_of=None):
     """Grid shape/position of every subplot-grid axes, its own decorations
     (title, labels, limits, scale, ...), plus ``fig.group()`` boxes and the
     figure's own sup-title/label -- everything ``load_data()``'s
     ``"layout"`` needs to rebuild an equivalent, already-labeled figure
-    with :func:`plotpress.subplots_from_layout`, independent of
+    with :func:`plotpress.subplots_from_html`, independent of
     ``axes_metadata()``'s per-axes pixel/style payload above (built for the
     live interactive view, not for reconstruction -- the two overlap in a
     few fields, e.g. title, by coincidence of both needing it, not because
@@ -575,22 +633,39 @@ def layout_metadata(fig, idx_of=None):
     :meth:`Figure.add_axes` rect has no grid cell to recover, so it is
     simply absent from the payload rather than guessed at; its index is
     still recorded in ``"omitted_axes"`` (colorbars excluded -- they were
-    never expected to round-trip) so :func:`plotpress.subplots_from_layout`
+    never expected to round-trip) so :func:`plotpress.subplots_from_html`
     can warn that a real, once-visible axes won't come back, instead of the
     drop passing without any signal beyond the payload simply being smaller.
+
+    A ``twinx()``/``twiny()``/``secondary_xaxis()``/``secondary_yaxis()``
+    overlay also has ``_subplotspec is not None`` (copied from its parent
+    verbatim, so it stays aligned through ``tight_layout()``) but is
+    likewise excluded here, into ``omitted_axes`` -- it needs its parent
+    axes to already exist, so it can't be a grid cell of its own; without
+    this it would be captured as a second, unrelated grid axes at the exact
+    same ``row0``/``row1``/``col0``/``col1`` as its parent, which
+    :func:`plotpress.subplots_from_html` would then rebuild as two
+    overlapping ordinary axes rather than one primary + a real twin.
+
+    A :meth:`~plotpress.figure.Figure.group`'s own ``id`` round-trips (it's
+    a plain field on the group dict itself, not tied to any one axes).
 
     Deliberately NOT captured (real, currently unrecoverable gaps -- a
     caller that needs one of these still has to re-apply it by hand):
     colorbars (need their mappable, which doesn't exist until the data is
     replotted), a custom :class:`~plotpress.Style` (colors/fonts/dpi -- a
     figure-wide concern, not a per-axes one), tick_params()/explicit tick
-    overrides, twin/secondary/inset axes (each needs its *parent*
-    axes to already exist, so they can't be grid cells of their own), and
-    an axes' or group's own ``id`` (see
-    :meth:`~plotpress.axes.Axes.set_id`/:meth:`~plotpress.figure.Figure.group`)
-    -- silently, with no warning, unlike the member-loss case above: call
-    :meth:`~plotpress.axes.Axes.set_id`/pass ``id=`` again yourself after
-    replotting into the rebuilt figure if a lookup depends on it.
+    overrides, twin/secondary/inset axes (see above -- each needs its
+    *parent* axes to already exist), and an *axes'* own ``id`` (see
+    :meth:`~plotpress.axes.Axes.set_id`) -- silently, with no warning,
+    unlike the member-loss case above: call
+    :meth:`~plotpress.axes.Axes.set_id` again yourself after replotting
+    into the rebuilt figure if a lookup depends on it. (All of
+    these -- style, spines, tick overrides, twins/secondaries/insets, ids,
+    colorbar styling -- *are* captured by :meth:`~plotpress.figure.Figure.to_template`,
+    which exists for exactly this reason; this function stays deliberately
+    narrower so an ordinary interactive HTML export doesn't grow a payload
+    most of its readers never asked for.)
     ``"legend"`` is captured but never auto-applied here either, for a
     narrower reason: :meth:`Axes.legend` draws from already-plotted,
     labeled artists, none of which exist yet on a freshly rebuilt axes --
@@ -603,44 +678,11 @@ def layout_metadata(fig, idx_of=None):
     omitted = []
     for i, ax in enumerate(fig.axes):
         spec = ax._subplotspec
-        if spec is None:
+        if spec is None or ax._twin_of is not None or ax._secondary_of is not None:
             if not ax._is_colorbar:
                 omitted.append(i)
             continue
-        (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
-        axes[i] = {
-            "nrows": spec.nrows, "ncols": spec.ncols,
-            "row0": spec.row0, "row1": spec.row1,
-            "col0": spec.col0, "col1": spec.col1,
-            # None for a plain Cartesian axes, so a round trip through
-            # add_subplot(..., projection=...) reproduces it exactly.
-            "projection": "polar" if getattr(ax, "_is_polar", False) else None,
-            "title": ax._title or None, "title_size": ax._title_size,
-            "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
-            # Only emitted when actually hidden -- a visible label (the common
-            # case) carries no extra key, and an old layout without these
-            # rebuilds visible, which is what it always was.
-            **({"xlabel_visible": False} if ax._xlabel and not ax._xlabel_visible else {}),
-            **({"ylabel_visible": False} if ax._ylabel and not ax._ylabel_visible else {}),
-            # Always explicit, even for an originally auto-scaled axes --
-            # "the same figure back" means the same rendered extent, not
-            # whatever autoscale happens to recompute from however much of
-            # the original data the caller chooses to replot.
-            "xlim": [round(float(xmin), 6), round(float(xmax), 6)],
-            "ylim": [round(float(ymin), 6), round(float(ymax), 6)],
-            "xscale": ax._xscale, "yscale": ax._yscale,
-            "xinverted": bool(ax._xinverted), "yinverted": bool(ax._yinverted),
-            "grid": bool(ax._grid), "grid_alpha": ax._grid_alpha,
-            "grid_axis": ax._grid_axis, "grid_which": ax._grid_which,
-            "aspect": ax._aspect, "box_aspect": ax._box_aspect,
-            "axis_off": bool(ax._axis_off),
-            "facecolor": ax._facecolor,
-            "legend": ({
-                "loc": ax._legend_loc, "ncol": ax._legend_ncol,
-                "title": ax._legend_title, "fontsize": ax._legend_fontsize,
-                "framealpha": ax._legend_framealpha,
-            } if ax._show_legend else None),
-        }
+        axes[i] = _axes_layout_fields(ax)
     groups = [
         {
             "title": g["title"],
@@ -648,13 +690,14 @@ def layout_metadata(fig, idx_of=None):
             # `axes` above) -- a freeform add_axes() member is real
             # (`id(a) in idx_of`) but has no grid cell of its own, the same
             # reason it's absent from `axes`; leaving it in here would have
-            # `subplots_from_layout()` try to look it up among axes it was
+            # `subplots_from_html()` try to look it up among axes it was
             # never going to rebuild. `n_members` -- the ORIGINAL count,
             # before this filter -- is what lets that function tell a
             # group apart that lost a member from one that didn't.
             "axes": [idx_of[id(a)] for a in g["axes"]
                     if id(a) in idx_of and idx_of[id(a)] in axes],
             "n_members": len(g["axes"]),
+            "id": g.get("id"),
             "linestyle": g["linestyle"], "color": g["color"],
             "linewidth": g["linewidth"], "title_position": g["title_position"],
             "pad": list(g["pad"]), "fontsize": g["fontsize"],
@@ -668,6 +711,36 @@ def layout_metadata(fig, idx_of=None):
            "omitted_axes": omitted,
            "suptitle": fig._suptitle, "supxlabel": fig._supxlabel,
            "supylabel": fig._supylabel, "facecolor": fig.style.facecolor}
+
+
+def _template_axes_extra(ax):
+    """The fields :meth:`~plotpress.figure.Figure.to_template` needs beyond
+    :func:`_axes_layout_fields` -- everything a data round-trip doesn't
+    bother with but a reusable template does: which axes id it had, its own
+    per-side spine styling, and any ``tick_params()``/``tick_top()``-style
+    overrides.
+
+    Spine colors are the raw, possibly-``None`` override (see
+    :class:`~plotpress.axes.Spine`'s own "``None`` means inherit the
+    figure's ``Style``" convention) -- not the resolved color -- so a
+    template that never touched a given side keeps inheriting whatever
+    ``Style`` it's loaded with later, rather than baking in today's
+    concrete color as if it had been set explicitly.
+    """
+    return {
+        "id": ax.get_id(),
+        "spines": {
+            side: {"color": sp._color, "linewidth": sp._linewidth,
+                  "visible": sp._visible, "alpha": sp._alpha}
+            for side, sp in ax.spines.items()
+        },
+        "tick_overrides": {"x": dict(ax._tick_overrides["x"]),
+                           "y": dict(ax._tick_overrides["y"])},
+        "minor_tick_overrides": {"x": dict(ax._minor_tick_overrides["x"]),
+                                 "y": dict(ax._minor_tick_overrides["y"])},
+        "xtick_side": ax._xtick_side, "ytick_side": ax._ytick_side,
+        "minor_ticks_on": bool(ax._minor_ticks_on),
+    }
 
 
 def style_payload(fig):

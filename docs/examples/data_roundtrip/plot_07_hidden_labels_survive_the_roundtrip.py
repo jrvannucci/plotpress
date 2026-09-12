@@ -10,7 +10,7 @@ draws only one shared :meth:`~plotpress.figure.Figure.supxlabel`/
 
 The hidden labels aren't just cosmetic-free -- they're *recorded*.
 ``load_data()``'s ``"layout"`` carries each one (plus a ``visible: false``
-flag), :func:`plotpress.subplots_from_layout` rebuilds every panel with
+flag), :func:`plotpress.subplots_from_html` rebuilds every panel with
 its label still attached and still hidden, and in the interactive HTML a
 Point Picking **Extract** pulls each picked value out with its panel's
 ``xlabel``/``ylabel`` *and* the figure's ``supxlabel``/``supylabel``/
@@ -49,13 +49,13 @@ path = os.path.join(tempfile.gettempdir(), "plotpress_hidden_labels_roundtrip.ht
 fig.save(path, interactive=True)
 
 # ---------------------------------------------------------------------------
-# Load it back. subplots_from_layout() has already re-attached every hidden
+# Load it back. subplots_from_html() has already re-attached every hidden
 # label by the time this loop starts -- nothing below re-types one.
 # ---------------------------------------------------------------------------
 entry = plotpress.load_data(path)["Figure 1"]
 layout, axes_data = entry["layout"], entry["axes"]
 
-rebuilt_fig, rebuilt_axes = plotpress.subplots_from_layout(layout)
+rebuilt_fig, rebuilt_axes = plotpress.subplots_from_html(layout)
 for ax, name in zip(np.asarray(rebuilt_axes).ravel(), CHANNELS):
     s = axes_data[name]["series"][0]
     ax.plot(s["x"], s["y"])

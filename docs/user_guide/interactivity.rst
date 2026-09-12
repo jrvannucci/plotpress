@@ -398,7 +398,7 @@ raw ``#plotpress-meta``/``#plotpress-pick``/``#plotpress-style``/
 what plotpress already provides. ``#plotpress-layout`` (grid shape/position
 and every decoration -- title, labels, limits, scale, ... -- of each
 subplot-grid axes, plus any ``Figure.group()`` boxes and the figure's own
-sup-title) is read by Python's own ``load_data()``/``subplots_from_layout()``
+sup-title) is read by Python's own ``load_data()``/``subplots_from_html()``
 round trip, not by the bundled client JS -- no toolbar tool reads it back
 out of the page.
 ``binary_pick_data=False`` is worth pairing with this: the default packs

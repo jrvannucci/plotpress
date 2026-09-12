@@ -10,13 +10,15 @@ Top level
 
    Figure
    subplots
-   subplots_from_layout
+   subplots_from_html
    subplots_from_groups
    GroupLayout
    Group
    Report
    load_data
    load_data_xarray
+   load_template
+   figure_from_template
    select_panel
    Style
    Normalize
@@ -32,7 +34,7 @@ Figure
 
 .. autofunction:: plotpress.subplots
 
-.. autofunction:: plotpress.subplots_from_layout
+.. autofunction:: plotpress.subplots_from_html
 
 Grouping
 --------
@@ -54,6 +56,10 @@ Report
 .. autofunction:: plotpress.load_data
 
 .. autofunction:: plotpress.load_data_xarray
+
+.. autofunction:: plotpress.load_template
+
+.. autofunction:: plotpress.figure_from_template
 
 .. autofunction:: plotpress.select_panel
 

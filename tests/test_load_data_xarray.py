@@ -282,7 +282,7 @@ def test_missing_subplots_in_a_line_grid_also_come_back_nan(tmp_path):
     assert np.allclose(ds["y"].values[0, 2], x * 2)
 
 
-def test_attrs_layout_matches_load_data_and_feeds_subplots_from_layout(tmp_path):
+def test_attrs_layout_matches_load_data_and_feeds_subplots_from_html(tmp_path):
     """The whole layout dict load_data() returns under "layout" is now also
     reachable straight off the Dataset -- no second, separate load_data()
     call (a second parse of the file) just to get it before replotting."""
@@ -299,7 +299,7 @@ def test_attrs_layout_matches_load_data_and_feeds_subplots_from_layout(tmp_path)
     expected_layout = plotpress.load_data(str(p), by_index=True)[0]["layout"]
     assert ds.attrs["layout"] == expected_layout
 
-    fig2, axes2 = plotpress.subplots_from_layout(ds.attrs["layout"])
+    fig2, axes2 = plotpress.subplots_from_html(ds.attrs["layout"])
     # squeezed to 1-D, same as plotpress.subplots(1, 2) itself would return.
     assert axes2.shape == (2,)
     assert axes2[0].get_title() == "panel 0"

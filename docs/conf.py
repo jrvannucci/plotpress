@@ -877,6 +877,7 @@ sphinx_gallery_conf = {
         "examples/signal",
         "examples/seaborn",
         "examples/data_roundtrip",
+        "examples/templates",
         "examples/limitations",
         "live_streaming/patterns",
         "live_streaming/lab_examples",

@@ -874,7 +874,8 @@ def test_load_data_layout_recovers_grid_shape_and_groups(tmp_path):
     }
     assert a0["title"] is None and a0["grid"] is False   # never set on this fixture
     assert layout["groups"] == [{
-        "title": "Top row", "axes": [0, 1, 2], "n_members": 3, "linestyle": "--",
+        "title": "Top row", "axes": [0, 1, 2], "n_members": 3, "id": None,
+        "linestyle": "--",
         "color": "black", "linewidth": 1.5, "title_position": "bottom",
         "pad": [4.0, 4.0, 12.0, 4.0], "fontsize": None,
         "supxlabel": None, "supylabel": None,
@@ -894,7 +895,7 @@ def test_load_data_layout_omits_axes_without_a_grid_cell(tmp_path):
     assert layout["groups"] == []
     assert layout["omitted_axes"] == [0], (
         "a freeform add_axes() axes has no grid cell to recover -- its "
-        "index must still be recorded, so subplots_from_layout() can warn "
+        "index must still be recorded, so subplots_from_html() can warn "
         "that it won't come back")
 
 
@@ -912,7 +913,7 @@ def test_load_data_layout_does_not_count_a_colorbar_as_omitted(tmp_path):
     assert layout["omitted_axes"] == []
 
 
-def test_subplots_from_layout_warns_about_unrecoverable_freeform_axes(tmp_path):
+def test_subplots_from_html_warns_about_unrecoverable_freeform_axes(tmp_path):
     fig = plotpress.Figure()
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_axes((0.6, 0.6, 0.3, 0.3))   # freeform inset, no subplotspec
@@ -923,7 +924,7 @@ def test_subplots_from_layout_warns_about_unrecoverable_freeform_axes(tmp_path):
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
 
     with pytest.warns(UserWarning, match="1 axes .* could not be recovered"):
-        fig2, ax2b = plotpress.subplots_from_layout(layout)
+        fig2, ax2b = plotpress.subplots_from_html(layout)
     assert len(fig2.axes) == 1   # only the grid-placed axes comes back
 
     # The clean-grid case (no freeform axes) must not warn at all.
@@ -935,7 +936,7 @@ def test_subplots_from_layout_warns_about_unrecoverable_freeform_axes(tmp_path):
     layout3 = plotpress.load_data(str(p3))["Figure 1"]["layout"]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        plotpress.subplots_from_layout(layout3)   # must not raise/warn
+        plotpress.subplots_from_html(layout3)   # must not raise/warn
 
 
 def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
@@ -960,7 +961,7 @@ def test_load_data_layout_falls_back_to_empty_on_older_files(tmp_path):
                       "facecolor": None}
 
 
-def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
+def test_subplots_from_html_rebuilds_a_uniform_grid_with_its_group(tmp_path):
     fig, axes = plotpress.subplots(2, 3, figsize=(9.0, 6.0))
     for i, ax in enumerate(np.asarray(axes).ravel()):
         ax.plot([0.0, 1.0], [float(i), float(i) + 1.0])
@@ -970,7 +971,7 @@ def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
     fig.save(str(p), interactive=True)
     entry = plotpress.load_data(str(p))["Figure 1"]
 
-    fig2, axes2 = plotpress.subplots_from_layout(entry["layout"])
+    fig2, axes2 = plotpress.subplots_from_html(entry["layout"])
     assert fig2.figsize == (9.0, 6.0)
     assert isinstance(axes2, np.ndarray) and axes2.shape == (2, 3)
     assert len(fig2._groups) == 1
@@ -986,18 +987,18 @@ def test_subplots_from_layout_rebuilds_a_uniform_grid_with_its_group(tmp_path):
     assert fig2.to_svg()   # renders without error
 
 
-def test_subplots_from_layout_single_axes_squeezes_like_subplots():
+def test_subplots_from_html_single_axes_squeezes_like_subplots():
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
     layout = {"figsize": [6.4, 4.8],
              "axes": {0: {"nrows": 1, "ncols": 1, "row0": 0, "row1": 0,
                           "col0": 0, "col1": 0, "projection": None}},
              "groups": []}
-    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    fig2, ax2 = plotpress.subplots_from_html(layout)
     assert ax2 is not None and not isinstance(ax2, (list, np.ndarray))
 
 
-def test_subplots_from_layout_falls_back_to_a_flat_list_for_spans():
+def test_subplots_from_html_falls_back_to_a_flat_list_for_spans():
     fig = plotpress.Figure(figsize=(8.0, 6.0))
     gs = fig.add_gridspec(2, 2)
     fig.add_subplot(gs[0, :])
@@ -1015,17 +1016,17 @@ def test_subplots_from_layout_falls_back_to_a_flat_list_for_spans():
         },
         "groups": [],
     }
-    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    fig2, axes2 = plotpress.subplots_from_html(layout)
     assert isinstance(axes2, list) and len(axes2) == 3
 
 
-def test_subplots_from_layout_empty_layout_returns_an_empty_figure():
-    fig, axes = plotpress.subplots_from_layout(
+def test_subplots_from_html_empty_layout_returns_an_empty_figure():
+    fig, axes = plotpress.subplots_from_html(
         {"figsize": None, "axes": {}, "groups": []})
     assert fig.axes == [] and axes == []
 
 
-def test_subplots_from_layout_recreates_polar_projection(tmp_path):
+def test_subplots_from_html_recreates_polar_projection(tmp_path):
     fig = plotpress.Figure()
     fig.add_subplot(1, 2, 1, projection="polar")
     fig.add_subplot(1, 2, 2)
@@ -1034,7 +1035,7 @@ def test_subplots_from_layout_recreates_polar_projection(tmp_path):
     layout = plotpress.load_data(str(p))["Figure 1"]["layout"]
     assert layout["axes"][0]["projection"] == "polar"
     assert layout["axes"][1]["projection"] is None
-    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    fig2, axes2 = plotpress.subplots_from_html(layout)
     from plotpress.polar import PolarAxes
     assert isinstance(axes2[0], PolarAxes)
     assert type(axes2[1]) is plotpress.figure.Axes
@@ -1049,10 +1050,10 @@ def test_3d_projection_is_unsupported():
         fig.add_subplot(projection="3d")
 
 
-def test_subplots_from_layout_rejects_a_3d_projection_from_an_old_file():
+def test_subplots_from_html_rejects_a_3d_projection_from_an_old_file():
     """A file saved before 3-D support was removed can still report the
     literal "3d" in its layout -- load_data() just reads back whatever
-    string was stored, it doesn't validate it. subplots_from_layout() must
+    string was stored, it doesn't validate it. subplots_from_html() must
     raise a clear error rather than silently rebuild something else, since
     it genuinely cannot recreate an axes kind that no longer exists."""
     layout = {
@@ -1064,11 +1065,11 @@ def test_subplots_from_layout_rejects_a_3d_projection_from_an_old_file():
         "facecolor": None,
     }
     with pytest.raises(ValueError, match="unknown projection"):
-        plotpress.subplots_from_layout(layout)
+        plotpress.subplots_from_html(layout)
 
 
 def test_layout_metadata_captures_every_axes_decoration(tmp_path):
-    """The layout payload -- and subplots_from_layout()'s reconstruction of
+    """The layout payload -- and subplots_from_html()'s reconstruction of
     it -- has to carry a title/label/limit/scale/grid/aspect/inverted-axis
     round trip, not just the grid shape: the whole point of the user-facing
     complaint this closes was "I shouldn't need to already know what
@@ -1102,7 +1103,7 @@ def test_layout_metadata_captures_every_axes_decoration(tmp_path):
     assert a1["facecolor"] == "#f0f0f0" and a1["box_aspect"] == 0.5
     assert a1["legend"] is None
 
-    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    fig2, axes2 = plotpress.subplots_from_html(layout)
     b1, b2 = axes2
     assert b1._title == "Panel A" and b1._title_size == 14
     assert b1._xlabel == "time" and b1._ylabel == "value"
@@ -1115,7 +1116,7 @@ def test_layout_metadata_captures_every_axes_decoration(tmp_path):
     assert b2._facecolor == "#f0f0f0" and b2._box_aspect == 0.5
 
 
-def test_subplots_from_layout_reproduces_figure_suptitle_and_facecolor(tmp_path):
+def test_subplots_from_html_reproduces_figure_suptitle_and_facecolor(tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
     fig.suptitle("Demo Figure", size=18)
@@ -1131,7 +1132,7 @@ def test_subplots_from_layout_reproduces_figure_suptitle_and_facecolor(tmp_path)
     assert layout["supylabel"] == {"text": "shared y", "size": 10}
     assert layout["facecolor"] == "#eeeeee"
 
-    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    fig2, ax2 = plotpress.subplots_from_html(layout)
     assert fig2._suptitle == {"text": "Demo Figure", "size": 18}
     assert fig2._supxlabel == {"text": "shared x", "size": None}
     assert fig2._supylabel == {"text": "shared y", "size": 10}
@@ -1139,7 +1140,7 @@ def test_subplots_from_layout_reproduces_figure_suptitle_and_facecolor(tmp_path)
 
     # An explicit facecolor= argument still overrides the loaded one, the
     # same way figsize= already does.
-    fig3, ax3 = plotpress.subplots_from_layout(layout, facecolor="#123456")
+    fig3, ax3 = plotpress.subplots_from_html(layout, facecolor="#123456")
     assert fig3.style.facecolor == "#123456"
 
 
@@ -1187,7 +1188,7 @@ def test_set_xlabel_visible_toggles_without_touching_text():
     assert "Frequency (Hz)" in fig.to_svg()
 
 
-def test_hidden_label_round_trips_through_subplots_from_layout(tmp_path):
+def test_hidden_label_round_trips_through_subplots_from_html(tmp_path):
     fig, axes = plotpress.subplots(1, 2)
     for ax in axes:
         ax.plot([0, 1], [0, 1])
@@ -1203,7 +1204,7 @@ def test_hidden_label_round_trips_through_subplots_from_layout(tmp_path):
     assert layout["axes"][1]["xlabel_visible"] is False
     assert layout["axes"][1]["ylabel_visible"] is False
 
-    fig2, axes2 = plotpress.subplots_from_layout(layout)
+    fig2, axes2 = plotpress.subplots_from_html(layout)
     assert axes2[0].get_xlabel() == "shown x" and axes2[0].get_xlabel_visible()
     assert axes2[1].get_xlabel() == "hidden x"
     assert axes2[1].get_xlabel_visible() is False
@@ -1211,7 +1212,7 @@ def test_hidden_label_round_trips_through_subplots_from_layout(tmp_path):
     assert "hidden x" not in fig2.to_svg()
 
 
-def test_subplots_from_layout_skips_decorations_absent_from_an_older_layout():
+def test_subplots_from_html_skips_decorations_absent_from_an_older_layout():
     """A layout saved by a plotpress version between the grid-shape-only
     release and this one has grid-shape keys but none of the decoration
     ones -- _apply_axes_decorations() must no-op on the missing keys
@@ -1222,7 +1223,7 @@ def test_subplots_from_layout_skips_decorations_absent_from_an_older_layout():
                      "col0": 0, "col1": 0, "projection": None}},
         "groups": [],
     }
-    fig, ax = plotpress.subplots_from_layout(layout)   # must not raise
+    fig, ax = plotpress.subplots_from_html(layout)   # must not raise
     assert ax._title == "" and ax._xlabel == "" and ax._grid is False
 
 
@@ -1230,7 +1231,7 @@ def test_reconstructed_figure_renders_byte_identical_svg_to_the_original(tmp_pat
     """The user-facing test: save a figure, load its data and layout back,
     rebuild the figure and replot the recovered data into it (no title,
     label, limit, scale, or grid re-typed by hand -- all of it comes back
-    through subplots_from_layout() alone) -- the result must render to
+    through subplots_from_html() alone) -- the result must render to
     *exactly* the same SVG as the original, not just something visually
     similar."""
     def build():
@@ -1257,7 +1258,7 @@ def test_reconstructed_figure_renders_byte_identical_svg_to_the_original(tmp_pat
     entry = plotpress.load_data(str(p))["Figure 1"]
     layout, axes_data = entry["layout"], entry["axes"]
 
-    rebuilt, (ax1b, ax2b) = plotpress.subplots_from_layout(layout)
+    rebuilt, (ax1b, ax2b) = plotpress.subplots_from_html(layout)
     s1 = axes_data["Panel A"]["series"][0]
     ax1b.plot(s1["x"], s1["y"], label="sq")
     ax1b.legend(**layout["axes"][0]["legend"])   # the one field the caller must re-apply
@@ -1266,7 +1267,7 @@ def test_reconstructed_figure_renders_byte_identical_svg_to_the_original(tmp_pat
     rebuilt.tight_layout()
 
     assert rebuilt.to_svg() == original_svg, (
-        "a figure rebuilt from load_data() + subplots_from_layout() must "
+        "a figure rebuilt from load_data() + subplots_from_html() must "
         "render byte-identical SVG to the source figure once its recovered "
         "data is replotted, with no manual title/label/limit/scale/grid "
         "re-application needed")
@@ -1760,7 +1761,7 @@ def test_group_linestyle_none_draws_no_box_border():
     assert group_rect2 and group_rect2[0].get("stroke-dasharray") == "6,4"
 
 
-def test_subplots_from_layout_warns_when_a_group_loses_a_member(tmp_path):
+def test_subplots_from_html_warns_when_a_group_loses_a_member(tmp_path):
     """Regression: the top-level omitted_axes warning says *an* axes was
     dropped but never *which group* that broke -- a group spanning a
     freeform add_axes() axes and a grid-placed one silently lost the
@@ -1778,7 +1779,7 @@ def test_subplots_from_layout_warns_when_a_group_loses_a_member(tmp_path):
     assert layout["groups"][0]["axes"] == [0]   # the freeform member already filtered out
 
     with pytest.warns(UserWarning, match="'Mixed' had 2 axes .* only 1 could be recovered"):
-        fig2, _ = plotpress.subplots_from_layout(layout)
+        fig2, _ = plotpress.subplots_from_html(layout)
     assert len(fig2._groups[0]["axes"]) == 1
 
     # Sanity: a group that lost nothing must not trigger this warning.
@@ -1791,7 +1792,7 @@ def test_subplots_from_layout_warns_when_a_group_loses_a_member(tmp_path):
     layout3 = plotpress.load_data(str(p3))["Figure 1"]["layout"]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        plotpress.subplots_from_layout(layout3)   # must not warn/raise
+        plotpress.subplots_from_html(layout3)   # must not warn/raise
 
 
 def test_axes_metadata_for_picking():

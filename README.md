@@ -125,7 +125,7 @@ axes' own decorations,        mesh/pie data per axes,
 
            |
            ▼
-       plotpress.subplots_from_layout(layout)
+       plotpress.subplots_from_html(layout)
        rebuilds the grid and every axes' own
      decorations -- not the plotted data itself
                          |
@@ -146,9 +146,17 @@ For the common case of a *uniform* grid — every axes its own single
 skips the title-keyed dict above entirely and reads the same file straight
 into one `xarray.Dataset` indexed by row/column instead, with the recovered
 layout still available under `ds.attrs["layout"]` for
-`plotpress.subplots_from_layout()`. See the
+`plotpress.subplots_from_html()`. See the
 [data round-trip example](https://jrvannucci.github.io/plotpress/auto_examples/data_roundtrip/index.html)
 for both paths worked through end to end.
+
+That same structure/decoration capture also builds **reusable, data-free
+templates**: `Figure.to_template()`/`save_template()` snapshot a figure's
+grid, group boxes, spine colors, tick overrides, ids, twin/secondary/inset
+overlays, and its own `Style` — with no plotted data in it at all — so a
+layout worth building once can be reused across many future plots via
+`plotpress.load_template()`/`plotpress.figure_from_template()`. See the
+[templates example](https://jrvannucci.github.io/plotpress/auto_examples/templates/index.html).
 
 ## What makes it different
 

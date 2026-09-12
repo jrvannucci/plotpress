@@ -2843,7 +2843,7 @@ def test_grid_axis_which_round_trip_through_html_layout():
     layout = _load_layout(path)
     spec = layout["axes"][0]
     assert spec["grid_axis"] == "x" and spec["grid_which"] == "minor"
-    fig2, ax2 = plotpress.subplots_from_layout(layout)   # 1x1 grid -> bare Axes
+    fig2, ax2 = plotpress.subplots_from_html(layout)   # 1x1 grid -> bare Axes
     assert ax2._grid_axis == "x" and ax2._grid_which == "minor"
 
 
@@ -3466,7 +3466,7 @@ def test_recovered_label_and_color_replot_into_a_working_legend(tmp_path):
     data = plotpress.load_data(str(path))
     entry = next(iter(data.values()))
     layout = entry["layout"]
-    fig2, ax2 = plotpress.subplots_from_layout(layout)
+    fig2, ax2 = plotpress.subplots_from_html(layout)
     for s in entry["axes"]["axes 0"]["series"]:
         ax2.plot(s["x"], s["y"], label=s["label"], color=s["color"])
     ax2.legend()
