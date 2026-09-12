@@ -2358,7 +2358,23 @@ class Axes:
         but not prevented case) comes out of both, freezing either that
         empties. Colorbar/legend space this axes' neighbors ceded to it is
         not automatically reclaimed; call ``tight_layout()`` again for that.
+
+        Also removes (recursively, via this same method, so each gets its
+        own full cleanup) any ``twinx()``/``twiny()``/``secondary_xaxis()``/
+        ``secondary_yaxis()`` overlay built from this axes. Neither kind
+        draws anything meaningful on its own -- a twin shares this axes'
+        own grid cell and one of its two data dimensions; a secondary
+        draws no data at all, only a mirrored copy of this axes' own
+        limits -- so leaving one behind after removing the axes it depends
+        on would strand it: still in ``figure.axes``, still rendered, with
+        its own ``_twin_of``/``_secondary_of`` now pointing at an axes no
+        longer part of the figure, and (a twin especially) no spine/box of
+        its own to visually anchor it -- just a lone data trace and a
+        stray column of tick labels floating with nothing around them.
         """
+        for dep in [ax for ax in self.figure.axes
+                   if ax._twin_of is self or ax._secondary_of is self]:
+            dep.remove()
         if self in self.figure.axes:
             self.figure.axes.remove(self)
         if self._id is not None and self.figure._id_index.get(self._id) is self:

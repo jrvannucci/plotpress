@@ -630,6 +630,33 @@ def test_axes_remove_detaches_from_figure_and_share_group():
     assert axes[1] not in axes[0]._sharex_group
 
 
+def test_axes_remove_also_removes_its_own_twin_and_secondary():
+    """Regression: a twinx()/twiny()/secondary_xaxis()/secondary_yaxis()
+    overlay depends entirely on the axes it was built from for its own
+    meaning -- a twin shares that axes' grid cell and one of its two data
+    dimensions, a secondary draws no data of its own at all, only a
+    mirrored copy of that axes' own limits. Removing the axes without also
+    removing these left them behind as orphans: still in fig.axes, still
+    rendered, with their own _twin_of/_secondary_of now pointing at an
+    axes no longer part of the figure -- a twin especially, with no
+    spine/box of its own to visually anchor it, rendered as a lone data
+    trace and a stray column of tick labels floating with nothing around
+    them. Checked by removing the axes and confirming zero axes remain,
+    not just that the removed one itself is gone."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    twin = ax.twinx()
+    twin.plot([0, 1], [1, 0])
+    sec = ax.secondary_xaxis("top")
+    assert len(fig.axes) == 3
+
+    ax.remove()
+    assert fig.axes == []
+    assert twin not in fig.axes
+    assert sec not in fig.axes
+    fig.to_svg()   # no orphan left to render, must not raise either
+
+
 def test_axes_cla_resets_state_but_keeps_position():
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])

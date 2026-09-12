@@ -497,6 +497,27 @@ def test_figure_remove_group_removes_axes_and_registration():
         fig.get_group(title="Group (1,1)")
 
 
+def test_figure_remove_group_also_removes_a_members_own_twin():
+    """remove_group() removes every axes in group.flat_axes() -- the
+    group's own *listed* members -- via Axes.remove(), which (see its own
+    docstring) now also removes any twin/secondary built from the axes
+    being removed. A twin is never itself a listed group member (see
+    Figure.group()'s own docstring on why it's auto-included instead), so
+    without that cascading cleanup it would survive its own group's
+    removal as an orphan: still in fig.axes, still rendered, with no
+    parent axes -- or group -- left to explain it."""
+    fig, axes = plotpress.subplots(1, 2)
+    axes[0].plot([0, 1], [0, 1])
+    axes[1].plot([0, 1], [0, 1])
+    twin = axes[1].twinx()
+    twin.plot([0, 1], [1, 0])
+    fig.group("G", [axes[0], axes[1]], id="g1")
+
+    fig.remove_group(id="g1")
+    assert fig.axes == []
+    assert twin not in fig.axes
+
+
 def test_figure_remove_group_needs_exactly_one_selector():
     fig, axes = _four_quadrants()
     g = fig.get_group(title="Group (0,0)")

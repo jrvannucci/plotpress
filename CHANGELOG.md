@@ -9,6 +9,25 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.5] - 2026-09-11
+
+### Fixed
+
+- **`Axes.remove()` left a removed axes' own `twinx()`/`twiny()`/
+  `secondary_xaxis()`/`secondary_yaxis()` overlay behind as an orphan.**
+  Neither kind draws anything meaningful on its own -- a twin shares its
+  parent's grid cell and one of its two data dimensions; a secondary draws
+  no data at all, only a mirrored copy of its parent's limits -- so once
+  the parent axes was removed, the overlay was left stranded: still in
+  `fig.axes`, still rendered, its own `_twin_of`/`_secondary_of` now
+  pointing at an axes no longer part of the figure, with (a twin
+  especially) no spine or box of its own to visually anchor it -- just a
+  disconnected data trace and a stray column of tick labels floating with
+  nothing around them. `remove_group()` inherited the same gap for any
+  group member with a twin/secondary, since it removes members through
+  this same method. `Axes.remove()` now also removes, recursively, any
+  axes depending on the one being removed.
+
 ## [0.34.4] - 2026-09-11
 
 ### Fixed
