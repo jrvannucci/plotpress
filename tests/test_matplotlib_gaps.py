@@ -596,6 +596,39 @@ def test_spines_visibility_and_per_side_color():
     assert ax.spines["bottom"].get_color() == ax.style.spine_color  # untouched
 
 
+def test_spines_slice_broadcasts_a_setter_to_all_four_sides():
+    """``ax.spines[:]`` is matplotlib's own idiom for "every side at once" --
+    covers set_color/set_edgecolor, set_linewidth, set_visible, and
+    set_alpha in one call apiece, and confirms plain string indexing
+    (spines["top"]) still returns an individual Spine, unaffected by the
+    slice special-case."""
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+
+    ax.spines[:].set_color("#123456")
+    assert all(ax.spines[s].get_color() == "#123456"
+               for s in ("top", "bottom", "left", "right"))
+
+    ax.spines[:].set_edgecolor("#abcdef")
+    assert all(ax.spines[s].get_color() == "#abcdef"
+               for s in ("top", "bottom", "left", "right"))
+
+    ax.spines[:].set_linewidth(4.0)
+    assert all(ax.spines[s].get_linewidth() == 4.0
+               for s in ("top", "bottom", "left", "right"))
+
+    ax.spines[:].set_alpha(0.5)
+    assert all(ax.spines[s].get_alpha() == 0.5
+               for s in ("top", "bottom", "left", "right"))
+
+    ax.spines[:].set_visible(False)
+    assert all(ax.spines[s].get_visible() is False
+               for s in ("top", "bottom", "left", "right"))
+
+    assert ax.spines["top"] is not ax.spines["bottom"]
+    fig.to_svg()
+
+
 def test_set_facecolor_is_per_axes():
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])

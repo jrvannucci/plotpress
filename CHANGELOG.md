@@ -9,6 +9,18 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.34.7] - 2026-09-11
+
+### Added
+
+- **`ax.spines[:]`** -- matplotlib's own idiom for "every side at once".
+  Setting one property on all four spines previously needed a loop over
+  `ax.spines.values()`; `ax.spines[:]` returns a proxy that broadcasts any
+  setter -- `set_color`/`set_edgecolor`, `set_linewidth`, `set_visible`,
+  `set_alpha` -- to all four `Spine` objects in a single call, e.g.
+  `ax.spines[:].set_color("red")`. Plain string indexing (`ax.spines["top"]`)
+  is unaffected.
+
 ## [0.34.6] - 2026-09-11
 
 ### Fixed

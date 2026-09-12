@@ -168,8 +168,35 @@ class Spine:
         return self._alpha if self._alpha is not None else 1.0
 
 
+class _SpinesProxy:
+    """Broadcasts a method call across a group of :class:`Spine` objects --
+    returned by ``ax.spines[:]``, matplotlib's own idiom for "every side at
+    once" (``ax.spines[:].set_color("red")`` needs no explicit loop over
+    ``ax.spines.values()``)."""
+
+    def __init__(self, spines):
+        self._spines = list(spines)
+
+    def __getattr__(self, name):
+        def broadcast(*args, **kwargs):
+            for sp in self._spines:
+                getattr(sp, name)(*args, **kwargs)
+        return broadcast
+
+
 class Spines(dict):
-    """Dict-like container of an axes' four :class:`Spine` objects."""
+    """Dict-like container of an axes' four :class:`Spine` objects.
+
+    ``spines[:]`` returns a :class:`_SpinesProxy` over all four, so a
+    setter called on it -- ``set_color``, ``set_linewidth``,
+    ``set_visible``, ``set_alpha``, ``set_edgecolor`` -- applies to every
+    side in one call instead of a loop over ``spines.values()``.
+    """
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return _SpinesProxy(self.values())
+        return super().__getitem__(key)
 
 
 class Legend:
