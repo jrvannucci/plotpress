@@ -1326,6 +1326,7 @@ class Figure:
                  if ax._subplotspec is not None and not ax._is_colorbar]
         if not specs:
             return self
+        _require_one_grid_shape(specs, "tight_layout")
         nrows, ncols = specs[0]._subplotspec.nrows, specs[0]._subplotspec.ncols
 
         # The top band stacks: a twiny's ticks and label sit directly above the
@@ -1781,6 +1782,7 @@ class Figure:
                  if ax._subplotspec is not None and not ax._is_colorbar]
         if not specs:
             return self
+        _require_one_grid_shape(specs, "subplots_adjust")
         nrows, ncols = specs[0]._subplotspec.nrows, specs[0]._subplotspec.ncols
 
         avail_w = sp["right"] - sp["left"]
@@ -2766,6 +2768,32 @@ def _collapse_empty_grid_rows_and_cols(fig):
             spec.row0, spec.row1 = row_map[spec.row0], row_map[spec.row1]
             spec.col0, spec.col1 = col_map[spec.col0], col_map[spec.col1]
             spec.nrows, spec.ncols = new_nrows, new_ncols
+
+
+def _require_one_grid_shape(specs, caller):
+    """Raise a clear error if ``specs`` spans more than one ``(nrows,
+    ncols)`` shape -- ``add_subplot()``/``subplots()`` can be called more
+    than once on one figure, each producing its own independently-shaped
+    grid, but :func:`_place_spec_rects` (shared by :meth:`Figure.tight_layout`
+    and :meth:`Figure.subplots_adjust`) assumes one uniform grid: its
+    ``col_left``/``row_bottom`` arrays are sized for just the *first* grid's
+    shape, so a later grid's own column/row index used to run past them and
+    raise a bare, uninformative ``IndexError`` instead of explaining what
+    happened. (:func:`_collapse_empty_grid_rows_and_cols` already handles
+    this case correctly, by grouping specs per shape -- it just has no
+    placement step of its own to protect.)
+    """
+    shapes = {(ax._subplotspec.nrows, ax._subplotspec.ncols) for ax in specs}
+    if len(shapes) > 1:
+        named = ", ".join(f"{r}x{c}" for r, c in sorted(shapes))
+        raise ValueError(
+            f"{caller}(): this figure has more than one independently-"
+            f"shaped grid ({named} -- from separate add_subplot()/"
+            f"subplots() calls on the same figure). {caller}() only knows "
+            "how to fit one shared grid at a time; lay each grid out on "
+            "its own Figure, or position these axes by hand with "
+            "set_position() instead."
+        )
 
 
 def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):

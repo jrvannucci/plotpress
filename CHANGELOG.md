@@ -9,6 +9,38 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.38.1] - 2026-09-13
+
+### Fixed
+
+Two real layout bugs found by an explicit audit of `tight_layout()`
+(prompted by the diagonal-tick-labels work in 0.38.0):
+
+- **Tick/label mutations made after `tight_layout()` left the reserved
+  margin stale.** `set_title()`/`set_xlabel()` already marked the figure's
+  layout dirty so it re-fits on the next render (`_settle_layout()`), but
+  `set_xticks`/`set_yticks`, `set_xticklabels`/`set_yticklabels`,
+  `set_xlocator`/`set_ylocator`, `set_xformat`/`set_yformat`,
+  `tick_top`/`tick_bottom`/`tick_left`/`tick_right`,
+  `tick_params(labelsize=...)`/`(length=...)`, and `set_axis_off`/
+  `set_axis_on` never did -- any of them called after `tight_layout()` kept
+  rendering with the old margin, which could clip a longer new label mostly
+  off the canvas rather than reflow to fit it. `tick_params(color=...)`/
+  `(labelcolor=...)`/`(width=...)` deliberately do **not** mark it dirty --
+  they have no effect on the reserved margin, so forcing a relayout for
+  them would just be wasted work on a large grid.
+- **Mixing more than one independently-shaped grid on one figure**
+  (`add_subplot()`/`subplots()` called more than once, each its own shape)
+  **crashed `tight_layout()`/`subplots_adjust()` with a bare `IndexError`.**
+  Both assumed one shared `(nrows, ncols)` grid for the whole figure; a
+  second, differently-shaped grid's own column/row index ran past the
+  first grid's placement arrays. Neither function can actually lay out more
+  than one independent grid at once, so both now raise a clear `ValueError`
+  naming every shape present, instead of either the previous crash or --
+  depending on which shapes happened to be involved -- silent mis-placement
+  that never crashed at all. Lay each grid out on its own `Figure`, or
+  position axes by hand with `Axes.set_position()`, instead.
+
 ## [0.38.0] - 2026-09-13
 
 ### Added

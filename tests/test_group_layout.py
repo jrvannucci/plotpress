@@ -727,7 +727,15 @@ def test_collapse_grid_never_corrupts_an_unrelated_independently_shaped_grid():
     grid axes on the figure indiscriminately -- silently overwriting a
     completely unrelated, untouched grid's own SubplotSpec.nrows/ncols
     with the wrong values. Specs must be grouped by their own (nrows,
-    ncols) first, and collapsing must stay within one group at a time."""
+    ncols) first, and collapsing must stay within one group at a time.
+
+    The figure still ends up with two genuinely different-shaped grids
+    (2x1 and 1x1) once the collapse itself is done -- tight_layout()'s own
+    *placement* step (a separate, later concern from collapsing) now
+    refuses that explicitly (see _require_one_grid_shape) rather than
+    silently mis-placing one of them, so this checks the collapse mutation
+    landed correctly before that expected error, not a full successful
+    render across the mismatched shapes."""
     fig = plotpress.Figure()
     col = [fig.add_subplot(3, 1, i) for i in (1, 2, 3)]
     for ax in col:
@@ -737,7 +745,8 @@ def test_collapse_grid_never_corrupts_an_unrelated_independently_shaped_grid():
     solo = fig.add_subplot(1, 1, 1)   # a second, unrelated 1x1 "grid"
     solo.plot([0, 1], [1, 0])
 
-    fig.tight_layout(collapse="grid")
+    with pytest.raises(ValueError, match="more than one independently-shaped grid"):
+        fig.tight_layout(collapse="grid")
 
     # The unrelated 1x1 axes must be completely untouched.
     assert (solo._subplotspec.nrows, solo._subplotspec.ncols,
@@ -747,7 +756,6 @@ def test_collapse_grid_never_corrupts_an_unrelated_independently_shaped_grid():
     assert len(remaining) == 2
     assert all(ax._subplotspec.nrows == 2 for ax in remaining)
     assert sorted(ax._subplotspec.row0 for ax in remaining) == [0, 1]
-    fig.to_svg()   # must not raise
 
 
 def test_collapse_grid_discards_a_group_emptied_by_direct_axes_removal():

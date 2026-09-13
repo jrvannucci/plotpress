@@ -2259,10 +2259,15 @@ class Axes:
     def set_axis_off(self):
         """Hide the spines, ticks, grid, and axis labels (keep the title)."""
         self._axis_off = True
+        # tight_layout() skips an axis-off axes' ticks/labels entirely when
+        # sizing margins -- toggling this after a fit leaves it reserving
+        # space that's no longer needed (or, toggled back on, none at all).
+        self.figure._layout_dirty = True
 
     def set_axis_on(self):
         """Undo :meth:`set_axis_off`."""
         self._axis_off = False
+        self.figure._layout_dirty = True
 
     def axis(self, *args, **kwargs):
         """matplotlib's overloaded ``axis()`` convenience.
@@ -2647,8 +2652,10 @@ class Axes:
                 ov = self._tick_overrides[a]
                 if labelsize is not None:
                     ov["tick_label_size"] = labelsize
+                    self.figure._layout_dirty = True   # changes the reserved margin
                 if length is not None:
                     ov["tick_size"] = length
+                    self.figure._layout_dirty = True   # ditto
                 if width is not None:
                     ov["tick_width"] = width
                 if color is not None:
@@ -2678,18 +2685,25 @@ class Axes:
     def tick_bottom(self):
         """Draw x-axis ticks/labels along the bottom edge (the default)."""
         self._xtick_side = "bottom"
+        # Moves which margin band (top vs. bottom) tight_layout() reserves
+        # this axes' ticks into -- a stale fit would still reserve the old
+        # side and leave the new one unreserved.
+        self.figure._layout_dirty = True
 
     def tick_top(self):
         """Draw x-axis ticks/labels along the top edge."""
         self._xtick_side = "top"
+        self.figure._layout_dirty = True
 
     def tick_left(self):
         """Draw y-axis ticks/labels along the left edge (the default)."""
         self._ytick_side = "left"
+        self.figure._layout_dirty = True
 
     def tick_right(self):
         """Draw y-axis ticks/labels along the right edge."""
         self._ytick_side = "right"
+        self.figure._layout_dirty = True
 
     def set_xbound(self, lower, upper):
         """Set the x data limits (alias of :meth:`set_xlim`)."""
@@ -2795,6 +2809,10 @@ class Axes:
             self._minor_ticks_on = True
             return
         self._xticks = None if ticks is None else self._as_axis_data(ticks, "x")
+        # Major tick positions/labels change what tight_layout() measures
+        # for the bottom margin (and, if this is a rotated axis, the left
+        # one too) -- see set_xticklabels for the same reasoning.
+        self.figure._layout_dirty = True
         if labels is not None:
             if len(labels) != len(ticks):
                 # Matplotlib itself raises for this exact mismatch; silently
@@ -2818,6 +2836,7 @@ class Axes:
             self._minor_ticks_on = True
             return
         self._yticks = None if ticks is None else self._as_axis_data(ticks, "y")
+        self.figure._layout_dirty = True
         if labels is not None:
             if len(labels) != len(ticks):
                 raise ValueError(
@@ -2829,10 +2848,15 @@ class Axes:
     def set_xticklabels(self, labels):
         """Set explicit x tick label strings (pair with :meth:`set_xticks`)."""
         self._xticklabels = None if labels is None else [str(s) for s in labels]
+        # Explicit labels are often far wider than the numbers they replace
+        # (category names) -- tight_layout() measures them as drawn, so a
+        # margin sized before this call is stale the moment it's set.
+        self.figure._layout_dirty = True
 
     def set_yticklabels(self, labels):
         """Set explicit y tick label strings (pair with :meth:`set_yticks`)."""
         self._yticklabels = None if labels is None else [str(s) for s in labels]
+        self.figure._layout_dirty = True
 
     def set_xlocator(self, spec):
         """Set a declarative x tick-*location* rule, e.g.
@@ -2853,10 +2877,12 @@ class Axes:
         for a worked example.
         """
         self._xlocator = spec
+        self.figure._layout_dirty = True
 
     def set_ylocator(self, spec):
         """Set a declarative y tick-location rule; see :meth:`set_xlocator`."""
         self._ylocator = spec
+        self.figure._layout_dirty = True
 
     def set_xformat(self, spec):
         """Set a declarative x tick-*label* rule: ``"percent"``, ``"comma"``,
@@ -2879,10 +2905,12 @@ class Axes:
         %-string format).
         """
         self._xformat = spec
+        self.figure._layout_dirty = True
 
     def set_yformat(self, spec):
         """Set a declarative y tick-label rule; see :meth:`set_xformat`."""
         self._yformat = spec
+        self.figure._layout_dirty = True
 
     def _resolve_xticks(self):
         """Resolved x tick locations -- the single chain every renderer
