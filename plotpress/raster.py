@@ -39,7 +39,7 @@ from .primitives import Rect as PRect
 from .primitives import Segments as PSegments
 from .svg import (
     _effective_rect, _group_bbox,
-    _LEGEND_ANCHORS, _max_ytick_width, _pixel_rect,
+    _LEGEND_ANCHORS, _max_ytick_width, _pixel_rect, _xtick_label_extent,
 )
 from .transform import LinearTransform
 
@@ -1299,17 +1299,24 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
 
 
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
+    # See svg._render_labels: axis-label *text* always uses the figure
+    # default (label_size/text_color aren't tick_params() fields), but the
+    # offset clearing the tick marks/labels has to match tick_params()'s
+    # own per-axis override -- using the default regardless used to put
+    # the axis label on top of a tick label sized (or rotated) differently
+    # from it.
+    xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+    yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
     cx = L + Wp / 2.0
-    ts, fs = st.tick_size, st.tick_label_size
     if ax._shown_xlabel() and not ax._axis_off:
         # Overrides (align_xlabels) are stamped in 1x figure-pixel space, like
         # the SVG backend's -- scale to this backend's supersampled space.
         if ax._xlabel_y_override is not None:
             y = ax._xlabel_y_override * S
-        elif ax._xtick_side == "top":
-            y = T - (ts + fs + st.label_size) * S
         else:
-            y = T + Hp + (ts + fs + st.label_size + 4) * S
+            xdec = xst.tick_size + _xtick_label_extent(ax, xst)
+            y = (T - (xdec + st.label_size) * S if ax._xtick_side == "top"
+                else T + Hp + (xdec + st.label_size + 4) * S)
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
                   font=_font(st.label_size * S, st.font_family), anchor="mm")
     if ax._shown_ylabel() and not ax._axis_off:
@@ -1319,9 +1326,9 @@ def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
         if ax._ylabel_x_override is not None:
             lx = ax._ylabel_x_override * S
         elif ax._ytick_side == "right":
-            lx = L + Wp + (ts + _max_ytick_width(ax, st) + st.label_size + 4) * S
+            lx = L + Wp + (yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4) * S
         else:
-            lx = L - (ts + _max_ytick_width(ax, st) + st.label_size + 4) * S
+            lx = L - (yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4) * S
         _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
                _rgb(st.text_color), _font(st.label_size * S, st.font_family))
     if ax._title:

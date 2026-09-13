@@ -2829,15 +2829,28 @@ def _render_spines(ax, px_left, px_top, px_w, px_h, body):
 
 
 def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
+    """Draw this axes' title and x/y axis labels.
+
+    ``st`` is the figure-wide default -- axis-label *text* always uses it
+    (``label_size``/``text_color`` aren't tick_params() fields), but the
+    *offset* that clears the tick marks/labels first has to match
+    ``tick_params()``'s own per-axis override, resolved here exactly like
+    :func:`_render_ticks`'s own caller already does. Using the figure
+    default there regardless of the override used to put the axis label
+    on top of a tick label sized (or rotated) differently from the
+    default -- most visibly with a *larger* ``labelsize`` override, whose
+    now-bigger tick labels reached past where this assumed they would end.
+    """
+    xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+    yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
     cx = px_left + px_w / 2.0
-    ts, fs = st.tick_size, st.tick_label_size
     if ax._shown_xlabel() and not ax._axis_off:
         if ax._xlabel_y_override is not None:
             y = ax._xlabel_y_override
-        elif ax._xtick_side == "top":
-            y = px_top - ts - fs - st.label_size
         else:
-            y = px_top + px_h + ts + fs + st.label_size + 4
+            xdec = xst.tick_size + _xtick_label_extent(ax, xst) + 4
+            y = (px_top - xdec - st.label_size if ax._xtick_side == "top"
+                else px_top + px_h + xdec + st.label_size)
         body.append(
             f'<text x="{_fmt(cx)}" y="{_fmt(y)}" text-anchor="middle" '
             f'font-size="{st.label_size}" fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
@@ -2847,16 +2860,42 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
         if ax._ylabel_x_override is not None:
             x, angle = ax._ylabel_x_override, -90
         elif ax._ytick_side == "right":
-            x = px_left + px_w + ts + _max_ytick_width(ax, st) + st.label_size + 4
+            x = px_left + px_w + yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4
             angle = 90
         else:
-            x = px_left - ts - _max_ytick_width(ax, st) - st.label_size - 4
+            x = px_left - yst.tick_size - _max_ytick_width(ax, yst) - st.label_size - 4
             angle = -90
         body.append(
             f'<text x="{_fmt(x)}" y="{_fmt(cy)}" text-anchor="middle" '
             f'font-size="{st.label_size}" fill="{st.text_color}" '
             f'transform="rotate({angle} {_fmt(x)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
         )
+    if ax._title:
+        size = ax._title_size or st.title_size
+        body.append(
+            f'<text x="{_fmt(cx)}" y="{_fmt(px_top - 8 - twiny_headroom(ax, st))}" '
+            f'text-anchor="middle" font-size="{size}" '
+            f'fill="{st.text_color}">{_esc(ax._title)}</text>'
+        )
+
+
+def _xtick_label_extent(ax, xst):
+    """Pixels an x tick label reaches away from the axis line -- one flat
+    text row when horizontal, or the label's real (measured) rotated
+    footprint when :meth:`~plotpress.axes.Axes.tick_params`'s
+    ``labelrotation`` is set. Mirrors :meth:`Figure.tight_layout`'s own
+    identical trig exactly (see its own comment on why this small
+    computation is duplicated rather than shared): this is what the axis
+    label's own offset has to clear, the same way tight_layout's margin
+    does.
+    """
+    if not xst.tick_label_rotation:
+        return xst.tick_label_size
+    ticks = ax._resolve_xticks()
+    labels = ax._resolve_xticklabels(ticks)
+    xtw = max((xst.text_width(l, xst.tick_label_size) for l in labels), default=0.0)
+    theta = math.radians(xst.tick_label_rotation)
+    return xtw * abs(math.sin(theta)) + xst.tick_label_size * abs(math.cos(theta))
     if ax._title:
         size = ax._title_size or st.title_size
         body.append(

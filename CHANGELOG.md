@@ -9,6 +9,23 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.38.3] - 2026-09-13
+
+### Fixed
+
+- **An axis label's own render offset used the figure-wide default tick
+  style instead of `tick_params()`'s resolved per-axis override.**
+  `tight_layout()` already measured the margin from the correct,
+  overridden style (see 0.38.1's fix in the same area), but
+  `svg._render_labels`/`raster._raster_labels` positioned the xlabel/ylabel
+  text itself from the plain figure default regardless -- so a `labelsize`
+  override (or a `labelrotation` one, new in 0.38.0) could still leave the
+  axis label sitting on top of the now differently-sized or diagonal tick
+  labels it was supposed to clear, even though the *margin* around them was
+  already correctly reserved. Both now resolve the same per-axis override
+  `_render_ticks`'s own caller already did for the tick marks/labels
+  themselves.
+
 ## [0.38.2] - 2026-09-13
 
 ### Fixed
