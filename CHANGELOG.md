@@ -9,6 +9,29 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.39.0] - 2026-09-13
+
+### Added
+
+- **`Figure.tight_layout()` now warns about text it can't reserve room
+  for, and can optionally fix it itself.** `tight_layout()`'s margin math
+  only ever sizes one text row per tick/label, so it never noticed an
+  *unrotated* x tick label too wide for its own tick spacing, or a
+  title/group title wider than the box it's centered over -- the last
+  piece of the long-labels-overlap audit that shipped 0.38.0-0.38.3. Since
+  the right fix (a smaller font, `tick_params(labelrotation=...)`, shorter
+  text, a wider figure) is a judgment call, the default is to **warn**,
+  naming the specific overflow and a concrete fix. Pass
+  `tight_layout(auto_label_scale=True)` to have it pick the "smaller font"
+  fix itself wherever there's a per-instance size to shrink -- x tick
+  labels (`tick_params`'s `labelsize`), an axes title (`set_title`'s
+  `size`), and a group title (`group`'s `fontsize`) -- down to a
+  legibility floor, then re-fits the grid for the new, smaller margin. A
+  plain `set_xlabel`/`set_ylabel` axis label has no such per-axes size
+  (it's always `Style.label_size`), so it still only warns even with
+  `auto_label_scale=True`; so does anything that still doesn't fit once
+  its floor is reached.
+
 ## [0.38.3] - 2026-09-13
 
 ### Fixed

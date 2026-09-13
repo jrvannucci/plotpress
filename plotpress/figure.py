@@ -1255,7 +1255,7 @@ class Figure:
 
         return _squeeze_grid(grid, nrows, ncols) if squeeze else grid
 
-    def tight_layout(self, pad=0.02, collapse=None):
+    def tight_layout(self, pad=0.02, collapse=None, auto_label_scale=False):
         """Auto-fit subplot margins so ticks/labels/titles never overflow.
 
         Measures each axes' decorations with the bundled font metrics and
@@ -1264,6 +1264,24 @@ class Figure:
         Also safe to call *before* the titles and axis labels exist: the fit is
         re-applied at render time if any of them change (see
         :meth:`_settle_layout`).
+
+        The margin this reserves is only ever sized from one text row per
+        tick/label -- it has no way to know an *unrotated* x tick label is
+        wide enough to run into its neighbor, or that a title/group title is
+        wider than the box it's centered over, without deciding on your
+        behalf whether the right fix is a smaller font, rotated labels,
+        shorter text, or a wider figure. By default this only warns about
+        those cases, naming a concrete fix for each. Pass
+        ``auto_label_scale=True`` to have it pick one of those fixes itself
+        for the cases with a settable per-instance size -- x tick labels
+        (:meth:`~plotpress.axes.Axes.tick_params`'s ``labelsize``), an
+        axes title (:meth:`~plotpress.axes.Axes.set_title`'s ``size``), and
+        a group title (:meth:`group`'s ``fontsize``) -- shrinking each just
+        enough to fit, down to a legibility floor. A plain
+        ``set_xlabel``/``set_ylabel`` axis label has no such per-axes size
+        to shrink (it's always ``Style.label_size``), so it still only
+        warns even with ``auto_label_scale=True``; so does anything that
+        still doesn't fit once its floor is reached.
 
         ``collapse`` reclaims whitespace :meth:`~plotpress.axes.Axes.remove`/
         :meth:`remove_group` leave behind, since neither reflows the grid on
@@ -1727,6 +1745,15 @@ class Figure:
 
         _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w_list, gap_h_list)
         self._finish_grid_relayout(specs)
+        if auto_label_scale and _auto_scale_overlapping_labels(self, specs, Wpx, Hpx):
+            # Shrinking a tick/title font changes what tight_layout() itself
+            # needs to reserve (a smaller bottom_px, mainly) -- re-run once,
+            # fully, rather than leave the margin sized for the text that no
+            # longer exists. auto_label_scale=False this time: shrinking
+            # never needs a second correction once applied, and this also
+            # bounds the recursion to exactly one extra pass.
+            return self.tight_layout(pad=pad, collapse=collapse, auto_label_scale=False)
+        _warn_about_text_overflow(self, specs, Wpx, Hpx)
         return self
 
     def _finish_grid_relayout(self, specs):
@@ -2796,6 +2823,175 @@ def _require_one_grid_shape(specs, caller):
             "its own Figure, or position these axes by hand with "
             "set_position() instead."
         )
+
+
+_MIN_TICK_LABEL_SIZE = 6.0    # below this, shrinking further stops helping
+_MIN_TITLE_SIZE = 8.0
+_TEXT_FIT_MARGIN = 0.9        # target 90% of the available space, not exactly 100%
+
+
+def _ax_ident(fig, ax):
+    """A short, human phrase naming ``ax`` for a warning message -- its own
+    id/title when it has one (what a caller actually recognizes it by),
+    falling back to its position in :attr:`Figure.axes`."""
+    if ax._id:
+        return f"axes {ax._id!r}"
+    if ax._title:
+        return f"the {ax._title!r}-titled axes"
+    try:
+        return f"axes index {fig.axes.index(ax)}"
+    except ValueError:
+        return "an axes"
+
+
+def _iter_text_overflows(fig, specs, Wpx, Hpx):
+    """Yield one dict per measured text extent that doesn't fit where
+    :meth:`Figure.tight_layout` placed it: unrotated x tick labels wider
+    than their own average spacing, or a title/xlabel/group title wider
+    than the box it's centered over.
+
+    tight_layout()'s own margin math only ever reserves *one text row* per
+    tick/label -- correct for the common case, but never enough to notice
+    an unrotated label simply being too long for its own tick spacing, or
+    a title wider than its axes, since fixing that means picking one of
+    several genuinely different remedies (a smaller font, rotated labels,
+    shorter text, a wider figure) that only the caller can choose. This is
+    the shared detector behind both the advisory warning
+    (:func:`_warn_about_text_overflow`) and the opt-in auto-fix
+    (:func:`_auto_scale_overlapping_labels`, ``tight_layout(auto_label_scale=
+    True)``) -- each dict's ``"fix"`` is a zero-arg callable that shrinks
+    the relevant font just enough to fit (``None`` where there's no
+    per-instance size to shrink at all, e.g. a plain ``set_xlabel`` axis
+    label -- always ``Style.label_size``, nothing narrower to reach for).
+    """
+    st = fig.style
+    for ax in specs:
+        if ax._axis_off or ax._is_colorbar:
+            continue
+        axes_w_px = ax._rect[2] * Wpx
+        xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
+        if not xst.tick_label_rotation:
+            xticks = ax._resolve_xticks()
+            if len(xticks) >= 2:
+                xlabels = ax._resolve_xticklabels(xticks)
+                max_w = max((xst.text_width(l, xst.tick_label_size) for l in xlabels),
+                           default=0.0)
+                avail = axes_w_px / len(xticks)
+                if max_w > avail:
+                    cur_size = xst.tick_label_size
+
+                    def fix(ax=ax, cur_size=cur_size, max_w=max_w, avail=avail):
+                        new_size = max(_MIN_TICK_LABEL_SIZE,
+                                     cur_size * avail / max_w * _TEXT_FIT_MARGIN)
+                        if new_size >= cur_size:
+                            return False
+                        ax.tick_params(axis="x", labelsize=new_size)
+                        return True
+
+                    yield {"kind": "xtick", "ax": ax, "measured_px": max_w,
+                           "avail_px": avail, "fix": fix}
+        if ax._title:
+            size = ax._title_size or st.title_size
+            w = st.text_width(ax._title, size)
+            if w > axes_w_px:
+                def fix(ax=ax, size=size, w=w, avail=axes_w_px):
+                    new_size = max(_MIN_TITLE_SIZE, size * avail / w * _TEXT_FIT_MARGIN)
+                    if new_size >= size:
+                        return False
+                    ax.set_title(ax._title, size=new_size)
+                    return True
+
+                yield {"kind": "title", "ax": ax, "measured_px": w,
+                       "avail_px": axes_w_px, "fix": fix}
+        if ax._shown_xlabel():
+            w = st.text_width(ax._xlabel, st.label_size)
+            if w > axes_w_px:
+                yield {"kind": "xlabel", "ax": ax, "measured_px": w,
+                       "avail_px": axes_w_px, "fix": None}
+
+    for g in fig._groups:
+        if not g["visible"] or g["title_position"] not in ("top", "bottom"):
+            continue
+        g_specs = [a for a in g["axes"] if a._subplotspec is not None]
+        if not g_specs:
+            continue
+        box_left = min(a._rect[0] for a in g_specs)
+        box_right = max(a._rect[0] + a._rect[2] for a in g_specs)
+        box_w_px = (box_right - box_left) * Wpx
+        size = g["fontsize"] or st.title_size
+        w = st.text_width(g["title"], size, bold=True)
+        if w > box_w_px:
+            def fix(g=g, size=size, w=w, avail=box_w_px):
+                new_size = max(_MIN_TITLE_SIZE, size * avail / w * _TEXT_FIT_MARGIN)
+                if new_size >= size:
+                    return False
+                g["fontsize"] = new_size
+                return True
+
+            yield {"kind": "group_title", "group": g, "measured_px": w,
+                   "avail_px": box_w_px, "fix": fix}
+
+
+def _auto_scale_overlapping_labels(fig, specs, Wpx, Hpx):
+    """``tight_layout(auto_label_scale=True)``: shrink every overflowing
+    text this can (see :func:`_iter_text_overflows`) down to its
+    legibility floor. Returns whether anything actually changed, so the
+    caller knows whether a second, full ``tight_layout()`` pass (to
+    re-size the margin for the now-smaller fonts) is worth running.
+    """
+    changed = False
+    for item in _iter_text_overflows(fig, specs, Wpx, Hpx):
+        if item["fix"] is not None and item["fix"]():
+            changed = True
+    return changed
+
+
+def _warn_about_text_overflow(fig, specs, Wpx, Hpx):
+    """Advisory pass: warn about whatever :func:`_iter_text_overflows`
+    still finds, naming a concrete fix for each -- run after
+    ``auto_label_scale`` (if requested) has already had its turn, so this
+    only ever reports what's still a problem afterward."""
+    for item in _iter_text_overflows(fig, specs, Wpx, Hpx):
+        kind, mpx, apx = item["kind"], item["measured_px"], item["avail_px"]
+        if kind == "xtick":
+            ident = _ax_ident(fig, item["ax"])
+            warnings.warn(
+                f"tight_layout(): {ident}'s x tick labels are wider "
+                f"(~{mpx:.0f}px) than their average spacing (~{apx:.0f}px) "
+                "and may overlap -- try tick_params(axis='x', "
+                "labelrotation=45) to angle them, tick_params(axis='x', "
+                "labelsize=<smaller>) to shrink them, "
+                "tight_layout(auto_label_scale=True) to shrink them "
+                "automatically, or set_xticks(...) to thin them out.",
+                UserWarning, stacklevel=3)
+        elif kind == "title":
+            ident = _ax_ident(fig, item["ax"])
+            warnings.warn(
+                f"tight_layout(): {ident}'s title (~{mpx:.0f}px) is wider "
+                f"than its own axes (~{apx:.0f}px) and may run past its "
+                "edges -- try set_title(..., size=<smaller>), shorter "
+                "text, tight_layout(auto_label_scale=True) to shrink it "
+                "automatically, or a wider figure.",
+                UserWarning, stacklevel=3)
+        elif kind == "xlabel":
+            ident = _ax_ident(fig, item["ax"])
+            warnings.warn(
+                f"tight_layout(): {ident}'s xlabel (~{mpx:.0f}px) is wider "
+                f"than its own axes (~{apx:.0f}px) and may run past its "
+                "edges -- try shorter text or a smaller fig.style."
+                "label_size (auto_label_scale can't shrink this one -- "
+                "there's no per-axes xlabel size to scale yet).",
+                UserWarning, stacklevel=3)
+        else:                                        # group_title
+            title = item["group"]["title"]
+            warnings.warn(
+                f"tight_layout(): the {title!r} group's title "
+                f"(~{mpx:.0f}px) is wider than its own box (~{apx:.0f}px) "
+                "and may run past its edges -- try a smaller fontsize= on "
+                "Figure.group(), shorter text, "
+                "tight_layout(auto_label_scale=True) to shrink it "
+                "automatically, or a wider figure.",
+                UserWarning, stacklevel=3)
 
 
 def _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w, gap_h):
