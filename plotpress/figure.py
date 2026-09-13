@@ -1718,10 +1718,12 @@ class Figure:
         # added only to the boundaries that actually border a group, not
         # folded into left_px/etc. above, so it never touches the outer
         # margin those also seed.
-        gap_w_list = [base_gap_w + px / Wpx for px in col_boundary_px]
-        gap_h_list = [base_gap_h + px / Hpx for px in row_boundary_px]
-        axw, gap_w_list = _fit_cells(right - left, ncols, gap_w_list)
-        axh, gap_h_list = _fit_cells(top - bottom, nrows, gap_h_list)
+        base_gap_w_list = [base_gap_w] * (ncols - 1)
+        base_gap_h_list = [base_gap_h] * (nrows - 1)
+        protected_w_list = [px / Wpx for px in col_boundary_px]
+        protected_h_list = [px / Hpx for px in row_boundary_px]
+        axw, gap_w_list = _fit_cells(right - left, ncols, base_gap_w_list, protected_w_list)
+        axh, gap_h_list = _fit_cells(top - bottom, nrows, base_gap_h_list, protected_h_list)
 
         _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w_list, gap_h_list)
         self._finish_grid_relayout(specs)
@@ -2855,9 +2857,27 @@ def _layout_figure_legend(fig):
     H = fig.figsize[1] * fig.style.dpi
     pad_px = spec["pad"] * min(W, H) + 4
     if edge in ("bottom", "top"):
-        band = min((lay["box_h"] + 2 * pad_px) / H, 0.6)
+        needed = (lay["box_h"] + 2 * pad_px) / H
     else:
-        band = min((lay["box_w"] + 2 * pad_px) / W, 0.6)
+        needed = (lay["box_w"] + 2 * pad_px) / W
+    # The legend itself always renders at its own full, unshrunk size
+    # (_render_figure_legend never scales it down) -- reserving anything
+    # less than that for it, as a flat 60% cap used to unconditionally do,
+    # left the difference for the legend to draw over the axes it had just
+    # "made room" for. A legend can still need more room than is
+    # comfortable (many entries, one column) -- 0.92 is a last-resort
+    # safety ceiling against that degenerate case eating the whole figure,
+    # not a routine limit, so it warns rather than silently clipping.
+    if needed > 0.92:
+        warnings.warn(
+            "Figure.legend(): this legend needs about "
+            f"{needed * 100:.0f}% of the figure's "
+            f"{'height' if edge in ('bottom', 'top') else 'width'} to avoid "
+            "overlapping the axes, more than tight_layout() will reserve "
+            "for it -- pass a larger ncol=, fewer entries, or move it to "
+            "loc='right'/'left' if there's more room on that axis.",
+            UserWarning, stacklevel=3)
+    band = min(needed, 0.92)
     keep = 1.0 - band
 
     for ax in specs:
@@ -3564,12 +3584,12 @@ def figure_from_template(template, figsize=None, style: Style = None, facecolor=
     return fig, _squeeze_template_axes(by_index, order, specs)
 
 
-def _fit_cells(avail, n, gaps, floor=0.02):
+def _fit_cells(avail, n, base_gaps, protected_gaps=None, floor=0.02):
     """Cell size and per-boundary gaps that fit ``n`` cells into ``avail``.
 
-    ``gaps`` is a list of ``n - 1`` inter-cell gaps -- not necessarily
-    uniform, since :meth:`Figure.group_spacing` only widens the boundaries
-    that actually border a group. The gap is what the decorations need; the
+    ``base_gaps`` is a list of ``n - 1`` inter-cell gaps -- not necessarily
+    uniform, since a twin/title's own decorations only widen the boundaries
+    that actually need them. The gap is what the decorations need; the
     cell is what is left over. When a dense grid cannot afford both, the
     *gap* gives way first -- panels squeezed together are still readable,
     and the alternative was worse than ugly: the cell size alone was clamped
@@ -3577,21 +3597,42 @@ def _fit_cells(avail, n, gaps, floor=0.02):
     top of the canvas and the first nine rows of a 30x30 grid were simply
     not on the figure.
 
+    ``protected_gaps`` (default: all zero) is added to each boundary's gap
+    the same way, but is exempt from this rescue's shrinking -- reserved
+    for :meth:`Figure.group_spacing`'s own explicit pixel request, which
+    the figure has *already grown* (``Wpx``/``Hpx`` above) specifically to
+    hold. A very wide/tall grid (a :class:`GroupLayout` supergrid's LCM
+    dimension routinely dwarfs the handful of groups a caller actually
+    asked for) can still push ``base_gaps`` below the floor on its own --
+    without this split, the rescue used to shrink group_spacing()'s own
+    pixels right along with the ordinary ones, so a figure that grew by
+    exactly the requested ``wspace`` could still end up with barely half of
+    it as real, visible gap. Only ``base_gaps`` ever shrinks; a caller who
+    explicitly asked for room keeps getting it as long as ``avail`` can
+    hold it at all.
+
     If even the floor does not fit, the cells shrink below it rather than
-    overflow. Tiny but present beats absent. A non-uniform ``gaps`` shrinks
-    proportionally, keeping the ratio between a group boundary and a plain
-    tick-label gap rather than collapsing both to the same value.
+    overflow. Tiny but present beats absent. A non-uniform ``base_gaps``
+    shrinks proportionally, keeping the ratio between one squeezable gap
+    and another rather than collapsing both to the same value.
     """
+    if protected_gaps is None:
+        protected_gaps = [0.0] * len(base_gaps)
     if n <= 1:
-        return max(avail, 1e-4), list(gaps)
-    total_gap = sum(gaps)
-    cell = (avail - total_gap) / n
+        return max(avail, 1e-4), [b + p for b, p in zip(base_gaps, protected_gaps)]
+    total_protected = sum(protected_gaps)
+    total_base = sum(base_gaps)
+    cell = (avail - total_base - total_protected) / n
     if cell >= floor:
-        return cell, list(gaps)
-    max_total_gap = max(0.0, avail - n * floor)
-    scale = (max_total_gap / total_gap) if total_gap > 0 else 0.0
-    new_gaps = [g * scale for g in gaps]
-    return max((avail - max_total_gap) / n, 1e-4), new_gaps
+        return cell, [b + p for b, p in zip(base_gaps, protected_gaps)]
+    # Squeeze only the base gaps; protected ones stay exactly as requested
+    # as long as there's room for them at all once every cell has its floor
+    # and every base gap has shrunk to nothing.
+    max_total_base = max(0.0, avail - n * floor - total_protected)
+    scale = (max_total_base / total_base) if total_base > 0 else 0.0
+    new_gaps = [b * scale + p for b, p in zip(base_gaps, protected_gaps)]
+    new_cell = max((avail - max_total_base - total_protected) / n, 1e-4)
+    return new_cell, new_gaps
 
 
 def _subplot_rect(nrows, ncols, index, sp=None):

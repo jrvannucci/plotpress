@@ -9,6 +9,38 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.38.2] - 2026-09-13
+
+### Fixed
+
+Two more real bugs found by the same `tight_layout()` audit:
+
+- **A large edge `Figure.legend()` could overlap the plot it was meant to
+  sit beside.** `_layout_figure_legend()` capped the reserved band at 60%
+  of the figure, but `_render_figure_legend()` always draws the legend at
+  its own real, unshrunk size regardless of that cap -- a legend whose
+  actual footprint needed more than 60% still drew its full size while the
+  axes only gave up 60%, overlapping by the difference. This broke
+  `Figure.legend()`'s own documented promise that the four named edges
+  "reserve a band ... so the legend never lands on a plot." The band is now
+  sized from what the legend actually needs, with a 92% safety ceiling
+  (an actual, if rare, degenerate case -- hundreds of entries in one
+  column) that warns instead of silently overlapping.
+- **`GroupLayout.group_spacing()` could be honored for only a fraction of
+  the requested pixels.** A `GroupLayout` supergrid's column/row count is
+  the LCM of its groups' own shapes times the outer grid -- a 1x3 and a
+  1x4 group side by side already reach a 1x24 supergrid, dense enough to
+  trigger `tight_layout()`'s cell-floor rescue (`_fit_cells`) well before
+  either group looks unusually large. That rescue shrinks gaps
+  proportionally to keep every column at its 2% floor, but it used to
+  shrink `group_spacing()`'s own explicit reservation right along with the
+  ordinary tick-label-driven gaps -- even though the figure had already
+  grown specifically to hold it -- so a `wspace=42` request could end up as
+  well under half that much real, visible gap, silently defeating the one
+  knob that exists to prevent two group boxes from overlapping.
+  `_fit_cells` now takes the ordinary and explicit portions of each gap
+  separately and only ever shrinks the ordinary one.
+
 ## [0.38.1] - 2026-09-13
 
 ### Fixed
