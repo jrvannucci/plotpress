@@ -1657,6 +1657,7 @@ _JS_SOURCE = r"""
       fs: ov.tick_label_size !== undefined ? ov.tick_label_size : base.fs,
       col: ov.spine_color !== undefined ? ov.spine_color : base.col,
       text: ov.text_color !== undefined ? ov.text_color : base.text,
+      rot: ov.tick_label_rotation !== undefined ? ov.tick_label_rotation : (base.rot || 0),
     };
   }
 
@@ -1714,13 +1715,20 @@ _JS_SOURCE = r"""
       var px = toPixel(m, xt, m.ymin).x;
       var ly = xAxis + xSign * xStyle.ts + (xTop ? -3 : xStyle.fs);
       xmarks.push('<line x1="' + px.toFixed(2) + '" y1="' + xAxis.toFixed(2) + '" x2="' + px.toFixed(2) + '" y2="' + (xAxis + xSign * xStyle.ts).toFixed(2) + '"/>');
-      labels.push('<text x="' + px.toFixed(2) + '" y="' + ly.toFixed(2) + '" text-anchor="middle" font-size="' + xStyle.fs + '" fill="' + xStyle.text + '">' + xr.labels[i] + '</text>');
+      // Mirrors svg._render_ticks: a rotated label anchors at its own end
+      // (against the tick), not centered, or it would straddle the tick
+      // edge-on instead of tilting away from it.
+      var xAnchor = xStyle.rot ? 'end' : 'middle';
+      var xRot = xStyle.rot ? ' transform="rotate(' + (-xStyle.rot) + ' ' + px.toFixed(2) + ' ' + ly.toFixed(2) + ')"' : '';
+      labels.push('<text x="' + px.toFixed(2) + '" y="' + ly.toFixed(2) + '" text-anchor="' + xAnchor + '" font-size="' + xStyle.fs + '" fill="' + xStyle.text + '"' + xRot + '>' + xr.labels[i] + '</text>');
     });
     yr.ticks.forEach(function (yt, i) {
       var py = toPixel(m, m.xmin, yt).y;
       var lx = yAxis + ySign * yStyle.ts + (yRight ? 2 : -2);
+      var ly2 = py + yStyle.fs * 0.35;
       ymarks.push('<line x1="' + yAxis.toFixed(2) + '" y1="' + py.toFixed(2) + '" x2="' + (yAxis + ySign * yStyle.ts).toFixed(2) + '" y2="' + py.toFixed(2) + '"/>');
-      labels.push('<text x="' + lx.toFixed(2) + '" y="' + (py + yStyle.fs * 0.35).toFixed(2) + '" text-anchor="' + (yRight ? 'start' : 'end') + '" font-size="' + yStyle.fs + '" fill="' + yStyle.text + '">' + yr.labels[i] + '</text>');
+      var yRotAttr = yStyle.rot ? ' transform="rotate(' + (-yStyle.rot) + ' ' + lx.toFixed(2) + ' ' + ly2.toFixed(2) + ')"' : '';
+      labels.push('<text x="' + lx.toFixed(2) + '" y="' + ly2.toFixed(2) + '" text-anchor="' + (yRight ? 'start' : 'end') + '" font-size="' + yStyle.fs + '" fill="' + yStyle.text + '"' + yRotAttr + '>' + yr.labels[i] + '</text>');
     });
     parts.push('<g stroke="' + xStyle.col + '" stroke-width="' + xStyle.tw + '">' + xmarks.join('') + '</g>');
     parts.push('<g stroke="' + yStyle.col + '" stroke-width="' + yStyle.tw + '">' + ymarks.join('') + '</g>');

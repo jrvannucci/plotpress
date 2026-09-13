@@ -9,6 +9,36 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [0.38.0] - 2026-09-13
+
+### Added
+
+- **`Axes.tick_params(labelrotation=...)`** -- angles tick labels instead of
+  leaving them horizontal, the standard fix once category names are long
+  enough to overlap their neighbors. Works on either axis
+  (`tick_params(axis='x'/'y', labelrotation=...)`); a nonzero rotation
+  right-anchors the label to its own tick automatically (matplotlib needs a
+  separate `ha='right'` for this -- a diagonal *tick* label has no other
+  look anyone would want, so it isn't a second knob here).
+  `Figure.tight_layout()` reserves the rotated label's real measured
+  footprint (not a single fixed text row) so the row below it, or the
+  figure's own edge for the leftmost column, never overlaps it. Round-trips
+  through `Figure.to_template()`/`figure_from_template()` and the
+  interactive HTML export like every other `tick_params()` override.
+
+### Fixed
+
+- **A twin axes' own `tick_params()` override was never consulted by its
+  renderer at all** -- found while wiring the SVG/raster twin-tick
+  renderers up to the new `labelrotation` -- so `twin.tick_params(...)`
+  (labelsize, color, and now rotation) silently had no effect on a
+  `twinx()`/`twiny()`, always drawing with the figure-wide default
+  regardless of what was set on the twin itself. Both `svg.py`'s
+  `_render_twin_ticks` and `raster.py`'s `_raster_twin_ticks` now resolve
+  the twin's own override for whichever axis it actually draws
+  independently, matching how a `secondary_xaxis()`/`secondary_yaxis()`
+  already worked.
+
 ## [0.37.1] - 2026-09-12
 
 ### Fixed

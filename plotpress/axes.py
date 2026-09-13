@@ -2616,7 +2616,7 @@ class Axes:
         return self._ylim
 
     def tick_params(self, axis="both", which="major", labelsize=None, length=None,
-                    width=None, color=None, labelcolor=None):
+                    width=None, color=None, labelcolor=None, labelrotation=None):
         """Style this axes' tick marks and labels (a subset of matplotlib's).
 
         ``labelsize`` (tick-label font), ``length``/``width`` (tick marks),
@@ -2624,8 +2624,20 @@ class Axes:
         ``"x"``, ``"y"``, or ``"both"`` (default) -- each axis keeps its own
         override, so ``tick_params(axis='x', color='red')`` recolors only the
         x ticks. ``which`` selects ``"major"``, ``"minor"``, or ``"both"``;
-        minor ticks have no labels, so ``labelsize``/``labelcolor`` only ever
-        affect major ticks.
+        minor ticks have no labels, so ``labelsize``/``labelcolor``/
+        ``labelrotation`` only ever affect major ticks.
+
+        ``labelrotation`` angles the tick labels (degrees, counterclockwise --
+        matching :meth:`text`'s own ``rotation``), the standard fix for long
+        labels crowding into their neighbors: ``ax.tick_params(axis='x',
+        labelrotation=45)`` turns a bottom row of long category names
+        diagonal instead of letting them overlap. A nonzero rotation also
+        right-anchors the label to its tick (matplotlib needs a separate
+        ``ha='right'`` for this; this is the only sensible look for a
+        diagonal *tick* label, so it's automatic here rather than a second
+        knob nobody would set differently). :meth:`~plotpress.figure.Figure.tight_layout`
+        reserves the rotated label's actual measured extent, not just one
+        text line, so the row below never overlaps it.
         """
         if axis not in ("x", "y", "both"):
             raise ValueError("axis must be 'x', 'y', or 'both'")
@@ -2643,6 +2655,9 @@ class Axes:
                     ov["spine_color"] = color    # tick-mark color (box spine unchanged)
                 if labelcolor is not None:
                     ov["text_color"] = labelcolor
+                if labelrotation is not None:
+                    ov["tick_label_rotation"] = labelrotation
+                    self.figure._layout_dirty = True
             if which in ("minor", "both"):
                 mov = self._minor_tick_overrides[a]
                 if length is not None:

@@ -1150,6 +1150,38 @@ def _text(draw, x, y, s, fill, font, ha="left", va="baseline", rotation=0.0,
     draw.text((x, y), s, fill=fill, font=font, anchor=anchor, **kw)
 
 
+def _rotated_anchored_text(draw, x, y, s, fill, font, anchor, rotation):
+    """Draw ``s`` rotated ``rotation`` degrees (PIL/matplotlib convention:
+    counterclockwise positive) about its own ``anchor`` point (a PIL
+    two-letter anchor code, e.g. ``"ra"`` = right/ascender), landing that
+    point exactly at ``(x, y)`` -- unlike a plain ``_text(..., rotation=...)``
+    call, whose rotated path centers the whole glyph box on ``(x, y)``
+    instead (see its own docstring), which is wrong for a tick label: half
+    the rotated text would swing up past the axis and into the plot instead
+    of hanging below/beside it.
+
+    Pillow's own ``Image.rotate(..., expand=True)`` documents that
+    ``expand`` "assumes rotation around the center", so it can't be trusted
+    together with a ``center=`` this needs to pivot around instead --
+    rotating with an explicit ``center`` and ``expand=False`` sidesteps that
+    entirely: the anchor point *is* the rotation center, so it never moves,
+    as long as the canvas is padded enough in every direction that no part
+    of the (rotated, at any angle) text can fall outside it.
+    """
+    from PIL import Image as PILImage, ImageDraw
+
+    left, top, right, bottom = draw.textbbox((0, 0), s, font=font, anchor=anchor)
+    r = max(math.hypot(left, top), math.hypot(right, top),
+           math.hypot(left, bottom), math.hypot(right, bottom)) + 2
+    size = max(1, int(math.ceil(2 * r)))
+    ax_local = ay_local = r
+    local = PILImage.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(local).text((ax_local, ay_local), s, fill=fill, font=font, anchor=anchor)
+    rotated = local.rotate(rotation, resample=PILImage.BICUBIC,
+                           center=(ax_local, ay_local), expand=False)
+    draw._image.alpha_composite(rotated, (int(round(x - ax_local)), int(round(y - ay_local))))
+
+
 def _quiver_arrow(draw, x0, y0, x1, y1, col, S):
     w = max(1, int(round(1.2 * S)))
     draw.line([x0, y0, x1, y1], fill=col, width=w)
@@ -1178,18 +1210,30 @@ def _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
     x_top = xside == "top"
     y_right = yside == "right"
     x_axis, x_sign, y_axis, y_sign = tick_axis_edge(L, Wp, T, Hp, xside, yside)
+    xrot, yrot = xst.tick_label_rotation, yst.tick_label_rotation
     for xt, lab in zip(xticks, xlabels):
         x = float(tr.x(xt))
         draw.line([x, x_axis, x, x_axis + x_sign * xts], fill=xcol, width=xtw)
         ly = x_axis + x_sign * (xts + 1)
-        draw.text((x, ly), lab, fill=_rgb(xst.text_color), font=xfont,
-                  anchor=("md" if x_top else "ma"))
+        if xrot:
+            # Right-anchor (not the plain "md"/"ma" middle) so the label
+            # hangs away from its tick instead of straddling it once
+            # diagonal -- see svg._render_ticks for the same convention.
+            _rotated_anchored_text(draw, x, ly, lab, _rgb(xst.text_color), xfont,
+                                   ("rd" if x_top else "ra"), xrot)
+        else:
+            draw.text((x, ly), lab, fill=_rgb(xst.text_color), font=xfont,
+                      anchor=("md" if x_top else "ma"))
     for yt, lab in zip(yticks, ylabels):
         y = float(tr.y(yt))
         draw.line([y_axis, y, y_axis + y_sign * yts, y], fill=ycol, width=ytw)
         lx = y_axis + y_sign * (yts + 2)
-        draw.text((lx, y), lab, fill=_rgb(yst.text_color), font=yfont,
-                  anchor=("lm" if y_right else "rm"))
+        anchor = "lm" if y_right else "rm"
+        if yrot:
+            _rotated_anchored_text(draw, lx, y, lab, _rgb(yst.text_color), yfont,
+                                   anchor, yrot)
+        else:
+            draw.text((lx, y), lab, fill=_rgb(yst.text_color), font=yfont, anchor=anchor)
 
 
 def _raster_minor_ticks(xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
@@ -1211,18 +1255,29 @@ def _raster_minor_ticks(xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
 
 
 def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
+    # See svg._render_twin_ticks: a twin only draws one axis independently
+    # (the other mirrors the parent), so only that one axis' own
+    # tick_params() override matters -- previously neither was consulted here.
+    axis = "y" if ax._twin_shared == "x" else "x"
+    ov = ax._tick_overrides[axis]
+    st = st.copy(**ov) if ov else st
     col = _rgb(st.spine_color)
     ts = st.tick_size * S
     fs = st.tick_label_size * S
     font = _font(fs, st.font_family)
     tw = max(1, int(round(st.tick_width * S)))
+    rot = st.tick_label_rotation
     if ax._twin_shared == "x":                       # twinx: y-axis on the RIGHT
         xr = L + Wp
         for yt, lab in zip(yticks, ax._resolve_yticklabels(yticks)):
             y = float(tr.y(yt))
             draw.line([xr, y, xr + ts, y], fill=col, width=tw)
-            draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
-                      font=font, anchor="lm")
+            if rot:
+                _rotated_anchored_text(draw, xr + ts + 2, y, lab, _rgb(st.text_color),
+                                       font, "lm", rot)
+            else:
+                draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
+                          font=font, anchor="lm")
         if ax._shown_ylabel():
             lx = xr + ts + (_max_ytick_width(ax, st) + st.label_size + 4) * S
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
@@ -1231,8 +1286,12 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
         for xt, lab in zip(xticks, ax._resolve_xticklabels(xticks)):
             x = float(tr.x(xt))
             draw.line([x, T, x, T - ts], fill=col, width=tw)
-            draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),
-                      font=font, anchor="md")
+            if rot:
+                _rotated_anchored_text(draw, x, T - ts - 1, lab, _rgb(st.text_color),
+                                       font, "rd", rot)
+            else:
+                draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),
+                          font=font, anchor="md")
         if ax._shown_xlabel():
             draw.text((L + Wp / 2.0, T - ts - fs - st.label_size * S),
                       ax._xlabel, fill=_rgb(st.text_color),

@@ -1366,6 +1366,10 @@ class Figure:
             ylabels = ax._resolve_yticklabels(yt)
             ytw = max((yst.text_width(l, yst.tick_label_size) for l in ylabels),
                       default=0.0)
+            if yst.tick_label_rotation:
+                ytheta = math.radians(yst.tick_label_rotation)
+                yc, ys = abs(math.cos(ytheta)), abs(math.sin(ytheta))
+                ytw = ytw * yc + yst.tick_label_size * ys
             right_px = max(right_px, xst.tick_label_size * 0.6)  # last x label overhang
 
             # A twin draws its axis on the side *opposite* its parent, so its
@@ -1373,6 +1377,37 @@ class Figure:
             # left/bottom bands padded the wrong side and left the twin's own
             # tick labels and axis label to overflow -- off the canvas for a
             # single axes, and into the next panel for a grid.
+            # A rotated x tick label's own footprint depends on the string
+            # it's rotating, not just one fixed text row -- _max_xtick_width
+            # is only worth computing on this (uncommon) path, mirroring how
+            # ytw above is always needed but this isn't.
+            if xst.tick_label_rotation:
+                xt_ = ax._resolve_xticks()
+                xtlabels = ax._resolve_xticklabels(xt_)
+                xtw = max((xst.text_width(l, xst.tick_label_size) for l in xtlabels),
+                         default=0.0)
+                theta = math.radians(xst.tick_label_rotation)
+                c, s = abs(math.cos(theta)), abs(math.sin(theta))
+                rot_w = xtw * c + xst.tick_label_size * s
+                rot_h = xtw * s + xst.tick_label_size * c
+                xdec = xst.tick_size + rot_h + 4
+                # The label is anchored at its own end (see svg._render_ticks),
+                # so it reaches away from the tick horizontally too -- past
+                # the figure's own left edge for column 0, since nothing else
+                # widens an *interior* column boundary for this (that's the
+                # same unsolved interior-gap tick labels already have
+                # unrotated -- rotation doesn't make it worse there, only the
+                # outer edge, which would otherwise clip clean off the canvas
+                # rather than merely crowd a neighbor, is handled here).
+                # rot_w over-reserves slightly (it's the full rotated-box
+                # width, not just the reach from an end anchor) -- generous
+                # on purpose, the same tradeoff every other approximate
+                # extent in this function makes.
+                if ax._subplotspec.col0 == 0:
+                    left_px = max(left_px, rot_w)
+            else:
+                xdec = xst.tick_size + xst.tick_label_size + 4
+
             if ax._twin_of is not None:
                 if ax._twin_shared == "x":                   # twinx: y on the right
                     rdec = yst.tick_size + ytw + 4
@@ -1380,7 +1415,7 @@ class Figure:
                         rdec += st.label_size + 6
                     right_px = max(right_px, rdec)
                 else:                                        # twiny: x on the top
-                    tdec = xst.tick_size + xst.tick_label_size + 4
+                    tdec = xdec
                     if ax._shown_xlabel():
                         tdec += st.label_size + 6
                     twin_top_px = max(twin_top_px, tdec)
@@ -1397,7 +1432,7 @@ class Figure:
                 right_px = max(right_px, ldec)
             else:
                 left_px = max(left_px, ldec)
-            bdec = xst.tick_size + xst.tick_label_size + 4
+            bdec = xdec
             if ax._shown_xlabel():
                 bdec += st.label_size + 6
             if ax._xtick_side == "top":

@@ -2687,16 +2687,28 @@ def _render_grid(st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body,
 
 def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, body):
     """Draw a twin overlay's independent axis on the side opposite the parent."""
-    ts, tw, fs = st.tick_size, st.tick_width, st.tick_label_size
+    # A twin only ever draws *one* of its two axes independently (the other
+    # mirrors the parent's own, already-drawn one), so unlike a regular
+    # axes/secondary -- which resolve "x" and "y" overrides separately --
+    # only that one axis' own tick_params() override is relevant here.
+    # Previously neither was ever consulted, so tick_params() on a twin was
+    # silently ignored by its own renderer.
+    axis = "y" if ax._twin_shared == "x" else "x"
+    ov = ax._tick_overrides[axis]
+    st = st.copy(**ov) if ov else st
+    ts, tw, fs, rot = st.tick_size, st.tick_width, st.tick_label_size, st.tick_label_rotation
     marks, labels = [], []
     if ax._twin_shared == "x":                      # twinx: y-axis on the RIGHT
         xr = px_left + px_w
         for yt, lab in zip(yticks, ax._resolve_yticklabels(yticks)):
             y = tr.y(yt)
             marks.append(f'<line x1="{_fmt(xr)}" y1="{_fmt(y)}" x2="{_fmt(xr + ts)}" y2="{_fmt(y)}"/>')
+            lx, ly = xr + ts + 2, y + fs * 0.35
+            anchor = "end" if rot else "start"
+            rt = f' transform="rotate({_fmt(-rot)} {_fmt(lx)} {_fmt(ly)})"' if rot else ""
             labels.append(
-                f'<text x="{_fmt(xr + ts + 2)}" y="{_fmt(y + fs * 0.35)}" '
-                f'text-anchor="start" font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+                f'<text x="{_fmt(lx)}" y="{_fmt(ly)}" '
+                f'text-anchor="{anchor}" font-size="{fs}" fill="{st.text_color}"{rt}>{_esc(lab)}</text>'
             )
         if ax._shown_ylabel():
             lx = xr + ts + _max_ytick_width(ax, st) + st.label_size + 4
@@ -2710,9 +2722,12 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
         for xt, lab in zip(xticks, ax._resolve_xticklabels(xticks)):
             x = tr.x(xt)
             marks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(px_top)}" x2="{_fmt(x)}" y2="{_fmt(px_top - ts)}"/>')
+            ly = px_top - ts - 3
+            anchor = "end" if rot else "middle"
+            rt = f' transform="rotate({_fmt(-rot)} {_fmt(x)} {_fmt(ly)})"' if rot else ""
             labels.append(
-                f'<text x="{_fmt(x)}" y="{_fmt(px_top - ts - 3)}" text-anchor="middle" '
-                f'font-size="{fs}" fill="{st.text_color}">{_esc(lab)}</text>'
+                f'<text x="{_fmt(x)}" y="{_fmt(ly)}" text-anchor="{anchor}" '
+                f'font-size="{fs}" fill="{st.text_color}"{rt}>{_esc(lab)}</text>'
             )
         if ax._shown_xlabel():
             body.append(
@@ -2729,6 +2744,7 @@ def _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
                   xside="bottom", yside="left"):
     xts, xfs = xst.tick_size, xst.tick_label_size
     yts, yfs = yst.tick_size, yst.tick_label_size
+    xrot, yrot = xst.tick_label_rotation, yst.tick_label_rotation
     xmarks, ymarks, labels = [], [], []
     x_axis, xsign, y_axis, ysign = tick_axis_edge(px_left, px_w, px_top, px_h, xside, yside)
 
@@ -2737,9 +2753,18 @@ def _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
         xmarks.append(f'<line x1="{_fmt(x)}" y1="{_fmt(x_axis)}" x2="{_fmt(x)}" '
                       f'y2="{_fmt(x_axis + xsign * xts)}"/>')
         ly = x_axis + xsign * xts + (xfs if xside == "bottom" else -3)
+        # A rotated label pivots around the same point unrotated text would
+        # have started from (text-anchor="middle") -- but "end" (the label's
+        # own last character) is the sensible anchor once it's diagonal: that
+        # puts the string right up against its own tick, tilting away from
+        # it, instead of straddling the tick position edge-on. Matplotlib
+        # needs a separate ha="right" for this; a diagonal *tick* label has
+        # no other look anyone would want, so it isn't a second knob here.
+        anchor = "end" if xrot else "middle"
+        rot = f' transform="rotate({_fmt(-xrot)} {_fmt(x)} {_fmt(ly)})"' if xrot else ""
         labels.append(
-            f'<text x="{_fmt(x)}" y="{_fmt(ly)}" text-anchor="middle" '
-            f'font-size="{xfs}" fill="{xst.text_color}">{_esc(lab)}</text>'
+            f'<text x="{_fmt(x)}" y="{_fmt(ly)}" text-anchor="{anchor}" '
+            f'font-size="{xfs}" fill="{xst.text_color}"{rot}>{_esc(lab)}</text>'
         )
     for yt, lab in zip(yticks, ylabels):
         y = tr.y(yt)
@@ -2747,9 +2772,11 @@ def _render_ticks(xst, yst, tr, xticks, yticks, xlabels, ylabels,
                       f'x2="{_fmt(y_axis + ysign * yts)}" y2="{_fmt(y)}"/>')
         anchor = "end" if yside == "left" else "start"
         lx = y_axis + ysign * yts + (-2 if yside == "left" else 2)
+        ly2 = y + yfs * 0.35
+        rot = f' transform="rotate({_fmt(-yrot)} {_fmt(lx)} {_fmt(ly2)})"' if yrot else ""
         labels.append(
-            f'<text x="{_fmt(lx)}" y="{_fmt(y + yfs * 0.35)}" text-anchor="{anchor}" '
-            f'font-size="{yfs}" fill="{yst.text_color}">{_esc(lab)}</text>'
+            f'<text x="{_fmt(lx)}" y="{_fmt(ly2)}" text-anchor="{anchor}" '
+            f'font-size="{yfs}" fill="{yst.text_color}"{rot}>{_esc(lab)}</text>'
         )
     body.append(f'<g stroke="{xst.spine_color}" stroke-width="{xst.tick_width}">{"".join(xmarks)}</g>')
     body.append(f'<g stroke="{yst.spine_color}" stroke-width="{yst.tick_width}">{"".join(ymarks)}</g>')
@@ -2868,15 +2895,25 @@ def twiny_headroom(ax, st):
 
 
 def _max_ytick_width(ax, st):
-    """Width of the widest y tick label, as drawn.
+    """Horizontal footprint of the widest y tick label, as drawn.
 
     Must mirror the tick selection the renderer uses -- explicit ``set_yticks``
     and ``set_yticklabels`` included -- or the y label gets placed on top of
-    labels this never measured.
+    labels this never measured. When ``tick_params(axis='y',
+    labelrotation=...)`` is set, that footprint is the *rotated* label's
+    horizontal reach, not its unrotated string width -- a tilted label is
+    narrower (or wider) than the plain text, and every caller of this
+    function positions the y-axis label just past whatever this returns.
     """
     ticks = ax._resolve_yticks()
     labels = ax._resolve_yticklabels(ticks)
-    return max((st.text_width(l, st.tick_label_size) for l in labels), default=0.0)
+    w = max((st.text_width(l, st.tick_label_size) for l in labels), default=0.0)
+    if st.tick_label_rotation:
+        theta = math.radians(st.tick_label_rotation)
+        w = w * abs(math.cos(theta)) + st.tick_label_size * abs(math.sin(theta))
+    return w
+
+
 
 
 # loc name -> (fx, fy) fractions of the free space inside the axes: 0 = left/top.

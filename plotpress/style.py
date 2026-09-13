@@ -113,6 +113,7 @@ class Style:
     tick_size: float = 3.5
     tick_width: float = 0.8
     tick_label_size: float = 9.0
+    tick_label_rotation: float = 0.0
 
     # Grid
     grid_color: str = "#b0b0b0"
