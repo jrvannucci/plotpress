@@ -592,6 +592,26 @@ _JS_SOURCE = r"""
     'font-size:11px;color:#555;cursor:pointer;user-select:none}' +
     '.plotpress-slider .idx{background:#e8eeff;border:1px solid #b9c6ef;' +
     'border-radius:4px;padding:0 5px;font-weight:600;color:#2b5bd7}' +
+    // Slice's own menu controls -- a radio pair plus two checkboxes -- are
+    // plain <label>s, not .plotpress-toolbar <button>s, so they need their
+    // own (much smaller) padding/hover rule instead of inheriting one.
+    '.plotpress-menu-dropdown label{display:flex;align-items:center;' +
+    'gap:6px;padding:5px 9px;border-radius:5px;font:12px system-ui,' +
+    'sans-serif;color:#222;cursor:pointer;white-space:nowrap}' +
+    '.plotpress-menu-dropdown label:hover{background:#f1f1f1}' +
+    '.plotpress-slice-orient{display:flex;flex-direction:column}' +
+    '.plotpress-slice-custom-range{display:flex;gap:6px;padding:3px 9px 5px 27px}' +
+    '.plotpress-slice-custom-range input{width:64px;font:12px system-ui,' +
+    'sans-serif;padding:3px 5px;border:1px solid #ccc;border-radius:4px}' +
+    '.plotpress-slice-custom-range input:disabled{background:#f3f3f3;color:#999}' +
+    // Drawn on the outer (untransformed) <svg>, not inside any axes' own
+    // g#zoom{key} -- see drawCursor()/renderSliceAxes()'s own comments for
+    // why -- so neither needs vector-effect:non-scaling-stroke the way
+    // .plotpress-zoom content does; their stroke-width is recomputed in JS
+    // for the current zoom instead (matches .plotpress-rubber).
+    '.plotpress-slice-cursor{pointer-events:none}' +
+    '.plotpress-slice-line{pointer-events:none}' +
+    '.plotpress-slice-ticks text{fill:#444;font:9px system-ui,sans-serif}' +
     '.plotpress-pin.selected circle{fill:#2b8cff}' +   /* r itself: selectPin(), scaled per-pin */
     '.plotpress-pin.plotpress-note rect{fill:#b45309}' +   /* user notes: amber */
     // Hide Points/Hide Annotations toggle independently -- one class per
@@ -755,8 +775,118 @@ _JS_SOURCE = r"""
   standaloneDivider.className = 'plotpress-menubar-divider';
   menubar.appendChild(standaloneDivider);
 
+  // Parsed here (rather than down by the rest of point-picking's own setup,
+  // its more natural home) so the Slice menu below -- built once, alongside
+  // every other menu -- already knows whether the figure has anything to
+  // slice. PICK is otherwise exactly what point-picking itself reads later.
+  var pickEl = document.getElementById('plotpress-pick');
+  var PICK = pickEl ? reviveBinary(JSON.parse(pickEl.textContent)) : {};
+
+  // Likewise parsed here rather than down by the rest of the frame-slider's
+  // own setup (see the "slider(s) over extra data dimensions" section
+  // below, its more natural home) -- an axes whose only mesh is an animated
+  // pcolormesh_frames() one has no entry in PICK at all (see frame_data()),
+  // so SLICE_AXES below needs FRAMES too, or it would silently offer no
+  // Slice menu (or, on a figure that also has an ordinary pcolormesh, no
+  // slider for that one axes) for an animated mesh with no indication why.
+  var framesEl = document.getElementById('plotpress-frames');
+  var unitsEl = document.getElementById('plotpress-sliders');
+  var FRAMES = framesEl ? reviveBinary(JSON.parse(framesEl.textContent)) : null;
+  var UNITS = unitsEl ? JSON.parse(unitsEl.textContent) : null;
+  if (FRAMES) {
+    for (var fk in FRAMES) {
+      FRAMES[fk].forEach(function (e) { FRAME_INDEX[e.id] = { entry: e, axesKey: fk }; });
+    }
+  }
+
+  // One mesh axes -> its first slice-eligible mesh: either its own index
+  // into that axes' PICK[key].meshes array (a plain pcolormesh/imshow), or
+  // -- when the axes has no PICK entry at all, only an animated
+  // pcolormesh_frames() one -- a direct reference to its FRAMES[key] entry
+  // instead (see meshEntryForAxes, which resolves that reference to
+  // whichever frame is currently showing on every read, since a mesh's own
+  // z data changes with the frame even though its edges/vmin/vmax don't). A
+  // curvilinear mesh has no single well-defined row/column to slice (see
+  // QuadMesh.curvilinear), so it's excluded here rather than partway into a
+  // drag. "pcolormesh"/"image" (see svg.py's pick_data()) share one entry
+  // shape (z/xedges/yedges), so both slice identically -- Slice doesn't
+  // otherwise care which produced the data.
+  var SLICE_AXES = {};
+  for (var sliceKey in PICK) {
+    var sliceMeshes = (PICK[sliceKey] && PICK[sliceKey].meshes) || [];
+    for (var smi = 0; smi < sliceMeshes.length; smi++) {
+      var sme = sliceMeshes[smi];
+      if ((sme.kind === 'pcolormesh' || sme.kind === 'image') && !sme.curvilinear) {
+        SLICE_AXES[sliceKey] = { meshIndex: smi };
+        break;
+      }
+    }
+  }
+  if (FRAMES) {
+    for (var frameSliceKey in FRAMES) {
+      if (SLICE_AXES[frameSliceKey]) continue;   // already has a static mesh
+      var frameEntries = FRAMES[frameSliceKey];
+      for (var fei = 0; fei < frameEntries.length; fei++) {
+        var fe = frameEntries[fei];
+        // A FrameLine2D entry has no "kind" at all (see frame_data()) --
+        // only a FrameQuadMesh's does -- so this can't mistake one for a
+        // slice-eligible mesh.
+        if (fe.kind === 'pcolormesh' && !fe.curvilinear) {
+          SLICE_AXES[frameSliceKey] = { frameEntry: fe };
+          break;
+        }
+      }
+    }
+  }
+  var sliceMenuNeeded = Object.keys(SLICE_AXES).length > 0;
+  // Figure-wide Slice state, declared here (not down by the rest of the
+  // tool's own implementation) so the menu-building code just below --
+  // which reads SLICE_ORIENTATION to set the radios' initial checked state
+  // -- sees the real value, not undefined from an as-yet-unassigned hoisted
+  // var. 'x' = a horizontal cursor at a fixed Y, slicing one *row* (values
+  // vs. X); 'y' = a vertical cursor at a fixed X, slicing one *column*
+  // (values vs. Y) -- matching the menu's own "Slice X (horizontal
+  // cursor)"/"Slice Y (vertical cursor)" labels. SLICE_STATE is per mesh
+  // axes; the rest are figure-wide.
+  // Off by default -- Slice is otherwise the only tool in this toolbar
+  // that puts something on screen (docked sliders, a cursor line) without
+  // the caller asking for it first; every other tool (Point Picking,
+  // Annotate, ...) stays completely inert until its own mode is selected.
+  // The Slice *menu* still always exists whenever there's a mesh to slice
+  // (sliceMenuNeeded), so it's always reachable, but nothing about the
+  // figure changes until this is checked -- unchecking it later tears
+  // everything back down to a plain, unmodified pcolormesh.
+  var SLICE_ENABLED = false;
+  var SLICE_ORIENTATION = 'x';
+  var SLICE_VIEW_ON = false;
+  // Off (default): every axes gets its own docked slider; a compatible
+  // group of 2+ additionally gets a link checkbox+badge on each member,
+  // opt-in and manual. On: skips the per-axes checkbox dance entirely --
+  // every compatible group of 2+ instead gets *one* global slider (the
+  // fixed bottom bar) driving every member at once, the answer to "500
+  // meshes, all coupled, clicking 500 checkboxes isn't feasible" --
+  // see buildSliceSliders()'s own comment for the full layout logic.
+  var SLICE_LINK_ALL = false;
+  var sliceGlobalBar = null;   // the fixed bottom bar SLICE_LINK_ALL sliders dock in
+  // Value-axis bounds for the slice view: 'auto' (each slice's own
+  // min/max -- reads that one slice most clearly, but rescales on every
+  // step), 'colorbar' (the mesh's resolved color-scale bounds -- holds
+  // still across every slice, matching what the colorbar itself shows),
+  // or 'custom' (SLICE_CUSTOM_MIN/MAX, typed in by hand -- for comparing
+  // against a range that's neither, e.g. matching a different mesh's scale
+  // or a domain-specific reference band).
+  var SLICE_RANGE_MODE = 'auto';
+  var SLICE_CUSTOM_MIN = null;
+  var SLICE_CUSTOM_MAX = null;
+  var SLICE_STATE = {};    // axesKey -> {orientation, index, fixedCoord, cursorEl, sliceEl, tickGroup}
+  var SLICE_SLIDERS = {};  // axesKey -> {box, api} -- the docked play/step control
+  var SLICE_LINKS = {};    // link index -> [slider api], mirrors frame sliders' LINKS
+
   var DROPDOWN_FOR_MENU = {};
-  ['Axes', 'Point Picking', 'Annotate', 'File'].forEach(function (name) {
+  var MENU_NAMES = ['Axes', 'Point Picking', 'Annotate'];
+  if (sliceMenuNeeded) MENU_NAMES.push('Slice');
+  MENU_NAMES.push('File');
+  MENU_NAMES.forEach(function (name) {
     DROPDOWN_FOR_MENU[name] = buildMenu(name);
   });
 
@@ -830,6 +960,194 @@ _JS_SOURCE = r"""
     container.appendChild(b);
     return b;
   });
+
+  // Slice's own options -- an orientation radio pair, plus a toggle button
+  // switching the view -- aren't one-shot actions or mode-select buttons,
+  // so they're appended straight into the dropdown TOOLS.map() already
+  // built (DROPDOWN_FOR_MENU['Slice']), rather than routed through it.
+  // There's no drag-to-place mode at all: like the frame-animation slider
+  // it's deliberately modeled on (see buildSliceSlider()'s own comment),
+  // Slice is driven entirely by a docked play/step control per mesh axes,
+  // built once sliceMenuNeeded and rebuilt whenever orientation changes
+  // (see buildSliceSliders(), called both below and from the radio's own
+  // change handler).
+  if (sliceMenuNeeded) {
+    var sliceMenu = DROPDOWN_FOR_MENU['Slice'];
+    // Every button's own click handler above stops propagation itself (see
+    // attachModeButton/the plain-action handler) so the document-level
+    // "click anywhere closes every open menu" listener doesn't immediately
+    // undo the click that just opened one -- a plain <label>/<input> here
+    // has no such handler of its own, so without this, checking a box
+    // would toggle it correctly and then instantly close the whole
+    // dropdown out from under it (the very next line of read-back state
+    // still succeeds, but the user watching it happen sees the menu
+    // vanish).
+    sliceMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    // Top section: the two controls that matter before anything else --
+    // whether Slice does anything at all, and (once it does) which of its
+    // two views is showing. Everything below is scoped under "Enable
+    // Slice" (disabled, not hidden, while it's off, so the rest of the
+    // menu still explains itself) and rebuilt fresh whenever it toggles
+    // back on.
+    var enableLabel = document.createElement('label');
+    var enableCb = document.createElement('input');
+    enableCb.type = 'checkbox';
+    enableCb.checked = SLICE_ENABLED;
+    enableCb.addEventListener('change', function () {
+      SLICE_ENABLED = enableCb.checked;
+      setSliceControlsEnabled(SLICE_ENABLED);
+      if (SLICE_ENABLED) buildSliceSliders();
+      else { teardownSliceSliders(); teardownSliceVisuals(); }
+    });
+    enableLabel.appendChild(enableCb);
+    enableLabel.appendChild(document.createTextNode(' Enable Slice'));
+    sliceMenu.appendChild(enableLabel);
+
+    // Switches every mesh axes between the pcolormesh (with the slider's
+    // current row/column marked by a red dashed cursor line) and the 1-D
+    // slice itself -- never both at once, and the cursor line only ever
+    // shows on the pcolormesh side of that toggle (see renderMeshOrSlice).
+    // A checkbox, not a label-swapping button -- every other Slice option
+    // is a radio/checkbox, and a lone button in the middle of them didn't
+    // read as a toggle at a glance the way a checked/unchecked box does.
+    var sliceViewLabel = document.createElement('label');
+    var sliceViewCb = document.createElement('input');
+    sliceViewCb.type = 'checkbox';
+    sliceViewCb.checked = SLICE_VIEW_ON;
+    sliceViewCb.addEventListener('change', function () {
+      SLICE_VIEW_ON = sliceViewCb.checked;
+      Object.keys(SLICE_SLIDERS).forEach(function (k) {
+        renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
+      });
+    });
+    sliceViewLabel.appendChild(sliceViewCb);
+    sliceViewLabel.appendChild(document.createTextNode(' Show slice view'));
+    sliceMenu.appendChild(sliceViewLabel);
+
+    var topDivider = document.createElement('div');
+    topDivider.className = 'plotpress-menu-divider';
+    sliceMenu.appendChild(topDivider);
+
+    // Orientation is figure-wide, not per-axes: switching it rebuilds every
+    // mesh's own slider from scratch (buildSliceSliders(), defined with the
+    // rest of the tool below) -- a different orientation means a different
+    // row/column count (ny vs. nx) and can change which axes are even
+    // compatible to link, so there's no sensible way to adjust an existing
+    // slider in place.
+    var orientRow = document.createElement('div');
+    orientRow.className = 'plotpress-slice-orient';
+    var orientRadios = [];
+    [['x', 'Slice X (horizontal cursor)'], ['y', 'Slice Y (vertical cursor)']]
+      .forEach(function (pair) {
+        var axKey = pair[0];
+        var lbl = document.createElement('label');
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'plotpress-slice-orient';
+        radio.checked = (axKey === SLICE_ORIENTATION);
+        radio.addEventListener('change', function () {
+          SLICE_ORIENTATION = axKey;
+          if (SLICE_ENABLED) buildSliceSliders();
+        });
+        lbl.appendChild(radio);
+        lbl.appendChild(document.createTextNode(' ' + pair[1]));
+        orientRow.appendChild(lbl);
+        orientRadios.push(radio);
+      });
+    sliceMenu.appendChild(orientRow);
+
+    // Collapses every compatible group's sliders into one shared global
+    // slider instead of one docked slider per axes each needing its own
+    // link checkbox checked by hand -- see SLICE_LINK_ALL's own comment.
+    var linkAllLabel = document.createElement('label');
+    var linkAllCb = document.createElement('input');
+    linkAllCb.type = 'checkbox';
+    linkAllCb.checked = SLICE_LINK_ALL;
+    linkAllCb.addEventListener('change', function () {
+      SLICE_LINK_ALL = linkAllCb.checked;
+      if (SLICE_ENABLED) buildSliceSliders();
+    });
+    linkAllLabel.appendChild(linkAllCb);
+    linkAllLabel.appendChild(document.createTextNode(' Link all matching axes'));
+    sliceMenu.appendChild(linkAllLabel);
+
+    var rangeDivider = document.createElement('div');
+    rangeDivider.className = 'plotpress-menu-divider';
+    sliceMenu.appendChild(rangeDivider);
+
+    // Value axis range for the slice view -- 'auto' (default) reads *that*
+    // row/column's own min/max most clearly but rescales on every step,
+    // distracting when scrubbing/playing through several; 'colorbar' holds
+    // still at the mesh's own resolved color-scale bounds (pick_data()'s
+    // vmin/vmax -- exactly what the colorbar itself is drawn against,
+    // whether the caller passed vmin=/vmax= or let it autoscale from the
+    // data); 'custom' holds still at whatever the caller types into the
+    // two number fields below instead -- for comparing against a range
+    // that's neither of the other two (a different mesh's own scale, a
+    // fixed domain-specific reference band).
+    var refreshAllSlices = function () {
+      Object.keys(SLICE_SLIDERS).forEach(function (k) {
+        renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
+      });
+    };
+    var rangeRow = document.createElement('div');
+    rangeRow.className = 'plotpress-slice-orient';
+    var rangeRadios = [];
+    [['auto', 'Auto (per slice)'], ['colorbar', 'Colorbar range'], ['custom', 'Custom:']]
+      .forEach(function (pair) {
+        var modeKey = pair[0];
+        var lbl = document.createElement('label');
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'plotpress-slice-range-mode';
+        radio.checked = (modeKey === SLICE_RANGE_MODE);
+        radio.addEventListener('change', function () {
+          SLICE_RANGE_MODE = modeKey;
+          customMinInput.disabled = customMaxInput.disabled =
+            !SLICE_ENABLED || modeKey !== 'custom';
+          refreshAllSlices();
+        });
+        lbl.appendChild(radio);
+        lbl.appendChild(document.createTextNode(' ' + pair[1]));
+        rangeRow.appendChild(lbl);
+        rangeRadios.push(radio);
+      });
+    sliceMenu.appendChild(rangeRow);
+
+    var customRow = document.createElement('div');
+    customRow.className = 'plotpress-slice-custom-range';
+    var customMinInput = document.createElement('input');
+    var customMaxInput = document.createElement('input');
+    [[customMinInput, 'min'], [customMaxInput, 'max']].forEach(function (pair) {
+      var input = pair[0];
+      input.type = 'number'; input.placeholder = pair[1]; input.step = 'any';
+      input.disabled = (SLICE_RANGE_MODE !== 'custom');
+      input.addEventListener('change', function () {
+        SLICE_CUSTOM_MIN = customMinInput.value === '' ? null : +customMinInput.value;
+        SLICE_CUSTOM_MAX = customMaxInput.value === '' ? null : +customMaxInput.value;
+        if (SLICE_RANGE_MODE === 'custom') refreshAllSlices();
+      });
+      customRow.appendChild(input);
+    });
+    sliceMenu.appendChild(customRow);
+
+    // Enables/disables every control below "Enable Slice" itself (that
+    // checkbox and "Show slice view" excepted -- those two stay live
+    // always, per the user's own "in their own section" grouping) --
+    // greyed out rather than hidden while Slice is off, so the menu still
+    // explains what turning it on will offer. The custom min/max inputs
+    // fold in their own second condition (only live under 'custom' range
+    // mode to begin with) rather than simply mirroring `on`.
+    function setSliceControlsEnabled(on) {
+      orientRadios.forEach(function (r) { r.disabled = !on; });
+      linkAllCb.disabled = !on;
+      rangeRadios.forEach(function (r) { r.disabled = !on; });
+      customMinInput.disabled = customMaxInput.disabled =
+        !on || SLICE_RANGE_MODE !== 'custom';
+    }
+    setSliceControlsEnabled(SLICE_ENABLED);
+  }
 
   // Public extension point for a caller's own extra_js= (see Figure.to_html):
   // add a tool to its own menu, created lazily on first call -- a page with
@@ -1084,6 +1402,542 @@ _JS_SOURCE = r"""
     down = null; panAxes = null;
   });
 
+  // ---- Slice tool (pcolormesh/imshow row/column profile) -----------------
+  // Modeled directly on the frame-animation slider (buildSlider, above) --
+  // stepping through a mesh's rows/columns is the same interaction as
+  // stepping through animation frames, so it gets the identical widget
+  // (play/pause/step-forward/step-back + a scrub range), docked under its
+  // own axes via the same wrap/dockedSliders/positionDocked machinery, with
+  // linking via the same index/checkbox/external fan-out pattern
+  // (SLICE_LINKS mirrors LINKS). There is no separate "drag on the mesh"
+  // mode: the slider is the one way to move a slice, exactly like a frame
+  // slider is the one way to change frames.
+  function meshEntryForAxes(key) {
+    var info = SLICE_AXES[key];
+    if (!info) return null;
+    if (info.frameEntry) {
+      // A FrameQuadMesh's entry carries one z per frame (frame_data() pops
+      // each frame's z into its own array-of-arrays; everything else --
+      // edges/vmin/vmax/curvilinear -- is shared across frames, since every
+      // frame draws over the same grid) -- resolved to whichever frame is
+      // currently showing on every call, not cached, so a slice/cursor
+      // redraw always reflects the frame the mesh itself is on. Shaped to
+      // match a plain PICK mesh entry so every other Slice function below
+      // (computeSliceByIndex, edgesMatch, sliceSpecFor, ...) can read either
+      // one identically.
+      var e = info.frameEntry;
+      return {
+        xedges: e.xedges, yedges: e.yedges, xc: e.xc, yc: e.yc,
+        shape: e.shape, z: e.z[CURRENT_FRAME[e.unit] || 0],
+        vmin: e.vmin, vmax: e.vmax, curvilinear: e.curvilinear,
+      };
+    }
+    var meshes = (PICK[key] && PICK[key].meshes) || [];
+    return meshes[info.meshIndex] || null;
+  }
+  function cellMidpoints(edges) {
+    var out = [];
+    for (var i = 0; i < edges.length - 1; i++) out.push((edges[i] + edges[i + 1]) / 2);
+    return out;
+  }
+  function isFiniteNum(v) { return typeof v === 'number' && isFinite(v); }
+
+  // The 1-D profile at row/column `index` along `orientation`, plus the
+  // fixed coordinate that row/column actually sits at (its own midpoint) --
+  // z is a *flat*, row-major array (shape [ny, nx], row 0 = ymin -- see
+  // pick_data()/reviveBinary, which decodes a large mesh's z straight into
+  // a flat typed array, never a nested one), so a cell is z[row*nx+col],
+  // not z[row][col].
+  function computeSliceByIndex(key, orientation, index) {
+    var entry = meshEntryForAxes(key);
+    if (!entry) return null;
+    var z = entry.z, xedges = entry.xedges, yedges = entry.yedges;
+    var ny = entry.shape[0], nx = entry.shape[1];
+    if (orientation === 'x') {
+      var row = Math.max(0, Math.min(ny - 1, index));
+      var ysRow = [];
+      for (var c = 0; c < nx; c++) ysRow.push(z[row * nx + c]);
+      return { xs: cellMidpoints(xedges), ys: ysRow,
+              fixedCoord: (yedges[row] + yedges[row + 1]) / 2 };
+    }
+    var col = Math.max(0, Math.min(nx - 1, index));
+    var ysCol = [];
+    for (var r = 0; r < ny; r++) ysCol.push(z[r * nx + col]);
+    return { xs: cellMidpoints(yedges), ys: ysCol,
+            fixedCoord: (xedges[col] + xedges[col + 1]) / 2 };
+  }
+
+  // Two mesh axes are compatible for linking iff they share the same values
+  // along whichever axis the current orientation holds fixed -- Y for a
+  // horizontal (X) slice, X for a vertical (Y) one -- so index i means the
+  // same row/column position on both. Matches the user-facing "share the
+  // same values on the axis" framing directly.
+  function edgesMatch(k1, k2, orientation) {
+    var e1 = meshEntryForAxes(k1), e2 = meshEntryForAxes(k2);
+    if (!e1 || !e2) return false;
+    var a1 = orientation === 'x' ? e1.yedges : e1.xedges;
+    var a2 = orientation === 'x' ? e2.yedges : e2.xedges;
+    if (!a1 || !a2 || a1.length !== a2.length) return false;
+    for (var i = 0; i < a1.length; i++) {
+      if (Math.abs(a1[i] - a2[i]) > 1e-9 * Math.max(1, Math.abs(a1[i]))) return false;
+    }
+    return true;
+  }
+  // Groups every slice-eligible axes by mutual edgesMatch() compatibility
+  // under the current orientation. Returns the raw groups (each an array of
+  // axes keys, in no particular order) -- callers needing just "axesKey ->
+  // link index string for axes in a group of >=2" (the per-slider
+  // checkbox/badge case) derive that with sliceLinkIndexOf() below; the
+  // "one shared global slider per group" case (buildSliceSliders(), when
+  // SLICE_LINK_ALL) needs the full member list per group instead, which a
+  // flattened index map can't give back.
+  function computeSliceLinkGroups(orientation) {
+    var keys = Object.keys(SLICE_AXES), groups = [];
+    keys.forEach(function (k) {
+      for (var g = 0; g < groups.length; g++) {
+        if (edgesMatch(k, groups[g][0], orientation)) { groups[g].push(k); return; }
+      }
+      groups.push([k]);
+    });
+    return groups;
+  }
+  // axesKey -> link index string, for axes in a group of >=2 only (a lone,
+  // incompatible mesh has nothing to link to and gets no badge/checkbox --
+  // mirrors indexCount/showLink in the frame-slider setup below).
+  function sliceLinkIndexOf(groups) {
+    var linkIndexOf = {};
+    groups.forEach(function (g, gi) {
+      if (g.length < 2) return;
+      g.forEach(function (k) { linkIndexOf[k] = 'slice' + gi; });
+    });
+    return linkIndexOf;
+  }
+
+  // Ensure the cursor line for `key` exists, appended to the outer,
+  // untransformed <svg> and positioned with already-final pixel coordinates
+  // (toPixel against the *current* CUR[key]) -- like the rubber-band box
+  // and point-pick pins, not inside g#zoom{key}, which carries its own
+  // separate META->CUR CSS matrix() transform (applyAxesTransform) that
+  // would double-apply on top of coordinates already computed for the
+  // current view.
+  function drawCursor(key, orientation, coord) {
+    var st = SLICE_STATE[key] || (SLICE_STATE[key] = {});
+    var m = CUR[key];
+    if (!m) return;
+    if (!st.cursorEl) {
+      var el = document.createElementNS(SVGNS, 'line');
+      el.setAttribute('class', 'plotpress-slice-cursor');
+      el.setAttribute('stroke', '#d62728');
+      el.setAttribute('stroke-dasharray', '4,3');
+      svg.appendChild(el);
+      st.cursorEl = el;
+    }
+    st.cursorEl.setAttribute('stroke-width', 1 / pxPerUser());
+    if (orientation === 'x') {
+      var py = toPixel(m, m.xmin, coord).y;
+      st.cursorEl.setAttribute('x1', m.x); st.cursorEl.setAttribute('x2', m.x + m.w);
+      st.cursorEl.setAttribute('y1', py); st.cursorEl.setAttribute('y2', py);
+    } else {
+      var px = toPixel(m, coord, m.ymin).x;
+      st.cursorEl.setAttribute('y1', m.y); st.cursorEl.setAttribute('y2', m.y + m.h);
+      st.cursorEl.setAttribute('x1', px); st.cursorEl.setAttribute('x2', px);
+    }
+  }
+
+  // The one render entry point, called by a slider's own setIndex()/
+  // external() and by resyncSlice() on pan/zoom: draws whichever of the two
+  // views (pcolormesh+cursor, or the 1-D slice line) SLICE_VIEW_ON selects
+  // for this axes at its slider's current `index`. The red cursor line
+  // only ever belongs on the pcolormesh -- it marks a position *on* the 2-D
+  // image, not on the 1-D profile derived from it -- so it's created only
+  // in that branch and torn down in the other, never both at once.
+  function renderMeshOrSlice(key, index) {
+    var m = CUR[key];
+    if (!m) return;
+    var st = SLICE_STATE[key] || (SLICE_STATE[key] = {});
+    st.orientation = SLICE_ORIENTATION; st.index = index;
+    // .plotpress-mesh (not image.plotpress-series) -- a QuadMesh/Image
+    // artist reaches the page as either a raster <image> (large/uniform
+    // grids) or a vectorized <g> of <rect>s (a small non-uniform one, see
+    // artists._resolve_mesh_render); both carry this class precisely so
+    // Slice can hide whichever one this mesh actually used without caring
+    // which. image.plotpress-series alone missed the vectorized case
+    // entirely, leaving its rects visible underneath the slice line.
+    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    var origTicks = document.getElementById('ticks' + key);
+
+    if (!SLICE_VIEW_ON) {
+      meshEls.forEach(function (im) { im.style.display = ''; });
+      if (origTicks) origTicks.style.display = '';
+      if (st.sliceEl) { st.sliceEl.remove(); st.sliceEl = null; }
+      if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
+      var slice0 = computeSliceByIndex(key, SLICE_ORIENTATION, index);
+      if (slice0) drawCursor(key, SLICE_ORIENTATION, slice0.fixedCoord);
+      return;
+    }
+    // Slice view: no cursor line here (see above) -- remove one left over
+    // from before the toggle switched.
+    if (st.cursorEl) { st.cursorEl.remove(); st.cursorEl = null; }
+    var slice = computeSliceByIndex(key, SLICE_ORIENTATION, index);
+    if (!slice) return;
+    var finiteYs = slice.ys.filter(isFiniteNum);
+    if (!finiteYs.length) return;
+    var entryForRange = meshEntryForAxes(key);
+    var vmin, vmax;
+    if (SLICE_RANGE_MODE === 'colorbar' && entryForRange
+       && isFiniteNum(entryForRange.vmin) && isFiniteNum(entryForRange.vmax)) {
+      vmin = entryForRange.vmin; vmax = entryForRange.vmax;
+    } else if (SLICE_RANGE_MODE === 'custom' && isFiniteNum(SLICE_CUSTOM_MIN)
+              && isFiniteNum(SLICE_CUSTOM_MAX) && SLICE_CUSTOM_MIN < SLICE_CUSTOM_MAX) {
+      vmin = SLICE_CUSTOM_MIN; vmax = SLICE_CUSTOM_MAX;
+    } else {
+      // 'auto' (or 'custom' with nothing valid typed in yet) -- the
+      // slice's own min/max.
+      vmin = Math.min.apply(null, finiteYs); vmax = Math.max.apply(null, finiteYs);
+    }
+    if (vmin === vmax) { vmin -= 0.5; vmax += 0.5; }
+    meshEls.forEach(function (im) { im.style.display = 'none'; });
+
+    var d = '', started = false;
+    for (var i = 0; i < slice.xs.length; i++) {
+      if (!isFiniteNum(slice.ys[i])) { started = false; continue; }
+      var px, py;
+      var frac = (slice.ys[i] - vmin) / (vmax - vmin);
+      if (SLICE_ORIENTATION === 'x') {
+        px = toPixel(m, slice.xs[i], m.ymin).x;
+        py = m.y + m.h - frac * m.h;
+      } else {
+        py = toPixel(m, m.xmin, slice.xs[i]).y;
+        px = m.x + frac * m.w;
+      }
+      d += (started ? 'L' : 'M') + px.toFixed(2) + ',' + py.toFixed(2);
+      started = true;
+    }
+    if (!st.sliceEl) {
+      st.sliceEl = document.createElementNS(SVGNS, 'path');
+      st.sliceEl.setAttribute('class', 'plotpress-slice-line');
+      st.sliceEl.setAttribute('fill', 'none');
+      st.sliceEl.setAttribute('stroke', '#1f77b4');
+      st.sliceEl.setAttribute('stroke-width', 1.5);
+      svg.appendChild(st.sliceEl);
+    }
+    st.sliceEl.setAttribute('d', d);
+
+    // The normal tick group draws both axes' ticks as one mixed unit (see
+    // rebuildTicks) -- nothing to selectively keep "just the unsliced
+    // dimension's" from it, so it's hidden outright and both dimensions'
+    // ticks are redrawn here instead: value ticks (axisTicks() over the
+    // slice's own min/max -- the same "nice numbers" generator the rest of
+    // this file already uses for a real zoomed axis, jsNiceTicks) along
+    // whichever edge the sliced dimension occupies, and the *unsliced*
+    // dimension's own real, unchanged spatial ticks along its own edge, so
+    // the view doesn't lose all axis context while a slice is showing.
+    // Rebuilt fresh every call (removed, not diffed).
+    if (origTicks) origTicks.style.display = 'none';
+    if (st.tickGroup) st.tickGroup.remove();
+    st.tickGroup = document.createElementNS(SVGNS, 'g');
+    st.tickGroup.setAttribute('class', 'plotpress-slice-ticks');
+    var tk = axisTicks(vmin, vmax, 'linear');
+    for (var j = 0; j < tk.ticks.length; j++) {
+      var frac2 = (tk.ticks[j] - vmin) / (vmax - vmin);
+      var txt = document.createElementNS(SVGNS, 'text');
+      if (SLICE_ORIENTATION === 'x') {
+        txt.setAttribute('x', m.x - 6); txt.setAttribute('y', (m.y + m.h - frac2 * m.h + 3).toFixed(2));
+        txt.setAttribute('text-anchor', 'end');
+      } else {
+        txt.setAttribute('x', (m.x + frac2 * m.w).toFixed(2)); txt.setAttribute('y', m.y + m.h + 12);
+        txt.setAttribute('text-anchor', 'middle');
+      }
+      txt.textContent = tk.labels[j];
+      st.tickGroup.appendChild(txt);
+    }
+    var spatialLo = SLICE_ORIENTATION === 'x' ? Math.min(m.xmin, m.xmax) : Math.min(m.ymin, m.ymax);
+    var spatialHi = SLICE_ORIENTATION === 'x' ? Math.max(m.xmin, m.xmax) : Math.max(m.ymin, m.ymax);
+    var spatialScale = SLICE_ORIENTATION === 'x' ? m.xscale : m.yscale;
+    var stk = axisTicks(spatialLo, spatialHi, spatialScale);
+    for (var k = 0; k < stk.ticks.length; k++) {
+      var sp = (SLICE_ORIENTATION === 'x') ? toPixel(m, stk.ticks[k], m.ymin) : toPixel(m, m.xmin, stk.ticks[k]);
+      var stxt = document.createElementNS(SVGNS, 'text');
+      if (SLICE_ORIENTATION === 'x') {
+        stxt.setAttribute('x', sp.x.toFixed(2)); stxt.setAttribute('y', m.y + m.h + 12);
+        stxt.setAttribute('text-anchor', 'middle');
+      } else {
+        stxt.setAttribute('x', m.x - 6); stxt.setAttribute('y', (sp.y + 3).toFixed(2));
+        stxt.setAttribute('text-anchor', 'end');
+      }
+      stxt.textContent = stk.labels[k];
+      st.tickGroup.appendChild(stxt);
+    }
+    svg.appendChild(st.tickGroup);
+  }
+
+  // One docked play/step control, modeled directly on buildSlider() (same
+  // transport buttons, same range input, same link-checkbox/index-badge
+  // shape) but driving a mesh's row/column index instead of an animation
+  // frame -- see the section comment above for why these are two separate,
+  // parallel functions rather than one generalized over both.
+  // `keys` is an array of one or more axes keys this one slider drives at
+  // once -- a single-element array for the ordinary "one slider per axes"
+  // case, or every member of a compatible group at once for the "Link all
+  // matching axes" global-slider case (buildSliceSliders() below), which
+  // needs no per-axes link checkbox at all since there's only one slider
+  // for the whole group to begin with.
+  function buildSliceSlider(keys, n, values, label, opts) {
+    var box = document.createElement('div');
+    box.className = 'plotpress-slider';
+    var api = { index: opts.linkIndex, checkbox: null, external: null, i: 0 };
+
+    if (opts.showLink) {
+      var link = document.createElement('label');
+      link.className = 'link';
+      link.title = 'link all "' + opts.linkIndex + '" slice sliders to scrub together';
+      api.checkbox = document.createElement('input');
+      api.checkbox.type = 'checkbox';
+      var idx = document.createElement('span');
+      idx.className = 'idx'; idx.textContent = opts.linkIndex;
+      link.appendChild(api.checkbox); link.appendChild(idx);
+      box.appendChild(link);
+    }
+
+    var input = document.createElement('input');
+    input.type = 'range'; input.min = 0; input.max = n - 1; input.step = 1; input.value = 0;
+    if (opts.inputWidth) input.style.width = opts.inputWidth + 'px';
+    var val = document.createElement('span'); val.className = 'val';
+
+    var timer = null;
+    var applyIndex = function (i) {
+      api.i = (i % n + n) % n;
+      input.value = api.i;
+      keys.forEach(function (k) { renderMeshOrSlice(k, api.i); });
+      val.textContent = label + ' = ' + fmt(values[api.i]);
+    };
+    api.external = applyIndex;   // set from a linked peer, no re-propagation
+    var setIndex = function (i) {
+      applyIndex(i);
+      if (api.checkbox && api.checkbox.checked) {
+        (SLICE_LINKS[api.index] || []).forEach(function (o) {
+          if (o !== api && o.checkbox && o.checkbox.checked) o.external(api.i);
+        });
+      }
+    };
+
+    var sbtn = function (txt, title) {
+      var b = document.createElement('button');
+      b.textContent = txt; b.title = title;
+      return b;
+    };
+    var back = sbtn('⏮', 'step back');
+    var playBtn = sbtn('▶', 'play');
+    var fwdBtn = sbtn('⏭', 'step forward');
+    var pause = function () {
+      if (timer) { clearInterval(timer); timer = null; }
+      playBtn.textContent = '▶'; playBtn.title = 'play';
+    };
+    var play = function () {
+      if (timer) return;
+      playBtn.textContent = '⏸'; playBtn.title = 'pause';
+      timer = setInterval(function () { setIndex(api.i + 1); }, 300);
+    };
+    back.addEventListener('click', function () { pause(); setIndex(api.i - 1); });
+    fwdBtn.addEventListener('click', function () { pause(); setIndex(api.i + 1); });
+    playBtn.addEventListener('click', function () { timer ? pause() : play(); });
+    input.addEventListener('input', function () { pause(); setIndex(+input.value); });
+
+    // When linking is switched on, snap to an already-linked peer's index.
+    if (api.checkbox) {
+      api.checkbox.addEventListener('change', function () {
+        if (!api.checkbox.checked) return;
+        var peer = (SLICE_LINKS[api.index] || []).find(function (o) {
+          return o !== api && o.checkbox && o.checkbox.checked;
+        });
+        if (peer) setIndex(peer.i);
+      });
+      (SLICE_LINKS[api.index] = SLICE_LINKS[api.index] || []).push(api);
+    }
+
+    box.appendChild(back); box.appendChild(playBtn); box.appendChild(fwdBtn);
+    box.appendChild(input); box.appendChild(val);
+    applyIndex(0);
+    return { box: box, api: api };
+  }
+
+  // Ensure the SVG is wrapped for docked-widget positioning -- shared with
+  // the frame-slider setup below, since either (or both) may need it and
+  // only one should ever actually create it.
+  function ensureSvgWrap() {
+    if (wrap) return;
+    wrap = document.createElement('div');
+    wrap.className = 'plotpress-svg-wrap';
+    svg.parentNode.insertBefore(wrap, svg);
+    wrap.appendChild(svg);
+  }
+
+  // Also shared with the frame-slider setup below: both it and Slice's own
+  // "Link all matching axes" (sliceGlobalBar, see buildSliceSliders) can put
+  // a fixed-position .plotpress-sliders bar at the bottom of the page, and a
+  // figure combining an animated pcolormesh_frames() axes with a
+  // SLICE_LINK_ALL-coupled group of ordinary ones can have both at once --
+  // .plotpress-sliders' own CSS rule is a single fixed bottom:12px spot, so
+  // without this they'd draw on top of each other. Called whenever either
+  // bar is created or removed; recomputes every surviving bar's own offset
+  // from scratch (stacking them, in DOM order, bottom to top) rather than
+  // adjusting one in place, so it doesn't matter which of the two exists
+  // first -- that depends on whether Slice was ever enabled, the frame
+  // slider's own global bar (if any) is always built once at load.
+  function reflowGlobalBars() {
+    var bars = document.querySelectorAll('.plotpress-sliders');
+    var offset = 12;
+    bars.forEach(function (b) {
+      b.style.bottom = offset + 'px';
+      offset += b.getBoundingClientRect().height + 6;
+    });
+  }
+
+  // (Re)builds every mesh axes' own slice slider from scratch -- torn down
+  // and rebuilt rather than adjusted in place, since a changed orientation
+  // can change both the row/column count (ny vs. nx) and which axes are
+  // even compatible to link, and SLICE_LINK_ALL can change how many
+  // sliders there even are. Called once at load (if sliceMenuNeeded), and
+  // again from the orientation radio's and "Link all matching axes"
+  // toggle's own onchange handlers.
+  //
+  // Two layouts, chosen by SLICE_LINK_ALL:
+  // - Off (default): one *docked* slider per axes, same as a per-axes
+  //   frame slider -- a compatible group of 2+ gets its own link
+  //   checkbox+badge on each member's slider (buildSliceSlider's own
+  //   showLink), opt-in and manual, fine at the scale of a handful of axes.
+  // - On: one *global* slider (the fixed bottom bar, same as a global
+  //   frame slider) per compatible group of 2+, driving every member at
+  //   once with no checkbox to click at all -- this is the answer to "500
+  //   meshes, all coupled": one slider instead of 500 individually-checked
+  //   ones. A singleton with nothing to link to still gets its own docked
+  //   slider either way, since there's no group for it to join.
+  // Removes every slider (docked or global) with no rebuild -- shared by
+  // buildSliceSliders() (about to replace them) and the "Enable Slice"
+  // checkbox's own off handler (which tears down and stops there).
+  function teardownSliceSliders() {
+    Object.keys(SLICE_SLIDERS).forEach(function (k) {
+      var s = SLICE_SLIDERS[k];
+      if (s.box.parentNode) s.box.parentNode.removeChild(s.box);
+    });
+    dockedSliders = dockedSliders.filter(function (d) {
+      return !(SLICE_SLIDERS[d.axesKey] && SLICE_SLIDERS[d.axesKey].box === d.box);
+    });
+    SLICE_SLIDERS = {};
+    SLICE_LINKS = {};
+    if (sliceGlobalBar) { sliceGlobalBar.remove(); sliceGlobalBar = null; }
+    reflowGlobalBars();
+  }
+  // Restores every mesh axes this ever touched back to a plain, unmodified
+  // pcolormesh -- the mesh raster and its own ticks shown again, any
+  // cursor/slice-line/value-tick element removed. Paired with
+  // teardownSliceSliders() by the "Enable Slice" checkbox's off handler so
+  // unchecking it leaves nothing behind at all, the same figure this would
+  // have rendered if Slice didn't exist.
+  function teardownSliceVisuals() {
+    Object.keys(SLICE_STATE).forEach(function (key) {
+      var st = SLICE_STATE[key];
+      // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
+      // own comment on this same selector.
+      var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+      meshEls.forEach(function (im) { im.style.display = ''; });
+      var origTicks = document.getElementById('ticks' + key);
+      if (origTicks) origTicks.style.display = '';
+      if (st.cursorEl) st.cursorEl.remove();
+      if (st.sliceEl) st.sliceEl.remove();
+      if (st.tickGroup) st.tickGroup.remove();
+    });
+    SLICE_STATE = {};
+  }
+
+  function buildSliceSliders() {
+    teardownSliceSliders();
+    ensureSvgWrap();
+
+    var groups = computeSliceLinkGroups(SLICE_ORIENTATION);
+    var linkIndexOf = sliceLinkIndexOf(groups);
+
+    function sliceSpecFor(key) {
+      var entry = meshEntryForAxes(key);
+      if (!entry) return null;
+      var ny = entry.shape[0], nx = entry.shape[1];
+      return SLICE_ORIENTATION === 'x'
+        ? { n: ny, values: cellMidpoints(entry.yedges), label: 'y' }
+        : { n: nx, values: cellMidpoints(entry.xedges), label: 'x' };
+    }
+
+    function dockOne(key, opts) {
+      var spec = sliceSpecFor(key);
+      if (!spec) return;
+      var m = META[key] || { x: 0, y: 0, w: home[2], h: home[3] };
+      var iw = Math.max(80, Math.min(240, m.w - (opts.showLink ? 210 : 175)));
+      var built = buildSliceSlider([key], spec.n, spec.values, spec.label,
+        { inputWidth: iw, showLink: opts.showLink, linkIndex: opts.linkIndex });
+      built.box.style.position = 'absolute';
+      built.box.style.whiteSpace = 'nowrap';
+      wrap.appendChild(built.box);
+      dockedSliders.push({ box: built.box, axesKey: key });
+      SLICE_SLIDERS[key] = built;
+    }
+
+    groups.forEach(function (g) {
+      if (SLICE_LINK_ALL && g.length >= 2) {
+        var spec = sliceSpecFor(g[0]);
+        if (!spec) return;
+        if (!sliceGlobalBar) {
+          sliceGlobalBar = document.createElement('div');
+          sliceGlobalBar.className = 'plotpress-sliders';
+          document.body.appendChild(sliceGlobalBar);
+        }
+        var built = buildSliceSlider(g, spec.n, spec.values,
+          spec.label + ' (' + g.length + ' axes)', { inputWidth: 240, showLink: false });
+        sliceGlobalBar.appendChild(built.box);
+        g.forEach(function (key) { SLICE_SLIDERS[key] = built; });
+      } else if (g.length >= 2) {
+        var linkIndex = linkIndexOf[g[0]];
+        g.forEach(function (key) { dockOne(key, { showLink: true, linkIndex: linkIndex }); });
+      } else {
+        dockOne(g[0], { showLink: false, linkIndex: undefined });
+      }
+    });
+    positionDocked();
+    reflowGlobalBars();
+  }
+
+  // Keeps an already-placed cursor/slice line glued to the right spot
+  // after a pan/zoom -- called from refreshAxes, the same single place
+  // applyAxesTransform/rebuildTicks/relayoutPins/relayoutTextCounterScale
+  // already resync from on every view change.
+  function resyncSlice(key) {
+    var st = SLICE_STATE[key];
+    if (!st || typeof st.index !== 'number') return;
+    renderMeshOrSlice(key, st.index);
+  }
+  // The row/column position a slice sits at doesn't change when an animated
+  // pcolormesh_frames() mesh's own frame slider moves, but the z values
+  // under it do (see meshEntryForAxes's frameEntry branch) -- called from
+  // buildSlider()'s own applyFrame() (below), the one place that already
+  // knows a frame slider unit just moved, so any Slice-enabled axes reading
+  // that same unit's current frame redraws to match. A no-op for every
+  // frame slider unit no SLICE_AXES entry is watching (the common case),
+  // and for one Slice was never enabled on (resyncSlice's own guard).
+  function resyncSliceForFrameUnit(unit) {
+    for (var frameSyncKey in SLICE_AXES) {
+      var info = SLICE_AXES[frameSyncKey];
+      if (info.frameEntry && info.frameEntry.unit === unit) resyncSlice(frameSyncKey);
+    }
+  }
+  // Off by default (SLICE_ENABLED) -- nothing is built here at load; the
+  // "Enable Slice" checkbox in the menu above is what calls
+  // buildSliceSliders() the first time. The resize listener still needs
+  // registering unconditionally, though: positionDocked() itself already
+  // no-ops with nothing docked, and registering it only from inside the
+  // checkbox handler would mean re-registering (and so double-firing after
+  // a second toggle) instead of once.
+  if (sliceMenuNeeded) {
+    window.addEventListener('resize', positionDocked);
+  }
+
   // Double-click a plot (while panning/zooming) resets just that plot's view.
   // Under Magnify, there is no per-axes view to reset -- only the whole
   // figure's, exactly what its wheel zoom and drag pan both operate on (see
@@ -1117,8 +1971,9 @@ _JS_SOURCE = r"""
   });
 
   // ---- point picking (pick mode) ----------------------------------------
-  var pickEl = document.getElementById('plotpress-pick');
-  var PICK = pickEl ? reviveBinary(JSON.parse(pickEl.textContent)) : {};
+  // PICK itself is parsed earlier (see the comment above DROPDOWN_FOR_MENU)
+  // so the Slice menu, built alongside the other menus, already knows
+  // whether there's anything to slice.
   var POINT_THRESHOLD = 28;  // px: snap to an embedded point within this radius
   // A much tighter radius for a line/scatter point to win over a mesh cell
   // the click also landed inside (see resolvePickTarget) -- a deliberate,
@@ -1876,7 +2731,7 @@ _JS_SOURCE = r"""
 
   function refreshAxes(key) {
     applyAxesTransform(key); rebuildTicks(key); relayoutPins(key); relayoutTextCounterScale(key);
-    syncLinked(key);
+    syncLinked(key); resyncSlice(key);
   }
   function resetAxesOne(key) {
     for (var f in META[key]) CUR[key][f] = META[key][f];
@@ -1888,7 +2743,7 @@ _JS_SOURCE = r"""
     // Otherwise double-clicking just the parent of a pan-desynced twin/
     // secondary snaps the parent back but leaves the other one stranded at
     // whatever view it last drifted to.
-    syncLinked(key);
+    syncLinked(key); resyncSlice(key);
   }
   function resetAxes() { Object.keys(META).forEach(resetAxesOne); }
 
@@ -3148,16 +4003,10 @@ _JS_SOURCE = r"""
   // driving all shared series; a docked unit sits under its axes. Docked units
   // that share a connection index show an index badge + a checkbox to link them
   // so they scrub together on demand.
-  var framesEl = document.getElementById('plotpress-frames');
-  var unitsEl = document.getElementById('plotpress-sliders');
-  var FRAMES = framesEl ? reviveBinary(JSON.parse(framesEl.textContent)) : null;
-  var UNITS = unitsEl ? JSON.parse(unitsEl.textContent) : null;
+  // FRAMES/UNITS are parsed up above, alongside PICK, not here -- the Slice
+  // menu built alongside every other menu needs FRAMES too, to know about an
+  // animated pcolormesh_frames() axes (see SLICE_AXES's own comment).
   var LINKS = {};  // connection index -> [slider api]
-  if (FRAMES) {
-    for (var fk in FRAMES) {
-      FRAMES[fk].forEach(function (e) { FRAME_INDEX[e.id] = { entry: e, axesKey: fk }; });
-    }
-  }
 
   // Move any pins attached to this unit's series to the new frame's vertex.
   function updateFramePins(unit, f) {
@@ -3231,6 +4080,7 @@ _JS_SOURCE = r"""
       CURRENT_FRAME[unit] = api.frame;
       input.value = api.frame;
       drawFrame(unit, api.frame);
+      resyncSliceForFrameUnit(unit);
       val.textContent = spec.label + ' = ' + fmt(spec.values[api.frame]);
     };
     api.external = applyFrame;  // set from a linked peer, no re-propagation
@@ -3283,17 +4133,17 @@ _JS_SOURCE = r"""
   }
 
   if (UNITS && FRAMES) {
-    // Wrap the SVG so docked sliders can be positioned over it. Sized by the
-    // .plotpress-svg-wrap rule in the page's own <style> (see Figure.to_html),
-    // not inline here -- standalone shrink-wraps it to the SVG's natural size
-    // for flex-centering; embedded (standalone=False) stretches it to the
+    // Wrap the SVG so docked sliders can be positioned over it (see
+    // ensureSvgWrap()'s own comment -- shared with the Slice tool's own
+    // docked sliders, since either may need this and only one should ever
+    // actually create it). Sized by the .plotpress-svg-wrap rule in the
+    // page's own <style> (see Figure.to_html), not inline here --
+    // standalone shrink-wraps it to the SVG's natural size for
+    // flex-centering; embedded (standalone=False) stretches it to the
     // container's width so #plotpress-svg's own width:100% has a definite,
     // non-circular size to resolve against instead of falling back to the
     // SVG's fixed width/height attributes.
-    wrap = document.createElement('div');
-    wrap.className = 'plotpress-svg-wrap';
-    svg.parentNode.insertBefore(wrap, svg);
-    wrap.appendChild(svg);
+    ensureSvgWrap();
 
     // How many units share each connection index (>=2 => offer linking).
     var indexCount = {};
@@ -3331,6 +4181,13 @@ _JS_SOURCE = r"""
       }
     });
     positionDocked();
+    // If Slice's own global bar (sliceGlobalBar) already exists by the time
+    // this runs, it doesn't -- Slice only ever builds one in response to a
+    // user action (Enable Slice / Link all matching axes), never at load --
+    // but call it anyway rather than assuming the ordering, matching how
+    // buildSliceSliders()/teardownSliceSliders() call it back for this bar
+    // in the other direction.
+    reflowGlobalBars();
     window.addEventListener('resize', positionDocked);
   }
 

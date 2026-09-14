@@ -942,6 +942,8 @@ def _quadmesh_pick_entry(art, max_mesh_cells, precision):
         "z": _round_list(z),
         "name": "z",
         "curvilinear": bool(curvilinear),
+        "kind": "pcolormesh",
+        "vmin": float(art.norm.vmin), "vmax": float(art.norm.vmax),
     }
     if (ny, nx) != (ny0, nx0):
         # Internal-only -- frame_data() (the one caller) pops this back off
@@ -1213,6 +1215,21 @@ def pick_data(fig, max_points=20000, max_mesh_cells=250000, precision=6):
                     "z": _round_list(z),
                     "name": "z",
                     "curvilinear": bool(curvilinear),
+                    # Distinguishes a pcolormesh from a plain imshow() for the
+                    # interactive Slice tool -- both share this exact entry
+                    # shape (z/xedges/yedges), so nothing else here needs to
+                    # tell them apart, but Slice reports which kind of axes
+                    # it's slicing.
+                    "kind": "image" if is_img else "pcolormesh",
+                    # The resolved color-scale bounds (after autoscale_none,
+                    # so always real floats, whether the caller passed
+                    # vmin=/vmax= or let them autoscale from the data) --
+                    # exactly what the colorbar itself is drawn against.
+                    # Slice's own "fix value axis to colorbar range" option
+                    # reads these instead of each slice's own row/column
+                    # min/max, so scrubbing through slices doesn't rescale
+                    # the axis out from under the reader on every step.
+                    "vmin": float(art.norm.vmin), "vmax": float(art.norm.vmax),
                 }
                 if curvilinear:
                     # No separable 1-D edges on a warped grid -- picking
@@ -1673,8 +1690,15 @@ def _emit_prim(p) -> str:
         # class/data-label match every other series (see _emit_prim's PLine/PRect
         # branches below) so the legend's click-to-hide toggle -- which matches
         # on .plotpress-series + data-label -- can find a raster mesh/image the
-        # same way it already finds a vectorized one.
-        return (f'<image class="plotpress-series" data-label="{_esc(p.label)}" '
+        # same way it already finds a vectorized one. plotpress-mesh (shared
+        # with _render_mesh_vector's own <g>, the other of the two ways a
+        # QuadMesh/Image artist can reach the page -- see
+        # artists._resolve_mesh_render) is the interactive Slice tool's own
+        # hook for "hide whichever of the two this axes actually used" when
+        # switching to its 1-D slice view (renderMeshOrSlice); .plotpress-series
+        # alone can't do that since plain lines/bars/fills share it too.
+        return (f'<image class="plotpress-series plotpress-mesh" '
+                f'data-label="{_esc(p.label)}" '
                 f'x="{_fmt(p.x)}" y="{_fmt(p.y)}" width="{_fmt(p.w)}" '
                 f'height="{_fmt(p.h)}" preserveAspectRatio="none"'
                 f'{style} href="{uri}"/>')
@@ -1788,9 +1812,14 @@ def _render_framequadmesh(art: FrameQuadMesh, tr, ai, k, body):
     p = prims[0]
     uri = png_data_uri(p.rgba)
     label = _esc(art.label) if art.label else ""
+    # plotpress-mesh (shared with a plain QuadMesh/Image's own raster/
+    # vectorized rendering -- see _emit_prim's PImage branch) is the
+    # interactive Slice tool's hook for hiding this mesh when switching to
+    # its 1-D slice view; plotpress-framemesh is a separate, pre-existing
+    # marker with its own callers and stays untouched.
     body.append(
-        f'<image class="plotpress-series plotpress-framemesh" id="s{ai}_{k}" '
-        f'data-label="{label}" x="{_fmt(p.x)}" y="{_fmt(p.y)}" '
+        f'<image class="plotpress-series plotpress-framemesh plotpress-mesh" '
+        f'id="s{ai}_{k}" data-label="{label}" x="{_fmt(p.x)}" y="{_fmt(p.y)}" '
         f'width="{_fmt(p.w)}" height="{_fmt(p.h)}" preserveAspectRatio="none" '
         f'style="image-rendering:pixelated" href="{uri}"/>'
     )
@@ -1923,9 +1952,14 @@ def _render_mesh_vector(art: QuadMesh, tr, ai, k, body):
                  '" height="', fmt(H), '" fill="', hexcolor, '"/>'):
         rects = np.char.add(rects, piece)
 
+    # plotpress-mesh (shared with _emit_prim's PImage branch, the raster
+    # path a large/uniform mesh takes instead) is the interactive Slice
+    # tool's own hook for finding this mesh's on-screen element regardless
+    # of which of the two rendering paths it actually took -- see that
+    # branch's own comment.
     body.append(
-        f'<g class="plotpress-series" id="s{ai}_{k}" data-label="{label}"{op}>'
-        f'{"".join(rects.tolist())}</g>'
+        f'<g class="plotpress-series plotpress-mesh" id="s{ai}_{k}" '
+        f'data-label="{label}"{op}>{"".join(rects.tolist())}</g>'
     )
 
 
