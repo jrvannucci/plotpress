@@ -282,6 +282,53 @@ def test_set_title_takes_a_size():
     assert ax._title_size is None
 
 
+def test_set_xlabel_and_ylabel_take_a_size():
+    """Same per-instance escape hatch as set_title(): each axes' own x/y
+    label can be sized independently of Style.label_size and of every
+    other axes' label, GroupLayout-built axes included."""
+    _, ax = plotpress.subplots()
+    ax.set_xlabel("small", size=5)
+    assert ax._xlabel_size == 5
+    ax.set_xlabel("mpl spelling", fontsize=7)
+    assert ax._xlabel_size == 7
+    ax.set_xlabel("default")
+    assert ax._xlabel_size is None
+
+    ax.set_ylabel("small", size=6)
+    assert ax._ylabel_size == 6
+    ax.set_ylabel("mpl spelling", fontsize=8)
+    assert ax._ylabel_size == 8
+    ax.set_ylabel("default")
+    assert ax._ylabel_size is None
+
+
+def test_xlabel_ylabel_sizes_render_independently_per_axes():
+    import re
+
+    fig, axes = plotpress.subplots(1, 2, figsize=(8, 4))
+    axes[0].set_xlabel("Left X", size=20)
+    axes[0].set_ylabel("Left Y", size=8)
+    axes[1].set_xlabel("Right X")   # default size
+    fig.tight_layout()
+    svg = fig.to_svg()
+    sizes = {m.group(2): float(m.group(1)) for m in
+            re.finditer(r'font-size="([\d.]+)"[^>]*>([^<]*)</text>', svg)}
+    assert sizes["Left X"] == 20
+    assert sizes["Left Y"] == 8
+    assert sizes["Right X"] == fig.style.label_size
+
+
+def test_xlabel_size_survives_template_round_trip():
+    fig, ax = plotpress.subplots()
+    ax.set_xlabel("x", size=18)
+    ax.set_ylabel("y", size=9)
+    template = fig.to_template()
+    fig2, _ = plotpress.figure_from_template(template)
+    ax2 = fig2.axes[0]
+    assert ax2._xlabel_size == 18
+    assert ax2._ylabel_size == 9
+
+
 def test_titles_set_after_tight_layout_still_get_room():
     """A figure whose title reports its own build time has no other option.
 

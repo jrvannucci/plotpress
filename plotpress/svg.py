@@ -197,23 +197,23 @@ def _group_axes_extra(ax, st):
         if ax._twin_shared == "x":                   # twinx: y-axis on the right
             ydec = st.tick_size + _max_ytick_width(ax, st) + 4
             if ax._shown_ylabel():
-                ydec += st.label_size + 6
+                ydec += (ax._ylabel_size or st.label_size) + 6
             return top, bottom, left, ydec
         else:                                          # twiny: x-axis on top
             xdec = st.tick_size + st.tick_label_size + 4
             if ax._shown_xlabel():
-                xdec += st.label_size + 6
+                xdec += (ax._xlabel_size or st.label_size) + 6
             return top + xdec, bottom, left, right
     xdec = st.tick_size + st.tick_label_size + 4
     if ax._shown_xlabel():
-        xdec += st.label_size + 6
+        xdec += (ax._xlabel_size or st.label_size) + 6
     if ax._xtick_side == "top":
         top += xdec
     else:
         bottom += xdec
     ydec = st.tick_size + _max_ytick_width(ax, st) + 4
     if ax._shown_ylabel():
-        ydec += st.label_size + 6
+        ydec += (ax._ylabel_size or st.label_size) + 6
     if ax._ytick_side == "right":
         right += ydec
     else:
@@ -292,29 +292,48 @@ def _group_bbox(fig, g, W, H, scale=1.0):
     the axes is still there) to freeze into ``frozen_rect`` before
     detaching it.
 
-    A group can outlive every one of its own axes (see :meth:`Axes.remove`:
-    removing one drops it from the group rather than the whole group, so
-    the *last* axes leaving empties ``g["axes"]`` without deleting the
-    group itself) -- with no members left to measure, ``frozen_rect`` (that
-    same box, captured in figure-fraction units at the moment the group
-    actually went empty) stands in instead, keeping the box exactly where
-    it last was rather than raising on an empty min()/max() or silently
-    vanishing.
+    A group whose membership has ever shrunk (see :meth:`Axes.remove`:
+    removing one axes drops it from the group rather than the whole group)
+    stops tracking its live members at all, even the ones still left --
+    ``frozen_rect`` (that same box, captured in figure-fraction units at
+    the moment the *first* axes departed) stands in instead from then on,
+    keeping the box wrapping the group's original structure rather than
+    shrinking removal by removal down to whatever happens to be left, and
+    finally to nothing measurable at all once the group empties completely.
     """
-    st = fig.style
-    # Colorbars are looked up against g["axes"] *plus* any auto-included
-    # twin/secondary -- fig.colorbar(mesh, ax=some_twin) is exactly as valid
-    # as attaching one to the plain axes it overlays, and a colorbar found
-    # only by checking the caller's own literal axes= list would otherwise
-    # never be discovered when its actual parent is the twin instead.
-    overlays = _group_twins_and_secondaries(g["axes"], fig)
-    members = g["axes"] + overlays + _group_colorbars(g["axes"] + overlays, fig)
-    if not members:
+    if g["frozen_rect"] is not None:
+        ghost = _ghost_group_rects(fig, g, W, H)
+        if ghost is not None:
+            rects, extras = ghost
+            return _combine_group_rects(g, fig.style, rects, extras, W, H, scale)
         fx0, fy0, fx1, fy1 = g["frozen_rect"]
         return fx0 * W, fy0 * H, fx1 * W, fy1 * H
+    st = fig.style
+    members = _group_members(g, fig)
     rects = [_pixel_rect(ax, W, H) for ax in members]
     extras = [_group_colorbar_extra(ax, st) if ax._is_colorbar
              else _group_axes_extra(ax, st) for ax in members]
+    return _combine_group_rects(g, st, rects, extras, W, H, scale)
+
+
+def _group_members(g, fig):
+    """This group's own axes plus any twin/secondary overlay and colorbar
+    that :func:`_group_bbox` auto-includes with them (see its own docstring)
+    -- shared with :meth:`Axes.remove`, which needs this exact list (while
+    the axes about to leave is still on it) to snapshot each member's grid
+    position and decoration extent into ``_ghost_specs``/``_ghost_extras``
+    before detaching it, the same way :func:`_group_bbox` itself used to
+    inline this just for its own one-time pixel freeze.
+    """
+    overlays = _group_twins_and_secondaries(g["axes"], fig)
+    return g["axes"] + overlays + _group_colorbars(g["axes"] + overlays, fig)
+
+
+def _combine_group_rects(g, st, rects, extras, W, H, scale):
+    """The shared tail of :func:`_group_bbox`: turn a group's per-member
+    ``(rects, extras)`` -- real, currently-live axes or (see
+    :func:`_ghost_group_rects`) reconstructed ghosts standing in for
+    departed ones -- into the group's own padded bounding box."""
     pad_l, pad_r, pad_t, pad_b = (v * scale for v in g["pad"])
     sx_size = (g["supxlabel_size"] or st.label_size * 1.2) * scale
     sy_size = (g["supylabel_size"] or st.label_size * 1.2) * scale
@@ -325,6 +344,63 @@ def _group_bbox(fig, g, W, H, scale=1.0):
     x1 = max(r[0] + r[2] + e[3] * scale for r, e in zip(rects, extras)) + pad_r
     y1 = max(r[1] + r[3] + e[1] * scale for r, e in zip(rects, extras)) + pad_b + sx_extent
     return x0, y0, x1, y1
+
+
+def _ghost_group_rect(placement, W, H, row0, row1, col0, col1):
+    """The pixel rect (same ``(left, top, w, h)`` shape as :func:`_pixel_rect`)
+    a grid cell spanning ``row0..row1``/``col0..col1`` would have under
+    ``placement`` -- the same ``nrows``/``ncols``/``left``/``bottom``/``axw``/
+    ``axh``/``gap_w``/``gap_h`` inputs :func:`_place_spec_rects` itself takes
+    (see :attr:`Figure._grid_placement`) -- whether or not any real axes
+    currently occupies it. Mirrors :func:`_place_spec_rects`'s own
+    col_left/row_bottom derivation exactly, then applies the same bottom-up
+    fraction -> top-down pixel flip :func:`_pixel_rect` applies for a real
+    axes' ``_rect``.
+    """
+    nrows, ncols = placement["nrows"], placement["ncols"]
+    left, bottom = placement["left"], placement["bottom"]
+    axw, axh = placement["axw"], placement["axh"]
+    gap_w, gap_h = placement["gap_w"], placement["gap_h"]
+    col_left = []
+    x = left
+    for c in range(ncols):
+        col_left.append(x)
+        x += axw + (gap_w[c] if c < ncols - 1 else 0.0)
+    row_bottom = [0.0] * nrows
+    y = bottom
+    for r in range(nrows - 1, -1, -1):
+        row_bottom[r] = y
+        if r > 0:
+            y += axh + gap_h[r - 1]
+    x0 = col_left[col0]
+    w = col_left[col1] + axw - x0
+    y0_bottom_up = row_bottom[row1]
+    h = row_bottom[row0] + axh - y0_bottom_up
+    return (x0 * W, (1.0 - (y0_bottom_up + h)) * H, w * W, h * H)
+
+
+def _ghost_group_rects(fig, g, W, H):
+    """Reconstruct ``(rects, extras)`` for a fully-or-partially emptied
+    group from the grid positions its axes had *before* any of them left
+    (see :meth:`Axes.remove`'s ``_ghost_specs``/``_ghost_extras``), placed
+    at those same positions' *current* geometry -- so the box a departed
+    group's members would still occupy keeps matching its still-populated
+    siblings' own width/height as tight_layout() reflows the grid, rather
+    than staying pixel-locked to whatever the layout looked like the moment
+    the group was first left with a gap. Returns ``None`` (falling back to
+    the plain frozen pixel rect) when there's nothing to reconstruct from --
+    an irregular/freeform group with no shared grid to begin with, or one
+    whose recorded shape no longer matches the figure's current grid (e.g.
+    after ``tight_layout(collapse="grid")`` reshaped it).
+    """
+    specs = g.get("_ghost_specs")
+    placement = fig._grid_placement
+    if not specs or placement is None:
+        return None
+    if g.get("_ghost_grid_shape") != (placement["nrows"], placement["ncols"]):
+        return None
+    rects = [_ghost_group_rect(placement, W, H, *span) for span in specs]
+    return rects, g["_ghost_extras"]
 
 
 def _render_groups(fig, W, H, body):
@@ -568,6 +644,7 @@ def _axes_decoration_fields(ax):
     return {
         "title": ax._title or None, "title_size": ax._title_size,
         "xlabel": ax._xlabel or None, "ylabel": ax._ylabel or None,
+        "xlabel_size": ax._xlabel_size, "ylabel_size": ax._ylabel_size,
         # Only emitted when actually hidden -- a visible label (the common
         # case) carries no extra key, and an old layout without these
         # rebuilds visible, which is what it always was.
@@ -2711,11 +2788,12 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
                 f'text-anchor="{anchor}" font-size="{fs}" fill="{st.text_color}"{rt}>{_esc(lab)}</text>'
             )
         if ax._shown_ylabel():
-            lx = xr + ts + _max_ytick_width(ax, st) + st.label_size + 4
+            ylabel_size = ax._ylabel_size or st.label_size
+            lx = xr + ts + _max_ytick_width(ax, st) + ylabel_size + 4
             cy = px_top + px_h / 2.0
             body.append(
                 f'<text x="{_fmt(lx)}" y="{_fmt(cy)}" text-anchor="middle" '
-                f'font-size="{st.label_size}" fill="{st.text_color}" '
+                f'font-size="{ylabel_size}" fill="{st.text_color}" '
                 f'transform="rotate(90 {_fmt(lx)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
             )
     else:                                           # twiny: x-axis on the TOP
@@ -2730,9 +2808,10 @@ def _render_twin_ticks(ax, st, tr, xticks, yticks, px_left, px_top, px_w, px_h, 
                 f'font-size="{fs}" fill="{st.text_color}"{rt}>{_esc(lab)}</text>'
             )
         if ax._shown_xlabel():
+            xlabel_size = ax._xlabel_size or st.label_size
             body.append(
-                f'<text x="{_fmt(px_left + px_w / 2)}" y="{_fmt(px_top - ts - fs - st.label_size)}" '
-                f'text-anchor="middle" font-size="{st.label_size}" '
+                f'<text x="{_fmt(px_left + px_w / 2)}" y="{_fmt(px_top - ts - fs - xlabel_size)}" '
+                f'text-anchor="middle" font-size="{xlabel_size}" '
                 f'fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
             )
     body.append(f'<g stroke="{st.spine_color}" stroke-width="{tw}">{"".join(marks)}</g>')
@@ -2831,11 +2910,12 @@ def _render_spines(ax, px_left, px_top, px_w, px_h, body):
 def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
     """Draw this axes' title and x/y axis labels.
 
-    ``st`` is the figure-wide default -- axis-label *text* always uses it
-    (``label_size``/``text_color`` aren't tick_params() fields), but the
-    *offset* that clears the tick marks/labels first has to match
-    ``tick_params()``'s own per-axis override, resolved here exactly like
-    :func:`_render_ticks`'s own caller already does. Using the figure
+    ``st`` is the figure-wide default -- axis-label *text* uses it unless
+    this axes' own :meth:`~plotpress.axes.Axes.set_xlabel`/``set_ylabel``
+    gave it a ``size`` of its own (``text_color`` still isn't a per-axes
+    field), but the *offset* that clears the tick marks/labels first has to
+    match ``tick_params()``'s own per-axis override, resolved here exactly
+    like :func:`_render_ticks`'s own caller already does. Using the figure
     default there regardless of the override used to put the axis label
     on top of a tick label sized (or rotated) differently from the
     default -- most visibly with a *larger* ``labelsize`` override, whose
@@ -2845,29 +2925,31 @@ def _render_labels(ax, st, px_left, px_top, px_w, px_h, body):
     yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
     cx = px_left + px_w / 2.0
     if ax._shown_xlabel() and not ax._axis_off:
+        xlabel_size = ax._xlabel_size or st.label_size
         if ax._xlabel_y_override is not None:
             y = ax._xlabel_y_override
         else:
             xdec = xst.tick_size + _xtick_label_extent(ax, xst) + 4
-            y = (px_top - xdec - st.label_size if ax._xtick_side == "top"
-                else px_top + px_h + xdec + st.label_size)
+            y = (px_top - xdec - xlabel_size if ax._xtick_side == "top"
+                else px_top + px_h + xdec + xlabel_size)
         body.append(
             f'<text x="{_fmt(cx)}" y="{_fmt(y)}" text-anchor="middle" '
-            f'font-size="{st.label_size}" fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
+            f'font-size="{xlabel_size}" fill="{st.text_color}">{_esc(ax._xlabel)}</text>'
         )
     if ax._shown_ylabel() and not ax._axis_off:
+        ylabel_size = ax._ylabel_size or st.label_size
         cy = px_top + px_h / 2.0
         if ax._ylabel_x_override is not None:
             x, angle = ax._ylabel_x_override, -90
         elif ax._ytick_side == "right":
-            x = px_left + px_w + yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4
+            x = px_left + px_w + yst.tick_size + _max_ytick_width(ax, yst) + ylabel_size + 4
             angle = 90
         else:
-            x = px_left - yst.tick_size - _max_ytick_width(ax, yst) - st.label_size - 4
+            x = px_left - yst.tick_size - _max_ytick_width(ax, yst) - ylabel_size - 4
             angle = -90
         body.append(
             f'<text x="{_fmt(x)}" y="{_fmt(cy)}" text-anchor="middle" '
-            f'font-size="{st.label_size}" fill="{st.text_color}" '
+            f'font-size="{ylabel_size}" fill="{st.text_color}" '
             f'transform="rotate({angle} {_fmt(x)} {_fmt(cy)})">{_esc(ax._ylabel)}</text>'
         )
     if ax._title:
@@ -2919,7 +3001,7 @@ def twiny_headroom(ax, st):
     if ax._xtick_side == "top" and not ax._axis_off:
         h = st.tick_size + st.tick_label_size + 4
         if ax._shown_xlabel():
-            h += st.label_size + 6
+            h += (ax._xlabel_size or st.label_size) + 6
     for other in ax.figure.axes:
         is_twiny = other._twin_of is ax and other._twin_shared == "y"
         is_secondary_top = (other._secondary_of is ax
@@ -2928,7 +3010,7 @@ def twiny_headroom(ax, st):
         if is_twiny or is_secondary_top:
             th = st.tick_size + st.tick_label_size + 4
             if other._shown_xlabel():
-                th += st.label_size + 6
+                th += (other._xlabel_size or st.label_size) + 6
             h = max(h, th)
     return h
 

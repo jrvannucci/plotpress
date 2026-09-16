@@ -277,7 +277,13 @@ def test_to_vega_group_marks_handle_empty_hidden_and_twin_cases():
     the new tight_layout(collapse=...) gallery example), and auto-including
     a member's own twin/secondary overlay (and any colorbar attached to
     one) the same way svg._group_bbox does."""
-    # Empty group (frozen_rect) must not crash and must use the frozen box.
+    # Empty group (frozen_rect) must not crash and must use the frozen box --
+    # reconstructed from its former cell's *current* (post tight_layout())
+    # geometry (see svg._ghost_group_rects), not literally the raw pixel
+    # rect frozen the moment it emptied, which tight_layout() here goes on
+    # to move.
+    from plotpress.svg import _group_bbox
+
     fig, axes = plotpress.subplots(1, 2)
     for ax in axes:
         ax.plot([0, 1], [0, 1])
@@ -286,10 +292,10 @@ def test_to_vega_group_marks_handle_empty_hidden_and_twin_cases():
     fig.tight_layout()   # collapse=None -- group freezes, doesn't disappear
     spec = fig.to_vega()   # must not raise
     [rect] = [m for m in spec["marks"] if m["name"] == "group0"]
-    fx0, fy0, fx1, fy1 = fig.get_groups()[0]._raw["frozen_rect"]
     W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
-    assert rect["encode"]["enter"]["x"]["value"] == round(fx0 * W, 2)
-    assert rect["encode"]["enter"]["y"]["value"] == round(fy0 * H, 2)
+    ex0, ey0, _, _ = _group_bbox(fig, fig._groups[0], W, H)
+    assert rect["encode"]["enter"]["x"]["value"] == round(ex0, 2)
+    assert rect["encode"]["enter"]["y"]["value"] == round(ey0, 2)
 
     # visible=False must be skipped entirely, same as the SVG backend.
     fig2, ax2 = plotpress.subplots()

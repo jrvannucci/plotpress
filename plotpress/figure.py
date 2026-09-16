@@ -659,6 +659,16 @@ class Figure:
         self._group_wspace = None    # set by Figure.group_spacing()
         self._group_hspace = None
 
+        # The uniform-grid geometry (nrows/ncols plus the col/row placement
+        # inputs _place_spec_rects itself takes) from the most recent
+        # tight_layout()/subplots_adjust() call -- kept around so a group
+        # that has lost some (not necessarily all) of its own axes (see
+        # Axes.remove()) can still recompute where its box belongs from its
+        # *other* members' current, correctly-relaid-out cells instead of a
+        # pixel snapshot frozen back when it was removed -- see svg.py's
+        # _ghost_group_rect.
+        self._grid_placement = None
+
         # tight_layout is re-applied at render time if anything it measured has
         # changed since -- see _settle_layout.
         self._tight_pad = None
@@ -805,11 +815,21 @@ class Figure:
             "supxlabel_size": supxlabel_size, "supylabel_size": supylabel_size,
             "visible": bool(visible),
             "outer_row": _outer_row, "outer_col": _outer_col, "axes_grid": _axes_grid,
-            # Set by Axes.remove() the moment this group's last axes leaves
-            # it -- see _group_bbox's own docstring for why: with no member
-            # left to measure a box from, this frozen (figure-fraction)
-            # rect stands in instead of dropping the group outright.
+            # Set by Axes.remove() the moment any one of this group's own
+            # axes first leaves it -- see _group_bbox's own docstring for
+            # why: from then on this frozen (figure-fraction) rect stands
+            # in for the usual live, axes-derived bounds, keeping the box
+            # wrapping the group's original structure rather than
+            # shrinking (or, once nothing is left, vanishing) removal by
+            # removal. "_ghost_specs"/"_ghost_extras"/"_ghost_grid_shape",
+            # set alongside it, let a later tight_layout() reposition this
+            # same box at its members' *current* grid geometry instead of
+            # leaving it pixel-locked to this exact moment -- see
+            # svg._ghost_group_rects; None (a group with no shared grid to
+            # begin with, e.g. built over a freeform add_axes() rect) just
+            # falls back to the plain frozen pixel rect forever.
             "frozen_rect": None,
+            "_ghost_specs": None, "_ghost_extras": None, "_ghost_grid_shape": None,
         })
         self._layout_dirty = True
         return self
@@ -1274,14 +1294,12 @@ class Figure:
         those cases, naming a concrete fix for each. Pass
         ``auto_label_scale=True`` to have it pick one of those fixes itself
         for the cases with a settable per-instance size -- x tick labels
-        (:meth:`~plotpress.axes.Axes.tick_params`'s ``labelsize``), an
-        axes title (:meth:`~plotpress.axes.Axes.set_title`'s ``size``), and
-        a group title (:meth:`group`'s ``fontsize``) -- shrinking each just
-        enough to fit, down to a legibility floor. A plain
-        ``set_xlabel``/``set_ylabel`` axis label has no such per-axes size
-        to shrink (it's always ``Style.label_size``), so it still only
-        warns even with ``auto_label_scale=True``; so does anything that
-        still doesn't fit once its floor is reached.
+        (:meth:`~plotpress.axes.Axes.tick_params`'s ``labelsize``), an axes
+        title (:meth:`~plotpress.axes.Axes.set_title`'s ``size``), an axes
+        x label (:meth:`~plotpress.axes.Axes.set_xlabel`'s ``size``), and a
+        group title (:meth:`group`'s ``fontsize``) -- shrinking each just
+        enough to fit, down to a legibility floor. Anything that still
+        doesn't fit once its floor is reached still only warns.
 
         ``collapse`` reclaims whitespace :meth:`~plotpress.axes.Axes.remove`/
         :meth:`remove_group` leave behind, since neither reflows the grid on
@@ -1431,12 +1449,12 @@ class Figure:
                 if ax._twin_shared == "x":                   # twinx: y on the right
                     rdec = yst.tick_size + ytw + 4
                     if ax._shown_ylabel():
-                        rdec += st.label_size + 6
+                        rdec += (ax._ylabel_size or st.label_size) + 6
                     right_px = max(right_px, rdec)
                 else:                                        # twiny: x on the top
                     tdec = xdec
                     if ax._shown_xlabel():
-                        tdec += st.label_size + 6
+                        tdec += (ax._xlabel_size or st.label_size) + 6
                     twin_top_px = max(twin_top_px, tdec)
                 continue
 
@@ -1446,14 +1464,14 @@ class Figure:
             # rather than the bottom/left band the default side would need.
             ldec = yst.tick_size + ytw + 4
             if ax._shown_ylabel():
-                ldec += st.label_size + 6
+                ldec += (ax._ylabel_size or st.label_size) + 6
             if ax._ytick_side == "right":
                 right_px = max(right_px, ldec)
             else:
                 left_px = max(left_px, ldec)
             bdec = xdec
             if ax._shown_xlabel():
-                bdec += st.label_size + 6
+                bdec += (ax._xlabel_size or st.label_size) + 6
             if ax._xtick_side == "top":
                 twin_top_px = max(twin_top_px, bdec)
             else:
@@ -1529,7 +1547,24 @@ class Figure:
         col_right_px = [0.0] * (ncols - 1)
         for g in self._groups:
             g_specs = [ax for ax in g["axes"] if ax._subplotspec is not None]
-            if not g_specs:
+            if g_specs:
+                r0 = min(ax._subplotspec.row0 for ax in g_specs)
+                r1 = max(ax._subplotspec.row1 for ax in g_specs)
+                c0 = min(ax._subplotspec.col0 for ax in g_specs)
+                c1 = max(ax._subplotspec.col1 for ax in g_specs)
+            elif g["_ghost_specs"] and g["_ghost_grid_shape"] == (nrows, ncols):
+                # Every one of this group's own axes has already left it
+                # (see Axes.remove()), but it still draws a title/box (see
+                # svg._ghost_group_rects) at its former cells -- which still
+                # needs its own margin reserved here the same as a live
+                # group's would, or a title facing an interior boundary
+                # (row_below_px/etc. below) collides with the neighboring
+                # row/column that boundary was never widened for.
+                r0 = min(s[0] for s in g["_ghost_specs"])
+                r1 = max(s[1] for s in g["_ghost_specs"])
+                c0 = min(s[2] for s in g["_ghost_specs"])
+                c1 = max(s[3] for s in g["_ghost_specs"])
+            else:
                 continue
             size = g["fontsize"] or st.title_size
             pos = g["title_position"]
@@ -1602,10 +1637,6 @@ class Figure:
             # from.
             top_extent, bottom_extent = top_text + pad_t, bottom_text + pad_b
             left_extent, right_extent = left_text + pad_l, right_text + pad_r
-            r0 = min(ax._subplotspec.row0 for ax in g_specs)
-            r1 = max(ax._subplotspec.row1 for ax in g_specs)
-            c0 = min(ax._subplotspec.col0 for ax in g_specs)
-            c1 = max(ax._subplotspec.col1 for ax in g_specs)
             # "Touches that edge" -- the group's bounding box reaches row 0 /
             # the last row / column 0 / the last column -- not "every one of
             # its axes sits in that single row/col": a group spanning several
@@ -1743,6 +1774,10 @@ class Figure:
         axw, gap_w_list = _fit_cells(right - left, ncols, base_gap_w_list, protected_w_list)
         axh, gap_h_list = _fit_cells(top - bottom, nrows, base_gap_h_list, protected_h_list)
 
+        self._grid_placement = {
+            "nrows": nrows, "ncols": ncols, "left": left, "bottom": bottom,
+            "axw": axw, "axh": axh, "gap_w": gap_w_list, "gap_h": gap_h_list,
+        }
         _place_spec_rects(specs, nrows, ncols, left, bottom, axw, axh, gap_w_list, gap_h_list)
         self._finish_grid_relayout(specs)
         if auto_label_scale and _auto_scale_overlapping_labels(self, specs, Wpx, Hpx):
@@ -1820,8 +1855,13 @@ class Figure:
         axh = avail_h / (nrows + sp["hspace"] * (nrows - 1))
         gap_w, gap_h = axw * sp["wspace"], axh * sp["hspace"]
 
+        gap_w_list, gap_h_list = [gap_w] * (ncols - 1), [gap_h] * (nrows - 1)
+        self._grid_placement = {
+            "nrows": nrows, "ncols": ncols, "left": sp["left"], "bottom": sp["bottom"],
+            "axw": axw, "axh": axh, "gap_w": gap_w_list, "gap_h": gap_h_list,
+        }
         _place_spec_rects(specs, nrows, ncols, sp["left"], sp["bottom"], axw, axh,
-                          [gap_w] * (ncols - 1), [gap_h] * (nrows - 1))
+                          gap_w_list, gap_h_list)
         self._finish_grid_relayout(specs)
         return self
 
@@ -1860,7 +1900,7 @@ class Figure:
                 _, px_top, _, px_h = _effective_rect(
                     ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
                 ys.append(px_top + px_h + st.tick_size + st.tick_label_size
-                         + st.label_size + 4)
+                         + (ax._xlabel_size or st.label_size) + 4)
             y = max(ys)
             for ax in group:
                 ax._xlabel_y_override = y
@@ -1897,7 +1937,7 @@ class Figure:
                 px_left, _, _, _ = _effective_rect(
                     ax, *_pixel_rect(ax, W, H), (xmin, xmax), (ymin, ymax))
                 xs.append(px_left - st.tick_size - _max_ytick_width(ax, st)
-                         - st.label_size - 4)
+                         - (ax._ylabel_size or st.label_size) - 4)
             x = min(xs)
             for ax in group:
                 ax._ylabel_x_override = x
@@ -2860,9 +2900,12 @@ def _iter_text_overflows(fig, specs, Wpx, Hpx):
     (:func:`_warn_about_text_overflow`) and the opt-in auto-fix
     (:func:`_auto_scale_overlapping_labels`, ``tight_layout(auto_label_scale=
     True)``) -- each dict's ``"fix"`` is a zero-arg callable that shrinks
-    the relevant font just enough to fit (``None`` where there's no
-    per-instance size to shrink at all, e.g. a plain ``set_xlabel`` axis
-    label -- always ``Style.label_size``, nothing narrower to reach for).
+    the relevant font just enough to fit, calling back into whichever
+    per-instance size that text already has (:meth:`~plotpress.axes.
+    Axes.set_title`/:meth:`~plotpress.axes.Axes.set_xlabel`/
+    :meth:`~plotpress.axes.Axes.set_ylabel`'s own ``size``, or :meth:`group`'s
+    ``fontsize``) rather than ``Style``'s figure-wide default, so shrinking
+    one piece of text never touches any other axes'.
     """
     st = fig.style
     for ax in specs:
@@ -2904,10 +2947,18 @@ def _iter_text_overflows(fig, specs, Wpx, Hpx):
                 yield {"kind": "title", "ax": ax, "measured_px": w,
                        "avail_px": axes_w_px, "fix": fix}
         if ax._shown_xlabel():
-            w = st.text_width(ax._xlabel, st.label_size)
+            size = ax._xlabel_size or st.label_size
+            w = st.text_width(ax._xlabel, size)
             if w > axes_w_px:
+                def fix(ax=ax, size=size, w=w, avail=axes_w_px):
+                    new_size = max(_MIN_TITLE_SIZE, size * avail / w * _TEXT_FIT_MARGIN)
+                    if new_size >= size:
+                        return False
+                    ax.set_xlabel(ax._xlabel, visible=ax._xlabel_visible, size=new_size)
+                    return True
+
                 yield {"kind": "xlabel", "ax": ax, "measured_px": w,
-                       "avail_px": axes_w_px, "fix": None}
+                       "avail_px": axes_w_px, "fix": fix}
 
     for g in fig._groups:
         if not g["visible"] or g["title_position"] not in ("top", "bottom"):
@@ -2978,9 +3029,9 @@ def _warn_about_text_overflow(fig, specs, Wpx, Hpx):
             warnings.warn(
                 f"tight_layout(): {ident}'s xlabel (~{mpx:.0f}px) is wider "
                 f"than its own axes (~{apx:.0f}px) and may run past its "
-                "edges -- try shorter text or a smaller fig.style."
-                "label_size (auto_label_scale can't shrink this one -- "
-                "there's no per-axes xlabel size to scale yet).",
+                "edges -- try set_xlabel(..., size=<smaller>), shorter "
+                "text, tight_layout(auto_label_scale=True) to shrink it "
+                "automatically, or a wider figure.",
                 UserWarning, stacklevel=3)
         else:                                        # group_title
             title = item["group"]["title"]
@@ -3506,8 +3557,7 @@ def _apply_axes_decorations(ax, spec):
     property at a time.
     """
     bulk = {}
-    for key in ("xlabel", "ylabel", "xscale", "yscale", "aspect", "box_aspect",
-               "facecolor"):
+    for key in ("xscale", "yscale", "aspect", "box_aspect", "facecolor"):
         if spec.get(key) is not None:
             bulk[key] = spec[key]
     if spec.get("xlim") is not None:
@@ -3516,13 +3566,16 @@ def _apply_axes_decorations(ax, spec):
         bulk["ylim"] = tuple(spec["ylim"])
     if bulk:
         ax.set(**bulk)
-    # Not covered by .set() -- see its own docstring on the no-argument
-    # toggles and multi-value setters it deliberately excludes.
-    # template_metadata() only records these when a label is actually hidden.
-    if spec.get("xlabel_visible") is False:
-        ax.set_xlabel_visible(False)
-    if spec.get("ylabel_visible") is False:
-        ax.set_ylabel_visible(False)
+    # xlabel/ylabel/title carry a per-instance size (and, for the labels,
+    # a visibility flag -- template_metadata() only records that key when
+    # actually hidden) alongside their text, so each needs its own direct
+    # call rather than .set()'s single-value-per-key dispatch.
+    if spec.get("xlabel") is not None:
+        ax.set_xlabel(spec["xlabel"], visible=spec.get("xlabel_visible", True),
+                      size=spec.get("xlabel_size"))
+    if spec.get("ylabel") is not None:
+        ax.set_ylabel(spec["ylabel"], visible=spec.get("ylabel_visible", True),
+                      size=spec.get("ylabel_size"))
     if spec.get("title") is not None:
         ax.set_title(spec["title"], size=spec.get("title_size"))
     if spec.get("axis_off"):
