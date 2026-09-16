@@ -61,12 +61,12 @@ def test_a_title_wider_than_its_axes_warns():
     assert any("title" in m and "wider than its own axes" in m for m in msgs)
 
 
-def test_an_xlabel_wider_than_its_axes_warns_and_names_the_limitation():
+def test_an_xlabel_wider_than_its_axes_warns_with_a_concrete_fix():
     fig, ax = plotpress.subplots(figsize=(2.0, 3))
     ax.plot([0, 1], [0, 1])
     ax.set_xlabel("An Extremely Long X Axis Label Right Here")
     msgs = _warnings_from(fig.tight_layout)
-    assert any("xlabel" in m and "no per-axes xlabel size" in m for m in msgs)
+    assert any("xlabel" in m and "set_xlabel(..., size=<smaller>)" in m for m in msgs)
 
 
 def test_a_group_title_wider_than_its_box_warns():
@@ -111,14 +111,17 @@ def test_auto_label_scale_fixes_an_oversized_group_title_with_no_warning():
     assert g._raw["fontsize"] < default_size
 
 
-def test_auto_label_scale_never_fixes_a_plain_xlabel_and_still_warns():
-    """There's no per-axes font size to shrink for a plain set_xlabel() --
-    auto_label_scale must not pretend it fixed this."""
+def test_auto_label_scale_fixes_an_overflowing_xlabel_with_no_warning():
+    """set_xlabel() now has its own per-instance size (like set_title()
+    already did) -- auto_label_scale must actually shrink it rather than
+    leave it to warn unfixed."""
     fig, ax = plotpress.subplots(figsize=(2.0, 3))
     ax.plot([0, 1], [0, 1])
     ax.set_xlabel("An Extremely Long X Axis Label Right Here")
+    default_size = ax.style.label_size
     msgs = _warnings_from(lambda: fig.tight_layout(auto_label_scale=True))
-    assert any("xlabel" in m for m in msgs)
+    assert msgs == []
+    assert ax._xlabel_size < default_size
 
 
 def test_auto_label_scale_stops_at_the_legibility_floor_and_still_warns():

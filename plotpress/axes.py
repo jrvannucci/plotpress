@@ -289,6 +289,8 @@ class Axes:
         # panel's axes for data export but shows only one shared sup-label.
         self._xlabel_visible = True
         self._ylabel_visible = True
+        self._xlabel_size = None   # None -> the style's label_size
+        self._ylabel_size = None
         self._xlabel_y_override = None   # figure pixels; set by Figure.align_xlabels
         self._ylabel_x_override = None   # figure pixels; set by Figure.align_ylabels
         self._title = ""
@@ -2381,20 +2383,29 @@ class Axes:
         it belonged to -- both that group's flat axes list and, for a
         :class:`~plotpress.figure.GroupLayout`-built one, its own inner
         ``(row, col)`` grid -- so neither keeps a stale reference to a
-        detached axes. A group left with no axes at all this way keeps its
-        box exactly where it last was rather than disappearing: its current
-        bounding rect is frozen (figure-fraction, so it survives a later
-        ``set_size_inches``/dpi change) the moment its last axes leaves,
-        standing in for the usual axes-derived bounds from then on -- see
-        ``svg._group_bbox``. One axes shared between two groups (an unusual
-        but not prevented case) comes out of both, freezing either that
-        empties. Colorbar/legend space this axes' neighbors ceded to it is
-        not automatically reclaimed; call ``tight_layout()`` again for that.
-        Neither this frozen box nor the whitespace this axes' own removed
-        grid cell leaves behind shrinks on its own -- call
+        detached axes. A group loses its live, axes-derived box the moment
+        *any* one of its axes leaves this way -- not just once the last one
+        does: its bounding rect at that instant (figure-fraction, so it
+        survives a later ``set_size_inches``/dpi change) is frozen and
+        stands in for the usual axes-derived bounds from then on, whether
+        the group still has other members or none at all -- see
+        ``svg._group_bbox``. Freezing on the *first* departure rather than
+        the last is what keeps the box wrapping the group's original
+        structure (e.g. a whole row it was drawn around) instead of
+        shrinking down, removal by removal, to wherever whichever axes
+        happened to leave last, and finally disappearing to just that one's
+        own rect. One axes shared between two groups (an unusual but not
+        prevented case) comes out of both, freezing either that hadn't
+        already been. Colorbar/legend space this axes' neighbors ceded to
+        it is not automatically reclaimed; call ``tight_layout()`` again
+        for that. Neither this frozen box nor the whitespace this axes' own
+        removed grid cell leaves behind shrinks on its own -- call
         ``fig.tight_layout(collapse="grid")`` to reclaim both: it drops any
         group left with zero members entirely and shrinks any row/column
-        of the grid that's now completely empty.
+        of the grid that's now completely empty. A group still holding some
+        members keeps its frozen box even after that call -- collapse=
+        "grid" only ever drops a fully-emptied group, it doesn't re-tighten
+        a partially-emptied one's box around whatever is left.
 
         Also removes (recursively, via this same method, so each gets its
         own full cleanup) any ``twinx()``/``twiny()``/``secondary_xaxis()``/
@@ -2433,13 +2444,34 @@ class Axes:
         if self._id is not None and self.figure._id_index.get(self._id) is self:
             del self.figure._id_index[self._id]
         for g in self.figure._groups:
-            if self in g["axes"] and len(g["axes"]) == 1 and g["frozen_rect"] is None:
-                from .svg import _group_bbox
+            if self in g["axes"] and g["frozen_rect"] is None:
+                from .svg import (
+                    _group_axes_extra, _group_bbox, _group_colorbar_extra, _group_members,
+                )
                 fig = self.figure
+                st = fig.style
                 W = fig.figsize[0] * fig.style.dpi
                 H = fig.figsize[1] * fig.style.dpi
                 x0, y0, x1, y1 = _group_bbox(fig, g, W, H)
                 g["frozen_rect"] = (x0 / W, y0 / H, x1 / W, y1 / H)
+                # Also snapshot each current member's own grid cell and
+                # decoration extent -- while this axes and every other
+                # member is still in place -- so a later tight_layout()
+                # can reposition this group's box at these same cells'
+                # *then-current* geometry (see svg._ghost_group_rects)
+                # instead of leaving it pixel-locked to this exact moment,
+                # the way frozen_rect above has to on its own once nothing
+                # is left to derive a live position from.
+                members = _group_members(g, fig)
+                specs = [ax._subplotspec for ax in members]
+                shapes = {(s.nrows, s.ncols) for s in specs if s is not None}
+                if len(specs) == len(members) and len(shapes) == 1:
+                    g["_ghost_specs"] = [(s.row0, s.row1, s.col0, s.col1) for s in specs]
+                    g["_ghost_extras"] = [
+                        _group_colorbar_extra(ax, st) if ax._is_colorbar
+                        else _group_axes_extra(ax, st) for ax in members
+                    ]
+                    g["_ghost_grid_shape"] = shapes.pop()
             if self in g["axes"]:
                 g["axes"].remove(self)
             if g["axes_grid"] is not None:
@@ -3138,21 +3170,32 @@ class Axes:
         """
         return self._rect
 
-    def set_xlabel(self, xlabel, visible=True):
+    def set_xlabel(self, xlabel, visible=True, size=None, fontsize=None):
         """Set the x-axis label. ``visible=False`` stores it without drawing
         it -- ``get_xlabel()``, the ``load_data()`` layout round-trip, and a
         picked point's Extract record still report it, but it isn't rendered
         and reserves no margin (see also :meth:`set_xlabel_visible`). Passing
-        text again with the default ``visible=True`` re-shows it."""
+        text again with the default ``visible=True`` re-shows it.
+
+        ``size`` overrides the style's ``label_size`` for this axes' x label
+        only, the same per-axes escape hatch :meth:`set_title` already has --
+        a small-multiples grid can want each panel's own label a few points
+        high without a whole ``Style`` copy per figure changing every other
+        label too. ``fontsize`` is accepted as matplotlib spells it.
+        """
         self._xlabel = xlabel
         self._xlabel_visible = bool(visible)
+        self._xlabel_size = size if size is not None else fontsize
         self.figure._layout_dirty = True
 
-    def set_ylabel(self, ylabel, visible=True):
+    def set_ylabel(self, ylabel, visible=True, size=None, fontsize=None):
         """Set the y-axis label. ``visible=False`` stores it without drawing
-        it -- see :meth:`set_xlabel` and :meth:`set_ylabel_visible`."""
+        it -- see :meth:`set_xlabel` and :meth:`set_ylabel_visible`. ``size``/
+        ``fontsize`` override the style's ``label_size`` for this axes' y
+        label only, same as :meth:`set_xlabel`'s own."""
         self._ylabel = ylabel
         self._ylabel_visible = bool(visible)
+        self._ylabel_size = size if size is not None else fontsize
         self.figure._layout_dirty = True
 
     def set_xlabel_visible(self, visible=True):
