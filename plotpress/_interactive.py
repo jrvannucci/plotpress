@@ -740,6 +740,13 @@ _JS_SOURCE = r"""
     { action: 'save', label: 'Save', menu: 'File' },
     { action: 'save-as', label: 'Save As', menu: 'File' },
   ];
+  // Optional add-ons, opted in by name from Python (Figure.to_html's
+  // options=, emitted as window.PLOTPRESS_OPTIONS). Everything in TOOLS above
+  // -- navigation, Axes, Point Picking, Annotate, File -- is unconditional;
+  // options only add menus beyond it. With no config at all (this JS loaded
+  // some other way) every add-on is on, rather than silently omitting one.
+  var OPTIONS = window.PLOTPRESS_OPTIONS || ['slice'];
+  function hasOption(name) { return OPTIONS.indexOf(name) !== -1; }
   var pointsHidden = false;
   var annotationsHidden = false;
   // Hide Points/Hide Annotations toggle independently -- one class per kind
@@ -838,7 +845,7 @@ _JS_SOURCE = r"""
       }
     }
   }
-  var sliceMenuNeeded = Object.keys(SLICE_AXES).length > 0;
+  var sliceMenuNeeded = hasOption('slice') && Object.keys(SLICE_AXES).length > 0;
   // Figure-wide Slice state, declared here (not down by the rest of the
   // tool's own implementation) so the menu-building code just below --
   // which reads SLICE_ORIENTATION to set the radios' initial checked state
@@ -1619,6 +1626,10 @@ _JS_SOURCE = r"""
       st.sliceEl.setAttribute('fill', 'none');
       st.sliceEl.setAttribute('stroke', '#1f77b4');
       st.sliceEl.setAttribute('stroke-width', 1.5);
+      // The line lives on the outer <svg> (already-final pixel coords), so
+      // it doesn't inherit the axes' own clip; a value outside the chosen
+      // colorbar/custom range would otherwise run out past the axes box.
+      st.sliceEl.setAttribute('clip-path', 'url(#clip' + key + ')');
       svg.appendChild(st.sliceEl);
     }
     st.sliceEl.setAttribute('d', d);

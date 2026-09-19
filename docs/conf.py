@@ -11,7 +11,9 @@ import plotpress  # noqa: E402
 # Shared with Figure.to_html/Report.save so a gallery/usage embed's iframe is
 # sized by the exact same toolbar/slider clearance math the embedded document
 # itself uses, rather than a second, easily-drifting guess -- see there.
-from plotpress.figure import _json_payload, _toolbar_clearance  # noqa: E402
+from plotpress.figure import (  # noqa: E402
+    _INTERACTIVE_OPTIONS as _ALL_INTERACTIVE_OPTIONS, _json_payload, _toolbar_clearance,
+)
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
@@ -213,7 +215,8 @@ def _interactive_embed(fig, image_path, src_file):
     # flex-centering slack, which splits evenly top and bottom and so can't
     # express "112px above, 0-or-more below" -- exactly what's needed here.
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True, standalone=False))
+        fh.write(fig.to_html(interactive=True, standalone=False,
+                          options=_ALL_INTERACTIVE_OPTIONS))
 
     src = _static_prefix(src_file) + "_static/interactive/" + name
     n_axes = sum(1 for ax in fig.axes if not ax._is_colorbar)
@@ -574,7 +577,8 @@ def _write_usage_demo(fig, name, caption):
     # asymmetric top/bottom body padding for the toolbar/slider clearance,
     # which flex-centering's evenly-split slack can't express.
     with open(os.path.join(_INTERACTIVE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True, standalone=False))
+        fh.write(fig.to_html(interactive=True, standalone=False,
+                          options=_ALL_INTERACTIVE_OPTIONS))
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
     top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}))

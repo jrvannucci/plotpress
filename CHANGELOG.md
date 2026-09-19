@@ -9,6 +9,25 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Added
+
+- **Interactive Slice tool for pcolormesh/imshow** (`options=["slice"]`).
+  Scrub any row or column of a mesh as a 1-D profile with a play/step
+  slider, toggle between the heatmap (with a dashed cursor) and the profile,
+  fix the value axis to auto / colorbar / custom bounds, and couple every
+  mesh sharing the same grid to one global slider with "Link all matching
+  axes" -- built for figures with hundreds of meshes, where per-axes link
+  checkboxes are not workable. Off until "Enable Slice" is checked; curvilinear
+  meshes are excluded (no single row/column to slice).
+- **Modular toolbar via `options=`.** `to_html`/`save`/`show`/
+  `show_in_jupyter`/`Report.save` (and `PlotPressWidget`) take
+  `options=[...]` for tools beyond the core toolbar (Pan/Zoom, Home, Fit
+  Width, Axes, Point Picking, Annotate, File), which every page keeps.
+  Currently `"slice"` adds the Slice menu; nothing existing changes unless
+  asked for.
+
 ## [0.39.0] - 2026-09-13
 
 ### Added

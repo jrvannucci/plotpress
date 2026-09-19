@@ -37,6 +37,27 @@ Point Picking, sliders, all of it -- works exactly as it does in a saved
 (``figsize`` x ``style.dpi``) and can be overridden --
 ``fig.show_in_jupyter(width=900, height=600)``.
 
+Choosing your tools
+-------------------
+
+Every interactive page gets the same core toolbar -- Pan/Zoom, Home, Fit
+Width, **Axes**, **Point Picking**, **Annotate**, and **File**. Anything
+beyond that is opt-in, by name, through ``options=`` on ``to_html``,
+``save``, ``show``, ``show_in_jupyter``, and ``Report.save``::
+
+    fig.save("fig.html", interactive=True)                    # the core toolbar
+    fig.save("fig.html", interactive=True, options=["slice"]) # + Slice
+
+``"slice"``
+    The **Slice** menu -- scrub a row or column of a pcolormesh/imshow as a
+    1-D profile, coupled across as many axes as share the same grid. It only
+    appears when the figure actually has a pcolormesh or imshow to slice.
+
+An unknown name raises ``ValueError`` listing the valid ones. The choice only
+changes which tools the page builds: the embedded data is identical either
+way, so ``load_data()`` reads back any interactive HTML regardless of which
+options it was saved with.
+
 The toolbar
 -----------
 
