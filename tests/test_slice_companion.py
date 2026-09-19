@@ -854,3 +854,57 @@ def test_a_dragged_strip_pin_label_survives_slider_steps(page, tmp_path):
     after = page.evaluate("""() => { const p = document.querySelector('.plotpress-pin[data-kind="slice"]');
         return [p.dataset.boxDx, p.dataset.boxDy]; }""")
     assert after == moved
+
+
+# ---- audit regressions ---------------------------------------------------------------
+
+@pytest.mark.browser
+def test_disabling_slice_removes_the_heatmap_side_mirrors_too(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)       # heatmap pin  -> mirror on the strip
+    _click_strip(page, 0.7)              # strip pin    -> mirror on the heatmap
+    assert len(_pins(page)) == 4
+    page.evaluate("""() => Array.from(document.querySelectorAll('label')).find(
+        l => l.textContent.includes('Enable Slice')).querySelector('input').click()""")
+    # Only the pin the user placed on the heatmap survives -- no orphaned (and, being
+    # non-deletable, permanent) mirror pins.
+    assert [(k, s) for k, s, _ in _pins(page)] == [("mesh", False)]
+
+
+def _twin_fig():
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9), np.arange(80, dtype=float).reshape(8, 10))
+    ax.twinx().plot([0, 10], [0, 1], color="k")
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+def test_an_axes_with_a_twin_keeps_the_plain_cursor_and_no_strip(page, tmp_path):
+    # A twin overlays the axes' original rect, so it wouldn't line up with a shrunken
+    # heatmap -- such an axes gets the cursor and slider only.
+    _load(page, tmp_path, _twin_fig(), options={"slice": {"enabled": True}})
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length") == 0
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-cursor').length") == 1
+
+
+@pytest.mark.browser
+def test_a_strip_pin_follows_an_animated_meshs_frame_slider(page, tmp_path):
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
+    ax.pcolormesh_frames(x, y, [np.full((8, 10), float(f)) for f in range(4)])
+    fig.tight_layout()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    box = page.evaluate("""() => { const c = document.getElementById('plotpress-svg').getScreenCTM();
+        const r = document.querySelector('#sliceclip0 rect');
+        return [(+r.getAttribute('x') + +r.getAttribute('width') / 2) * c.a + c.e,
+                (+r.getAttribute('y') + +r.getAttribute('height') / 2) * c.d + c.f]; }""")
+    page.mouse.click(*box)
+    before = _parse(_pin_labels(page)[0])["z"]
+    page.evaluate("""() => { const s = Array.from(document.querySelectorAll('.plotpress-slider')).find(
+        s => s.textContent.includes('frame')); const r = s.querySelector('input[type=range]');
+        r.value = 3; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
+    assert _parse(_pin_labels(page)[0])["z"] == 3.0 and before != 3.0

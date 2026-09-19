@@ -1022,7 +1022,7 @@ _JS_SOURCE = r"""
       SLICE_ENABLED = enableCb.checked;
       setSliceControlsEnabled(SLICE_ENABLED);
       if (SLICE_ENABLED) buildSliceSliders();
-      else { teardownSliceSliders(); teardownSliceVisuals(); }
+      else { teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins(); }
     });
     enableLabel.appendChild(enableCb);
     enableLabel.appendChild(document.createTextNode(' Enable Slice'));
@@ -1648,12 +1648,20 @@ _JS_SOURCE = r"""
   function companionEligible(key) {
     if (COMPANION_OK[key] !== undefined) return COMPANION_OK[key];
     var om = META[key];
-    var ok = !!om && !om.axis_off && !om.xfixed && !om.yfixed && om.secondary_of == null;
+    var ok = !!om && !om.axis_off && !om.xfixed && !om.yfixed
+             && om.secondary_of == null && om.twin_of == null;
     if (ok) {
+      // Any axes sharing or nested inside this one's rect -- a twin/secondary
+      // (which overlays it exactly), an inset -- is laid out in the *original*
+      // rect and would no longer line up with a shrunken heatmap; and this axes
+      // being nested inside another (an inset itself) is the same problem.
+      var inside = function (a, b) {   // is rect a within rect b (1px slack)?
+        return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
+      };
       for (var mk in META) {
-        if (META[mk].secondary_of != null && String(META[mk].secondary_of) === String(key)) {
-          ok = false; break;
-        }
+        if (String(mk) === String(key)) continue;
+        var other = META[mk];
+        if (inside(other, om) || inside(om, other)) { ok = false; break; }
       }
     }
     COMPANION_OK[key] = ok;
@@ -2456,9 +2464,19 @@ _JS_SOURCE = r"""
   // frame slider unit no SLICE_AXES entry is watching (the common case),
   // and for one Slice was never enabled on (resyncSlice's own guard).
   function resyncSliceForFrameUnit(unit) {
+    var moved = [];
     for (var frameSyncKey in SLICE_AXES) {
       var info = SLICE_AXES[frameSyncKey];
-      if (info.frameEntry && info.frameEntry.unit === unit) resyncSlice(frameSyncKey);
+      if (info.frameEntry && info.frameEntry.unit === unit) {
+        resyncSlice(frameSyncKey);
+        moved.push(String(frameSyncKey));
+      }
+    }
+    // The profile under a strip pin changed with the frame, so the pin's value
+    // (and any mirror of it) has to be re-read too, not just the line redrawn.
+    if (moved.length) {
+      relayoutSlicePins(moved);
+      if (SLICE_SNAP) syncSnappedPins();
     }
   }
   // Off by default (SLICE_ENABLED) -- nothing is built here at load; the
