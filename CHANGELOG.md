@@ -34,9 +34,11 @@ anywhere in the source.
   Point Picking works on the strip -- a click pins the nearest profile sample
   (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
   arrow keys (staying on the strip's edge, value in red, if it goes off the
-  range), and extracts as a `"slice"` record -- and **Snap pins to slice** (a checkbox
-  in the menu's own "Slice view" group) mirrors each heatmap pin onto the
-  shown profile while the heatmap pin stays put.
+  range), and extracts as a `"slice"` record -- and **Snap pins to
+  slice** (a checkbox in the menu's own "Slice view" group) links pins in both
+  directions: a heatmap pin gets a mirror on the shown profile, and a pin placed
+  on the profile gets one on the heatmap cell it points at. The original stays
+  put and each pair shares a label color.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in
   a chosen state -- e.g. `options={"slice": {"enabled": True, "view":
   "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --

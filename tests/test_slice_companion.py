@@ -596,7 +596,7 @@ def test_a_pin_whose_value_leaves_the_range_clamps_to_the_strip_with_a_red_value
     over = _strip_pin_state(page)
     assert over["top"] - 1 <= over["dot_y"] <= over["bottom"] + 1   # stays on the strip
     assert over["dot_y"] < inside["dot_y"]             # pinned at the top edge
-    assert over["red"] == "#ff6b6b"                    # the value is red
+    assert over["red"] == "#dc1f1f"                    # the value is red
     assert _parse(over["label"])["z"] >= 70            # and still the true value
 
     _set_slider(page, 0)                               # back in range
@@ -659,7 +659,7 @@ def test_a_pin_dropped_off_scale_is_red_immediately(page, tmp_path):
         return [(+r.getAttribute('x') + +r.getAttribute('width') / 2) * c.a + c.e,
                 (+r.getAttribute('y') + +r.getAttribute('height') / 2) * c.d + c.f]; }""")
     page.mouse.click(x, y)
-    assert _strip_pin_state(page)["red"] == "#ff6b6b"
+    assert _strip_pin_state(page)["red"] == "#dc1f1f"
 
 
 @pytest.mark.browser
@@ -667,4 +667,68 @@ def test_a_mirror_of_an_off_scale_pin_is_red_immediately(page, tmp_path):
     _load(page, tmp_path, _ramp_fig(), options={"slice": {**_RANGE, "index": 7, "snap_pins": True}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.5, 0.5)
-    assert _strip_pin_state(page)["red"] == "#ff6b6b"
+    assert _strip_pin_state(page)["red"] == "#dc1f1f"
+
+
+# ---- Snap is two-way: a pin placed on the profile is mirrored on the heatmap ------
+
+@pytest.mark.browser
+def test_a_pin_placed_on_the_slice_is_mirrored_onto_the_heatmap(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    pins = _pins(page)
+    assert sorted((k, s) for k, s, _ in pins) == [("mesh", True), ("slice", False)]
+    strip = _parse(next(l for k, s, l in pins if k == "slice"))
+    heat = _parse(next(l for k, s, l in pins if k == "mesh"))
+    assert heat["x"] == strip["x"]                       # same column
+    assert heat["y"] == pytest.approx(3.5)               # on the row the slice shows
+    assert heat["z"] == strip["z"] == z[3, int(heat["x"])]
+    # the pair is marked by a shared label color
+    fills = page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-pin'))
+        .map(p => p.querySelector('rect').getAttribute('fill'))""")
+    assert fills[0] == fills[1] != "#111"
+
+
+@pytest.mark.browser
+def test_the_heatmap_mirror_follows_the_slider_to_the_new_row(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    col = int(_parse(next(l for k, s, l in _pins(page) if k == "slice"))["x"])
+    _set_slider(page, 5)
+    heat = _parse(next(l for k, s, l in _pins(page) if k == "mesh"))
+    assert heat["y"] == pytest.approx(5.5) and heat["z"] == z[5, col]
+    assert len(_pins(page)) == 2                          # no pile-up of mirrors while stepping
+
+
+@pytest.mark.browser
+def test_reverse_snap_uses_the_column_for_a_y_slice(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {
+        "enabled": True, "orientation": "y", "index": 2, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    strip = _parse(next(l for k, s, l in _pins(page) if k == "slice"))
+    heat = _parse(next(l for k, s, l in _pins(page) if k == "mesh"))
+    assert heat["x"] == pytest.approx(2.5)               # the column the slice shows
+    assert heat["y"] == strip["y"]
+    assert heat["z"] == z[int(heat["y"]), 2]
+
+
+@pytest.mark.browser
+def test_reverse_mirror_is_removed_with_snap_or_its_pin_and_never_extracted(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert len(page.evaluate("window.plotpressGetMarkers()")) == 1   # the pin you placed
+    _set_snap(page, False)
+    assert [(k, s) for k, s, _ in _pins(page)] == [("slice", False)]
+    _set_snap(page, True)
+    assert len(_pins(page)) == 2
+    page.evaluate("""() => document.querySelector('.plotpress-pin[data-kind="slice"]:not([data-snapped])')
+        .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
+    assert _pins(page) == []                              # deleting the pin takes its mirror too

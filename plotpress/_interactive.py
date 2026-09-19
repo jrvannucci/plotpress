@@ -1859,9 +1859,10 @@ _JS_SOURCE = r"""
       text.textContent = '';
       text.appendChild(document.createTextNode(m[1]));
       var red = document.createElementNS(SVGNS, 'tspan');
-      red.setAttribute('fill', '#ff6b6b'); red.setAttribute('font-weight', 'bold');
-      // A dark halo keeps the red legible on the teal/purple link-colored boxes too.
-      red.setAttribute('stroke', '#111'); red.setAttribute('stroke-width', 2);
+      red.setAttribute('fill', '#dc1f1f'); red.setAttribute('font-weight', 'bold');
+      // A darker red needs a light halo to stay legible on the dark, teal and
+      // purple label boxes.
+      red.setAttribute('stroke', '#fff'); red.setAttribute('stroke-width', 2);
       red.setAttribute('paint-order', 'stroke');
       red.textContent = m[2];
       text.appendChild(red);
@@ -1906,16 +1907,22 @@ _JS_SOURCE = r"""
       if (key === undefined || String(pins[i].dataset.axes) === String(key)) pins[i].remove();
     }
   }
-  // "Snap pins to slice": while on, every Point Picking pin on a heatmap
-  // that has a companion strip gets a mirror on the profile -- same position
-  // along the shared axis, dropped onto the shown slice's line, so it reads
-  // that slice's value there. The heatmap pin itself stays put; the mirror
-  // is a separate "slice" pin (marked .plotpress-snapped) that follows the
-  // profile like one placed on it directly. It's rebuilt from scratch on
-  // every change to the pins or the view rather than tracked individually,
-  // and kept out of Extract and Save (the heatmap pin it mirrors is what
-  // carries the data) and out of right-click delete (it would only be
-  // rebuilt). Annotate notes and pins on a different mesh get no mirror.
+  // "Snap pins to slice" links pins on the heatmap and pins on the profile in
+  // both directions while it's on. A Point Picking pin on the heatmap gets a
+  // mirror on the profile (same position along the shared axis, dropped onto
+  // the shown slice's line); a pin placed on the profile gets a mirror on the
+  // heatmap (the cell it points at on the shown row/column). Either way the
+  // original stays put and the mirror is a separate pin marked
+  // .plotpress-snapped, which follows the slice like any pin. Mirrors are
+  // rebuilt from scratch on every change to the pins, the view or the slider
+  // rather than tracked individually, kept out of Extract and Save (the
+  // original is what carries the data) and out of right-click delete (it would
+  // only be rebuilt). Annotate notes and pins on a different mesh get none.
+  // Each pair's two labels share a color -- the only thing marking them as
+  // linked (the dots are drawn like any other pin's).
+  var SNAP_LINK_COLORS = ['#0f766e', '#6d28d9', '#be185d', '#15803d', '#1d4ed8', '#b91c1c'];
+  var SNAP_COLOR_NEXT = 0;
+  var snapSyncing = false;   // creating a mirror must not trigger another sync
   function heatmapPinSample(pin) {
     var kind = pin.dataset.kind, key = pin.dataset.axes;
     if ((kind !== 'mesh' && kind !== 'meshframe') || key === undefined) return null;
@@ -1932,44 +1939,68 @@ _JS_SOURCE = r"""
     var cell = +pin.dataset.index, nx = mesh.shape[1];
     return { key: key, j: SLICE_ORIENTATION === 'x' ? cell % nx : Math.floor(cell / nx) };
   }
-  // Label colors for linked pin pairs (never amber -- that's the notes' color).
-  var SNAP_LINK_COLORS = ['#0f766e', '#6d28d9', '#be185d', '#15803d', '#1d4ed8', '#b91c1c'];
-  var SNAP_COLOR_NEXT = 0;
-  function syncSnappedPins() {
-    var keep = selectedPin;
-    document.querySelectorAll('.plotpress-snapped').forEach(function (p) { p.remove(); });
-    // Back to the ordinary label color everywhere; the loop below recolors
-    // whichever pins are (still) linked.
-    document.querySelectorAll('.plotpress-pin:not(.plotpress-note) rect').forEach(function (r) {
-      r.setAttribute('fill', '#111');
-    });
-    if (SLICE_SNAP && SLICE_ENABLED && SLICE_COMPANION_ON) {
-      var pins = document.querySelectorAll(
-        '.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)');
-      for (var i = 0; i < pins.length; i++) {
-        var at = heatmapPinSample(pins[i]);
-        if (!at || !slicePinPoint(at.key, at.j)) continue;   // no value to mirror there
-        var g = addAnchoredPin({ kind: 'slice', axes: at.key }, at.j);
-        if (!g) continue;
-        g.classList.add('plotpress-snapped');
-        g.dataset.snapped = '1';
-        // The two labels share a color -- the only thing that marks the pair
-        // (the dots are drawn exactly like any other pin's). Each pin keeps
-        // its color for good once it has one, so deleting another pin never
-        // recolors it.
-        if (pins[i].dataset.linkColor === undefined) {
-          pins[i].dataset.linkColor = SNAP_COLOR_NEXT++ % SNAP_LINK_COLORS.length;
-        }
-        var linkColor = SNAP_LINK_COLORS[+pins[i].dataset.linkColor];
-        var srcBox = pins[i].querySelector('rect'), mirrorBox = g.querySelector('rect');
-        if (srcBox) srcBox.setAttribute('fill', linkColor);
-        if (mirrorBox) mirrorBox.setAttribute('fill', linkColor);
-      }
+  // Marks `mirror` as the linked twin of `source`: same label color, and the
+  // color is kept on the source for good so deleting another pin never
+  // recolors it.
+  function linkPins(source, mirror) {
+    mirror.classList.add('plotpress-snapped');
+    mirror.dataset.snapped = '1';
+    if (source.dataset.linkColor === undefined) {
+      source.dataset.linkColor = SNAP_COLOR_NEXT++ % SNAP_LINK_COLORS.length;
     }
-    // Adding a pin selects it; hand the selection back to whatever the user
-    // actually had selected (arrow keys must keep stepping *their* pin).
-    if (keep && keep.isConnected) selectPin(keep);
-    else if (selectedPin && !selectedPin.isConnected) selectedPin = null;
+    var color = SNAP_LINK_COLORS[+source.dataset.linkColor];
+    var srcBox = source.querySelector('rect'), mirrorBox = mirror.querySelector('rect');
+    if (srcBox) srcBox.setAttribute('fill', color);
+    if (mirrorBox) mirrorBox.setAttribute('fill', color);
+  }
+  function syncSnappedPins() {
+    if (snapSyncing) return;
+    snapSyncing = true;
+    try {
+      var keep = selectedPin;
+      document.querySelectorAll('.plotpress-snapped').forEach(function (p) { p.remove(); });
+      // Back to the ordinary label color everywhere; linkPins() recolors
+      // whichever pins are (still) linked.
+      document.querySelectorAll('.plotpress-pin:not(.plotpress-note) rect').forEach(function (r) {
+        r.setAttribute('fill', '#111');
+      });
+      if (SLICE_SNAP && SLICE_ENABLED && SLICE_COMPANION_ON) {
+        var pins = document.querySelectorAll(
+          '.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)');
+        for (var i = 0; i < pins.length; i++) {
+          var pin = pins[i];
+          if (pin.dataset.kind === 'slice') { snapStripPinToHeatmap(pin); continue; }
+          var at = heatmapPinSample(pin);
+          if (!at || !slicePinPoint(at.key, at.j)) continue;   // nothing to mirror there
+          var g = addAnchoredPin({ kind: 'slice', axes: at.key }, at.j);
+          if (g) linkPins(pin, g);
+        }
+      }
+      // Adding a pin selects it; hand the selection back to whatever the user
+      // actually had selected (arrow keys must keep stepping *their* pin).
+      if (keep && keep.isConnected) selectPin(keep);
+      else if (selectedPin && !selectedPin.isConnected) selectedPin = null;
+    } finally {
+      snapSyncing = false;
+    }
+  }
+  // The reverse direction: a pin the user placed on the profile gets a mirror
+  // on the heatmap cell it points at -- the sample it sits on along the shared
+  // axis, on the row (X slice) or column (Y slice) the slider is showing.
+  function snapStripPinToHeatmap(pin) {
+    var key = pin.dataset.axes, info = SLICE_AXES[key], st = SLICE_STATE[key];
+    if (!info || !st || typeof st.index !== 'number') return;
+    var sp = slicePinPoint(key, +pin.dataset.index);
+    if (!sp || !isFiniteNum(sp.z)) return;   // no value there to point at
+    var mesh = info.frameEntry || PICK[key].meshes[info.meshIndex];
+    var ny = mesh.shape[0], nx = mesh.shape[1], isX = SLICE_ORIENTATION === 'x';
+    var row = Math.min(ny - 1, isX ? st.index : sp.index);
+    var col = Math.min(nx - 1, isX ? sp.index : st.index);
+    var anchor = info.frameEntry
+      ? { kind: 'meshframe', axes: key, id: info.frameEntry.id, unit: info.frameEntry.unit }
+      : { kind: 'mesh', axes: key, mesh: info.meshIndex };
+    var g = addAnchoredPin(anchor, row * nx + col);
+    if (g) linkPins(pin, g);
   }
 
   // The one render entry point, called by a slider's own setIndex()/
@@ -2140,6 +2171,7 @@ _JS_SOURCE = r"""
       input.value = api.i;
       keys.forEach(function (k) { renderMeshOrSlice(k, api.i); });
       relayoutSlicePins(keys);
+      if (SLICE_SNAP) syncSnappedPins();
       val.textContent = label + ' = ' + fmt(values[api.i]);
     };
     api.external = applyIndex;   // set from a linked peer, no re-propagation
@@ -3803,7 +3835,9 @@ _JS_SOURCE = r"""
     // Needs dataset.axes (set above), which layoutPin's own call in addPin
     // ran too early to see.
     applySliceVisibility(g);
-    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe')) syncSnappedPins();
+    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe' || anchor.kind === 'slice')) {
+      syncSnappedPins();
+    }
     return g;
   }
 
@@ -3819,7 +3853,9 @@ _JS_SOURCE = r"""
     if (!a) return;
     pin.dataset.index = a.index;
     layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
-    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe')) syncSnappedPins();
+    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe' || anchor.kind === 'slice')) {
+      syncSnappedPins();
+    }
   }
 
   // ---- extract markers --------------------------------------------------
