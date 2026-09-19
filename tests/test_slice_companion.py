@@ -525,10 +525,12 @@ def test_each_linked_pair_gets_its_own_label_color_and_snap_off_restores_it(page
     _enter_pick_mode(page)
     _click_heatmap(page, 0.3, 0.5)
     _click_heatmap(page, 0.8, 0.7)
-    fills = [f for _, f in _label_fills(page)]           # pin, pin, mirror, mirror
-    assert fills[0] == fills[2] and fills[1] == fills[3]  # each pair shares a color...
-    assert fills[0] != fills[1]                           # ...and the pairs differ
-    assert "#111" not in fills
+    all_fills = _label_fills(page)
+    pins = [f for snapped, f in all_fills if not snapped]
+    mirrors = [f for snapped, f in all_fills if snapped]
+    assert pins == mirrors                                # each pair shares a color...
+    assert pins[0] != pins[1]                             # ...and the pairs differ
+    assert "#111" not in pins + mirrors
     _set_snap(page, False)
     assert {f for _, f in _label_fills(page)} == {"#111"}  # back to ordinary labels
 
@@ -540,10 +542,10 @@ def test_a_pins_link_color_survives_another_pin_being_deleted(page, tmp_path):
     _enter_pick_mode(page)
     _click_heatmap(page, 0.3, 0.5)
     _click_heatmap(page, 0.8, 0.7)
-    second = _label_fills(page)[1][1]
+    second = [f for snapped, f in _label_fills(page) if not snapped][1]
     page.evaluate("""() => document.querySelector('.plotpress-pin:not([data-snapped])')
         .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
-    assert [f for s_, f in _label_fills(page) if not s_] == [second]
+    assert [f for snapped, f in _label_fills(page) if not snapped] == [second]
 
 
 # ---- a strip pin whose value leaves the strip / disappears / scrolls away ----------
@@ -792,3 +794,63 @@ def test_a_y_slice_leaves_the_colorbar_alone(page, tmp_path):
     y_strip = _cbar_geometry(page)
     assert y_strip["img_top"] == pytest.approx(plain["img_top"], abs=1.0)   # strip is on the left
     assert y_strip["img_bottom"] == pytest.approx(plain["img_bottom"], abs=1.0)
+
+
+# ---- a dragged label box stays where the user put it -----------------------------------
+
+def _drag_label(page, selector, dx, dy):
+    """Drag a pin's label box by (dx, dy) screen pixels; return its box offset dataset."""
+    box = page.evaluate("""(sel) => { const r = document.querySelector(sel + ' rect')
+        .getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }""", selector)
+    page.mouse.move(box[0], box[1])
+    page.mouse.down()
+    page.mouse.move(box[0] + dx, box[1] + dy, steps=4)
+    page.mouse.up()
+    return page.evaluate("""(sel) => { const p = document.querySelector(sel);
+        return [p.dataset.boxDx, p.dataset.boxDy]; }""", selector)
+
+
+@pytest.mark.browser
+def test_a_dragged_mirror_label_survives_slider_steps(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    moved = _drag_label(page, ".plotpress-pin[data-snapped]", 40, 25)
+    assert moved[0] is not None                          # the drag registered
+    element_before = page.evaluate("""() => { window.__m = document.querySelector(
+        '.plotpress-pin[data-snapped]'); return true; }""")
+    for row in (2, 4, 6, 1):
+        _set_slider(page, row)
+    after = page.evaluate("""() => { const p = document.querySelector('.plotpress-pin[data-snapped]');
+        return [p === window.__m, p.dataset.boxDx, p.dataset.boxDy]; }""")
+    assert after == [True, moved[0], moved[1]]           # same element, same dragged offset
+    assert len(_pins(page)) == 2
+
+
+@pytest.mark.browser
+def test_a_dragged_heatmap_mirror_label_survives_slider_steps(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    moved = _drag_label(page, ".plotpress-pin[data-kind='mesh'][data-snapped]", -30, 20)
+    assert moved[0] is not None
+    _set_slider(page, 6)
+    after = page.evaluate("""() => { const p = document.querySelector(
+        '.plotpress-pin[data-kind="mesh"][data-snapped]'); return [p.dataset.boxDx, p.dataset.boxDy]; }""")
+    assert after == moved
+
+
+@pytest.mark.browser
+def test_a_dragged_strip_pin_label_survives_slider_steps(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    moved = _drag_label(page, ".plotpress-pin[data-kind='slice']", 30, 30)
+    assert moved[0] is not None
+    _set_slider(page, 5)
+    after = page.evaluate("""() => { const p = document.querySelector('.plotpress-pin[data-kind="slice"]');
+        return [p.dataset.boxDx, p.dataset.boxDy]; }""")
+    assert after == moved
