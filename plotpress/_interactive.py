@@ -1076,6 +1076,23 @@ _JS_SOURCE = r"""
       companionLabel.appendChild(companionCb);
       companionLabel.appendChild(document.createTextNode(' Show companion panel'));
       sliceMenu.appendChild(companionLabel);
+
+      var snapBtn = document.createElement('button');
+      var snapText = 'Snap pins to slice';
+      snapBtn.textContent = snapText;
+      snapBtn.title = 'Move Point Picking pins from the heatmap onto the profile shown in the strip';
+      snapBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var note = null;
+        if (!SLICE_ENABLED) note = 'Enable Slice first';
+        else if (!SLICE_COMPANION_ON) note = 'Show the companion panel first';
+        else if (snapPinsToSlice() === 0) note = 'No heatmap pins to snap';
+        if (note === null) { closeAllMenus(); return; }
+        // Nothing moved -- say why in place, and leave the menu open.
+        snapBtn.textContent = note;
+        setTimeout(function () { snapBtn.textContent = snapText; }, 1800);
+      });
+      sliceMenu.appendChild(snapBtn);
     }
 
     var topDivider = document.createElement('div');
@@ -1856,6 +1873,42 @@ _JS_SOURCE = r"""
     for (var i = 0; i < pins.length; i++) {
       if (key === undefined || String(pins[i].dataset.axes) === String(key)) pins[i].remove();
     }
+  }
+  // Moves every Point Picking pin sitting on a heatmap that has a companion
+  // strip onto the profile shown in it: the pin keeps its position along
+  // the shared axis and drops onto the slice's own line (its row for an X
+  // slice, column for a Y slice), so it now reads that slice's value there.
+  // The pin is converted in place -- same element, so selection and
+  // dragging carry over -- into a "slice" pin, which then follows the
+  // profile like one placed on it directly. Annotate notes (which carry
+  // their own text) and pins on a different mesh are left alone. Returns how
+  // many moved.
+  function snapPinsToSlice() {
+    var moved = 0;
+    var pins = document.querySelectorAll('.plotpress-pin:not(.plotpress-note)');
+    for (var i = 0; i < pins.length; i++) {
+      var pin = pins[i], kind = pin.dataset.kind, key = pin.dataset.axes;
+      if ((kind !== 'mesh' && kind !== 'meshframe') || key === undefined) continue;
+      var st = SLICE_STATE[key], info = SLICE_AXES[key];
+      if (!st || !st.compGroup || !info) continue;
+      var mesh;
+      if (kind === 'mesh') {
+        if (info.meshIndex === undefined || +pin.dataset.mesh !== info.meshIndex) continue;
+        mesh = PICK[key].meshes[info.meshIndex];
+      } else {
+        if (!info.frameEntry || info.frameEntry.id !== pin.dataset.frameId) continue;
+        mesh = info.frameEntry;
+      }
+      var cell = +pin.dataset.index, nx = mesh.shape[1];
+      var a = slicePinPoint(key, SLICE_ORIENTATION === 'x' ? cell % nx : Math.floor(cell / nx));
+      if (!a) continue;   // that sample has no value to pin
+      pin.dataset.kind = 'slice';
+      delete pin.dataset.mesh; delete pin.dataset.frameId; delete pin.dataset.frameUnit;
+      pin.dataset.index = a.index;
+      layoutPin(pin, a.px, a.py, a.label);
+      moved++;
+    }
+    return moved;
   }
 
   // The one render entry point, called by a slider's own setIndex()/

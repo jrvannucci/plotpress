@@ -339,3 +339,106 @@ def test_strip_pins_go_when_the_panel_does(page, tmp_path):
     page.evaluate("""() => Array.from(document.querySelectorAll('label')).find(
         l => l.textContent.includes('Show companion panel')).querySelector('input').click()""")
     assert _pin_labels(page) == []
+
+
+# ---- Snap heatmap pins onto the slice -----------------------------------------
+
+def _snap(page):
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button'))
+        .find(b => b.textContent === 'Snap pins to slice').click()""")
+
+
+def _click_heatmap(page, fx, fy):
+    box = page.evaluate("""() => { const r = document.querySelector('.plotpress-mesh')
+        .getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }""")
+    page.mouse.click(box[0] + box[2] * fx, box[1] + box[3] * fy)
+
+
+def _all_pin_kinds(page):
+    return page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-pin'))
+        .map(p => p.dataset.kind)""")
+
+
+@pytest.mark.browser
+def test_snap_moves_a_heatmap_pin_onto_the_shown_slice(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 1}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.55, 0.3)          # a cell well away from the cursor row
+    assert _all_pin_kinds(page) == ["mesh"]
+    before = _parse(page.evaluate(
+        "document.querySelector('.plotpress-pin').textContent.trim()"))
+    assert before["y"] != pytest.approx(1.5)
+
+    _snap(page)
+
+    assert _all_pin_kinds(page) == ["slice"]
+    after = _parse(page.evaluate(
+        "document.querySelector('.plotpress-pin').textContent.trim()"))
+    assert after["x"] == before["x"]                  # same place along the profile
+    assert after["y"] == pytest.approx(1.5)           # now on the shown row
+    assert after["z"] == z[1, int(after["x"])]        # reading that row's value
+    # ...and the pin really moved up into the strip, above the heatmap.
+    pin_y, mesh_top = page.evaluate("""() => [
+        document.querySelector('.plotpress-pin').getBoundingClientRect().top,
+        document.querySelector('.plotpress-mesh').getBoundingClientRect().top]""")
+    assert pin_y < mesh_top
+
+
+@pytest.mark.browser
+def test_snapped_pin_then_follows_the_slider(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    _snap(page)
+    x = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))["x"]
+    page.evaluate("""() => { const r = document.querySelector('input[type=range]');
+        r.value = 5; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
+    now = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
+    assert now["y"] == pytest.approx(5.5) and now["z"] == z[5, int(x)]
+
+
+@pytest.mark.browser
+def test_snap_uses_the_column_for_a_y_slice(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {
+        "enabled": True, "orientation": "y", "index": 2}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.7, 0.4)
+    before = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
+    _snap(page)
+    after = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
+    assert after["y"] == before["y"]                   # same place along the profile
+    assert after["x"] == pytest.approx(2.5)            # on the shown column
+    assert after["z"] == z[int(after["y"]), 2]
+
+
+@pytest.mark.browser
+def test_snap_says_why_when_there_is_nothing_to_do(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _snap(page)                                          # no pins yet
+    text = page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown button')).map(b => b.textContent)
+        .find(t => t.startsWith('No heatmap'))""")
+    assert text == "No heatmap pins to snap"
+
+    _load(page, tmp_path, fig, options=["slice-companion-panel"])   # Slice still off
+    _snap(page)
+    assert "Enable Slice first" in page.evaluate("""() => Array.from(
+        document.querySelectorAll('.plotpress-menu-dropdown button'))
+        .map(b => b.textContent).join('|')""")
+
+
+@pytest.mark.browser
+def test_snap_leaves_annotation_notes_alone(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    page.evaluate("window.prompt = () => 'my note'")
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
+        .find(b => b.textContent === 'Annotate Point').click()""")
+    _click_heatmap(page, 0.5, 0.5)
+    assert _all_pin_kinds(page) == ["mesh"]
+    _snap(page)
+    assert _all_pin_kinds(page) == ["mesh"]              # a note keeps its own spot
