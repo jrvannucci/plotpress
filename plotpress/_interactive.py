@@ -1860,6 +1860,9 @@ _JS_SOURCE = r"""
       text.appendChild(document.createTextNode(m[1]));
       var red = document.createElementNS(SVGNS, 'tspan');
       red.setAttribute('fill', '#ff6b6b'); red.setAttribute('font-weight', 'bold');
+      // A dark halo keeps the red legible on the teal/purple link-colored boxes too.
+      red.setAttribute('stroke', '#111'); red.setAttribute('stroke-width', 2);
+      red.setAttribute('paint-order', 'stroke');
       red.textContent = m[2];
       text.appendChild(red);
     }
