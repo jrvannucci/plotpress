@@ -569,6 +569,8 @@ _JS_SOURCE = r"""
     '.plotpress-menubar-divider{width:1px;align-self:stretch;' +
     'background:#d5d9e0;margin:0 4px}' +
     '.plotpress-menu-divider{height:1px;background:#e4e6ea;margin:4px 2px}' +
+    '.plotpress-menu-heading{font:600 11px system-ui,sans-serif;color:#6b7280;' +
+    'padding:4px 10px 2px}' +
     '.plotpress-mode-indicator{display:flex;align-items:center;gap:6px;' +
     'margin-left:auto;padding:4px 10px 4px 8px;background:#eef2ff;' +
     'border-radius:999px;font:500 11px system-ui,sans-serif;color:#2b5bd7;' +
@@ -878,6 +880,7 @@ _JS_SOURCE = r"""
                    ? SLICE_CFG.view : 'companion';
   var SLICE_VIEW_ON = SLICE_VIEW === 'replace';
   var SLICE_COMPANION_ON = SLICE_VIEW === 'companion';
+  var SLICE_SNAP = SLICE_CFG.snap_pins === true;   // see syncSnappedPins()
   var SLICE_COMPANION_FRAC = isFinite(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
@@ -1029,11 +1032,19 @@ _JS_SOURCE = r"""
       Object.keys(SLICE_SLIDERS).forEach(function (k) {
         renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
       });
+      syncSnappedPins();
     };
     // How the slice is shown -- see SLICE_VIEW. Radios, not independent
     // checkboxes: the three are alternatives, and picking one has to end the
     // others. The red cursor only ever shows with the heatmap, so it isn't
     // drawn under 'replace'.
+    var viewDivider = document.createElement('div');
+    viewDivider.className = 'plotpress-menu-divider';
+    sliceMenu.appendChild(viewDivider);
+    var viewHeading = document.createElement('div');
+    viewHeading.className = 'plotpress-menu-heading';
+    viewHeading.textContent = 'Slice view';
+    sliceMenu.appendChild(viewHeading);
     var viewRow = document.createElement('div');
     viewRow.className = 'plotpress-slice-orient';
     [['cursor', 'Heatmap with cursor'], ['companion', 'Companion panel'],
@@ -1056,22 +1067,18 @@ _JS_SOURCE = r"""
     });
     sliceMenu.appendChild(viewRow);
 
-    var snapBtn = document.createElement('button');
-    var snapText = 'Snap pins to slice';
-    snapBtn.textContent = snapText;
-    snapBtn.title = 'Move Point Picking pins from the heatmap onto the profile shown in the strip';
-    snapBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var note = null;
-      if (!SLICE_ENABLED) note = 'Enable Slice first';
-      else if (!SLICE_COMPANION_ON) note = 'Switch to the companion panel first';
-      else if (snapPinsToSlice() === 0) note = 'No heatmap pins to snap';
-      if (note === null) { closeAllMenus(); return; }
-      // Nothing moved -- say why in place, and leave the menu open.
-      snapBtn.textContent = note;
-      setTimeout(function () { snapBtn.textContent = snapText; }, 1800);
+    // Mirrors each heatmap pin onto the shown profile -- see syncSnappedPins().
+    var snapLabel = document.createElement('label');
+    var snapCb = document.createElement('input');
+    snapCb.type = 'checkbox';
+    snapCb.checked = SLICE_SNAP;
+    snapCb.addEventListener('change', function () {
+      SLICE_SNAP = snapCb.checked;
+      syncSnappedPins();
     });
-    sliceMenu.appendChild(snapBtn);
+    snapLabel.appendChild(snapCb);
+    snapLabel.appendChild(document.createTextNode(' Snap pins to slice'));
+    sliceMenu.appendChild(snapLabel);
 
     var topDivider = document.createElement('div');
     topDivider.className = 'plotpress-menu-divider';
@@ -1192,6 +1199,7 @@ _JS_SOURCE = r"""
     function setSliceControlsEnabled(on) {
       orientRadios.forEach(function (r) { r.disabled = !on; });
       linkAllCb.disabled = !on;
+      snapCb.disabled = !on;
       rangeRadios.forEach(function (r) { r.disabled = !on; });
       customMinInput.disabled = customMaxInput.disabled =
         !on || SLICE_RANGE_MODE !== 'custom';
@@ -1852,41 +1860,53 @@ _JS_SOURCE = r"""
       if (key === undefined || String(pins[i].dataset.axes) === String(key)) pins[i].remove();
     }
   }
-  // Moves every Point Picking pin sitting on a heatmap that has a companion
-  // strip onto the profile shown in it: the pin keeps its position along
-  // the shared axis and drops onto the slice's own line (its row for an X
-  // slice, column for a Y slice), so it now reads that slice's value there.
-  // The pin is converted in place -- same element, so selection and
-  // dragging carry over -- into a "slice" pin, which then follows the
-  // profile like one placed on it directly. Annotate notes (which carry
-  // their own text) and pins on a different mesh are left alone. Returns how
-  // many moved.
-  function snapPinsToSlice() {
-    var moved = 0;
-    var pins = document.querySelectorAll('.plotpress-pin:not(.plotpress-note)');
-    for (var i = 0; i < pins.length; i++) {
-      var pin = pins[i], kind = pin.dataset.kind, key = pin.dataset.axes;
-      if ((kind !== 'mesh' && kind !== 'meshframe') || key === undefined) continue;
-      var st = SLICE_STATE[key], info = SLICE_AXES[key];
-      if (!st || !st.compGroup || !info) continue;
-      var mesh;
-      if (kind === 'mesh') {
-        if (info.meshIndex === undefined || +pin.dataset.mesh !== info.meshIndex) continue;
-        mesh = PICK[key].meshes[info.meshIndex];
-      } else {
-        if (!info.frameEntry || info.frameEntry.id !== pin.dataset.frameId) continue;
-        mesh = info.frameEntry;
-      }
-      var cell = +pin.dataset.index, nx = mesh.shape[1];
-      var a = slicePinPoint(key, SLICE_ORIENTATION === 'x' ? cell % nx : Math.floor(cell / nx));
-      if (!a) continue;   // that sample has no value to pin
-      pin.dataset.kind = 'slice';
-      delete pin.dataset.mesh; delete pin.dataset.frameId; delete pin.dataset.frameUnit;
-      pin.dataset.index = a.index;
-      layoutPin(pin, a.px, a.py, a.label);
-      moved++;
+  // "Snap pins to slice": while on, every Point Picking pin on a heatmap
+  // that has a companion strip gets a mirror on the profile -- same position
+  // along the shared axis, dropped onto the shown slice's line, so it reads
+  // that slice's value there. The heatmap pin itself stays put; the mirror
+  // is a separate "slice" pin (marked .plotpress-snapped) that follows the
+  // profile like one placed on it directly. It's rebuilt from scratch on
+  // every change to the pins or the view rather than tracked individually,
+  // and kept out of Extract and Save (the heatmap pin it mirrors is what
+  // carries the data) and out of right-click delete (it would only be
+  // rebuilt). Annotate notes and pins on a different mesh get no mirror.
+  function heatmapPinSample(pin) {
+    var kind = pin.dataset.kind, key = pin.dataset.axes;
+    if ((kind !== 'mesh' && kind !== 'meshframe') || key === undefined) return null;
+    var info = SLICE_AXES[key];
+    if (!info) return null;
+    var mesh;
+    if (kind === 'mesh') {
+      if (info.meshIndex === undefined || +pin.dataset.mesh !== info.meshIndex) return null;
+      mesh = PICK[key].meshes[info.meshIndex];
+    } else {
+      if (!info.frameEntry || info.frameEntry.id !== pin.dataset.frameId) return null;
+      mesh = info.frameEntry;
     }
-    return moved;
+    var cell = +pin.dataset.index, nx = mesh.shape[1];
+    return { key: key, j: SLICE_ORIENTATION === 'x' ? cell % nx : Math.floor(cell / nx) };
+  }
+  function syncSnappedPins() {
+    var keep = selectedPin;
+    document.querySelectorAll('.plotpress-snapped').forEach(function (p) { p.remove(); });
+    if (SLICE_SNAP && SLICE_ENABLED && SLICE_COMPANION_ON) {
+      var pins = document.querySelectorAll(
+        '.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)');
+      for (var i = 0; i < pins.length; i++) {
+        var at = heatmapPinSample(pins[i]);
+        if (!at || !slicePinPoint(at.key, at.j)) continue;   // no value to mirror there
+        var g = addAnchoredPin({ kind: 'slice', axes: at.key }, at.j);
+        if (!g) continue;
+        g.classList.add('plotpress-snapped');
+        g.dataset.snapped = '1';
+        var dot = g.querySelector('circle');
+        if (dot) dot.setAttribute('fill', '#fff');   // hollow: a mirror, not the pick itself
+      }
+    }
+    // Adding a pin selects it; hand the selection back to whatever the user
+    // actually had selected (arrow keys must keep stepping *their* pin).
+    if (keep && keep.isConnected) selectPin(keep);
+    else if (selectedPin && !selectedPin.isConnected) selectedPin = null;
   }
 
   // The one render entry point, called by a slider's own setIndex()/
@@ -2252,6 +2272,7 @@ _JS_SOURCE = r"""
     });
     positionDocked();
     reflowGlobalBars();
+    syncSnappedPins();
   }
 
   // Keeps an already-placed cursor/slice line glued to the right spot
@@ -3462,8 +3483,10 @@ _JS_SOURCE = r"""
     g.addEventListener('click', function (ev) { ev.stopPropagation(); selectPin(g); });
     g.addEventListener('contextmenu', function (ev) {
       ev.preventDefault(); ev.stopPropagation();
+      if (g.classList.contains('plotpress-snapped')) return;   // rebuilt from its heatmap pin
       if (selectedPin === g) selectedPin = null;
       g.remove();
+      if (SLICE_SNAP) syncSnappedPins();
     });
     g.addEventListener('mousedown', function (ev) {
       if (ev.button !== 0 || (ev.target !== rect && ev.target !== text)) return;
@@ -3713,6 +3736,7 @@ _JS_SOURCE = r"""
     // boxDraggableNow() itself keys its point-picking-vs-annotation split
     // on, so it has to run again now that it's actually set.
     if (text !== undefined) refreshOneDragReady(g);
+    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe')) syncSnappedPins();
     return g;
   }
 
@@ -3728,6 +3752,7 @@ _JS_SOURCE = r"""
     if (!a) return;
     pin.dataset.index = a.index;
     layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
+    if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe')) syncSnappedPins();
   }
 
   // ---- extract markers --------------------------------------------------
@@ -3833,7 +3858,7 @@ _JS_SOURCE = r"""
   // Extract itself is narrower -- see doExtract below.
   function getMarkers() {
     return Array.prototype.map.call(
-      document.querySelectorAll('.plotpress-pin'), markerRecord);
+      document.querySelectorAll('.plotpress-pin:not(.plotpress-snapped)'), markerRecord);
   }
   window.plotpressGetMarkers = getMarkers;   // programmatic access
 
@@ -3926,7 +3951,7 @@ _JS_SOURCE = r"""
   // like drag-ready and clearAllPins) deliberately still covers both kinds.
   function doExtract() {
     var records = Array.prototype.map.call(
-      document.querySelectorAll('.plotpress-pin:not(.plotpress-note)'), markerRecord);
+      document.querySelectorAll('.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)'), markerRecord);
     // Hand off to Python when running inside the native (pywebview) window.
     try {
       if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
@@ -3949,7 +3974,7 @@ _JS_SOURCE = r"""
   // own next load.
   function serializePins() {
     var out = [];
-    document.querySelectorAll('.plotpress-pin').forEach(function (pin) {
+    document.querySelectorAll('.plotpress-pin:not(.plotpress-snapped)').forEach(function (pin) {
       var d = {};
       for (var k in pin.dataset) d[k] = pin.dataset[k];
       out.push({
@@ -4585,6 +4610,7 @@ _JS_SOURCE = r"""
       if (!isAnnotationPin(p)) p.remove();
     });
     if (selectedPin && !isAnnotationPin(selectedPin)) selectedPin = null;
+    if (SLICE_SNAP) syncSnappedPins();
   }
 
   function clearAnnotationPins() {

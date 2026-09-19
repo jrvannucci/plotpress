@@ -66,9 +66,11 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     profile to pin the nearest sample, which reads ``x``, ``y`` and the value
     there. The pin rides the line through pan, zoom, and slider steps
     (reporting the value the slice holds *now*), arrow keys step it along
-    the profile, and Extract returns it as a ``"slice"`` record. **Snap pins
-    to slice** moves every Point Picking pin already on the heatmap onto the
-    shown profile, keeping its position along the shared axis. Pins on the
+    the profile, and Extract returns it as a ``"slice"`` record. **Snap pins to slice** (a checkbox
+    under "Slice view") gives every Point Picking pin on the heatmap a
+    hollow mirror on the shown profile, at the same position along the shared
+    axis; the heatmap pin stays where it is, and the mirror follows the
+    slider and is left out of Extract. Pins on the
     "replaces heatmap" profile aren't supported. Axes with fixed ticks
     (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep the
     plain cursor and slider, since their ticks can't be redrawn around a

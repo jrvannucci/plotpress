@@ -2213,7 +2213,8 @@ class Figure:
         state: ``options={"slice": {"enabled": True, "view": "companion",
         "orientation": "y", "link_all": True, "range": "colorbar"}}``.
         The settings are ``enabled``, ``view``, ``orientation``
-        (``"x"``/``"y"``), ``link_all``, ``range``
+        (``"x"``/``"y"``), ``link_all``, ``snap_pins`` (mirror Point Picking
+        pins onto the profile), ``range``
         (``"auto"``/``"colorbar"``/``"custom"``, the last with
         ``range_min``/``range_max``), ``index`` (the starting row/column),
         and ``panel_size`` (the companion strip's fraction of the axes,
@@ -3317,6 +3318,7 @@ _OPTION_KEYS = {
         "view": ("cursor", "companion", "replace"),
         "panel_size": "fraction",
         "link_all": bool,
+        "snap_pins": bool,
         "range": ("auto", "colorbar", "custom"),
         "range_min": "number",
         "range_max": "number",

@@ -355,11 +355,12 @@ def test_strip_pins_go_when_the_panel_does(page, tmp_path):
     assert _pin_labels(page) == []
 
 
-# ---- Snap heatmap pins onto the slice -----------------------------------------
+# ---- Snap pins to slice (mirrors of heatmap pins on the profile) -----------------
 
-def _snap(page):
-    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button'))
-        .find(b => b.textContent === 'Snap pins to slice').click()""")
+def _set_snap(page, on=True):
+    page.evaluate("""(on) => { const cb = Array.from(document.querySelectorAll('label')).find(
+        l => l.textContent.includes('Snap pins to slice')).querySelector('input');
+        if (cb.checked !== on) cb.click(); }""", on)
 
 
 def _click_heatmap(page, fx, fy):
@@ -368,91 +369,137 @@ def _click_heatmap(page, fx, fy):
     page.mouse.click(box[0] + box[2] * fx, box[1] + box[3] * fy)
 
 
-def _all_pin_kinds(page):
-    return page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-pin'))
-        .map(p => p.dataset.kind)""")
+def _pins(page):
+    """[(kind, snapped, label)] for every pin, in document order."""
+    return page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-pin')).map(
+        p => [p.dataset.kind, !!p.dataset.snapped, p.textContent.trim()])""")
 
 
 @pytest.mark.browser
-def test_snap_moves_a_heatmap_pin_onto_the_shown_slice(page, tmp_path):
+def test_snap_mirrors_a_heatmap_pin_onto_the_shown_slice_and_keeps_it(page, tmp_path):
     fig, z = _pick_fig()
     _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 1}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.55, 0.3)          # a cell well away from the cursor row
-    assert _all_pin_kinds(page) == ["mesh"]
-    before = _parse(page.evaluate(
-        "document.querySelector('.plotpress-pin').textContent.trim()"))
-    assert before["y"] != pytest.approx(1.5)
+    assert [(k, s) for k, s, _ in _pins(page)] == [("mesh", False)]
+    original = _pins(page)[0][2]
 
-    _snap(page)
+    _set_snap(page, True)
 
-    assert _all_pin_kinds(page) == ["slice"]
-    after = _parse(page.evaluate(
-        "document.querySelector('.plotpress-pin').textContent.trim()"))
-    assert after["x"] == before["x"]                  # same place along the profile
-    assert after["y"] == pytest.approx(1.5)           # now on the shown row
-    assert after["z"] == z[1, int(after["x"])]        # reading that row's value
-    # ...and the pin really moved up into the strip, above the heatmap.
-    pin_y, mesh_top = page.evaluate("""() => [
-        document.querySelector('.plotpress-pin').getBoundingClientRect().top,
+    (kind0, snap0, label0), (kind1, snap1, label1) = _pins(page)
+    assert (kind0, snap0, label0) == ("mesh", False, original)   # the heatmap pin stays, unchanged
+    assert (kind1, snap1) == ("slice", True)
+    before, mirror = _parse(original), _parse(label1)
+    assert mirror["x"] == before["x"]                    # same place along the profile
+    assert mirror["y"] == pytest.approx(1.5)             # dropped onto the shown row
+    assert mirror["z"] == z[1, int(mirror["x"])]         # reading that row's value
+    pin_top, mesh_top = page.evaluate("""() => [
+        document.querySelector('.plotpress-pin[data-snapped]').getBoundingClientRect().top,
         document.querySelector('.plotpress-mesh').getBoundingClientRect().top]""")
-    assert pin_y < mesh_top
+    assert pin_top < mesh_top                            # up in the strip
 
 
 @pytest.mark.browser
-def test_snapped_pin_then_follows_the_slider(page, tmp_path):
-    fig, z = _pick_fig()
+def test_turning_snap_off_removes_only_the_mirrors(page, tmp_path):
+    fig, _ = _pick_fig()
     _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.4, 0.6)
-    _snap(page)
-    x = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))["x"]
+    _set_snap(page, True)
+    assert len(_pins(page)) == 2
+    _set_snap(page, False)
+    assert [(k, s) for k, s, _ in _pins(page)] == [("mesh", False)]
+
+
+@pytest.mark.browser
+def test_pins_placed_while_snap_is_on_are_mirrored_immediately(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.3, 0.5)
+    _click_heatmap(page, 0.8, 0.7)
+    assert sorted((k, s) for k, s, _ in _pins(page)) == [
+        ("mesh", False), ("mesh", False), ("slice", True), ("slice", True)]
+
+
+@pytest.mark.browser
+def test_a_mirror_follows_the_slider(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    x = _parse(_pins(page)[1][2])["x"]
     page.evaluate("""() => { const r = document.querySelector('input[type=range]');
         r.value = 5; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
-    now = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
+    now = _parse(_pins(page)[1][2])
     assert now["y"] == pytest.approx(5.5) and now["z"] == z[5, int(x)]
+    # the heatmap pin itself did not move with the slider
+    assert _parse(_pins(page)[0][2])["y"] != pytest.approx(5.5)
 
 
 @pytest.mark.browser
-def test_snap_uses_the_column_for_a_y_slice(page, tmp_path):
+def test_mirrors_use_the_column_for_a_y_slice(page, tmp_path):
     fig, z = _pick_fig()
     _load(page, tmp_path, fig, options={"slice": {
-        "enabled": True, "orientation": "y", "index": 2}})
+        "enabled": True, "orientation": "y", "index": 2, "snap_pins": True}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.7, 0.4)
-    before = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
-    _snap(page)
-    after = _parse(page.evaluate("document.querySelector('.plotpress-pin').textContent.trim()"))
-    assert after["y"] == before["y"]                   # same place along the profile
-    assert after["x"] == pytest.approx(2.5)            # on the shown column
-    assert after["z"] == z[int(after["y"]), 2]
+    before, mirror = (_parse(_pins(page)[i][2]) for i in (0, 1))
+    assert mirror["y"] == before["y"]
+    assert mirror["x"] == pytest.approx(2.5)
+    assert mirror["z"] == z[int(mirror["y"]), 2]
 
 
 @pytest.mark.browser
-def test_snap_says_why_when_there_is_nothing_to_do(page, tmp_path):
+def test_mirrors_are_not_extracted_saved_or_deletable(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
-    _snap(page)                                          # no pins yet
-    text = page.evaluate("""() => Array.from(document.querySelectorAll(
-        '.plotpress-menu-dropdown button')).map(b => b.textContent)
-        .find(t => t.startsWith('No heatmap'))""")
-    assert text == "No heatmap pins to snap"
-
-    _load(page, tmp_path, fig, options=["slice"])   # Slice still off
-    _snap(page)
-    assert "Enable Slice first" in page.evaluate("""() => Array.from(
-        document.querySelectorAll('.plotpress-menu-dropdown button'))
-        .map(b => b.textContent).join('|')""")
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    assert len(page.evaluate("window.plotpressGetMarkers()")) == 1      # not two
+    # right-clicking the mirror does nothing; right-clicking the pin removes both
+    page.evaluate("""() => document.querySelector('.plotpress-pin[data-snapped]')
+        .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
+    assert len(_pins(page)) == 2
+    page.evaluate("""() => document.querySelector('.plotpress-pin:not([data-snapped])')
+        .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
+    assert _pins(page) == []
 
 
 @pytest.mark.browser
-def test_snap_leaves_annotation_notes_alone(page, tmp_path):
+def test_snap_needs_the_companion_view_and_leaves_notes_alone(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
     page.evaluate("window.prompt = () => 'my note'")
     page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
         .find(b => b.textContent === 'Annotate Point').click()""")
     _click_heatmap(page, 0.5, 0.5)
-    assert _all_pin_kinds(page) == ["mesh"]
-    _snap(page)
-    assert _all_pin_kinds(page) == ["mesh"]              # a note keeps its own spot
+    assert [(k, s) for k, s, _ in _pins(page)] == [("mesh", False)]      # a note: no mirror
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.4)
+    assert len(_pins(page)) == 3                                          # note, pin, mirror
+    _pick_view(page, "cursor")                                            # strip gone -> mirror gone
+    assert [s for _, s, _ in _pins(page)] == [False, False]
+    _pick_view(page, "Companion")
+    assert [s for _, s, _ in _pins(page)] == [False, False, True]
+
+
+@pytest.mark.browser
+def test_view_options_are_their_own_menu_group(page, tmp_path):
+    _load(page, tmp_path, _grid_fig(), options=["slice"])
+    groups = page.evaluate("""() => {
+      const menu = Array.from(document.querySelectorAll('.plotpress-menu-dropdown')).find(
+          d => d.textContent.includes('Enable Slice'));
+      const out = [[]];
+      for (const el of menu.children) {
+        if (el.classList.contains('plotpress-menu-divider')) out.push([]);
+        else out[out.length - 1].push(el.textContent.trim());
+      }
+      return out;
+    }""")
+    view_group = next(g for g in groups if "Slice view" in g)
+    for wanted in ("Heatmap with cursor", "Companion panel",
+                   "Profile replaces heatmap", "Snap pins to slice"):
+        assert any(wanted in t for t in view_group), wanted
+    assert not any("Enable Slice" in t or "Slice X" in t or "Auto (per slice)" in t
+                   for t in view_group)

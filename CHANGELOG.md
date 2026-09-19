@@ -33,8 +33,9 @@ anywhere in the source.
   (the default), the profile replacing the heatmap, and a cursor-only heatmap.
   Point Picking works on the strip -- a click pins the nearest profile sample
   (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
-  arrow keys, and extracts as a `"slice"` record -- and **Snap pins to
-  slice** moves pins already on the heatmap onto the shown profile.
+  arrow keys, and extracts as a `"slice"` record -- and **Snap pins to slice** (a checkbox
+  in the menu's own "Slice view" group) mirrors each heatmap pin onto the
+  shown profile while the heatmap pin stays put.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in
   a chosen state -- e.g. `options={"slice": {"enabled": True, "view":
   "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --
