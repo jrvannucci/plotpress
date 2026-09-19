@@ -1809,12 +1809,12 @@ def _emit_prim(p) -> str:
                     f'points="{coords}" fill="{p.fill}" '
                     f'fill-opacity="{p.fill_opacity}" {stroke}>{title}</polygon>')
         d = _path_d(p.subpaths, p.closed)
-        if p.fill and not p.stroke:
-            return (f'<path class="plotpress-series"{idattr} data-label="{lbl}" '
-                    f'd="{d}" fill="{p.fill}" fill-opacity="{p.fill_opacity}" '
-                    f'stroke="none">{title}</path>')
-        attrs = (f'fill="none" stroke="{p.stroke}" stroke-width="{p.stroke_width}" '
-                 f'stroke-linejoin="round" stroke-linecap="round"')
+        fill = (f'fill="{p.fill}" fill-opacity="{p.fill_opacity}"'
+                if p.fill else 'fill="none"')
+        stroke = (f'stroke="{p.stroke}" stroke-width="{p.stroke_width}" '
+                  f'stroke-linejoin="round" stroke-linecap="round"'
+                  if p.stroke else 'stroke="none"')
+        attrs = f'{fill} {stroke}'
         dash = _DASH.get(p.linestyle)
         if dash:
             attrs += f' stroke-dasharray="{dash}"'

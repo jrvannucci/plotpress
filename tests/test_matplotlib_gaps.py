@@ -1286,17 +1286,28 @@ def test_bar_yerr_ecolor_is_independent_of_bar_color():
 
 def test_fill_between_and_fill_betweenx_accept_edgecolor_and_linewidth():
     import numpy as np
+    import xml.etree.ElementTree as ET
 
     fig, ax = plotpress.subplots()
-    fb = ax.fill_between([0, 1, 2], [0, 1, 0], edgecolor="#123456", linewidth=2.0)
+    fb = ax.fill_between([0, 1, 2], [0, 1, 0], color="#abcdef", alpha=0.4,
+                         edgecolor="#123456", linewidth=2.0)
     assert fb.edgecolor == "#123456" and fb.linewidth == 2.0
-    svg = fig.to_svg()
-    assert 'stroke="#123456"' in svg
+    root = ET.fromstring(fig.to_svg())
+    path = next(p for p in root.iter("{http://www.w3.org/2000/svg}path")
+                if p.get("stroke") == "#123456")
+    assert path.get("fill") == "#abcdef"
+    assert float(path.get("fill-opacity")) == 0.4
+    assert float(path.get("stroke-width")) == 2.0
 
     fig2, ax2 = plotpress.subplots()
     y = np.linspace(0, 5, 10)
-    ax2.fill_betweenx(y, 0, np.ones_like(y), edgecolor="#654321", linewidth=1.5)
-    assert 'stroke="#654321"' in fig2.to_svg()
+    ax2.fill_betweenx(y, 0, np.ones_like(y), color="#fedcba", alpha=0.3,
+                      edgecolor="#654321", linewidth=1.5)
+    root2 = ET.fromstring(fig2.to_svg())
+    path2 = next(p for p in root2.iter() if p.get("stroke") == "#654321")
+    assert path2.get("fill") == "#fedcba"
+    assert float(path2.get("fill-opacity")) == 0.3
+    assert float(path2.get("stroke-width")) == 1.5
 
 
 def test_fill_between_default_has_no_visible_edge():
