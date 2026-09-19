@@ -397,6 +397,12 @@ def test_snap_mirrors_a_heatmap_pin_onto_the_shown_slice_and_keeps_it(page, tmp_
         document.querySelector('.plotpress-pin[data-snapped]').getBoundingClientRect().top,
         document.querySelector('.plotpress-mesh').getBoundingClientRect().top]""")
     assert pin_top < mesh_top                            # up in the strip
+    # A hollow ring you can actually see: the outline must differ from the fill
+    # (pins outline in white, so a white fill alone would be invisible).
+    fill, stroke = page.evaluate("""() => { const c = document.querySelector(
+        '.plotpress-pin[data-snapped] circle');
+        return [c.getAttribute('fill'), c.getAttribute('stroke')]; }""")
+    assert fill != stroke
 
 
 @pytest.mark.browser

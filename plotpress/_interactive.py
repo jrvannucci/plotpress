@@ -1900,7 +1900,9 @@ _JS_SOURCE = r"""
         g.classList.add('plotpress-snapped');
         g.dataset.snapped = '1';
         var dot = g.querySelector('circle');
-        if (dot) dot.setAttribute('fill', '#fff');   // hollow: a mirror, not the pick itself
+        // Hollow ring, not the pick itself. Pins draw with a white outline, so
+        // the ring has to be dark or a white fill would vanish into the page.
+        if (dot) { dot.setAttribute('fill', '#fff'); dot.setAttribute('stroke', '#111'); dot.setAttribute('stroke-width', 1.5); }
       }
     }
     // Adding a pin selects it; hand the selection back to whatever the user
