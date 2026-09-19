@@ -397,12 +397,16 @@ def test_snap_mirrors_a_heatmap_pin_onto_the_shown_slice_and_keeps_it(page, tmp_
         document.querySelector('.plotpress-pin[data-snapped]').getBoundingClientRect().top,
         document.querySelector('.plotpress-mesh').getBoundingClientRect().top]""")
     assert pin_top < mesh_top                            # up in the strip
-    # A hollow ring you can actually see: the outline must differ from the fill
-    # (pins outline in white, so a white fill alone would be invisible).
-    fill, stroke = page.evaluate("""() => { const c = document.querySelector(
-        '.plotpress-pin[data-snapped] circle');
-        return [c.getAttribute('fill'), c.getAttribute('stroke')]; }""")
-    assert fill != stroke
+    # The dots are drawn like any other pin's; the pair is marked by both
+    # labels sharing a (non-default) color.
+    def style(sel):
+        return page.evaluate("""(sel) => { const p = document.querySelector(sel);
+            const c = p.querySelector('circle');
+            return [c.getAttribute('fill'), c.getAttribute('stroke'),
+                    p.querySelector('rect').getAttribute('fill')]; }""", sel)
+    src, mir = style(".plotpress-pin:not([data-snapped])"), style(".plotpress-pin[data-snapped]")
+    assert src[:2] == mir[:2] == ["#111", "#fff"]
+    assert src[2] == mir[2] != "#111"
 
 
 @pytest.mark.browser
@@ -509,3 +513,36 @@ def test_view_options_are_their_own_menu_group(page, tmp_path):
         assert any(wanted in t for t in view_group), wanted
     assert not any("Enable Slice" in t or "Slice X" in t or "Auto (per slice)" in t
                    for t in view_group)
+
+
+def _label_fills(page):
+    return page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-pin')).map(
+        p => [!!p.dataset.snapped, p.querySelector('rect').getAttribute('fill')])""")
+
+
+@pytest.mark.browser
+def test_each_linked_pair_gets_its_own_label_color_and_snap_off_restores_it(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.3, 0.5)
+    _click_heatmap(page, 0.8, 0.7)
+    fills = [f for _, f in _label_fills(page)]           # pin, pin, mirror, mirror
+    assert fills[0] == fills[2] and fills[1] == fills[3]  # each pair shares a color...
+    assert fills[0] != fills[1]                           # ...and the pairs differ
+    assert "#111" not in fills
+    _set_snap(page, False)
+    assert {f for _, f in _label_fills(page)} == {"#111"}  # back to ordinary labels
+
+
+@pytest.mark.browser
+def test_a_pins_link_color_survives_another_pin_being_deleted(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.3, 0.5)
+    _click_heatmap(page, 0.8, 0.7)
+    second = _label_fills(page)[1][1]
+    page.evaluate("""() => document.querySelector('.plotpress-pin:not([data-snapped])')
+        .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
+    assert [f for s_, f in _label_fills(page) if not s_] == [second]

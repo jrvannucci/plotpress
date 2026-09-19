@@ -1886,9 +1886,17 @@ _JS_SOURCE = r"""
     var cell = +pin.dataset.index, nx = mesh.shape[1];
     return { key: key, j: SLICE_ORIENTATION === 'x' ? cell % nx : Math.floor(cell / nx) };
   }
+  // Label colors for linked pin pairs (never amber -- that's the notes' color).
+  var SNAP_LINK_COLORS = ['#0f766e', '#6d28d9', '#be185d', '#15803d', '#1d4ed8', '#b91c1c'];
+  var SNAP_COLOR_NEXT = 0;
   function syncSnappedPins() {
     var keep = selectedPin;
     document.querySelectorAll('.plotpress-snapped').forEach(function (p) { p.remove(); });
+    // Back to the ordinary label color everywhere; the loop below recolors
+    // whichever pins are (still) linked.
+    document.querySelectorAll('.plotpress-pin:not(.plotpress-note) rect').forEach(function (r) {
+      r.setAttribute('fill', '#111');
+    });
     if (SLICE_SNAP && SLICE_ENABLED && SLICE_COMPANION_ON) {
       var pins = document.querySelectorAll(
         '.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)');
@@ -1899,10 +1907,17 @@ _JS_SOURCE = r"""
         if (!g) continue;
         g.classList.add('plotpress-snapped');
         g.dataset.snapped = '1';
-        var dot = g.querySelector('circle');
-        // Hollow ring, not the pick itself. Pins draw with a white outline, so
-        // the ring has to be dark or a white fill would vanish into the page.
-        if (dot) { dot.setAttribute('fill', '#fff'); dot.setAttribute('stroke', '#111'); dot.setAttribute('stroke-width', 1.5); }
+        // The two labels share a color -- the only thing that marks the pair
+        // (the dots are drawn exactly like any other pin's). Each pin keeps
+        // its color for good once it has one, so deleting another pin never
+        // recolors it.
+        if (pins[i].dataset.linkColor === undefined) {
+          pins[i].dataset.linkColor = SNAP_COLOR_NEXT++ % SNAP_LINK_COLORS.length;
+        }
+        var linkColor = SNAP_LINK_COLORS[+pins[i].dataset.linkColor];
+        var srcBox = pins[i].querySelector('rect'), mirrorBox = g.querySelector('rect');
+        if (srcBox) srcBox.setAttribute('fill', linkColor);
+        if (mirrorBox) mirrorBox.setAttribute('fill', linkColor);
       }
     }
     // Adding a pin selects it; hand the selection back to whatever the user
