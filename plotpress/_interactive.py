@@ -1670,6 +1670,34 @@ _JS_SOURCE = r"""
     cr.setAttribute('x', r.x); cr.setAttribute('y', r.y);
     cr.setAttribute('width', r.w); cr.setAttribute('height', r.h);
   }
+  // A colorbar attached to just this axes (see svg._render_colorbar's
+  // g.plotpress-colorbar wrapper) shrinks to the heatmap's share of the rect
+  // along with it, or it would run up beside the strip too. It's static SVG
+  // in the axes' *original* rect, so it's remapped by the same rect change
+  // the heatmap gets (y' = c.y + (y - o.y) * c.h/o.h); the gradient and the
+  // tick spacing scale with it, while the tick labels are counter-scaled
+  // around their own anchor so the text isn't squashed.
+  function alignColorbars(key) {
+    var o = META[key], c = CUR[key];
+    var bars = svg.querySelectorAll('g.plotpress-colorbar[data-parent="' + key + '"]');
+    if (!bars.length || !o || !c) return;
+    var sy = c.h / o.h, ty = c.y - o.y * sy;
+    var same = Math.abs(sy - 1) < 1e-9 && Math.abs(ty) < 1e-6;
+    bars.forEach(function (g) {
+      if (same) g.removeAttribute('transform');
+      else g.setAttribute('transform', 'matrix(1,0,0,' + sy + ',0,' + ty + ')');
+      g.querySelectorAll('text').forEach(function (t) {
+        if (same) { t.removeAttribute('transform'); return; }
+        var x = t.getAttribute('x'), y = t.getAttribute('y');
+        t.setAttribute('transform', 'translate(' + x + ',' + y + ') scale(1,' + (1 / sy)
+                       + ') translate(' + (-x) + ',' + (-y) + ')');
+      });
+      g.querySelectorAll('line, rect').forEach(function (v) {
+        if (same) v.removeAttribute('vector-effect');
+        else v.setAttribute('vector-effect', 'non-scaling-stroke');
+      });
+    });
+  }
   function ensureCompanionLayout(key) {
     var o = META[key], c = CUR[key];
     var s = companionSize(key);
@@ -1684,6 +1712,7 @@ _JS_SOURCE = r"""
       setClipRect(key, c);
       applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
       relayoutTextCounterScale(key);
+      alignColorbars(key);
     }
     return s;
   }
@@ -1700,6 +1729,7 @@ _JS_SOURCE = r"""
       setClipRect(key, c);
       applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
       relayoutTextCounterScale(key);
+      alignColorbars(key);
     }
   }
   function companionClip(key, r) {

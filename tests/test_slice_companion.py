@@ -732,3 +732,63 @@ def test_reverse_mirror_is_removed_with_snap_or_its_pin_and_never_extracted(page
     page.evaluate("""() => document.querySelector('.plotpress-pin[data-kind="slice"]:not([data-snapped])')
         .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
     assert _pins(page) == []                              # deleting the pin takes its mirror too
+
+
+# ---- colorbars shrink with their heatmap ---------------------------------------------
+
+def _cbar_fig():
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    m = ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9),
+                      np.arange(80, dtype=float).reshape(8, 10))
+    fig.colorbar(m, ax=ax)
+    fig.tight_layout()
+    return fig
+
+
+def _cbar_geometry(page):
+    return page.evaluate("""() => {
+      const g = document.querySelector('g.plotpress-colorbar');
+      const img = g.querySelector('image').getBoundingClientRect();
+      const mesh = document.querySelector('.plotpress-mesh').getBoundingClientRect();
+      const label = g.querySelector('text').getBoundingClientRect();
+      return {img_top: img.top, img_bottom: img.bottom, mesh_top: mesh.top,
+              mesh_bottom: mesh.bottom, label_h: label.height};
+    }""")
+
+
+@pytest.mark.browser
+def test_the_colorbar_shrinks_to_the_heatmap_under_a_companion_strip(page, tmp_path):
+    fig = _cbar_fig()
+    _load(page, tmp_path, fig)
+    plain = _cbar_geometry(page)
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    with_strip = _cbar_geometry(page)
+    # Top and bottom now line up with the (smaller) heatmap, not the full axes.
+    assert with_strip["img_top"] == pytest.approx(with_strip["mesh_top"], abs=1.5)
+    assert with_strip["img_bottom"] == pytest.approx(with_strip["mesh_bottom"], abs=1.5)
+    assert with_strip["img_top"] > plain["img_top"] + 20
+    # ...without squashing the tick labels.
+    assert with_strip["label_h"] == pytest.approx(plain["label_h"], rel=0.05)
+
+
+@pytest.mark.browser
+def test_the_colorbar_grows_back_when_the_strip_goes_away(page, tmp_path):
+    fig = _cbar_fig()
+    _load(page, tmp_path, fig)
+    plain = _cbar_geometry(page)
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _pick_view(page, "cursor")
+    back = _cbar_geometry(page)
+    assert back["img_top"] == pytest.approx(plain["img_top"], abs=1.0)
+    assert back["img_bottom"] == pytest.approx(plain["img_bottom"], abs=1.0)
+
+
+@pytest.mark.browser
+def test_a_y_slice_leaves_the_colorbar_alone(page, tmp_path):
+    fig = _cbar_fig()
+    _load(page, tmp_path, fig)
+    plain = _cbar_geometry(page)
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "orientation": "y"}})
+    y_strip = _cbar_geometry(page)
+    assert y_strip["img_top"] == pytest.approx(plain["img_top"], abs=1.0)   # strip is on the left
+    assert y_strip["img_bottom"] == pytest.approx(plain["img_bottom"], abs=1.0)

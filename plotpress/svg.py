@@ -1352,7 +1352,9 @@ def _render_axes(ax, fig, W, H, index, defs, body):
         return
 
     if ax._is_colorbar:
-        _render_colorbar(ax, tr, *alloc, clip_id, body)
+        parents = [i for i, a in enumerate(fig.axes) if a in (ax._cbar_parents or ())]
+        _render_colorbar(ax, tr, *alloc, clip_id, body,
+                         parent=parents[0] if len(parents) == 1 else None)
         _render_labels(ax, st, *alloc, body)   # title only, by convention: set_title() labels a colorbar's scale
         return
 
@@ -3206,8 +3208,18 @@ def draw_legend(lay, st, bx, by, body):
     body.append("</g>")
 
 
-def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body):
-    """Vertical gradient strip + right-side ticks for a colorbar axes."""
+def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body, parent=None):
+    """Vertical gradient strip + right-side ticks for a colorbar axes.
+
+    A colorbar with exactly one parent axes is wrapped in a
+    ``g.plotpress-colorbar[data-parent]`` so the interactive Slice companion
+    panel -- which shrinks that parent's heatmap to make room for a strip --
+    can shrink the colorbar to match (see ``alignColorbars`` in
+    ``_interactive.py``). Nothing else reads it; the static output is otherwise
+    unchanged.
+    """
+    outer = body
+    body = [] if parent is not None else outer
     src = ax._cbar_source
     lut = src.lut
     norm = src.norm
@@ -3234,3 +3246,5 @@ def _render_colorbar(ax, tr, px_left, px_top, px_w, px_h, clip_id, body):
         )
     body.append(f'<g stroke="{st.spine_color}" stroke-width="{st.tick_width}">{"".join(marks)}</g>')
     body.append("".join(labels))
+    if parent is not None:
+        outer.append(f'<g class="plotpress-colorbar" data-parent="{parent}">{"".join(body)}</g>')
