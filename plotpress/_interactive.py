@@ -745,20 +745,12 @@ _JS_SOURCE = r"""
   // -- navigation, Axes, Point Picking, Annotate, File -- is unconditional;
   // options only add menus beyond it. With no config at all (this JS loaded
   // some other way) every add-on is on, rather than silently omitting one.
-  var OPTIONS = window.PLOTPRESS_OPTIONS || ['slice', 'slice-companion-panel'];
+  var OPTIONS = window.PLOTPRESS_OPTIONS || ['slice'];
   function hasOption(name) { return OPTIONS.indexOf(name) !== -1; }
   // Per-option startup settings (options={"slice": {...}} on the Python
-  // side) -- the state each tool's menu would otherwise begin in. The two
-  // slice options are one tool with two views and share their tool-level
-  // keys (enabled, orientation, ...), so they're merged; the view-specific
-  // keys (show_view, show_panel, panel_size) only exist under their own.
+  // side) -- the state the tool's menu would otherwise begin in.
   var OPTION_CONFIG = window.PLOTPRESS_OPTION_CONFIG || {};
-  var SLICE_VIEW_CFG = OPTION_CONFIG['slice'] || {};
-  var SLICE_PANEL_CFG = OPTION_CONFIG['slice-companion-panel'] || {};
-  var SLICE_CFG = {};
-  [SLICE_VIEW_CFG, SLICE_PANEL_CFG].forEach(function (c) {
-    for (var ck in c) SLICE_CFG[ck] = c[ck];
-  });
+  var SLICE_CFG = OPTION_CONFIG['slice'] || {};
   var pointsHidden = false;
   var annotationsHidden = false;
   // Hide Points/Hide Annotations toggle independently -- one class per kind
@@ -857,8 +849,7 @@ _JS_SOURCE = r"""
       }
     }
   }
-  var sliceMenuNeeded = (hasOption('slice') || hasOption('slice-companion-panel'))
-                        && Object.keys(SLICE_AXES).length > 0;
+  var sliceMenuNeeded = hasOption('slice') && Object.keys(SLICE_AXES).length > 0;
   // Figure-wide Slice state, declared here (not down by the rest of the
   // tool's own implementation) so the menu-building code just below --
   // which reads SLICE_ORIENTATION to set the radios' initial checked state
@@ -878,15 +869,16 @@ _JS_SOURCE = r"""
   // everything back down to a plain, unmodified pcolormesh.
   var SLICE_ENABLED = SLICE_CFG.enabled === true;
   var SLICE_ORIENTATION = SLICE_CFG.orientation === 'y' ? 'y' : 'x';
-  var SLICE_VIEW_ON = hasOption('slice') && SLICE_VIEW_CFG.show_view === true;
-  // The companion panel (option "slice-companion-panel") draws the profile
-  // in a strip carved out of the mesh's own axes rect instead of replacing
-  // the heatmap. Mutually exclusive with SLICE_VIEW_ON, which already shows
-  // the profile in the heatmap's place -- a strip repeating it would be
-  // redundant -- so an explicit show_view wins over the panel's default.
-  var SLICE_COMPANION_ON = hasOption('slice-companion-panel')
-                           && SLICE_PANEL_CFG.show_panel !== false && !SLICE_VIEW_ON;
-  var SLICE_COMPANION_FRAC = isFinite(SLICE_PANEL_CFG.panel_size) ? +SLICE_PANEL_CFG.panel_size : 0.3;
+  // How a mesh's slice is shown -- 'cursor': the heatmap with just a dashed
+  // cursor on the slice; 'companion': the profile in a strip carved out of
+  // the mesh's own axes, beside the heatmap (see ensureCompanionLayout());
+  // 'replace': the profile drawn in the heatmap's place. One choice, so
+  // the two flags below can never both be set.
+  var SLICE_VIEW = (SLICE_CFG.view === 'cursor' || SLICE_CFG.view === 'replace')
+                   ? SLICE_CFG.view : 'companion';
+  var SLICE_VIEW_ON = SLICE_VIEW === 'replace';
+  var SLICE_COMPANION_ON = SLICE_VIEW === 'companion';
+  var SLICE_COMPANION_FRAC = isFinite(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
   // opt-in and manual. On: skips the per-axes checkbox dance entirely --
@@ -1033,67 +1025,53 @@ _JS_SOURCE = r"""
     enableLabel.appendChild(document.createTextNode(' Enable Slice'));
     sliceMenu.appendChild(enableLabel);
 
-    // Switches every mesh axes between the pcolormesh (with the slider's
-    // current row/column marked by a red dashed cursor line) and the 1-D
-    // slice itself -- never both at once, and the cursor line only ever
-    // shows on the pcolormesh side of that toggle (see renderMeshOrSlice).
-    // A checkbox, not a label-swapping button -- every other Slice option
-    // is a radio/checkbox, and a lone button in the middle of them didn't
-    // read as a toggle at a glance the way a checked/unchecked box does.
-    var sliceViewCb = null, companionCb = null;
     var rerenderAllSlices = function () {
       Object.keys(SLICE_SLIDERS).forEach(function (k) {
         renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
       });
     };
-    if (hasOption('slice')) {
-      var sliceViewLabel = document.createElement('label');
-      sliceViewCb = document.createElement('input');
-      sliceViewCb.type = 'checkbox';
-      sliceViewCb.checked = SLICE_VIEW_ON;
-      sliceViewCb.addEventListener('change', function () {
-        SLICE_VIEW_ON = sliceViewCb.checked;
-        if (SLICE_VIEW_ON && companionCb) { SLICE_COMPANION_ON = false; companionCb.checked = false; }
+    // How the slice is shown -- see SLICE_VIEW. Radios, not independent
+    // checkboxes: the three are alternatives, and picking one has to end the
+    // others. The red cursor only ever shows with the heatmap, so it isn't
+    // drawn under 'replace'.
+    var viewRow = document.createElement('div');
+    viewRow.className = 'plotpress-slice-orient';
+    [['cursor', 'Heatmap with cursor'], ['companion', 'Companion panel'],
+     ['replace', 'Profile replaces heatmap']].forEach(function (pair) {
+      var viewKey = pair[0];
+      var lbl = document.createElement('label');
+      var radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'plotpress-slice-view';
+      radio.checked = (viewKey === SLICE_VIEW);
+      radio.addEventListener('change', function () {
+        SLICE_VIEW = viewKey;
+        SLICE_VIEW_ON = viewKey === 'replace';
+        SLICE_COMPANION_ON = viewKey === 'companion';
         rerenderAllSlices();
       });
-      sliceViewLabel.appendChild(sliceViewCb);
-      sliceViewLabel.appendChild(document.createTextNode(' Show slice view'));
-      sliceMenu.appendChild(sliceViewLabel);
-    }
-    // Draws the profile in a strip beside the heatmap (above it for an X
-    // slice, to its left for a Y slice) so both are visible at once -- see
-    // ensureCompanionLayout().
-    if (hasOption('slice-companion-panel')) {
-      var companionLabel = document.createElement('label');
-      companionCb = document.createElement('input');
-      companionCb.type = 'checkbox';
-      companionCb.checked = SLICE_COMPANION_ON;
-      companionCb.addEventListener('change', function () {
-        SLICE_COMPANION_ON = companionCb.checked;
-        if (SLICE_COMPANION_ON && sliceViewCb) { SLICE_VIEW_ON = false; sliceViewCb.checked = false; }
-        rerenderAllSlices();
-      });
-      companionLabel.appendChild(companionCb);
-      companionLabel.appendChild(document.createTextNode(' Show companion panel'));
-      sliceMenu.appendChild(companionLabel);
+      lbl.appendChild(radio);
+      lbl.appendChild(document.createTextNode(' ' + pair[1]));
+      viewRow.appendChild(lbl);
+    });
+    sliceMenu.appendChild(viewRow);
 
-      var snapBtn = document.createElement('button');
-      var snapText = 'Snap pins to slice';
-      snapBtn.textContent = snapText;
-      snapBtn.title = 'Move Point Picking pins from the heatmap onto the profile shown in the strip';
-      snapBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var note = null;
-        if (!SLICE_ENABLED) note = 'Enable Slice first';
-        else if (!SLICE_COMPANION_ON) note = 'Show the companion panel first';
-        else if (snapPinsToSlice() === 0) note = 'No heatmap pins to snap';
-        if (note === null) { closeAllMenus(); return; }
-        // Nothing moved -- say why in place, and leave the menu open.
-        snapBtn.textContent = note;
-        setTimeout(function () { snapBtn.textContent = snapText; }, 1800);
-      });
-      sliceMenu.appendChild(snapBtn);
-    }
+    var snapBtn = document.createElement('button');
+    var snapText = 'Snap pins to slice';
+    snapBtn.textContent = snapText;
+    snapBtn.title = 'Move Point Picking pins from the heatmap onto the profile shown in the strip';
+    snapBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var note = null;
+      if (!SLICE_ENABLED) note = 'Enable Slice first';
+      else if (!SLICE_COMPANION_ON) note = 'Switch to the companion panel first';
+      else if (snapPinsToSlice() === 0) note = 'No heatmap pins to snap';
+      if (note === null) { closeAllMenus(); return; }
+      // Nothing moved -- say why in place, and leave the menu open.
+      snapBtn.textContent = note;
+      setTimeout(function () { snapBtn.textContent = snapText; }, 1800);
+    });
+    sliceMenu.appendChild(snapBtn);
 
     var topDivider = document.createElement('div');
     topDivider.className = 'plotpress-menu-divider';

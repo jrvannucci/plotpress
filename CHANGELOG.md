@@ -26,19 +26,19 @@ anywhere in the source.
   `options=[...]` for tools beyond the core toolbar (Pan/Zoom, Home, Fit
   Width, Axes, Point Picking, Annotate, File), which every page keeps.
   Nothing existing changes unless asked for.
-- **`options=["slice-companion-panel"]`: the Slice profile beside the
-  heatmap.** The same Slice tool, but the 1-D profile is drawn in a strip
-  carved out of the mesh's own axes (above it for an X slice, to its left
-  for a Y slice) instead of replacing the heatmap, aligned through every
-  pan/zoom. Request both `"slice"` and `"slice-companion-panel"` for a menu
-  offering either view.
-  Point Picking works on the strip: a click pins the nearest profile sample
+- **Slice companion panel.** The Slice menu's profile can be drawn in a
+  strip carved out of the mesh's own axes (above it for an X slice, to its
+  left for a Y slice), beside the heatmap and aligned through every pan/zoom,
+  instead of replacing it. A radio in the menu switches between that
+  (the default), the profile replacing the heatmap, and a cursor-only heatmap.
+  Point Picking works on the strip -- a click pins the nearest profile sample
   (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
-  arrow keys, and extracts as a `"slice"` record.
+  arrow keys, and extracts as a `"slice"` record -- and **Snap pins to
+  slice** moves pins already on the heatmap onto the shown profile.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in
-  a chosen state -- e.g. `options={"slice-companion-panel": {"enabled":
-  True, "orientation": "y", "link_all": True, "range": "colorbar"}}` -- rather
-  than switched off; values are validated up front.
+  a chosen state -- e.g. `options={"slice": {"enabled": True, "view":
+  "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --
+  rather than switched off; values are validated up front.
 
 ## [0.39.0] - 2026-09-13
 

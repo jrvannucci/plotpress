@@ -50,40 +50,44 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
 
 ``"slice"``
     The **Slice** menu -- scrub a row or column of a pcolormesh/imshow as a
-    1-D profile, coupled across as many axes as share the same grid. The
-    profile replaces the heatmap in place ("Show slice view"). The menu only
-    appears when the figure actually has a pcolormesh or imshow to slice.
+    1-D profile, coupled across as many axes as share the same grid. It only
+    appears when the figure actually has a pcolormesh or imshow to slice. A
+    radio in the menu picks how the profile is shown:
 
-``"slice-companion-panel"``
-    The same tool with a different view: the profile is drawn in a strip
-    carved out of the mesh's own axes -- above the heatmap for an X slice,
-    to its left for a Y slice -- so both are visible at once, aligned
-    through every pan and zoom ("Show companion panel"). The heatmap gives up
-    30% of its axes to the strip (``panel_size``). Ask for both options and the
-    menu offers both views, one at a time. **Point Picking works on the strip:**
-    click anywhere along the profile to pin the nearest sample, which reads
-    ``x``, ``y`` and the value there. The pin rides the line through pan, zoom,
-    and slider steps (reporting the value the slice holds *now*), arrow keys
-    step it along the profile, and Extract returns it as a ``"slice"`` record.
-    Pins on the in-place "Show slice view" profile aren't supported. Axes with fixed ticks
-    (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep
-    the plain cursor and slider, since their ticks can't be redrawn around a
+    - **Companion panel** (the default): the profile is drawn in a strip
+      carved out of the mesh's own axes -- above the heatmap for an X slice,
+      to its left for a Y slice -- so both are visible at once, aligned
+      through every pan and zoom. The heatmap gives up 30% of its axes to the
+      strip (``panel_size``).
+    - **Profile replaces heatmap**: the profile is drawn in the heatmap's place.
+    - **Heatmap with cursor**: no profile, just a dashed cursor on the slice.
+
+    Point Picking works on the companion strip: click anywhere along the
+    profile to pin the nearest sample, which reads ``x``, ``y`` and the value
+    there. The pin rides the line through pan, zoom, and slider steps
+    (reporting the value the slice holds *now*), arrow keys step it along
+    the profile, and Extract returns it as a ``"slice"`` record. **Snap pins
+    to slice** moves every Point Picking pin already on the heatmap onto the
+    shown profile, keeping its position along the shared axis. Pins on the
+    "replaces heatmap" profile aren't supported. Axes with fixed ticks
+    (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep the
+    plain cursor and slider, since their ticks can't be redrawn around a
     shrunken heatmap.
 
-To have a tool start in a chosen state instead of switched off, pass a dict
+To have Slice start in a chosen state instead of switched off, pass a dict
 whose values are its settings::
 
     fig.save("fig.html", interactive=True, options={
-        "slice-companion-panel": {"enabled": True, "orientation": "y",
-                                  "link_all": True, "range": "colorbar"},
+        "slice": {"enabled": True, "view": "companion", "orientation": "y",
+                  "link_all": True, "range": "colorbar"},
     })
 
-Both slice options accept ``enabled``, ``orientation`` (``"x"``/``"y"``),
-``link_all``, ``range`` (``"auto"``/``"colorbar"``/``"custom"``, the last with
-``range_min``/``range_max``), and ``index`` (the starting row/column);
-``"slice"`` adds ``show_view`` and ``"slice-companion-panel"`` adds
-``show_panel`` and ``panel_size``. Values are checked when the page is built,
-so a typo raises ``ValueError`` immediately.
+The settings are ``enabled``, ``view`` (``"companion"``/``"replace"``/
+``"cursor"``), ``orientation`` (``"x"``/``"y"``), ``link_all``, ``range``
+(``"auto"``/``"colorbar"``/``"custom"``, the last with
+``range_min``/``range_max``), ``index`` (the starting row/column), and
+``panel_size`` (the strip's share of the axes, 0.1-0.6). Values are checked
+when the page is built, so a typo raises ``ValueError`` immediately.
 
 An unknown name raises ``ValueError`` listing the valid ones. The choice only
 changes which tools the page builds: the embedded data is identical either

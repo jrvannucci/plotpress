@@ -1,6 +1,6 @@
-"""The Slice tool's two views (``options=["slice"]``: profile replaces the
-heatmap; ``options=["slice-companion-panel"]``: profile in a strip beside it)
-and the startup settings either option accepts.
+"""The Slice tool's three views -- a strip beside the heatmap (the default),
+the profile replacing the heatmap, or just a cursor -- switched by a radio in
+its menu, and the startup settings ``options={"slice": {...}}`` accepts.
 
 The Python half needs nothing; the browser half is opt-in (``pytest -m
 browser``) like the other Playwright tests.
@@ -36,14 +36,12 @@ def _config(html):
 
 def test_dict_options_emit_their_settings():
     html = _grid_fig().to_html(options={
-        "slice-companion-panel": {"enabled": True, "orientation": "y",
-                                  "link_all": True, "index": 4, "panel_size": 0.4},
-        "slice": True,
+        "slice": {"enabled": True, "orientation": "y", "view": "replace",
+                  "link_all": True, "index": 4, "panel_size": 0.4},
     })
-    cfg = _config(html)
-    assert cfg["slice-companion-panel"]["orientation"] == "y"
-    assert cfg["slice-companion-panel"]["panel_size"] == 0.4
-    assert cfg["slice"] == {}
+    assert _config(html)["slice"] == {
+        "enabled": True, "orientation": "y", "view": "replace",
+        "link_all": True, "index": 4, "panel_size": 0.4}
 
 
 def test_list_options_have_empty_settings():
@@ -59,19 +57,20 @@ def test_list_options_have_empty_settings():
     ({"panel_size": 0.9}, "between 0.1 and 0.6"),
     ({"range": "custom"}, "range_min and"),
     ({"range": "custom", "range_min": 2, "range_max": 1}, "range_min < range_max"),
-    ({"show_view": True}, "unknown setting"),   # belongs to "slice", not the panel
+    ({"view": "sideways"}, "one of 'cursor'"),
     ({"nope": 1}, "unknown setting"),
 ])
 def test_bad_panel_settings_are_rejected(settings, message):
     with pytest.raises(ValueError, match=message):
-        _grid_fig().to_html(options={"slice-companion-panel": settings})
+        _grid_fig().to_html(options={"slice": settings})
 
 
-def test_view_only_settings_belong_to_slice():
-    html = _grid_fig().to_html(options={"slice": {"show_view": True}})
-    assert _config(html)["slice"] == {"show_view": True}
+def test_old_view_options_no_longer_exist():
+    # The companion panel is a view of "slice" now, not an option of its own.
+    with pytest.raises(ValueError, match="unknown interactive option"):
+        _grid_fig().to_html(options=["slice-companion-panel"])
     with pytest.raises(ValueError, match="unknown setting"):
-        _grid_fig().to_html(options={"slice": {"panel_size": 0.3}})
+        _grid_fig().to_html(options={"slice": {"show_view": True}})
 
 
 def test_non_dict_settings_are_rejected():
@@ -124,40 +123,56 @@ def _axes_rects(page):
     }""")
 
 
-@pytest.mark.browser
-def test_panel_option_alone_offers_the_panel_not_the_replace_view(page, tmp_path):
-    _load(page, tmp_path, _grid_fig(), options=["slice-companion-panel"])
-    labels = _slice_labels(page)
-    assert "Show companion panel" in labels
-    assert "Show slice view" not in labels
+def _view_radios(page):
+    """{label: checked} for the three view radios."""
+    return page.evaluate("""() => Object.fromEntries(Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-view"]')).map(r => [r.parentNode.textContent.trim(), r.checked]))""")
+
+
+def _pick_view(page, label):
+    page.evaluate("""(label) => Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-view"]')).find(
+        r => r.parentNode.textContent.includes(label)).click()""", label)
 
 
 @pytest.mark.browser
-def test_slice_option_alone_offers_the_replace_view_not_the_panel(page, tmp_path):
+def test_slice_offers_all_three_views_with_the_companion_panel_by_default(page, tmp_path):
     _load(page, tmp_path, _grid_fig(), options=["slice"])
-    labels = _slice_labels(page)
-    assert "Show slice view" in labels
-    assert "Show companion panel" not in labels
+    assert _view_radios(page) == {
+        "Heatmap with cursor": False, "Companion panel": True,
+        "Profile replaces heatmap": False}
 
 
 @pytest.mark.browser
-def test_both_options_are_mutually_exclusive_views(page, tmp_path):
-    _load(page, tmp_path, _grid_fig(),
-          options={"slice": {"enabled": True}, "slice-companion-panel": {}})
-    # Panel is the default view; asking for the replace view swaps to it.
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length") == 6
-    page.evaluate("""() => { Array.from(document.querySelectorAll('label')).find(
-        l => l.textContent.includes('Show slice view')).querySelector('input').click(); }""")
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length") == 0
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-line').length") == 6
-    panel_cb = page.evaluate("""() => Array.from(document.querySelectorAll('label')).find(
-        l => l.textContent.includes('Show companion panel')).querySelector('input').checked""")
-    assert panel_cb is False
+def test_the_radio_switches_between_the_views(page, tmp_path):
+    _load(page, tmp_path, _grid_fig(), options={"slice": {"enabled": True}})
+
+    def counts():
+        return page.evaluate("""() => [
+          document.querySelectorAll('.plotpress-slice-companion').length,
+          document.querySelectorAll('.plotpress-slice-line').length,
+          document.querySelectorAll('.plotpress-slice-cursor').length]""")
+
+    assert counts() == [6, 0, 6]          # strip + cursor on the heatmap
+    _pick_view(page, "replace")
+    assert counts() == [0, 6, 0]          # profile in the heatmap's place, no cursor
+    _pick_view(page, "cursor")
+    assert counts() == [0, 0, 6]          # heatmap and cursor only
+    _pick_view(page, "Companion")
+    assert counts() == [6, 0, 6]          # and back
+
+
+@pytest.mark.browser
+def test_view_setting_picks_the_starting_radio(page, tmp_path):
+    for view, label in [("cursor", "Heatmap with cursor"),
+                        ("replace", "Profile replaces heatmap")]:
+        _load(page, tmp_path, _grid_fig(), options={"slice": {"view": view}})
+        assert [k for k, v in _view_radios(page).items() if v] == [label]
 
 
 @pytest.mark.browser
 def test_startup_settings_are_applied(page, tmp_path):
-    _load(page, tmp_path, _grid_fig(), options={"slice-companion-panel": {
+    _load(page, tmp_path, _grid_fig(), options={"slice": {
         "enabled": True, "orientation": "y", "link_all": True, "index": 5}})
     state = page.evaluate("""() => ({
       panels: document.querySelectorAll('.plotpress-slice-companion').length,
@@ -173,7 +188,7 @@ def test_startup_settings_are_applied(page, tmp_path):
 
 @pytest.mark.browser
 def test_slice_stays_off_until_asked(page, tmp_path):
-    _load(page, tmp_path, _grid_fig(), options=["slice-companion-panel"])
+    _load(page, tmp_path, _grid_fig(), options=["slice"])
     assert page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length") == 0
     assert page.evaluate("document.querySelectorAll('.plotpress-slider').length") == 0
 
@@ -188,7 +203,7 @@ def test_panel_splits_the_axes_rect_and_disabling_restores_it(page, tmp_path):
     _load(page, tmp_path, fig)
     original = _clip_height(page)
 
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     assert page.evaluate(
         "document.querySelector('.plotpress-slice-companion').childNodes.length") > 0
     # The heatmap gave up ~30% of the rect to the strip.
@@ -206,7 +221,7 @@ def test_panel_size_setting_changes_the_split(page, tmp_path):
     _load(page, tmp_path, fig)
     original = _clip_height(page)
     _load(page, tmp_path, fig,
-          options={"slice-companion-panel": {"enabled": True, "panel_size": 0.5}})
+          options={"slice": {"enabled": True, "panel_size": 0.5}})
     assert _clip_height(page) == pytest.approx(original * 0.5, rel=0.05)
 
 
@@ -225,13 +240,13 @@ def _line_pixels_outside_axes(page, rects):
 @pytest.mark.parametrize("options", [
     # A value range far narrower than the data, so the line has to leave the
     # plot box unless it is clipped -- in each view and orientation.
-    {"slice-companion-panel": {"enabled": True, "range": "custom",
+    {"slice": {"enabled": True, "range": "custom",
                                "range_min": -0.05, "range_max": 0.05}},
-    {"slice-companion-panel": {"enabled": True, "orientation": "y", "range": "custom",
+    {"slice": {"enabled": True, "orientation": "y", "range": "custom",
                                "range_min": -0.05, "range_max": 0.05}},
-    {"slice": {"enabled": True, "show_view": True, "range": "custom",
+    {"slice": {"enabled": True, "view": "replace", "range": "custom",
                "range_min": -0.05, "range_max": 0.05}},
-    {"slice": {"enabled": True, "show_view": True, "orientation": "y", "range": "custom",
+    {"slice": {"enabled": True, "view": "replace", "orientation": "y", "range": "custom",
                "range_min": -0.05, "range_max": 0.05}},
 ])
 def test_profile_never_leaves_the_axes(page, tmp_path, options):
@@ -279,7 +294,7 @@ def _parse(label):
 @pytest.mark.browser
 def test_clicking_the_strip_picks_the_profile_sample_under_it(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 3}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3}})
     _enter_pick_mode(page)
     _click_strip(page, 0.5)
     (label,) = _pin_labels(page)
@@ -292,7 +307,7 @@ def test_clicking_the_strip_picks_the_profile_sample_under_it(page, tmp_path):
 @pytest.mark.browser
 def test_a_strip_pin_follows_the_slider(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 1}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 1}})
     _enter_pick_mode(page)
     _click_strip(page, 0.3)
     before = _parse(_pin_labels(page)[0])
@@ -308,7 +323,7 @@ def test_a_strip_pin_follows_the_slider(page, tmp_path):
 @pytest.mark.browser
 def test_arrow_keys_step_a_strip_pin_along_the_profile(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     _enter_pick_mode(page)
     _click_strip(page, 0.5)
     x0 = _parse(_pin_labels(page)[0])["x"]
@@ -321,7 +336,7 @@ def test_arrow_keys_step_a_strip_pin_along_the_profile(page, tmp_path):
 @pytest.mark.browser
 def test_strip_pins_extract_as_slice_records(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 2}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 2}})
     _enter_pick_mode(page)
     _click_strip(page, 0.5)
     (rec,) = page.evaluate("window.plotpressGetMarkers()")
@@ -332,12 +347,11 @@ def test_strip_pins_extract_as_slice_records(page, tmp_path):
 @pytest.mark.browser
 def test_strip_pins_go_when_the_panel_does(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     _enter_pick_mode(page)
     _click_strip(page, 0.5)
     assert len(_pin_labels(page)) == 1
-    page.evaluate("""() => Array.from(document.querySelectorAll('label')).find(
-        l => l.textContent.includes('Show companion panel')).querySelector('input').click()""")
+    _pick_view(page, "cursor")
     assert _pin_labels(page) == []
 
 
@@ -362,7 +376,7 @@ def _all_pin_kinds(page):
 @pytest.mark.browser
 def test_snap_moves_a_heatmap_pin_onto_the_shown_slice(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 1}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 1}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.55, 0.3)          # a cell well away from the cursor row
     assert _all_pin_kinds(page) == ["mesh"]
@@ -388,7 +402,7 @@ def test_snap_moves_a_heatmap_pin_onto_the_shown_slice(page, tmp_path):
 @pytest.mark.browser
 def test_snapped_pin_then_follows_the_slider(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.4, 0.6)
     _snap(page)
@@ -402,7 +416,7 @@ def test_snapped_pin_then_follows_the_slider(page, tmp_path):
 @pytest.mark.browser
 def test_snap_uses_the_column_for_a_y_slice(page, tmp_path):
     fig, z = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {
+    _load(page, tmp_path, fig, options={"slice": {
         "enabled": True, "orientation": "y", "index": 2}})
     _enter_pick_mode(page)
     _click_heatmap(page, 0.7, 0.4)
@@ -417,14 +431,14 @@ def test_snap_uses_the_column_for_a_y_slice(page, tmp_path):
 @pytest.mark.browser
 def test_snap_says_why_when_there_is_nothing_to_do(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     _snap(page)                                          # no pins yet
     text = page.evaluate("""() => Array.from(document.querySelectorAll(
         '.plotpress-menu-dropdown button')).map(b => b.textContent)
         .find(t => t.startsWith('No heatmap'))""")
     assert text == "No heatmap pins to snap"
 
-    _load(page, tmp_path, fig, options=["slice-companion-panel"])   # Slice still off
+    _load(page, tmp_path, fig, options=["slice"])   # Slice still off
     _snap(page)
     assert "Enable Slice first" in page.evaluate("""() => Array.from(
         document.querySelectorAll('.plotpress-menu-dropdown button'))
@@ -434,7 +448,7 @@ def test_snap_says_why_when_there_is_nothing_to_do(page, tmp_path):
 @pytest.mark.browser
 def test_snap_leaves_annotation_notes_alone(page, tmp_path):
     fig, _ = _pick_fig()
-    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
     page.evaluate("window.prompt = () => 'my note'")
     page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
         .find(b => b.textContent === 'Annotate Point').click()""")

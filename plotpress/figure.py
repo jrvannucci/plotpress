@@ -2203,23 +2203,21 @@ class Figure:
         File; the rest are opt-in:
 
         - ``"slice"`` -- the Slice menu, scrubbing a row/column of a
-          pcolormesh/imshow as a 1-D profile that replaces the heatmap in
-          place (shown only when the figure has a mesh to slice).
-        - ``"slice-companion-panel"`` -- the same tool, but the profile
-          is drawn in a strip carved out of the top (X slice) or left (Y
-          slice) of the mesh's own axes, next to the heatmap instead of
-          replacing it. Asking for both gives the menu both views.
+          pcolormesh/imshow as a 1-D profile (shown only when the figure has
+          a mesh to slice). A radio in the menu picks how the profile is
+          shown: in a strip beside the heatmap (``"companion"``, the
+          default), in the heatmap's place (``"replace"``), or not at all
+          with just a cursor on the heatmap (``"cursor"``).
 
-        Pass a list of names, or a dict to also set each tool's startup
-        state: ``options={"slice-companion-panel": {"enabled": True,
+        Pass a list of names, or a dict to also set the tool's startup
+        state: ``options={"slice": {"enabled": True, "view": "companion",
         "orientation": "y", "link_all": True, "range": "colorbar"}}``.
-        Settings shared by both slice options are ``enabled``,
-        ``orientation`` (``"x"``/``"y"``), ``link_all``, ``range``
+        The settings are ``enabled``, ``view``, ``orientation``
+        (``"x"``/``"y"``), ``link_all``, ``range``
         (``"auto"``/``"colorbar"``/``"custom"``, the last with
-        ``range_min``/``range_max``), and ``index`` (the starting
-        row/column); ``"slice"`` adds ``show_view``, and
-        ``"slice-companion-panel"`` adds ``show_panel`` and ``panel_size``
-        (the strip's fraction of the axes, 0.1-0.6, default 0.3). The embedded
+        ``range_min``/``range_max``), ``index`` (the starting row/column),
+        and ``panel_size`` (the companion strip's fraction of the axes,
+        0.1-0.6, default 0.3). The embedded
         data payloads are the same either way, so :func:`load_data` reads any
         interactive HTML back regardless of which options it was saved with.
 
@@ -3308,25 +3306,22 @@ def _axes_summary_lines(ax, gaps=None):
 #: -- Pan/Zoom, Home, Fit Width, Axes, Point Picking, Annotate, File -- is
 #: not an option; each name here adds a whole extra menu on top of it, so
 #: nothing newer changes an existing figure unless asked for.
-_INTERACTIVE_OPTIONS = ("slice", "slice-companion-panel")
+_INTERACTIVE_OPTIONS = ("slice",)
 
 # Startup settings an option accepts (``options={"slice": {...}}``): the
-# state its menu would otherwise begin in. The two slice options are one
-# tool with two views, so they share the tool-level keys and each adds its
-# own view key.
-_SLICE_KEYS = {
-    "enabled": bool,
-    "orientation": ("x", "y"),
-    "link_all": bool,
-    "range": ("auto", "colorbar", "custom"),
-    "range_min": "number",
-    "range_max": "number",
-    "index": "index",
-}
+# state its menu would otherwise begin in.
 _OPTION_KEYS = {
-    "slice": {**_SLICE_KEYS, "show_view": bool},
-    "slice-companion-panel": {**_SLICE_KEYS, "show_panel": bool,
-                              "panel_size": "fraction"},
+    "slice": {
+        "enabled": bool,
+        "orientation": ("x", "y"),
+        "view": ("cursor", "companion", "replace"),
+        "panel_size": "fraction",
+        "link_all": bool,
+        "range": ("auto", "colorbar", "custom"),
+        "range_min": "number",
+        "range_max": "number",
+        "index": "index",
+    },
 }
 
 
