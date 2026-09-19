@@ -23,10 +23,10 @@ anywhere in the source.
   meshes are excluded (no single row/column to slice).
 - **Modular toolbar via `options=`.** `to_html`/`save`/`show`/
   `show_in_jupyter`/`Report.save` (and `PlotPressWidget`) take
-  `options=[...]`. Every page keeps the baseline (Pan/Zoom, Home, Fit Width,
-  Axes, File); `"annotation-pointpicking"` (on by default, so nothing
-  changes for existing code) adds Point Picking and Annotate, and `"slice"`
-  adds Slice. Pass `options=[]` for the baseline alone.
+  `options=[...]` for tools beyond the core toolbar (Pan/Zoom, Home, Fit
+  Width, Axes, Point Picking, Annotate, File), which every page keeps.
+  Currently `"slice"` adds the Slice menu; nothing existing changes unless
+  asked for.
 
 ## [0.39.0] - 2026-09-13
 

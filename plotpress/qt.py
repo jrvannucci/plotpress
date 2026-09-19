@@ -123,7 +123,7 @@ class PlotPressWidget(_QT.QWidget):
         :meth:`plotpress.Figure.to_html`). Lower it to shrink mesh-heavy
         figures.
     options : list of str, optional
-        Extra toolbar menus to include (see :meth:`plotpress.Figure.to_html`).
+        Optional extra toolbar menus to include (see :meth:`plotpress.Figure.to_html`).
     """
 
     def __init__(self, figure=None, parent=None, interactive=True,
