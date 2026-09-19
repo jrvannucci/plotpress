@@ -1642,7 +1642,7 @@ _JS_SOURCE = r"""
       r.setAttribute('x', o.x + 1); r.setAttribute('y', o.y + 1);
       r.setAttribute('width', o.w - 2); r.setAttribute('height', o.h - 2);
       if (on) {
-        r.setAttribute('fill', 'rgba(43,108,255,0.07)');
+        r.setAttribute('fill', 'none');   // outline only -- no tint over the plot
         r.setAttribute('stroke', '#2b6cff'); r.setAttribute('stroke-width', 2);
       } else {
         r.setAttribute('fill', 'none');

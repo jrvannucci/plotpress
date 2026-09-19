@@ -1034,3 +1034,11 @@ def test_choosing_another_axes_keeps_the_slider_where_it_was(page, tmp_path):
     assert _strips(page) == 2
     vals = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slider input[type=range]')).map(r => r.value)")
     assert vals == ["5", "5"]
+
+
+@pytest.mark.browser
+def test_chosen_axes_are_outlined_without_a_color_tint(page, tmp_path):
+    fig, axs = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0]]}})
+    fills = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slice-select rect')).map(r => r.getAttribute('fill'))")
+    assert fills == ["none"]
