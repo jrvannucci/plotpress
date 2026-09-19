@@ -241,3 +241,101 @@ def test_profile_never_leaves_the_axes(page, tmp_path, options):
     outside, inside = _line_pixels_outside_axes(page, rects)
     assert inside > 0, "the profile drew nothing, so this test proved nothing"
     assert outside == 0
+
+
+# ---- Point Picking on the companion strip -----------------------------------
+
+def _pick_fig():
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
+    z = np.arange(80, dtype=float).reshape(8, 10)   # z[row, col] = 10*row + col
+    ax.pcolormesh(x, y, z)
+    fig.tight_layout()
+    return fig, z
+
+
+def _enter_pick_mode(page):
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
+        .find(b => b.textContent === 'Point Picking').click()""")
+
+
+def _click_strip(page, frac=0.5):
+    """Click ``frac`` of the way across the profile line, at its height."""
+    box = page.evaluate("""() => { const r = document.querySelector(
+        '.plotpress-slice-companion path').getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height]; }""")
+    page.mouse.click(box[0] + box[2] * frac, box[1] + box[3] / 2)
+
+
+def _pin_labels(page):
+    return page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-pin[data-kind="slice"]')).map(p => p.textContent.trim())""")
+
+
+def _parse(label):
+    return {k: float(v) for k, v in re.findall(r"(\w+)=(-?[\d.e+-]+)", label)}
+
+
+@pytest.mark.browser
+def test_clicking_the_strip_picks_the_profile_sample_under_it(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    (label,) = _pin_labels(page)
+    got = _parse(label)
+    col = int(got["x"] - 0.5)                 # cell midpoints are col + 0.5
+    assert got["y"] == pytest.approx(3.5)     # the cursor row's own midpoint (index 3)
+    assert got["z"] == z[3, col]              # the same value the heatmap holds there
+
+
+@pytest.mark.browser
+def test_a_strip_pin_follows_the_slider(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 1}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.3)
+    before = _parse(_pin_labels(page)[0])
+    page.evaluate("""() => { const r = document.querySelector('input[type=range]');
+        r.value = 6; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
+    after = _parse(_pin_labels(page)[0])
+    col = int(before["x"] - 0.5)
+    assert after["x"] == before["x"]                 # same sample along the axis...
+    assert after["y"] == pytest.approx(6.5)          # ...on the row the slider moved to
+    assert after["z"] == z[6, col]                   # ...reporting that row's value
+
+
+@pytest.mark.browser
+def test_arrow_keys_step_a_strip_pin_along_the_profile(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    x0 = _parse(_pin_labels(page)[0])["x"]
+    page.keyboard.press("ArrowRight")
+    assert _parse(_pin_labels(page)[0])["x"] == pytest.approx(x0 + 1)
+    page.keyboard.press("ArrowUp")               # not along an X profile: no-op
+    assert _parse(_pin_labels(page)[0])["x"] == pytest.approx(x0 + 1)
+
+
+@pytest.mark.browser
+def test_strip_pins_extract_as_slice_records(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True, "index": 2}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    (rec,) = page.evaluate("window.plotpressGetMarkers()")
+    assert rec["kind"] == "slice"
+    assert rec["z"] == z[2, int(rec["x"])]
+
+
+@pytest.mark.browser
+def test_strip_pins_go_when_the_panel_does(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice-companion-panel": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert len(_pin_labels(page)) == 1
+    page.evaluate("""() => Array.from(document.querySelectorAll('label')).find(
+        l => l.textContent.includes('Show companion panel')).querySelector('input').click()""")
+    assert _pin_labels(page) == []

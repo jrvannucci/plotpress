@@ -32,6 +32,9 @@ anywhere in the source.
   for a Y slice) instead of replacing the heatmap, aligned through every
   pan/zoom. Request both `"slice"` and `"slice-companion-panel"` for a menu
   offering either view.
+  Point Picking works on the strip: a click pins the nearest profile sample
+  (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
+  arrow keys, and extracts as a `"slice"` record.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in
   a chosen state -- e.g. `options={"slice-companion-panel": {"enabled":
   True, "orientation": "y", "link_all": True, "range": "colorbar"}}` -- rather

@@ -1686,7 +1686,10 @@ _JS_SOURCE = r"""
   }
   function removeCompanion(key) {
     var st = SLICE_STATE[key];
-    if (st && st.compGroup) { st.compGroup.remove(); st.compGroup = null; }
+    if (st && st.compGroup) {
+      st.compGroup.remove(); st.compGroup = null;
+      removeSlicePins(key);   // nothing left for them to point at
+    }
     var o = META[key], c = CUR[key];
     if (!o || !c) return;
     if (c.x !== o.x || c.y !== o.y || c.w !== o.w || c.h !== o.h || c.tickAnchorX != null) {
@@ -1712,27 +1715,47 @@ _JS_SOURCE = r"""
     cr.setAttribute('width', r.w); cr.setAttribute('height', r.h);
     return 'url(#' + id + ')';
   }
-  function drawCompanion(key, slice) {
-    var st = SLICE_STATE[key], o = META[key], m = CUR[key];
+  // Maps a slice sample to its spot in the strip -- the one place that knows
+  // the strip's geometry, shared by drawing the profile and by Point Picking
+  // pins on it (slicePinPoint), so a pin can never disagree with the line it
+  // sits on. Null when the whole slice is NaN.
+  function companionPlacer(key, slice) {
+    var o = META[key], m = CUR[key];
     var finiteYs = slice.ys.filter(isFiniteNum);
+    if (!finiteYs.length) return null;
     var s = companionSize(key), pad = 4, isX = SLICE_ORIENTATION === 'x';
+    var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
+    var span = s - 2 * pad;
+    var off = function (v) { return pad + (v - vmin) / (vmax - vmin) * span; };
+    return {
+      s: s, isX: isX, vmin: vmin, vmax: vmax, off: off,
+      strip: isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h },
+      // Pixel position of sample j; null if its value is missing.
+      at: function (j) {
+        var v = slice.ys[j];
+        if (!isFiniteNum(v)) return null;
+        var along = isX ? toPixel(m, slice.xs[j], m.ymin).x : toPixel(m, m.xmin, slice.xs[j]).y;
+        return isX ? { px: along, py: o.y + s - off(v) } : { px: o.x + off(v), py: along };
+      }
+    };
+  }
+  function drawCompanion(key, slice) {
+    var st = SLICE_STATE[key], o = META[key];
     if (!st.compGroup) {
       st.compGroup = document.createElementNS(SVGNS, 'g');
       st.compGroup.setAttribute('class', 'plotpress-slice-companion');
       svg.appendChild(st.compGroup);
     }
-    var strip = isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h };
+    var pl = companionPlacer(key, slice);
+    var s = companionSize(key), isX = SLICE_ORIENTATION === 'x';
     var parts = [];
     var sepCol = STYLE.spine || '#444', fs = Math.max(8, (STYLE.tick_label_size || 10) - 1);
     var txtCol = STYLE.text || '#222';
-    if (finiteYs.length) {
-      var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
-      var span = s - 2 * pad;
-      var place = function (v) { return pad + (v - vmin) / (vmax - vmin) * span; };
-      var tk = axisTicks(vmin, vmax, 'linear');
+    if (pl) {
+      var tk = axisTicks(pl.vmin, pl.vmax, 'linear');
       var guides = [], labels = [], lastLabelOff = -Infinity;
       for (var j = 0; j < tk.ticks.length; j++) {
-        var off = place(tk.ticks[j]);
+        var off = pl.off(tk.ticks[j]);
         // The strip is only a few labels tall/wide -- drop any that would
         // run into the previous one rather than print them on top of each
         // other.
@@ -1755,15 +1778,12 @@ _JS_SOURCE = r"""
         + '" stroke="#fff" stroke-width="3" paint-order="stroke">' + labels.join('') + '</g>');
       var d = '', started = false;
       for (var i = 0; i < slice.xs.length; i++) {
-        var v = slice.ys[i];
-        if (!isFiniteNum(v)) { started = false; continue; }
-        var along = isX ? toPixel(m, slice.xs[i], m.ymin).x : toPixel(m, m.xmin, slice.xs[i]).y;
-        var px = isX ? along : o.x + place(v);
-        var py = isX ? o.y + s - place(v) : along;
-        d += (started ? 'L' : 'M') + px.toFixed(2) + ',' + py.toFixed(2);
+        var q = pl.at(i);
+        if (!q) { started = false; continue; }
+        d += (started ? 'L' : 'M') + q.px.toFixed(2) + ',' + q.py.toFixed(2);
         started = true;
       }
-      parts.push('<path d="' + d + '" fill="none" stroke="#1f77b4" stroke-width="1.5" clip-path="' + companionClip(key, strip) + '"/>');
+      parts.push('<path d="' + d + '" fill="none" stroke="#1f77b4" stroke-width="1.5" clip-path="' + companionClip(key, pl.strip) + '"/>');
     }
     // What the strip shows: the fixed coordinate the cursor sits on.
     var caption = (isX ? 'y = ' : 'x = ') + fmt(slice.fixedCoord);
@@ -1773,6 +1793,69 @@ _JS_SOURCE = r"""
       ? '<line x1="' + o.x + '" y1="' + (o.y + s) + '" x2="' + (o.x + o.w) + '" y2="' + (o.y + s) + '" stroke="' + sepCol + '"/>'
       : '<line x1="' + (o.x + s) + '" y1="' + o.y + '" x2="' + (o.x + s) + '" y2="' + (o.y + o.h) + '" stroke="' + sepCol + '"/>');
     st.compGroup.innerHTML = parts.join('');
+  }
+
+  // ---- Point Picking on the companion strip --------------------------------
+  // A pin on the profile is a {kind: 'slice', axes} anchor whose index is a
+  // sample along the shared axis. It's re-resolved from the *current* slice
+  // every time (pan/zoom, slider step), so it rides the line as it moves and
+  // reports the value the slice holds now; arrow keys step along it. Only the
+  // companion strip is pickable this way -- the in-place 1-D view isn't wired
+  // up -- and a pin is dropped when its strip goes away.
+  function slicePinPoint(key, j) {
+    var st = SLICE_STATE[key];
+    if (!st || !st.compGroup || typeof st.index !== 'number') return null;
+    var slice = computeSliceByIndex(key, SLICE_ORIENTATION, st.index);
+    var pl = slice && companionPlacer(key, slice);
+    if (!pl) return null;
+    j = Math.max(0, Math.min(slice.xs.length - 1, j));
+    var q = pl.at(j);
+    if (!q) return null;
+    var isX = SLICE_ORIENTATION === 'x';
+    var entry = meshEntryForAxes(key) || {};
+    var name = entry.name || 'z';
+    var x = isX ? slice.xs[j] : slice.fixedCoord, y = isX ? slice.fixedCoord : slice.xs[j];
+    return { px: q.px, py: q.py, index: j, x: x, y: y, z: slice.ys[j], name: name,
+             label: 'x=' + fmt(x) + ', y=' + fmt(y) + ', ' + name + '=' + fmt(slice.ys[j]) };
+  }
+  function sliceStripPick(p) {
+    var best = null;
+    Object.keys(SLICE_STATE).forEach(function (key) {
+      var st = SLICE_STATE[key], o = META[key];
+      if (!st || !st.compGroup || !o || (CUR[key] && CUR[key].pickable === false)) return;
+      var s = companionSize(key), isX = SLICE_ORIENTATION === 'x';
+      var inStrip = isX ? (p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + s)
+                        : (p.x >= o.x && p.x <= o.x + s && p.y >= o.y && p.y <= o.y + o.h);
+      if (!inStrip) return;
+      var slice = computeSliceByIndex(key, SLICE_ORIENTATION, st.index);
+      var pl = slice && companionPlacer(key, slice);
+      if (!pl) return;
+      var m = CUR[key], lo = isX ? o.x : o.y, hi = isX ? o.x + o.w : o.y + o.h;
+      for (var j = 0; j < slice.xs.length; j++) {
+        var q = pl.at(j);
+        if (!q) continue;
+        var along = isX ? q.px : q.py;
+        if (along < lo || along > hi) continue;   // panned/zoomed out of view
+        var d = Math.abs(along - (isX ? p.x : p.y));
+        if (!best || d < best.d) best = { d: d, ref: { kind: 'slice', axes: key, index: j } };
+      }
+    });
+    return best ? best.ref : null;
+  }
+  function relayoutSlicePins(keys) {
+    var pins = document.querySelectorAll('.plotpress-pin[data-kind="slice"]');
+    for (var i = 0; i < pins.length; i++) {
+      var pin = pins[i];
+      if (keys.indexOf(String(pin.dataset.axes)) === -1) continue;
+      var a = resolve(pinAnchor(pin), +pin.dataset.index);
+      if (a) layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
+    }
+  }
+  function removeSlicePins(key) {
+    var pins = document.querySelectorAll('.plotpress-pin[data-kind="slice"]');
+    for (var i = 0; i < pins.length; i++) {
+      if (key === undefined || String(pins[i].dataset.axes) === String(key)) pins[i].remove();
+    }
   }
 
   // The one render entry point, called by a slider's own setIndex()/
@@ -1942,6 +2025,7 @@ _JS_SOURCE = r"""
       api.i = (i % n + n) % n;
       input.value = api.i;
       keys.forEach(function (k) { renderMeshOrSlice(k, api.i); });
+      relayoutSlicePins(keys);
       val.textContent = label + ' = ' + fmt(values[api.i]);
     };
     api.external = applyIndex;   // set from a linked peer, no re-propagation
@@ -2049,6 +2133,7 @@ _JS_SOURCE = r"""
   // buildSliceSliders() (about to replace them) and the "Enable Slice"
   // checkbox's own off handler (which tears down and stops there).
   function teardownSliceSliders() {
+    removeSlicePins();
     Object.keys(SLICE_SLIDERS).forEach(function (k) {
       var s = SLICE_SLIDERS[k];
       if (s.box.parentNode) s.box.parentNode.removeChild(s.box);
@@ -3461,6 +3546,7 @@ _JS_SOURCE = r"""
       return { px: c.cx + 0.6 * c.R * Math.cos(am),
                py: c.cy - 0.6 * c.R * Math.sin(am), index: idx, label: lbl };
     }
+    if (anchor.kind === 'slice') return slicePinPoint(anchor.axes, index);
     if (anchor.kind === 'mesh') {
       var mesh = PICK[anchor.axes] && PICK[anchor.axes].meshes[anchor.mesh];
       if (!mesh) return null;
@@ -3517,6 +3603,17 @@ _JS_SOURCE = r"""
       var n = PICK[anchor.axes].pies[anchor.pie].fracs.length;
       return index + ((dir === 'right' || dir === 'up') ? 1 : -1) + n;  // resolve wraps
     }
+    if (anchor.kind === 'slice') {
+      // Along the profile only: one step per sample in the direction the
+      // shared axis runs; the other arrows have nothing to step to.
+      var isXs = SLICE_ORIENTATION === 'x';
+      var alongKeys = isXs ? (dir === 'right' || dir === 'left') : (dir === 'up' || dir === 'down');
+      if (!alongKeys) return index;
+      var am2 = META[anchor.axes] || {};
+      var flipped = isXs ? am2.xinv : am2.yinv;
+      var forward = isXs ? dir === 'right' : dir === 'up';
+      return index + ((forward ? 1 : -1) * (flipped ? -1 : 1));
+    }
     if (anchor.kind === 'mesh' || anchor.kind === 'meshframe') {
       var mesh = anchor.kind === 'mesh' ? PICK[anchor.axes].meshes[anchor.mesh]
                                         : FRAME_INDEX[anchor.id].entry;
@@ -3547,6 +3644,7 @@ _JS_SOURCE = r"""
     if (k === 'meshframe') return { kind: 'meshframe', axes: pin.dataset.axes,
                                     id: pin.dataset.frameId, unit: pin.dataset.frameUnit };
     if (k === 'mesh') return { kind: 'mesh', axes: pin.dataset.axes, mesh: +pin.dataset.mesh };
+    if (k === 'slice') return { kind: 'slice', axes: pin.dataset.axes };
     if (k === 'pie') return { kind: 'pie', axes: pin.dataset.axes, pie: +pin.dataset.pie };
     return { kind: 'points', axes: pin.dataset.axes, series: +pin.dataset.series,
              ptype: pin.dataset.ptype };
@@ -3572,6 +3670,8 @@ _JS_SOURCE = r"""
       g.dataset.axes = anchor.axes; g.dataset.mesh = anchor.mesh;
     } else if (anchor.kind === 'pie') {
       g.dataset.axes = anchor.axes; g.dataset.pie = anchor.pie;
+    } else if (anchor.kind === 'slice') {
+      g.dataset.axes = anchor.axes;
     } else {
       g.dataset.axes = anchor.axes; g.dataset.series = anchor.series;
       g.dataset.ptype = anchor.ptype;
@@ -3615,6 +3715,10 @@ _JS_SOURCE = r"""
       rec.axes = +anchor.axes; rec.kind = 'mesh'; rec.index = idx;
       rec.x = cc.x; rec.y = cc.y;
       rec[mesh.name || 'z'] = mesh.z[idx];
+    } else if (anchor && anchor.kind === 'slice') {
+      var sp = slicePinPoint(anchor.axes, +pin.dataset.index);
+      rec.axes = +anchor.axes; rec.kind = 'slice'; rec.index = +pin.dataset.index;
+      if (sp) { rec.x = sp.x; rec.y = sp.y; rec[sp.name] = sp.z; }
     } else if (anchor && anchor.kind === 'meshframe') {
       var mesh = FRAME_INDEX[anchor.id].entry, idx = +pin.dataset.index;
       var f = CURRENT_FRAME[mesh.unit] || 0;
@@ -4068,7 +4172,13 @@ _JS_SOURCE = r"""
   // fallback -- a pie axes only has its wedges to pick, so a click that
   // misses every one of them is a genuine miss, not "no data nearby".
   function resolvePickTarget(e) {
-    var p = toUser(e), a = pickableAxesAt(p);
+    var p = toUser(e);
+    // A click on a Slice companion strip -- outside every axes' own (shrunken)
+    // heatmap rect, so nothing below would ever see it -- picks a profile
+    // sample.
+    var stripHit = sliceStripPick(p);
+    if (stripHit) return stripHit;
+    var a = pickableAxesAt(p);
     if (!a) return null;
     var m = a.m;
     var np = nearestPoint(a.i, m, p);

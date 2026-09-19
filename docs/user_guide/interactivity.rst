@@ -60,7 +60,12 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     to its left for a Y slice -- so both are visible at once, aligned
     through every pan and zoom ("Show companion panel"). The heatmap gives up
     30% of its axes to the strip (``panel_size``). Ask for both options and the
-    menu offers both views, one at a time. Axes with fixed ticks
+    menu offers both views, one at a time. **Point Picking works on the strip:**
+    click anywhere along the profile to pin the nearest sample, which reads
+    ``x``, ``y`` and the value there. The pin rides the line through pan, zoom,
+    and slider steps (reporting the value the slice holds *now*), arrow keys
+    step it along the profile, and Extract returns it as a ``"slice"`` record.
+    Pins on the in-place "Show slice view" profile aren't supported. Axes with fixed ticks
     (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep
     the plain cursor and slider, since their ticks can't be redrawn around a
     shrunken heatmap.
