@@ -127,7 +127,7 @@ def shared_qt_widget():
     app = spqt._QT.QApplication.instance() or spqt._QT.QApplication(sys.argv)
     fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(16, dtype=float).reshape(4, 4))
-    w = spqt.PlotPressWidget(fig, options=["annotation-pointpicking"])
+    w = spqt.PlotPressWidget(fig)
     _wait_for_load(w.view, app)
     yield spqt, app, w
     w.close()

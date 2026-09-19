@@ -2198,14 +2198,16 @@ class Figure:
                 extra_js: str = None, options=None) -> str:
         """Serialize to a self-contained HTML document.
 
-        ``options`` opts extra toolbar menus in, by name -- every page gets
-        the baseline (Pan/Zoom, Home, Fit Width, Axes, File) and nothing
-        else unless asked: ``"annotation-pointpicking"`` adds the Point
-        Picking and Annotate menus; ``"slice"`` adds the Slice menu (shown
-        only when the figure has a pcolormesh/imshow to slice). For example
-        ``options=["annotation-pointpicking", "slice"]``. The embedded data
-        payloads are the same either way, so :func:`load_data` reads any
-        interactive HTML back regardless of which tools it was saved with.
+        ``options`` picks which extra toolbar menus the page gets, by name.
+        Every page has the baseline (Pan/Zoom, Home, Fit Width, Axes, File);
+        ``"annotation-pointpicking"`` adds the Point Picking and Annotate
+        menus and ``"slice"`` adds the Slice menu (shown only when the
+        figure has a pcolormesh/imshow to slice). The default,
+        ``None``, is ``["annotation-pointpicking"]``; pass ``[]`` for the
+        baseline alone, or e.g. ``["annotation-pointpicking", "slice"]``
+        to add Slice. The embedded data payloads are the same either way,
+        so :func:`load_data` reads any interactive HTML back regardless of
+        which tools it was saved with.
 
         ``standalone`` (default) centers the figure at its natural pixel size
         on a full-height page -- right for a file opened directly in its own
@@ -3289,20 +3291,25 @@ def _axes_summary_lines(ax, gaps=None):
 #: Optional toolbar add-ons for interactive HTML (``options=`` on
 #: :meth:`Figure.to_html`/``save``/``show``...). The baseline toolbar --
 #: Pan/Zoom, Home, Fit Width, Axes, File -- is always present; each name here
-#: opts a whole extra menu in. Nothing is on by default, so a page only
-#: carries the tools its author asked for.
+#: adds a whole extra menu. Point picking/annotation is the default add-on
+#: (it is what interactive output has always meant); everything newer is
+#: opt-in so existing figures don't change.
 _INTERACTIVE_OPTIONS = ("annotation-pointpicking", "slice")
+_DEFAULT_OPTIONS = ("annotation-pointpicking",)
 
 
 def _resolve_options(options, wait_extract=False):
     """Validate ``options=`` and return it as a de-duplicated list.
+
+    ``None`` means the default add-ons; ``[]`` means the baseline toolbar
+    only.
 
     ``wait_extract`` (``show(wait_for_extract=True)``) is a point-picking
     session by definition, so it turns that add-on on itself rather than
     blocking forever on an Extract button that isn't there.
     """
     if options is None:
-        resolved = []
+        resolved = list(_DEFAULT_OPTIONS)
     elif isinstance(options, str):
         raise TypeError(
             f"options= takes a list of names, not the bare string {options!r} "

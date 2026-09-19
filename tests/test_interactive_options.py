@@ -35,8 +35,12 @@ def _emitted_options(html):
     return json.loads(m.group(1))
 
 
-def test_default_is_baseline_only():
-    assert _emitted_options(_line_fig().to_html()) == []
+def test_default_keeps_point_picking_and_annotate():
+    assert _emitted_options(_line_fig().to_html()) == ["annotation-pointpicking"]
+
+
+def test_empty_options_is_the_baseline_alone():
+    assert _emitted_options(_line_fig().to_html(options=[])) == []
 
 
 def test_options_are_emitted_in_order_without_duplicates():
@@ -58,7 +62,7 @@ def test_bare_string_is_rejected_rather_than_split_into_letters():
 def test_wait_for_extract_turns_point_picking_on():
     # show(wait_for_extract=True) blocks until the user clicks Extract, which
     # lives in the Point Picking menu -- without it there'd be nothing to click.
-    html = _line_fig().to_html(wait_extract=True)
+    html = _line_fig().to_html(options=[], wait_extract=True)
     assert _emitted_options(html) == ["annotation-pointpicking"]
 
 
@@ -83,7 +87,7 @@ def test_data_payloads_do_not_depend_on_options(tmp_path):
     # a baseline-only page has to carry the same data as a fully-loaded one.
     fig = _line_fig()
     baseline, full = tmp_path / "b.html", tmp_path / "f.html"
-    fig.save(str(baseline), interactive=True)
+    fig.save(str(baseline), interactive=True, options=[])
     fig.save(str(full), interactive=True,
              options=["annotation-pointpicking", "slice"])
     for p in (baseline, full):
@@ -121,12 +125,20 @@ def _all_button_text(page, tmp_path, fig, **kw):
 
 
 @pytest.mark.browser
-def test_baseline_has_no_optional_menus(page, tmp_path):
-    labels = _all_button_text(page, tmp_path, _mesh_fig())
+def test_empty_options_has_no_optional_menus(page, tmp_path):
+    labels = _all_button_text(page, tmp_path, _mesh_fig(), options=[])
     for name in BASELINE:
         assert name in labels
     for absent in ("Point Picking", "Annotate", "Slice", "Extract"):
         assert absent not in labels
+
+
+@pytest.mark.browser
+def test_default_is_baseline_plus_point_picking_no_slice(page, tmp_path):
+    labels = _all_button_text(page, tmp_path, _mesh_fig())
+    for name in BASELINE + ["Point Picking", "Annotate"]:
+        assert name in labels
+    assert "Slice" not in labels
 
 
 @pytest.mark.browser

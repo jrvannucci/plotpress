@@ -23,16 +23,10 @@ anywhere in the source.
   meshes are excluded (no single row/column to slice).
 - **Modular toolbar via `options=`.** `to_html`/`save`/`show`/
   `show_in_jupyter`/`Report.save` (and `PlotPressWidget`) take
-  `options=[...]`: `"annotation-pointpicking"` adds Point Picking and
-  Annotate, `"slice"` adds Slice.
-
-### Changed
-
-- **Breaking: Point Picking and Annotate are no longer on by default.**
-  Interactive pages now get only the baseline toolbar (Pan/Zoom, Home, Fit
-  Width, Axes, File); pass `options=["annotation-pointpicking"]` to restore
-  them. The embedded data payloads are unchanged, so `load_data()` and
-  Extract-based workflows read the same data either way.
+  `options=[...]`. Every page keeps the baseline (Pan/Zoom, Home, Fit Width,
+  Axes, File); `"annotation-pointpicking"` (on by default, so nothing
+  changes for existing code) adds Point Picking and Annotate, and `"slice"`
+  adds Slice. Pass `options=[]` for the baseline alone.
 
 ## [0.39.0] - 2026-09-13
 

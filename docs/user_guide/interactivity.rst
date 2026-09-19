@@ -41,20 +41,23 @@ Choosing your tools
 -------------------
 
 Every interactive page gets the baseline toolbar -- Pan/Zoom, Home, Fit
-Width, **Axes**, and **File** -- and nothing else. Anything beyond that is
-opt-in, by name, through ``options=`` on ``to_html``, ``save``, ``show``,
-``show_in_jupyter``, and ``Report.save``::
+Width, **Axes**, and **File** -- plus Point Picking and Annotate by default.
+Anything else is opt-in, and you can trim the defaults too, by name through
+``options=`` on ``to_html``, ``save``, ``show``, ``show_in_jupyter``, and
+``Report.save``::
 
-    fig.save("fig.html", interactive=True)                       # baseline
-    fig.save("fig.html", interactive=True,
-             options=["annotation-pointpicking"])                # + Point Picking, Annotate
+    fig.save("fig.html", interactive=True)                       # baseline + Point Picking/Annotate
+    fig.save("fig.html", interactive=True, options=[])           # baseline only
     fig.save("fig.html", interactive=True,
              options=["annotation-pointpicking", "slice"])       # + Slice
+
+Passing ``options`` replaces the default list, so include
+``"annotation-pointpicking"`` whenever you still want it.
 
 ``"annotation-pointpicking"``
     The **Point Picking** and **Annotate** menus, including Extract.
     ``show(wait_for_extract=True)`` switches this on by itself, since it
-    blocks until you click Extract.
+    blocks until you click Extract. On by default.
 
 ``"slice"``
     The **Slice** menu -- scrub a row or column of a pcolormesh/imshow as a
