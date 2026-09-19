@@ -1350,6 +1350,14 @@ _JS_SOURCE = r"""
   // above, which really is only ever as wide as naturalW/zoomScale say.
   document.body.insertBefore(menubar, document.body.firstChild);
 
+  // The browser's own crosshair is drawn in one color, which vanishes against a
+  // white figure (or a dark one); this draws a black cross with a white halo, so
+  // it reads on either.
+  var SLICE_SELECT_CURSOR = 'url("data:image/svg+xml;utf8,' +
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'>" +
+    "<path d='M12 2v20M2 12h20' stroke='white' stroke-width='4'/>" +
+    "<path d='M12 2v20M2 12h20' stroke='black' stroke-width='1.5'/></svg>" +
+    '") 12 12, crosshair';
   function setMode(m) {
     // Cancel anything in progress and clear transient state.
     down = null; removeRubber();
@@ -1378,7 +1386,8 @@ _JS_SOURCE = r"""
     var custom = mode && CUSTOM_MODES[mode];
     svg.style.cursor =
       mode === 'span' ? 'grab' :
-      (mode === 'zoom' || mode === 'slice-select') ? 'crosshair' :
+      mode === 'zoom' ? 'crosshair' :
+      mode === 'slice-select' ? SLICE_SELECT_CURSOR :
       mode === 'magnify' ? 'zoom-in' :
       isAnnotateMode(mode) ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';

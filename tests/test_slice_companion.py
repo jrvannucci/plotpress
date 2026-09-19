@@ -1042,3 +1042,14 @@ def test_chosen_axes_are_outlined_without_a_color_tint(page, tmp_path):
     _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0]]}})
     fills = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slice-select rect')).map(r => r.getAttribute('fill'))")
     assert fills == ["none"]
+
+
+@pytest.mark.browser
+def test_choose_mode_uses_a_cursor_that_shows_on_white(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": []}})
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button'))
+        .find(b => b.textContent === 'Choose axes on figure').click()""")
+    cursor = page.evaluate("document.getElementById('plotpress-svg').style.cursor")
+    # A two-tone cross (white halo + black stroke), with the plain crosshair only as fallback.
+    assert "data:image/svg+xml" in cursor and "crosshair" in cursor
