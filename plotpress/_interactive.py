@@ -890,6 +890,9 @@ _JS_SOURCE = r"""
   // heatmaps: no slider, cursor or strip, and not part of any link group.
   var SLICE_SCOPE = Array.isArray(SLICE_CFG.axes) ? 'selected' : 'all';
   var SLICE_SELECTED = {};   // axes key -> true
+  // Set by the menu code below; declared here, before it, because a `var x = null`
+  // further down the file would run *after* that assignment and wipe it.
+  var scopeStatusEl = null;
   if (Array.isArray(SLICE_CFG.axes)) {
     SLICE_CFG.axes.forEach(function (k) { SLICE_SELECTED[String(k)] = true; });
   }
@@ -1129,6 +1132,10 @@ _JS_SOURCE = r"""
     sliceMenu.appendChild(scopeStatusEl);
     var chooseBtn = document.createElement('button');
     chooseBtn.textContent = 'Choose axes on figure';
+    // Joins the same highlight the other mode buttons get while their tool is
+    // selected (setMode toggles .active on every button carrying its mode).
+    chooseBtn.dataset.mode = 'slice-select';
+    buttons.push(chooseBtn);
     chooseBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       if (SLICE_SCOPE !== 'selected') return;
@@ -1333,7 +1340,8 @@ _JS_SOURCE = r"""
 
   function modeLabel(m) {
     if (!m) return 'No tool active';
-    if (m === 'slice-select') return 'Choose slice axes';
+    // Escape leaves this mode (see the keydown handler) -- said right in the label.
+    if (m === 'slice-select') return 'Choose slice axes · Esc to finish';
     for (var i = 0; i < TOOLS.length; i++) {
       if (TOOLS[i].mode === m) return TOOLS[i].label;
     }
@@ -1624,7 +1632,6 @@ _JS_SOURCE = r"""
     var keys = Object.keys(SLICE_AXES);
     return SLICE_SCOPE === 'selected' ? keys.filter(function (k) { return SLICE_SELECTED[k]; }) : keys;
   }
-  var scopeStatusEl = null;
   function updateScopeStatus() {
     if (!scopeStatusEl) return;
     var n = Object.keys(SLICE_SELECTED).filter(function (k) { return SLICE_AXES[k]; }).length;
@@ -4986,6 +4993,10 @@ _JS_SOURCE = r"""
       // that.
       if (menuNodes.some(function (m) { return m.classList.contains('open'); })) {
         closeAllMenus();
+      } else if (mode === 'slice-select') {
+        // Choosing Slice axes is a pick-only mode with nothing of the user's to
+        // clear: Escape just leaves it, keeping their pins.
+        setMode(null);
       } else {
         // Also deselects the active tool (if any), not just clearAllPins()
         // -- the only way back to "no tool active" for a keyboard-only

@@ -1057,3 +1057,64 @@ def test_choose_mode_uses_a_cursor_that_shows_on_white(page, tmp_path):
     cursor = page.evaluate("document.getElementById('plotpress-svg').style.cursor")
     # A two-tone cross (white halo + black stroke), with the plain crosshair only as fallback.
     assert "data:image/svg+xml" in cursor and "crosshair" in cursor
+
+
+def _mode_text(page):
+    return page.evaluate("document.querySelector('.plotpress-mode-indicator').textContent.trim()")
+
+
+def _menu_button(page, label):
+    return page.evaluate("""(label) => { const b = Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown button')).find(b => b.textContent === label);
+        if (!b) return false; b.click(); return true; }""", label)
+
+
+@pytest.mark.browser
+def test_escape_leaves_choose_mode_and_keeps_pins(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    assert len(_pins(page)) == 1
+    _scope_radio(page, "Selected axes")                       # now choosing
+    assert _mode_text(page).startswith("Choose slice axes")
+    page.keyboard.press("Escape")
+    assert _mode_text(page) == "No tool active"
+    assert len(_pins(page)) == 1                              # not cleared by leaving choose mode
+
+
+@pytest.mark.browser
+def test_choose_mode_label_says_escape_finishes_it(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": []}})
+    _menu_button(page, "Choose axes on figure")
+    assert "Esc" in _mode_text(page)                          # the hint is in the label itself
+    page.keyboard.press("Escape")
+    assert _mode_text(page) == "No tool active"
+
+
+@pytest.mark.browser
+def test_the_status_line_tracks_the_selection(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": []}})
+    status = lambda: page.evaluate("document.querySelector('.plotpress-menu-note').textContent")
+    assert status().startswith("None selected")
+    _menu_button(page, "Choose axes on figure")
+    box = page.evaluate("""() => { const r = document.querySelector('.plotpress-mesh').getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2]; }""")
+    page.mouse.click(*box)
+    assert status().startswith("1 selected")                  # updates after the first click too
+
+
+@pytest.mark.browser
+def test_choose_axes_button_is_highlighted_while_choosing(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": []}})
+    is_active = lambda: page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown button')).find(b => b.textContent === 'Choose axes on figure')
+        .classList.contains('active')""")
+    assert not is_active()
+    _menu_button(page, "Choose axes on figure")
+    assert is_active()                                        # same highlight as Point Picking/Annotate
+    page.keyboard.press("Escape")
+    assert not is_active()
