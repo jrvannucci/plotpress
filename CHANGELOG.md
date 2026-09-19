@@ -43,7 +43,7 @@ anywhere in the source.
   when the strip is above it, so the two stay aligned.
 - **Choose which axes to slice.** The Slice menu has an "Axes to slice" radio --
   All axes or Selected axes -- where selecting axes is done by clicking them on the
-  figure (outlined in blue); only the chosen axes get a slider, cursor and strip,
+  figure; only the chosen axes get a slider, cursor and strip,
   and "Link all matching axes" couples just those. The `axes` startup setting takes
   the axes (or indices) to start with.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in

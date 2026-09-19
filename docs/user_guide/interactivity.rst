@@ -86,8 +86,8 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
 **Choosing which axes to slice.** A pair of radios under "Axes to slice" picks
 between **All axes** and **Selected axes**. Choosing "Selected axes" drops into a
 click-to-choose mode: click a mesh's axes on the figure to add or remove it
-(chosen axes get a blue outline; the others stay plain heatmaps with no slider,
-cursor, or strip, and only the chosen ones are linked together by "Link all
+(the ones still choosable are dashed while you choose; the others stay plain
+heatmaps with no slider, cursor, or strip, and only the chosen ones are linked together by "Link all
 matching axes"). "Choose axes on figure" re-enters that mode later, and adding
 or removing an axes leaves the slider where it was.
 

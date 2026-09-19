@@ -1632,32 +1632,26 @@ _JS_SOURCE = r"""
       : n ? n + ' selected \u2014 click an axes to add or remove it'
           : 'None selected \u2014 click axes on the figure';
   }
-  // Outlines the chosen axes (solid, blue) -- and, while choosing, the
-  // choosable ones (dashed) -- in the outer <svg>, over the axes' own
-  // original rect, so the selection stays visible in every view.
+  // While choosing, dashed-outlines the axes that are still choosable, so it's
+  // clear what can be clicked. A chosen axes needs no marker of its own: it is
+  // the one whose frame now holds the slice (strip, cursor or profile).
   function drawSliceSelection() {
     var old = svg.querySelector('g.plotpress-slice-select');
     if (old) old.remove();
     // setMode(null) runs at startup, before any of the Slice state exists.
-    if (SLICE_SCOPE !== 'selected' || !sliceMenuNeeded) return;
+    if (SLICE_SCOPE !== 'selected' || !sliceMenuNeeded || mode !== 'slice-select') return;
     var g = document.createElementNS(SVGNS, 'g');
     g.setAttribute('class', 'plotpress-slice-select');
     g.setAttribute('pointer-events', 'none');
-    var choosing = mode === 'slice-select';
     Object.keys(SLICE_AXES).forEach(function (k) {
-      var o = META[k], on = !!SLICE_SELECTED[k];
-      if (!o || (!on && !choosing)) return;
+      var o = META[k];
+      if (!o || SLICE_SELECTED[k]) return;
       var r = document.createElementNS(SVGNS, 'rect');
       r.setAttribute('x', o.x + 1); r.setAttribute('y', o.y + 1);
       r.setAttribute('width', o.w - 2); r.setAttribute('height', o.h - 2);
-      if (on) {
-        r.setAttribute('fill', 'none');   // outline only -- no tint over the plot
-        r.setAttribute('stroke', '#2b6cff'); r.setAttribute('stroke-width', 2);
-      } else {
-        r.setAttribute('fill', 'none');
-        r.setAttribute('stroke', '#9ca3af'); r.setAttribute('stroke-width', 1);
-        r.setAttribute('stroke-dasharray', '4,3');
-      }
+      r.setAttribute('fill', 'none');
+      r.setAttribute('stroke', '#9ca3af'); r.setAttribute('stroke-width', 1);
+      r.setAttribute('stroke-dasharray', '4,3');
       g.appendChild(r);
     });
     svg.appendChild(g);

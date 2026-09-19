@@ -979,8 +979,8 @@ def test_axes_setting_slices_only_the_chosen_axes(page, tmp_path):
     full = page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')")
     _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0], axs[2]]}})
     assert page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')") == pytest.approx(full)
-    # the chosen ones are outlined
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select rect').length") == 2
+    # no separate marker for the chosen ones: their frame now holds the slice
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select').length") == 0
 
 
 @pytest.mark.browser
@@ -998,7 +998,8 @@ def test_choosing_axes_by_clicking_them(page, tmp_path):
     x0, y0, x1, y1 = rects[1]
     page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)         # choose the middle axes
     assert _strips(page) == 1
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select rect[stroke=\"#2b6cff\"]').length") == 1
+    # only the still-choosable axes are outlined (dashed), and only while choosing
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select rect').length") == 2
     x0, y0, x1, y1 = rects[2]
     page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)         # and the last
     assert _strips(page) == 2
@@ -1037,11 +1038,14 @@ def test_choosing_another_axes_keeps_the_slider_where_it_was(page, tmp_path):
 
 
 @pytest.mark.browser
-def test_chosen_axes_are_outlined_without_a_color_tint(page, tmp_path):
+def test_chosen_axes_have_no_blue_outline_or_tint(page, tmp_path):
     fig, axs = _row_fig()
     _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0]]}})
-    fills = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slice-select rect')).map(r => r.getAttribute('fill'))")
-    assert fills == ["none"]
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select').length") == 0
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button'))
+        .find(b => b.textContent === 'Choose axes on figure').click()""")
+    strokes = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slice-select rect')).map(r => [r.getAttribute('stroke'), r.getAttribute('fill')])")
+    assert strokes == [["#9ca3af", "none"], ["#9ca3af", "none"]]     # the two unchosen, faint and dashed
 
 
 @pytest.mark.browser
