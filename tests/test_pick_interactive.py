@@ -28,6 +28,10 @@ pytestmark = pytest.mark.browser
 HARNESS = (pathlib.Path(__file__).parent / "pick_harness.js").read_text()
 
 
+# These tests drive Point Picking/Annotate, which are opt-in add-ons.
+PICK_OPTIONS = ["annotation-pointpicking"]
+
+
 @pytest.fixture(scope="module")
 def page():
     """A headless Chromium page, shared across cases (launching one is slow)."""
@@ -51,7 +55,7 @@ def _run(page, tmp_path, case):
     """Load the figure and return the harness's per-target results."""
     # Unmodified to_html() output -- the tests drive exactly what users get.
     path = tmp_path / ("%s.html" % case.name)
-    path.write_text(case.fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(case.fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     errors = []
@@ -90,7 +94,7 @@ def test_click_on_empty_space_makes_no_stray_marker(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     path = tmp_path / "empty.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     n = page.evaluate(
@@ -123,13 +127,13 @@ def test_marker_radius_scales_with_its_own_axes_size(page, tmp_path):
     fig_small, ax = plotpress.subplots(figsize=(6, 4.8))
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path_small = tmp_path / "marker_size_single_axes.html"
-    path_small.write_text(fig_small.to_html(interactive=True), encoding="utf-8")
+    path_small.write_text(fig_small.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
 
     fig_grid, axes = plotpress.subplots(10, 10, figsize=(6, 4.8))
     for a in np.asarray(axes).ravel():
         a.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path_grid = tmp_path / "marker_size_10x10_grid.html"
-    path_grid.write_text(fig_grid.to_html(interactive=True), encoding="utf-8")
+    path_grid.write_text(fig_grid.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
 
     def picked_radius(path, fig, ax_index=0):
         page.goto(path.as_uri())
@@ -181,7 +185,7 @@ def test_marker_stays_a_constant_screen_size_across_magnify_zoom(page, tmp_path)
         ax.tick_params(labelsize=4)
     fig.tight_layout()
     path = tmp_path / "marker_constant_size_under_magnify.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 18, 3.0, 5.0)
@@ -236,7 +240,7 @@ def test_marker_shrinks_with_the_figure_when_zoomed_out(page, tmp_path):
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "marker_shrinks_on_zoom_out.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 5, 1.0, 1.0)
@@ -312,7 +316,7 @@ def test_mesh_pick_reads_correct_value_through_float16_encoding(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.pcolormesh(np.arange(nx + 1, dtype=float), np.arange(ny + 1, dtype=float), Z)
 
-    html = fig.to_html(interactive=True, pick_precision=2)
+    html = fig.to_html(interactive=True, options=PICK_OPTIONS, pick_precision=2)
     assert '"__f16__"' in html   # sanity: this figure actually exercises the tier
     path = tmp_path / "float16_mesh.html"
     path.write_text(html, encoding="utf-8")
@@ -375,7 +379,7 @@ def test_downsampled_mesh_pick_reads_correct_value(page, tmp_path):
     assert dny * dnx <= CAP < ny * nx   # sanity: this really downsamples
 
     with pytest.warns(UserWarning, match="coarser than what's drawn"):
-        html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+        html = fig.to_html(interactive=True, options=PICK_OPTIONS, pick_max_mesh_cells=CAP)
     path = tmp_path / "downsampled_mesh.html"
     path.write_text(html, encoding="utf-8")
     page.goto(path.as_uri())
@@ -440,7 +444,7 @@ def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
     assert "xc" in pd and "yc" in pd
 
     with pytest.warns(UserWarning, match="coarser than what's drawn"):
-        html = fig.to_html(interactive=True, pick_max_mesh_cells=CAP)
+        html = fig.to_html(interactive=True, options=PICK_OPTIONS, pick_max_mesh_cells=CAP)
     path = tmp_path / "downsampled_curvilinear_mesh.html"
     path.write_text(html, encoding="utf-8")
     page.goto(path.as_uri())
@@ -506,7 +510,7 @@ def test_vector_mesh_thin_cell_is_clickable_and_reads_its_value(page, tmp_path, 
     assert mesh.vectorized   # sanity: this case must actually exercise vector cells
 
     path = tmp_path / ("vector_mesh_thin_cell_%s.html" % rasterized)
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ccx, ccy = (edges[0] + edges[1]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 0)
@@ -527,7 +531,7 @@ def test_vector_mesh_stays_pickable_after_zoom(page, tmp_path):
     fig, ax, mesh, edges, y_edges, field = _extreme_mesh(rasterized=None)
     assert mesh.vectorized
     path = tmp_path / "vector_mesh_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     # Zoom into a narrow window around the thin cell.
@@ -565,7 +569,7 @@ def test_mesh_click_away_from_an_overlaid_line_still_picks_the_mesh(page, tmp_pa
     # rotor disc or a threshold marker drawn across the mesh.
     ax.plot([1.0, 1.0], [2.0, 3.0], color="cyan", linewidth=2.5)
     path = tmp_path / "mesh_line_overlay.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     # Well inside a mesh cell (col 3, row 0), several cells away from the line.
@@ -606,7 +610,7 @@ def test_mesh_override_radius_stays_a_constant_screen_size_under_magnify(page, t
     ax.pcolormesh(x, y, Z)
     ax.plot([1.0, 1.0], [2.0, 3.0], color="cyan", linewidth=2.5)
     path = tmp_path / "mesh_override_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     # A data point ~8 root-user-space units from the line's (1.0, 2.0)
@@ -644,7 +648,7 @@ def test_forced_raster_mesh_still_picks_its_surviving_cells(page, tmp_path):
         fig, ax, mesh, edges, y_edges, field = _extreme_mesh(rasterized=True)
     assert not mesh.vectorized
     path = tmp_path / "forced_raster_mesh_pick.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ccx, ccy = (edges[1] + edges[2]) / 2.0, (y_edges[0] + y_edges[1]) / 2.0  # cell (0, 1) -- survives
@@ -676,7 +680,7 @@ def test_pcolormesh_legend_entry_actually_hides_the_mesh(page, tmp_path, rasteri
                       label="mesh")
     ax.legend()
     path = tmp_path / ("mesh_legend_toggle_%s.html" % rasterized)
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     display_before = page.evaluate(
@@ -711,7 +715,7 @@ def test_pick_on_a_late_axes_survives_columnar_meta_with_a_gap(page, tmp_path):
         ax.plot([0.0, 1.0], [0.0, float(i)])
     flat[15].set_visible(False)            # gap in the surviving indices
 
-    html = fig.to_html(interactive=True)
+    html = fig.to_html(interactive=True, options=PICK_OPTIONS)
     assert '"cols"' in html   # sanity: this figure actually exercises it
     path = tmp_path / "many_axes_gap.html"
     path.write_text(html, encoding="utf-8")
@@ -763,7 +767,7 @@ def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
     ax.plot([0.0, 1.0], [0.0, 1.0])
     ax.set_pick_context(note='comma, and "quote"')
     path = tmp_path / "csv_escape.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 1.0, 1.0)
@@ -803,7 +807,7 @@ def test_extracted_record_carries_hidden_label_and_sup_labels(page, tmp_path):
     fig.suptitle("Sweep 4")
 
     path = tmp_path / "hidden_and_sup.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     # the hidden labels really are drawn nowhere
     assert "elapsed (s)" not in path.read_text(encoding="utf-8").split(
         "<script")[0]
@@ -828,7 +832,7 @@ def test_extract_omits_sup_label_fields_when_the_figure_has_none(page, tmp_path)
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "no_sup.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 1.0, 1.0)
@@ -852,7 +856,7 @@ def test_extracted_record_carries_group_title(page, tmp_path):
     axes[1].plot([0.0, 1.0], [1.0, 0.0])
     fig.group("Cluster A", [axes[0]])
     path = tmp_path / "group_field.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux0, uy0 = px(fig, 0, 1.0, 1.0)
@@ -889,7 +893,7 @@ def test_pick_values_key_does_not_clobber_structured_fields(page, tmp_path):
     ax.scatter([0.0, 1.0, 2.0], [0.0, 1.0, 4.0],
                values={"kind": [99.0, 98.0, 97.0], "index": [-1.0, -2.0, -3.0]})
     path = tmp_path / "values_collision.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 1.0, 1.0)
@@ -913,7 +917,7 @@ def test_unpickable_axes_makes_no_marker_but_stays_zoomable(page, tmp_path):
     right.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     right.set_pickable(False)
     path = tmp_path / "unpickable.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     target_px = px(fig, 1, 1.0, 1.0)   # a real, drawn datum on the right axes
@@ -961,7 +965,7 @@ def test_minor_ticks_reposition_on_zoom(page, tmp_path):
     ax.plot([0.0, 10.0], [0.0, 10.0])
     ax.minorticks_on()
     path = tmp_path / "minor_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     before = page.evaluate(
@@ -990,7 +994,7 @@ def test_tick_params_style_survives_zoom(page, tmp_path):
     ax.tick_params(axis="x", color="#d62728", width=3.0)
     ax.tick_params(axis="y", color="#2ca02c")
     path = tmp_path / "tick_style_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     stroke_query = (
@@ -1023,7 +1027,7 @@ def test_grid_alpha_override_survives_a_real_zoom(page, tmp_path):
     ax.grid(True, alpha=0.05)   # far from the Style default (0.6), so a
                                 # silent fallback is unmistakable, not a coincidence
     path = tmp_path / "grid_alpha_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     op_query = (
@@ -1058,7 +1062,7 @@ def test_text_counter_scale_survives_a_real_zoom(page, tmp_path):
     ax.plot([0.0, 10.0], [0.0, 10.0])
     ax.text(5.0, 5.0, "label", fontsize=14, bbox={"facecolor": "yellow"})
     path = tmp_path / "text_counter_scale_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     size_query = (
@@ -1092,7 +1096,7 @@ def test_pie_stays_circular_and_fixed_across_a_real_zoom(page, tmp_path):
     fig, ax = plotpress.subplots(figsize=(5, 5))
     ax.pie([30, 20, 50], labels=["a", "b", "c"])
     path = tmp_path / "pie_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     wedge_query = (
@@ -1152,7 +1156,7 @@ def test_point_pick_large_series_stays_accurate_after_zoom(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot(x, y)
     path = tmp_path / "large_series_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     target_x, target_y = 5.0, float(np.sin(5.0))
@@ -1189,7 +1193,7 @@ def test_wheel_zoom_scales_the_whole_figure_view_centered_on_cursor(page, tmp_pa
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "wheel_whole_figure.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1250,7 +1254,7 @@ def test_plain_wheel_without_ctrl_does_not_zoom_and_is_not_captured(page, tmp_pa
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "wheel_no_ctrl.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1286,7 +1290,7 @@ def test_magnify_mode_zooms_on_a_plain_wheel_no_ctrl_needed(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "magnify_plain_wheel.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1327,7 +1331,7 @@ def test_magnify_mode_drag_pans_the_zoomed_in_whole_figure_view(page, tmp_path):
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "magnify_drag_pan.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1388,7 +1392,7 @@ def test_magnify_mode_double_click_resets_the_whole_figure_view(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "magnify_dblclick_reset.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1427,7 +1431,7 @@ def test_pan_zoom_mode_disables_text_selection_on_the_svg(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "magnify_no_text_select.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     def user_select():
@@ -1462,7 +1466,7 @@ def test_zoomed_in_figure_makes_the_page_natively_scrollable(page, tmp_path):
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "magnify_native_scroll.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1534,7 +1538,7 @@ def test_wheel_zoom_out_can_shrink_past_the_figures_natural_size(page, tmp_path)
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "wheel_zoom_out_past_home.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1584,7 +1588,7 @@ def test_wheel_zoom_works_over_the_page_background_once_shrunk_below_it(page, tm
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "wheel_zoom_over_background.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1645,7 +1649,7 @@ def test_oversized_figure_at_home_has_no_unreachable_left_or_top_margin(page, tm
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "oversized_home_reachable.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1695,7 +1699,7 @@ def test_fit_width_scales_an_oversized_figure_to_the_viewport_width(page, tmp_pa
     for ax in np.asarray(axes).ravel():
         ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "fit_width_oversized.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     before = page.evaluate(
@@ -1733,7 +1737,7 @@ def test_fit_width_zooms_in_a_figure_narrower_than_the_viewport(page, tmp_path):
     fig, ax = plotpress.subplots(figsize=(3.0, 2.5))
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "fit_width_small.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     before = page.evaluate(
@@ -1770,7 +1774,7 @@ def test_tall_figure_group_title_is_not_hidden_behind_the_fixed_toolbar(page, tm
     fig.group("Top Group", list(axes[0, :]), title_position="top")
     fig.tight_layout()
     path = tmp_path / "tall_group_title.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = page.evaluate(
@@ -1860,7 +1864,7 @@ def test_twin_axes_stays_in_sync_when_the_parent_is_panned(page, tmp_path):
     ax2 = ax.twinx()
     ax2.plot([0.0, 10.0], [0.0, 1000.0])
     path = tmp_path / "twin_pan.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = _drag_pan(page, 200, 200, 260, 220)   # drag well inside the shared box
@@ -1880,7 +1884,7 @@ def test_secondary_axis_stays_in_sync_when_the_parent_is_panned(page, tmp_path):
     ax.plot([0.0, 10.0], [0.0, 1.0])
     ax.secondary_xaxis("top")
     path = tmp_path / "secondary_pan.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     out = _drag_pan(page, 200, 200, 260, 220)
@@ -1906,7 +1910,7 @@ def test_double_click_reset_also_resets_a_linked_twin(page, tmp_path):
     ax2 = ax.twinx()
     ax2.plot([0.0, 10.0], [0.0, 1000.0])
     path = tmp_path / "twin_reset.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _drag_pan(page, 200, 200, 260, 220)   # both now panned away from their default view
@@ -1973,7 +1977,7 @@ def test_home_and_reset_all_axes_do_not_clear_pins(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "reset_keeps_pins.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2020,7 +2024,7 @@ def test_escape_closes_an_open_menu_without_touching_pins_or_mode(page, tmp_path
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "escape_closes_menu.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2058,7 +2062,7 @@ def test_escape_with_no_menu_open_clears_pins_and_deselects_the_tool(page, tmp_p
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "escape_deselects.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     markers = _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2085,7 +2089,7 @@ def test_clear_points_and_clear_annotations_are_independently_scoped(page, tmp_p
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "clear_split.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2134,7 +2138,7 @@ def test_legacy_annotate_point_pin_restores_from_an_older_saved_file(page, tmp_p
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
-    html = fig.to_html(interactive=True)
+    html = fig.to_html(interactive=True, options=PICK_OPTIONS)
 
     # A real anchored pin's dataset (kind/axes/series/ptype/index) is the
     # part that's genuinely hard to hand-author correctly -- captured from an
@@ -2194,7 +2198,7 @@ def test_annotation_click_warns_once_when_prompt_is_blocked(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "prompt_blocked.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     # Simulate the blocked-dialog environment directly, rather than relying
@@ -2258,7 +2262,7 @@ def test_text_selection_disabled_under_every_active_toolbar_mode(page, tmp_path)
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     path = tmp_path / "text_select.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     for label in ("Axis Span", "Axis Zoom", "Point Picking", "Annotate",
@@ -2282,7 +2286,7 @@ def test_point_pick_pin_has_a_leader_arrow_to_its_marker(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "pin_arrow.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2334,7 +2338,7 @@ def test_leader_arrow_tracks_the_dots_radius_when_selection_changes(page, tmp_pa
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 4.0, 9.0, 16.0])
     path = tmp_path / "arrow_selection_sync.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     def arrow_end_matches_dot(selector):
@@ -2384,7 +2388,7 @@ def test_dragging_a_pins_box_repositions_it_independent_of_its_anchor(page, tmp_
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "drag_box.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2428,7 +2432,7 @@ def test_box_drag_is_scoped_to_the_matching_toolbar_mode(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "drag_scoped.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2478,7 +2482,7 @@ def test_any_annotate_mode_drags_every_note_style(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "drag_any_annotate_mode.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Annotate", 40, 40, prompt_text="plain")
@@ -2532,7 +2536,7 @@ def test_annotate_plain_has_no_dot_or_arrow_and_stays_figure_fixed(page, tmp_pat
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 10.0], [0.0, 5.0])
     path = tmp_path / "annotate_plain.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 3.0, 2.0)   # squarely inside the one axes
@@ -2567,7 +2571,7 @@ def test_annotate_point_never_appears_in_extract(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "annotate_point_extract.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 1.0, 1.0))
@@ -2601,7 +2605,7 @@ def test_dragged_box_offset_survives_pan_and_save_restore(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "drag_persists.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     page.evaluate("() => { delete window.showSaveFilePicker; }")
 
@@ -2650,7 +2654,7 @@ def test_dragged_box_offset_survives_arrow_key_stepping(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 4.0, 9.0, 16.0])
     path = tmp_path / "drag_then_step.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2688,7 +2692,7 @@ def test_pin_stays_constant_size_and_draggable_under_pan_zoom(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0])
     path = tmp_path / "pin_under_navigator_zoom.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Point Picking", *px(fig, 0, 2.0, 4.0))
@@ -2769,7 +2773,7 @@ def test_pcolormesh_frames_pick_reads_the_current_frames_value(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.pcolormesh_frames(frames, cmap="viridis")
     path = tmp_path / "meshframe_pick.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # center of cell (row=1, col=2)
@@ -2802,7 +2806,7 @@ def test_pcolormesh_frames_pick_arrow_key_steps_to_neighboring_cell(page, tmp_pa
     fig, ax = plotpress.subplots()
     ax.pcolormesh_frames(np.stack([Z, Z + 100.0]), cmap="viridis")
     path = tmp_path / "meshframe_step.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
@@ -2834,7 +2838,7 @@ def test_mesh_pick_arrow_key_up_honors_an_inverted_axis(page, tmp_path):
     ax.invert_yaxis()
     ax.invert_xaxis()
     path = tmp_path / "mesh_inverted_step.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 2.5, 1.5)   # cell (row=1, col=2)
@@ -2873,7 +2877,7 @@ def test_pcolormesh_frames_curvilinear_pick_uses_nearest_cell_center(page, tmp_p
     fig, ax = plotpress.subplots(figsize=(6, 5))
     ax.pcolormesh_frames(X, Y, np.stack([Z0, Z0 + 50.0]), cmap="plasma")
     path = tmp_path / "meshframe_curvi.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     i, j = 3, 3
@@ -2896,7 +2900,7 @@ def test_annotate_free_tracks_data_coordinate_inside_an_axes(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 10.0], [0.0, 5.0])
     path = tmp_path / "annotate_free_inside.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 3.0, 2.0)
@@ -2921,7 +2925,7 @@ def test_annotate_free_works_outside_any_axes(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
     path = tmp_path / "annotate_free_outside.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     # (2, 2) in SVG user space is the figure's top-left margin (see
@@ -2946,7 +2950,7 @@ def test_hide_points_and_hide_annotations_toggle_independently(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot(x, y)
     path = tmp_path / "hide_points_and_annotations.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux0, uy0 = px(fig, 0, x[1], y[1])
@@ -3011,7 +3015,7 @@ def test_hide_annotations_toggle_also_hides_static_boxed_text(page, tmp_path):
     ax.annotate("callout", xy=(1, 1), xytext=(2, 6),
                arrowprops={"color": "red"}, bbox={})
     path = tmp_path / "hide_annotations_textbox.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     def read():
@@ -3462,7 +3466,7 @@ def test_save_as_downloads_a_page_that_restores_pins_view_and_toggles(page, tmp_
     ax.plot(x, [0.0, 1.0, 2.0, 3.0], label="lin")
     ax.legend()
     path = tmp_path / "save_roundtrip.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     # The File System Access API's picker needs a real OS dialog Playwright
     # can't drive headlessly; deleting it forces the same plain-download
@@ -3568,7 +3572,7 @@ def test_save_as_restores_all_three_annotate_note_styles_and_their_own_dataset_n
     fig, ax = plotpress.subplots()
     ax.plot(x, [0.0, 1.0, 4.0, 9.0], label="sq")
     path = tmp_path / "note_styles_roundtrip.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     page.evaluate("() => { delete window.showSaveFilePicker; }")
 
@@ -3636,7 +3640,7 @@ def test_save_twice_does_not_duplicate_the_saved_state_payload(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
     path = tmp_path / "save_twice.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     # See test_save_as_downloads_a_page_that_restores_pins_view_and_toggles:
     # the picker needs a real OS dialog Playwright can't drive headlessly.
@@ -3676,7 +3680,7 @@ def test_save_falls_back_to_download_without_file_system_access_api(page, tmp_pa
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
     path = tmp_path / "save_fallback.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     page.evaluate("() => { delete window.showSaveFilePicker; }")
 
@@ -3699,7 +3703,7 @@ def test_builtin_toolbar_is_grouped_into_four_menus_plus_a_standalone_trio(page,
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
     path = tmp_path / "toolbar_grouping.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     standalone = page.evaluate(
@@ -3737,7 +3741,7 @@ def test_extra_js_add_tool_registers_a_button_in_the_real_toolbar(page, tmp_path
       });
     """
     path = tmp_path / "add_tool_action.html"
-    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS, extra_js=extra_js), encoding="utf-8")
     page.goto(path.as_uri())
 
     labels = page.evaluate(
@@ -3776,7 +3780,7 @@ def test_extra_js_add_tool_mode_joins_single_selection_group(page, tmp_path):
       });
     """
     path = tmp_path / "add_tool_mode.html"
-    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS, extra_js=extra_js), encoding="utf-8")
     page.goto(path.as_uri())
 
     _click_mode(page, "Axis Span", *px(fig, 0, 0.5, 0.5))
@@ -3827,7 +3831,7 @@ def test_plotpress_to_data_matches_point_pick_readout(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "to_data_check.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     ux, uy = px(fig, 0, 0.5, 0.5)
@@ -3850,7 +3854,7 @@ def test_plotpress_to_data_returns_null_off_any_axes(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "to_data_null.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
 
     result = page.evaluate("() => window.plotpressToData({x: -1000, y: -1000})")
@@ -3873,7 +3877,7 @@ def test_include_default_js_false_drops_the_toolbar_and_add_tool(page, tmp_path)
     """
     path = tmp_path / "override_mode.html"
     path.write_text(
-        fig.to_html(interactive=True, include_default_js=False,
+        fig.to_html(interactive=True, options=PICK_OPTIONS, include_default_js=False,
                     binary_pick_data=False, extra_js=extra_js),
         encoding="utf-8")
     page.goto(path.as_uri())
@@ -3903,7 +3907,7 @@ def test_extra_js_add_tool_lands_in_its_own_menu_not_a_builtin_one(page, tmp_pat
     ax.plot([0.0, 1.0], [0.0, 1.0])
     extra_js = "window.plotpressAddTool({label: 'Custom', onClick: function () {}});"
     path = tmp_path / "custom_menu.html"
-    path.write_text(fig.to_html(interactive=True, extra_js=extra_js), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS, extra_js=extra_js), encoding="utf-8")
     page.goto(path.as_uri())
 
     labels = _menu_labels(page)
@@ -3923,7 +3927,7 @@ def test_no_custom_menu_created_when_no_custom_tools_are_added(page, tmp_path):
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
     path = tmp_path / "no_custom_menu.html"
-    path.write_text(fig.to_html(interactive=True), encoding="utf-8")
+    path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS), encoding="utf-8")
     page.goto(path.as_uri())
     assert _menu_labels(page) == ["Axes", "Point Picking", "Annotate", "File"]
 
@@ -3951,7 +3955,7 @@ def test_embedded_zoomed_out_figure_centers_in_its_iframe(page, tmp_path):
     fig, ax = plotpress.subplots(figsize=(6.0, 4.0))
     ax.plot([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])
     inner_path = tmp_path / "embedded_inner.html"
-    inner_path.write_text(fig.to_html(interactive=True, standalone=False),
+    inner_path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS, standalone=False),
                           encoding="utf-8")
     outer_path = tmp_path / "embedded_outer.html"
     outer_path.write_text(
@@ -4019,7 +4023,7 @@ def test_embedded_zoomed_out_slider_figure_also_centers(page, tmp_path):
     Y = np.array([np.sin(x + t) for t in np.linspace(0.0, 3.0, 5)])
     ax.plot_frames(x, Y)
     inner_path = tmp_path / "embedded_slider_inner.html"
-    inner_path.write_text(fig.to_html(interactive=True, standalone=False),
+    inner_path.write_text(fig.to_html(interactive=True, options=PICK_OPTIONS, standalone=False),
                           encoding="utf-8")
     outer_path = tmp_path / "embedded_slider_outer.html"
     outer_path.write_text(

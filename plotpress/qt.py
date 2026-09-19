@@ -122,11 +122,14 @@ class PlotPressWidget(_QT.QWidget):
         Decimal places for the embedded point-pick data (see
         :meth:`plotpress.Figure.to_html`). Lower it to shrink mesh-heavy
         figures.
+    options : list of str, optional
+        Extra toolbar menus to include (see :meth:`plotpress.Figure.to_html`).
     """
 
     def __init__(self, figure=None, parent=None, interactive=True,
-                 pick_precision=6):
+                 pick_precision=6, options=None):
         super().__init__(parent)
+        self._options = options
         self._interactive = interactive
         self._pick_precision = pick_precision
         self._temp = None
@@ -147,7 +150,8 @@ class PlotPressWidget(_QT.QWidget):
         if pick_precision is not None:
             self._pick_precision = pick_precision
         html = figure.to_html(interactive=self._interactive,
-                              pick_precision=self._pick_precision)
+                              pick_precision=self._pick_precision,
+                              options=self._options)
         self._load_html(html)
         # A sensible default size from the figure's pixel dimensions.
         w = int(figure.figsize[0] * figure.style.dpi)

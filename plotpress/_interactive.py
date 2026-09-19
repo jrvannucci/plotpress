@@ -740,6 +740,19 @@ _JS_SOURCE = r"""
     { action: 'save', label: 'Save', menu: 'File' },
     { action: 'save-as', label: 'Save As', menu: 'File' },
   ];
+  // Optional add-ons, opted in by name from Python (Figure.to_html's
+  // options=, emitted as window.PLOTPRESS_OPTIONS). The baseline above --
+  // Pan/Zoom, Home, Fit Width, Axes, File -- is unconditional. With no
+  // config at all (this JS loaded some other way) every add-on is on, the
+  // pre-options behavior, rather than silently shipping a bare toolbar.
+  var OPTIONS = window.PLOTPRESS_OPTIONS || ['annotation-pointpicking', 'slice'];
+  function hasOption(name) { return OPTIONS.indexOf(name) !== -1; }
+  var pickingEnabled = hasOption('annotation-pointpicking');
+  if (!pickingEnabled) {
+    TOOLS = TOOLS.filter(function (t) {
+      return t.menu !== 'Point Picking' && t.menu !== 'Annotate';
+    });
+  }
   var pointsHidden = false;
   var annotationsHidden = false;
   // Hide Points/Hide Annotations toggle independently -- one class per kind
@@ -838,7 +851,7 @@ _JS_SOURCE = r"""
       }
     }
   }
-  var sliceMenuNeeded = Object.keys(SLICE_AXES).length > 0;
+  var sliceMenuNeeded = hasOption('slice') && Object.keys(SLICE_AXES).length > 0;
   // Figure-wide Slice state, declared here (not down by the rest of the
   // tool's own implementation) so the menu-building code just below --
   // which reads SLICE_ORIENTATION to set the radios' initial checked state
@@ -883,7 +896,8 @@ _JS_SOURCE = r"""
   var SLICE_LINKS = {};    // link index -> [slider api], mirrors frame sliders' LINKS
 
   var DROPDOWN_FOR_MENU = {};
-  var MENU_NAMES = ['Axes', 'Point Picking', 'Annotate'];
+  var MENU_NAMES = ['Axes'];
+  if (pickingEnabled) MENU_NAMES.push('Point Picking', 'Annotate');
   if (sliceMenuNeeded) MENU_NAMES.push('Slice');
   MENU_NAMES.push('File');
   MENU_NAMES.forEach(function (name) {
