@@ -1619,6 +1619,10 @@ _JS_SOURCE = r"""
       st.sliceEl.setAttribute('fill', 'none');
       st.sliceEl.setAttribute('stroke', '#1f77b4');
       st.sliceEl.setAttribute('stroke-width', 1.5);
+      // The line lives on the outer <svg> (already-final pixel coords), so
+      // it doesn't inherit the axes' own clip; a value outside the chosen
+      // colorbar/custom range would otherwise run out past the axes box.
+      st.sliceEl.setAttribute('clip-path', 'url(#clip' + key + ')');
       svg.appendChild(st.sliceEl);
     }
     st.sliceEl.setAttribute('d', d);
