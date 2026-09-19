@@ -1839,7 +1839,9 @@ _JS_SOURCE = r"""
     var x = isX ? slice.xs[j] : slice.fixedCoord, y = isX ? slice.fixedCoord : slice.xs[j];
     return { px: q.px, py: q.py, index: j, x: x, y: y, z: v, name: name,
              hidden: hidden, past: past,
-             label: 'x=' + fmt(x) + ', y=' + fmt(y) + ', ' + name + '=' + fmt(v) };
+             // Only the coordinate along the profile: the slice's own fixed
+             // coordinate is already shown in the strip's corner (drawCompanion).
+             label: (isX ? 'x=' + fmt(x) : 'y=' + fmt(y)) + ', ' + name + '=' + fmt(v) };
   }
   // Per-slice state of a strip pin, applied after every layout: hidden while
   // there is nothing to point at, and the value in its label drawn red while

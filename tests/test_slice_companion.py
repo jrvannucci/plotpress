@@ -300,7 +300,7 @@ def test_clicking_the_strip_picks_the_profile_sample_under_it(page, tmp_path):
     (label,) = _pin_labels(page)
     got = _parse(label)
     col = int(got["x"] - 0.5)                 # cell midpoints are col + 0.5
-    assert got["y"] == pytest.approx(3.5)     # the cursor row's own midpoint (index 3)
+    assert "y" not in got                     # the slice's own coordinate lives in the corner
     assert got["z"] == z[3, col]              # the same value the heatmap holds there
 
 
@@ -316,8 +316,7 @@ def test_a_strip_pin_follows_the_slider(page, tmp_path):
     after = _parse(_pin_labels(page)[0])
     col = int(before["x"] - 0.5)
     assert after["x"] == before["x"]                 # same sample along the axis...
-    assert after["y"] == pytest.approx(6.5)          # ...on the row the slider moved to
-    assert after["z"] == z[6, col]                   # ...reporting that row's value
+    assert after["z"] == z[6, col]                   # ...reporting the row the slider moved to
 
 
 @pytest.mark.browser
@@ -391,7 +390,6 @@ def test_snap_mirrors_a_heatmap_pin_onto_the_shown_slice_and_keeps_it(page, tmp_
     assert (kind1, snap1) == ("slice", True)
     before, mirror = _parse(original), _parse(label1)
     assert mirror["x"] == before["x"]                    # same place along the profile
-    assert mirror["y"] == pytest.approx(1.5)             # dropped onto the shown row
     assert mirror["z"] == z[1, int(mirror["x"])]         # reading that row's value
     pin_top, mesh_top = page.evaluate("""() => [
         document.querySelector('.plotpress-pin[data-snapped]').getBoundingClientRect().top,
@@ -442,7 +440,7 @@ def test_a_mirror_follows_the_slider(page, tmp_path):
     page.evaluate("""() => { const r = document.querySelector('input[type=range]');
         r.value = 5; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
     now = _parse(_pins(page)[1][2])
-    assert now["y"] == pytest.approx(5.5) and now["z"] == z[5, int(x)]
+    assert now["z"] == z[5, int(x)]
     # the heatmap pin itself did not move with the slider
     assert _parse(_pins(page)[0][2])["y"] != pytest.approx(5.5)
 
@@ -456,7 +454,7 @@ def test_mirrors_use_the_column_for_a_y_slice(page, tmp_path):
     _click_heatmap(page, 0.7, 0.4)
     before, mirror = (_parse(_pins(page)[i][2]) for i in (0, 1))
     assert mirror["y"] == before["y"]
-    assert mirror["x"] == pytest.approx(2.5)
+    assert "x" not in mirror                      # a Y slice's coordinate is in the corner
     assert mirror["z"] == z[int(mirror["y"]), 2]
 
 
@@ -634,3 +632,16 @@ def test_a_pin_is_hidden_once_zoomed_out_of_the_strips_view(page, tmp_path):
     page.mouse.move(box[0] + box[2] * 0.95, box[1] + box[3] * 0.7, steps=4)
     page.mouse.up()
     assert _strip_pin_state(page)["display"] == "none"
+
+
+@pytest.mark.browser
+def test_strip_pin_labels_leave_out_the_slices_own_coordinate(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    (label,) = _pin_labels(page)
+    assert re.fullmatch(r"x=[\d.]+, z=[\d.]+", label)      # no "y=..." (it's in the corner)
+    # ...while Extract still returns the full record.
+    (rec,) = page.evaluate("window.plotpressGetMarkers()")
+    assert {"x", "y", "z"} <= set(rec)
