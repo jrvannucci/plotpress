@@ -50,8 +50,35 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
 
 ``"slice"``
     The **Slice** menu -- scrub a row or column of a pcolormesh/imshow as a
-    1-D profile, coupled across as many axes as share the same grid. It only
+    1-D profile, coupled across as many axes as share the same grid. The
+    profile replaces the heatmap in place ("Show slice view"). The menu only
     appears when the figure actually has a pcolormesh or imshow to slice.
+
+``"slice-companion-panel"``
+    The same tool with a different view: the profile is drawn in a strip
+    carved out of the mesh's own axes -- above the heatmap for an X slice,
+    to its left for a Y slice -- so both are visible at once, aligned
+    through every pan and zoom ("Show companion panel"). The heatmap gives up
+    30% of its axes to the strip (``panel_size``). Ask for both options and the
+    menu offers both views, one at a time. Axes with fixed ticks
+    (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep
+    the plain cursor and slider, since their ticks can't be redrawn around a
+    shrunken heatmap.
+
+To have a tool start in a chosen state instead of switched off, pass a dict
+whose values are its settings::
+
+    fig.save("fig.html", interactive=True, options={
+        "slice-companion-panel": {"enabled": True, "orientation": "y",
+                                  "link_all": True, "range": "colorbar"},
+    })
+
+Both slice options accept ``enabled``, ``orientation`` (``"x"``/``"y"``),
+``link_all``, ``range`` (``"auto"``/``"colorbar"``/``"custom"``, the last with
+``range_min``/``range_max``), and ``index`` (the starting row/column);
+``"slice"`` adds ``show_view`` and ``"slice-companion-panel"`` adds
+``show_panel`` and ``panel_size``. Values are checked when the page is built,
+so a typo raises ``ValueError`` immediately.
 
 An unknown name raises ``ValueError`` listing the valid ones. The choice only
 changes which tools the page builds: the embedded data is identical either

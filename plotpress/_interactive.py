@@ -745,8 +745,20 @@ _JS_SOURCE = r"""
   // -- navigation, Axes, Point Picking, Annotate, File -- is unconditional;
   // options only add menus beyond it. With no config at all (this JS loaded
   // some other way) every add-on is on, rather than silently omitting one.
-  var OPTIONS = window.PLOTPRESS_OPTIONS || ['slice'];
+  var OPTIONS = window.PLOTPRESS_OPTIONS || ['slice', 'slice-companion-panel'];
   function hasOption(name) { return OPTIONS.indexOf(name) !== -1; }
+  // Per-option startup settings (options={"slice": {...}} on the Python
+  // side) -- the state each tool's menu would otherwise begin in. The two
+  // slice options are one tool with two views and share their tool-level
+  // keys (enabled, orientation, ...), so they're merged; the view-specific
+  // keys (show_view, show_panel, panel_size) only exist under their own.
+  var OPTION_CONFIG = window.PLOTPRESS_OPTION_CONFIG || {};
+  var SLICE_VIEW_CFG = OPTION_CONFIG['slice'] || {};
+  var SLICE_PANEL_CFG = OPTION_CONFIG['slice-companion-panel'] || {};
+  var SLICE_CFG = {};
+  [SLICE_VIEW_CFG, SLICE_PANEL_CFG].forEach(function (c) {
+    for (var ck in c) SLICE_CFG[ck] = c[ck];
+  });
   var pointsHidden = false;
   var annotationsHidden = false;
   // Hide Points/Hide Annotations toggle independently -- one class per kind
@@ -845,7 +857,8 @@ _JS_SOURCE = r"""
       }
     }
   }
-  var sliceMenuNeeded = hasOption('slice') && Object.keys(SLICE_AXES).length > 0;
+  var sliceMenuNeeded = (hasOption('slice') || hasOption('slice-companion-panel'))
+                        && Object.keys(SLICE_AXES).length > 0;
   // Figure-wide Slice state, declared here (not down by the rest of the
   // tool's own implementation) so the menu-building code just below --
   // which reads SLICE_ORIENTATION to set the radios' initial checked state
@@ -863,9 +876,17 @@ _JS_SOURCE = r"""
   // (sliceMenuNeeded), so it's always reachable, but nothing about the
   // figure changes until this is checked -- unchecking it later tears
   // everything back down to a plain, unmodified pcolormesh.
-  var SLICE_ENABLED = false;
-  var SLICE_ORIENTATION = 'x';
-  var SLICE_VIEW_ON = false;
+  var SLICE_ENABLED = SLICE_CFG.enabled === true;
+  var SLICE_ORIENTATION = SLICE_CFG.orientation === 'y' ? 'y' : 'x';
+  var SLICE_VIEW_ON = hasOption('slice') && SLICE_VIEW_CFG.show_view === true;
+  // The companion panel (option "slice-companion-panel") draws the profile
+  // in a strip carved out of the mesh's own axes rect instead of replacing
+  // the heatmap. Mutually exclusive with SLICE_VIEW_ON, which already shows
+  // the profile in the heatmap's place -- a strip repeating it would be
+  // redundant -- so an explicit show_view wins over the panel's default.
+  var SLICE_COMPANION_ON = hasOption('slice-companion-panel')
+                           && SLICE_PANEL_CFG.show_panel !== false && !SLICE_VIEW_ON;
+  var SLICE_COMPANION_FRAC = isFinite(SLICE_PANEL_CFG.panel_size) ? +SLICE_PANEL_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
   // opt-in and manual. On: skips the per-axes checkbox dance entirely --
@@ -873,7 +894,7 @@ _JS_SOURCE = r"""
   // fixed bottom bar) driving every member at once, the answer to "500
   // meshes, all coupled, clicking 500 checkboxes isn't feasible" --
   // see buildSliceSliders()'s own comment for the full layout logic.
-  var SLICE_LINK_ALL = false;
+  var SLICE_LINK_ALL = SLICE_CFG.link_all === true;
   var sliceGlobalBar = null;   // the fixed bottom bar SLICE_LINK_ALL sliders dock in
   // Value-axis bounds for the slice view: 'auto' (each slice's own
   // min/max -- reads that one slice most clearly, but rescales on every
@@ -882,9 +903,10 @@ _JS_SOURCE = r"""
   // or 'custom' (SLICE_CUSTOM_MIN/MAX, typed in by hand -- for comparing
   // against a range that's neither, e.g. matching a different mesh's scale
   // or a domain-specific reference band).
-  var SLICE_RANGE_MODE = 'auto';
-  var SLICE_CUSTOM_MIN = null;
-  var SLICE_CUSTOM_MAX = null;
+  var SLICE_RANGE_MODE = (SLICE_CFG.range === 'colorbar' || SLICE_CFG.range === 'custom')
+                         ? SLICE_CFG.range : 'auto';
+  var SLICE_CUSTOM_MIN = isFinite(SLICE_CFG.range_min) ? +SLICE_CFG.range_min : null;
+  var SLICE_CUSTOM_MAX = isFinite(SLICE_CFG.range_max) ? +SLICE_CFG.range_max : null;
   var SLICE_STATE = {};    // axesKey -> {orientation, index, fixedCoord, cursorEl, sliceEl, tickGroup}
   var SLICE_SLIDERS = {};  // axesKey -> {box, api} -- the docked play/step control
   var SLICE_LINKS = {};    // link index -> [slider api], mirrors frame sliders' LINKS
@@ -1018,19 +1040,43 @@ _JS_SOURCE = r"""
     // A checkbox, not a label-swapping button -- every other Slice option
     // is a radio/checkbox, and a lone button in the middle of them didn't
     // read as a toggle at a glance the way a checked/unchecked box does.
-    var sliceViewLabel = document.createElement('label');
-    var sliceViewCb = document.createElement('input');
-    sliceViewCb.type = 'checkbox';
-    sliceViewCb.checked = SLICE_VIEW_ON;
-    sliceViewCb.addEventListener('change', function () {
-      SLICE_VIEW_ON = sliceViewCb.checked;
+    var sliceViewCb = null, companionCb = null;
+    var rerenderAllSlices = function () {
       Object.keys(SLICE_SLIDERS).forEach(function (k) {
         renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
       });
-    });
-    sliceViewLabel.appendChild(sliceViewCb);
-    sliceViewLabel.appendChild(document.createTextNode(' Show slice view'));
-    sliceMenu.appendChild(sliceViewLabel);
+    };
+    if (hasOption('slice')) {
+      var sliceViewLabel = document.createElement('label');
+      sliceViewCb = document.createElement('input');
+      sliceViewCb.type = 'checkbox';
+      sliceViewCb.checked = SLICE_VIEW_ON;
+      sliceViewCb.addEventListener('change', function () {
+        SLICE_VIEW_ON = sliceViewCb.checked;
+        if (SLICE_VIEW_ON && companionCb) { SLICE_COMPANION_ON = false; companionCb.checked = false; }
+        rerenderAllSlices();
+      });
+      sliceViewLabel.appendChild(sliceViewCb);
+      sliceViewLabel.appendChild(document.createTextNode(' Show slice view'));
+      sliceMenu.appendChild(sliceViewLabel);
+    }
+    // Draws the profile in a strip beside the heatmap (above it for an X
+    // slice, to its left for a Y slice) so both are visible at once -- see
+    // ensureCompanionLayout().
+    if (hasOption('slice-companion-panel')) {
+      var companionLabel = document.createElement('label');
+      companionCb = document.createElement('input');
+      companionCb.type = 'checkbox';
+      companionCb.checked = SLICE_COMPANION_ON;
+      companionCb.addEventListener('change', function () {
+        SLICE_COMPANION_ON = companionCb.checked;
+        if (SLICE_COMPANION_ON && sliceViewCb) { SLICE_VIEW_ON = false; sliceViewCb.checked = false; }
+        rerenderAllSlices();
+      });
+      companionLabel.appendChild(companionCb);
+      companionLabel.appendChild(document.createTextNode(' Show companion panel'));
+      sliceMenu.appendChild(companionLabel);
+    }
 
     var topDivider = document.createElement('div');
     topDivider.className = 'plotpress-menu-divider';
@@ -1129,6 +1175,8 @@ _JS_SOURCE = r"""
     [[customMinInput, 'min'], [customMaxInput, 'max']].forEach(function (pair) {
       var input = pair[0];
       input.type = 'number'; input.placeholder = pair[1]; input.step = 'any';
+      var initial = pair[1] === 'min' ? SLICE_CUSTOM_MIN : SLICE_CUSTOM_MAX;
+      if (initial !== null) input.value = initial;
       input.disabled = (SLICE_RANGE_MODE !== 'custom');
       input.addEventListener('change', function () {
         SLICE_CUSTOM_MIN = customMinInput.value === '' ? null : +customMinInput.value;
@@ -1551,6 +1599,182 @@ _JS_SOURCE = r"""
     }
   }
 
+  // The value axis' bounds for one slice under the current range mode --
+  // shared by the in-place 1-D view and the companion strip so both read the
+  // same 'auto'/'colorbar'/'custom' choice identically. Never degenerate
+  // (vmin === vmax would divide by zero placing anything on it).
+  function sliceValueRange(key, finiteYs) {
+    var entryForRange = meshEntryForAxes(key);
+    var vmin, vmax;
+    if (SLICE_RANGE_MODE === 'colorbar' && entryForRange
+       && isFiniteNum(entryForRange.vmin) && isFiniteNum(entryForRange.vmax)) {
+      vmin = entryForRange.vmin; vmax = entryForRange.vmax;
+    } else if (SLICE_RANGE_MODE === 'custom' && isFiniteNum(SLICE_CUSTOM_MIN)
+              && isFiniteNum(SLICE_CUSTOM_MAX) && SLICE_CUSTOM_MIN < SLICE_CUSTOM_MAX) {
+      vmin = SLICE_CUSTOM_MIN; vmax = SLICE_CUSTOM_MAX;
+    } else {
+      // 'auto' (or 'custom' with nothing valid typed in yet) -- the
+      // slice's own min/max.
+      vmin = Math.min.apply(null, finiteYs); vmax = Math.max.apply(null, finiteYs);
+    }
+    if (vmin === vmax) { vmin -= 0.5; vmax += 0.5; }
+    return { vmin: vmin, vmax: vmax };
+  }
+
+  // ---- companion panel -----------------------------------------------------
+  // Shows the profile beside the heatmap instead of in place of it, by
+  // splitting the mesh axes' *own* rect: a strip (above the heatmap for an X
+  // slice, to its left for a Y slice) holds the profile, and the heatmap
+  // shrinks into the rest. Nothing outside that rect moves -- the same
+  // "only ever touch your own pre-computed rect" rule every other tool here
+  // relies on, which a true sibling axes (needing the JS to reflow the whole
+  // figure) would break.
+  //
+  // The shrunken heatmap rect lives in CUR[key] (x/y/w/h), so everything that
+  // maps data<->pixels through CUR -- toPixel, picking, pan/zoom, pins, tick
+  // rebuilds -- follows it for free; zoomAffine() maps META's rect to CUR's
+  // for the artist group, and the clip rect is resized to match. The strip's
+  // profile is positioned with the same CUR limits along the shared axis, so
+  // it stays aligned with the heatmap through every pan/zoom.
+  //
+  // Skipped (the axes keeps the plain cursor + slider) for an axes whose
+  // ticks rebuildTicks() can't redraw -- axis_off, or explicitly fixed
+  // set_xticks/set_yticks -- and for a twin/secondary (or its parent), whose
+  // rect is shared and synced from the other's limits.
+  var COMPANION_OK = {};
+  function companionEligible(key) {
+    if (COMPANION_OK[key] !== undefined) return COMPANION_OK[key];
+    var om = META[key];
+    var ok = !!om && !om.axis_off && !om.xfixed && !om.yfixed && om.secondary_of == null;
+    if (ok) {
+      for (var mk in META) {
+        if (META[mk].secondary_of != null && String(META[mk].secondary_of) === String(key)) {
+          ok = false; break;
+        }
+      }
+    }
+    COMPANION_OK[key] = ok;
+    return ok;
+  }
+  function companionSize(key) {
+    var o = META[key];
+    var span = SLICE_ORIENTATION === 'x' ? o.h : o.w;
+    return Math.max(28, Math.round(span * SLICE_COMPANION_FRAC));
+  }
+  function setClipRect(key, r) {
+    var cr = document.querySelector('#clip' + key + ' rect');
+    if (!cr) return;
+    cr.setAttribute('x', r.x); cr.setAttribute('y', r.y);
+    cr.setAttribute('width', r.w); cr.setAttribute('height', r.h);
+  }
+  function ensureCompanionLayout(key) {
+    var o = META[key], c = CUR[key];
+    var s = companionSize(key);
+    var ex = o.x, ey = o.y, ew = o.w, eh = o.h, anchor = null;
+    if (SLICE_ORIENTATION === 'x') { ey = o.y + s; eh = o.h - s; }
+    else { ex = o.x + s; ew = o.w - s; anchor = o.x; }
+    if (c.x !== ex || c.y !== ey || c.w !== ew || c.h !== eh) {
+      c.x = ex; c.y = ey; c.w = ew; c.h = eh;
+      // A Y slice's strip sits between the y tick labels and the heatmap, so
+      // those stay at the axes' original left edge, not the heatmap's.
+      if (anchor === null) delete c.tickAnchorX; else c.tickAnchorX = anchor;
+      setClipRect(key, c);
+      applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
+      relayoutTextCounterScale(key);
+    }
+    return s;
+  }
+  function removeCompanion(key) {
+    var st = SLICE_STATE[key];
+    if (st && st.compGroup) { st.compGroup.remove(); st.compGroup = null; }
+    var o = META[key], c = CUR[key];
+    if (!o || !c) return;
+    if (c.x !== o.x || c.y !== o.y || c.w !== o.w || c.h !== o.h || c.tickAnchorX != null) {
+      c.x = o.x; c.y = o.y; c.w = o.w; c.h = o.h; delete c.tickAnchorX;
+      setClipRect(key, c);
+      applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
+      relayoutTextCounterScale(key);
+    }
+  }
+  function companionClip(key, r) {
+    var id = 'sliceclip' + key;
+    var cp = document.getElementById(id);
+    if (!cp) {
+      var defs = svg.querySelector('defs');
+      if (!defs) { defs = document.createElementNS(SVGNS, 'defs'); svg.insertBefore(defs, svg.firstChild); }
+      cp = document.createElementNS(SVGNS, 'clipPath');
+      cp.setAttribute('id', id);
+      cp.appendChild(document.createElementNS(SVGNS, 'rect'));
+      defs.appendChild(cp);
+    }
+    var cr = cp.firstChild;
+    cr.setAttribute('x', r.x); cr.setAttribute('y', r.y);
+    cr.setAttribute('width', r.w); cr.setAttribute('height', r.h);
+    return 'url(#' + id + ')';
+  }
+  function drawCompanion(key, slice) {
+    var st = SLICE_STATE[key], o = META[key], m = CUR[key];
+    var finiteYs = slice.ys.filter(isFiniteNum);
+    var s = companionSize(key), pad = 4, isX = SLICE_ORIENTATION === 'x';
+    if (!st.compGroup) {
+      st.compGroup = document.createElementNS(SVGNS, 'g');
+      st.compGroup.setAttribute('class', 'plotpress-slice-companion');
+      svg.appendChild(st.compGroup);
+    }
+    var strip = isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h };
+    var parts = [];
+    var sepCol = STYLE.spine || '#444', fs = Math.max(8, (STYLE.tick_label_size || 10) - 1);
+    var txtCol = STYLE.text || '#222';
+    if (finiteYs.length) {
+      var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
+      var span = s - 2 * pad;
+      var place = function (v) { return pad + (v - vmin) / (vmax - vmin) * span; };
+      var tk = axisTicks(vmin, vmax, 'linear');
+      var guides = [], labels = [], lastLabelOff = -Infinity;
+      for (var j = 0; j < tk.ticks.length; j++) {
+        var off = place(tk.ticks[j]);
+        // The strip is only a few labels tall/wide -- drop any that would
+        // run into the previous one rather than print them on top of each
+        // other.
+        if (off - lastLabelOff < (isX ? fs + 4 : 26)) continue;
+        lastLabelOff = off;
+        if (isX) {
+          var gy = o.y + s - off;
+          guides.push('<line x1="' + o.x + '" y1="' + gy.toFixed(2) + '" x2="' + (o.x + o.w) + '" y2="' + gy.toFixed(2) + '"/>');
+          labels.push('<text x="' + (o.x + 3) + '" y="' + (gy + 3).toFixed(2) + '" text-anchor="start">' + tk.labels[j] + '</text>');
+        } else {
+          var gx = o.x + off;
+          guides.push('<line x1="' + gx.toFixed(2) + '" y1="' + o.y + '" x2="' + gx.toFixed(2) + '" y2="' + (o.y + o.h) + '"/>');
+          labels.push('<text x="' + gx.toFixed(2) + '" y="' + (o.y + o.h + fs + 3) + '" text-anchor="middle">' + tk.labels[j] + '</text>');
+        }
+      }
+      parts.push('<g stroke="#e3e3e3" stroke-width="0.8">' + guides.join('') + '</g>');
+      // Inside the strip with a white halo, not out in the gutter: the gap
+      // between neighboring axes is too narrow to hold a value label.
+      parts.push('<g font-size="' + fs + '" fill="' + txtCol
+        + '" stroke="#fff" stroke-width="3" paint-order="stroke">' + labels.join('') + '</g>');
+      var d = '', started = false;
+      for (var i = 0; i < slice.xs.length; i++) {
+        var v = slice.ys[i];
+        if (!isFiniteNum(v)) { started = false; continue; }
+        var along = isX ? toPixel(m, slice.xs[i], m.ymin).x : toPixel(m, m.xmin, slice.xs[i]).y;
+        var px = isX ? along : o.x + place(v);
+        var py = isX ? o.y + s - place(v) : along;
+        d += (started ? 'L' : 'M') + px.toFixed(2) + ',' + py.toFixed(2);
+        started = true;
+      }
+      parts.push('<path d="' + d + '" fill="none" stroke="#1f77b4" stroke-width="1.5" clip-path="' + companionClip(key, strip) + '"/>');
+    }
+    // What the strip shows: the fixed coordinate the cursor sits on.
+    var caption = (isX ? 'y = ' : 'x = ') + fmt(slice.fixedCoord);
+    parts.push('<text x="' + (isX ? o.x + o.w - 4 : o.x + s - 3) + '" y="' + (o.y + fs + 2)
+      + '" text-anchor="end" font-size="' + fs + '" fill="#666">' + caption + '</text>');
+    parts.push(isX
+      ? '<line x1="' + o.x + '" y1="' + (o.y + s) + '" x2="' + (o.x + o.w) + '" y2="' + (o.y + s) + '" stroke="' + sepCol + '"/>'
+      : '<line x1="' + (o.x + s) + '" y1="' + o.y + '" x2="' + (o.x + s) + '" y2="' + (o.y + o.h) + '" stroke="' + sepCol + '"/>');
+    st.compGroup.innerHTML = parts.join('');
+  }
+
   // The one render entry point, called by a slider's own setIndex()/
   // external() and by resyncSlice() on pan/zoom: draws whichever of the two
   // views (pcolormesh+cursor, or the 1-D slice line) SLICE_VIEW_ON selects
@@ -1579,9 +1803,20 @@ _JS_SOURCE = r"""
       if (st.sliceEl) { st.sliceEl.remove(); st.sliceEl = null; }
       if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
       var slice0 = computeSliceByIndex(key, SLICE_ORIENTATION, index);
+      // The panel first: it shrinks CUR[key] to the heatmap's share of the
+      // rect, which the cursor line below has to be positioned against.
+      if (SLICE_COMPANION_ON && slice0 && companionEligible(key)) {
+        ensureCompanionLayout(key);
+        drawCompanion(key, slice0);
+      } else {
+        removeCompanion(key);
+      }
       if (slice0) drawCursor(key, SLICE_ORIENTATION, slice0.fixedCoord);
       return;
     }
+    // The 1-D view replaces the heatmap in the full rect, so any strip
+    // (and the shrunken heatmap rect it needed) has to go first.
+    removeCompanion(key);
     // Slice view: no cursor line here (see above) -- remove one left over
     // from before the toggle switched.
     if (st.cursorEl) { st.cursorEl.remove(); st.cursorEl = null; }
@@ -1589,20 +1824,7 @@ _JS_SOURCE = r"""
     if (!slice) return;
     var finiteYs = slice.ys.filter(isFiniteNum);
     if (!finiteYs.length) return;
-    var entryForRange = meshEntryForAxes(key);
-    var vmin, vmax;
-    if (SLICE_RANGE_MODE === 'colorbar' && entryForRange
-       && isFiniteNum(entryForRange.vmin) && isFiniteNum(entryForRange.vmax)) {
-      vmin = entryForRange.vmin; vmax = entryForRange.vmax;
-    } else if (SLICE_RANGE_MODE === 'custom' && isFiniteNum(SLICE_CUSTOM_MIN)
-              && isFiniteNum(SLICE_CUSTOM_MAX) && SLICE_CUSTOM_MIN < SLICE_CUSTOM_MAX) {
-      vmin = SLICE_CUSTOM_MIN; vmax = SLICE_CUSTOM_MAX;
-    } else {
-      // 'auto' (or 'custom' with nothing valid typed in yet) -- the
-      // slice's own min/max.
-      vmin = Math.min.apply(null, finiteYs); vmax = Math.max.apply(null, finiteYs);
-    }
-    if (vmin === vmax) { vmin -= 0.5; vmax += 0.5; }
+    var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
     meshEls.forEach(function (im) { im.style.display = 'none'; });
 
     var d = '', started = false;
@@ -1847,6 +2069,7 @@ _JS_SOURCE = r"""
   // have rendered if Slice didn't exist.
   function teardownSliceVisuals() {
     Object.keys(SLICE_STATE).forEach(function (key) {
+      removeCompanion(key);
       var st = SLICE_STATE[key];
       // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
       // own comment on this same selector.
@@ -2539,7 +2762,8 @@ _JS_SOURCE = r"""
     var parts = [];
     var xTop = om.xside === 'top', yRight = om.yside === 'right';
     var xAxis = xTop ? m.y : m.y + m.h, xSign = xTop ? -1 : 1;
-    var yAxis = yRight ? m.x + m.w : m.x, ySign = yRight ? 1 : -1;
+    var yAxis = yRight ? m.x + m.w : (m.tickAnchorX != null ? m.tickAnchorX : m.x);
+    var ySign = yRight ? 1 : -1;
 
     // Per-axis effective style -- tick_params(axis='x'/'y', ...) overrides
     // (see Axes.tick_params) survive this rebuild instead of always falling
@@ -2633,10 +2857,14 @@ _JS_SOURCE = r"""
     var oe = edges(o), ce = edges(c);
     var ofx0 = oe.fx0, ofx1 = oe.fx1, cfx0 = ce.fx0, cfx1 = ce.fx1;
     var ofy0 = oe.fy0, ofy1 = oe.fy1, cfy0 = ce.fy0, cfy1 = ce.fy1;
-    var sx = (ofx1 - ofx0) / (cfx1 - cfx0);
-    var sy = (ofy1 - ofy0) / (cfy1 - cfy0);
-    var tx = o.x * (1 - sx) + (ofx0 - cfx0) / (cfx1 - cfx0) * o.w;
-    var ty = o.y * (1 - sy) + (cfy1 - ofy1) / (cfy1 - cfy0) * o.h;
+    // c's pixel rect is normally o's, but the Slice companion panel shrinks
+    // it to the heatmap's share of the axes, so the remap has to carry the
+    // rect change too -- with equal rects this reduces to the plain
+    // limits-only remap.
+    var sx = (ofx1 - ofx0) / (cfx1 - cfx0) * (c.w / o.w);
+    var sy = (ofy1 - ofy0) / (cfy1 - cfy0) * (c.h / o.h);
+    var tx = c.x + (ofx0 - cfx0) / (cfx1 - cfx0) * c.w - sx * o.x;
+    var ty = c.y + (cfy1 - ofy1) / (cfy1 - cfy0) * c.h - sy * o.y;
     return { sx: sx, sy: sy, tx: tx, ty: ty };
   }
 
@@ -4269,6 +4497,22 @@ _JS_SOURCE = r"""
   // Applied last: replays a Save/Save As from an earlier session (view,
   // pins, toggles) now that every function/data structure above exists to
   // do it with -- see buildSaveState()/applySavedState() above.
+  // Start Slice in the caller's chosen state (options={"slice": {"enabled":
+  // True, ...}}) -- the menu controls above already read the same variables,
+  // so this only has to build what "enabled" implies.
+  if (sliceMenuNeeded && SLICE_ENABLED) {
+    buildSliceSliders();
+    if (isFinite(SLICE_CFG.index)) {
+      var startedSliders = [];
+      Object.keys(SLICE_SLIDERS).forEach(function (k) {
+        var built = SLICE_SLIDERS[k];
+        if (startedSliders.indexOf(built) !== -1) return;
+        startedSliders.push(built);
+        var top = +built.box.querySelector('input[type=range]').max;
+        built.api.external(Math.min(+SLICE_CFG.index, top));
+      });
+    }
+  }
   var savedStateEl = document.getElementById('plotpress-saved-state');
   if (savedStateEl) applySavedState(JSON.parse(savedStateEl.textContent));
 })();

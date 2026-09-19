@@ -2200,10 +2200,28 @@ class Figure:
 
         ``options`` adds optional toolbar menus, by name. Every page already
         has Pan/Zoom, Home, Fit Width, Axes, Point Picking, Annotate, and
-        File; ``options=["slice"]`` adds the Slice menu (shown only when the
-        figure has a pcolormesh/imshow to slice). The embedded data payloads
-        are the same either way, so :func:`load_data` reads any interactive
-        HTML back regardless of which options it was saved with.
+        File; the rest are opt-in:
+
+        - ``"slice"`` -- the Slice menu, scrubbing a row/column of a
+          pcolormesh/imshow as a 1-D profile that replaces the heatmap in
+          place (shown only when the figure has a mesh to slice).
+        - ``"slice-companion-panel"`` -- the same tool, but the profile
+          is drawn in a strip carved out of the top (X slice) or left (Y
+          slice) of the mesh's own axes, next to the heatmap instead of
+          replacing it. Asking for both gives the menu both views.
+
+        Pass a list of names, or a dict to also set each tool's startup
+        state: ``options={"slice-companion-panel": {"enabled": True,
+        "orientation": "y", "link_all": True, "range": "colorbar"}}``.
+        Settings shared by both slice options are ``enabled``,
+        ``orientation`` (``"x"``/``"y"``), ``link_all``, ``range``
+        (``"auto"``/``"colorbar"``/``"custom"``, the last with
+        ``range_min``/``range_max``), and ``index`` (the starting
+        row/column); ``"slice"`` adds ``show_view``, and
+        ``"slice-companion-panel"`` adds ``show_panel`` and ``panel_size``
+        (the strip's fraction of the axes, 0.1-0.6, default 0.3). The embedded
+        data payloads are the same either way, so :func:`load_data` reads any
+        interactive HTML back regardless of which options it was saved with.
 
         ``standalone`` (default) centers the figure at its natural pixel size
         on a full-height page -- right for a file opened directly in its own
@@ -2279,7 +2297,7 @@ class Figure:
         inlined the same as plotpress's own JS, keeping the "no external
         requests" guarantee intact regardless of what it contains.
         """
-        opts = _resolve_options(options)
+        opts, opt_config = _resolve_options(options)
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
@@ -2340,7 +2358,8 @@ class Figure:
             config = ("<script>window.PLOTPRESS_WAIT_EXTRACT=true;</script>"
                       if wait_extract else "")
             config += ("<script>window.PLOTPRESS_OPTIONS="
-                       f"{json.dumps(opts)};</script>")
+                       f"{json.dumps(opts)};window.PLOTPRESS_OPTION_CONFIG="
+                       f"{json.dumps(opt_config)};</script>")
             script = config + payloads
             if include_default_js:
                 from ._interactive import INTERACTIVE_JS
@@ -3289,27 +3308,99 @@ def _axes_summary_lines(ax, gaps=None):
 #: -- Pan/Zoom, Home, Fit Width, Axes, Point Picking, Annotate, File -- is
 #: not an option; each name here adds a whole extra menu on top of it, so
 #: nothing newer changes an existing figure unless asked for.
-_INTERACTIVE_OPTIONS = ("slice",)
+_INTERACTIVE_OPTIONS = ("slice", "slice-companion-panel")
+
+# Startup settings an option accepts (``options={"slice": {...}}``): the
+# state its menu would otherwise begin in. The two slice options are one
+# tool with two views, so they share the tool-level keys and each adds its
+# own view key.
+_SLICE_KEYS = {
+    "enabled": bool,
+    "orientation": ("x", "y"),
+    "link_all": bool,
+    "range": ("auto", "colorbar", "custom"),
+    "range_min": "number",
+    "range_max": "number",
+    "index": "index",
+}
+_OPTION_KEYS = {
+    "slice": {**_SLICE_KEYS, "show_view": bool},
+    "slice-companion-panel": {**_SLICE_KEYS, "show_panel": bool,
+                              "panel_size": "fraction"},
+}
+
+
+def _check_option_value(option, key, spec, value):
+    def bad(expected):
+        return ValueError(
+            f"options[{option!r}][{key!r}] must be {expected}, got {value!r}")
+
+    if spec is bool:
+        if not isinstance(value, bool):
+            raise bad("True or False")
+    elif isinstance(spec, tuple):
+        if value not in spec:
+            raise bad("one of " + ", ".join(repr(v) for v in spec))
+    elif spec == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float))                 or not math.isfinite(value):
+            raise bad("a finite number")
+    elif spec == "index":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise bad("a non-negative integer")
+    elif spec == "fraction":
+        if isinstance(value, bool) or not isinstance(value, (int, float))                 or not 0.1 <= value <= 0.6:
+            raise bad("a number between 0.1 and 0.6")
 
 
 def _resolve_options(options):
-    """Validate ``options=`` and return it as a de-duplicated list."""
+    """Validate ``options=``; return ``(names, config)``.
+
+    ``options`` is a list of option names, or a dict mapping a name to its
+    startup settings (``True``/``None``/``{}`` for the defaults). ``config``
+    is ``{name: settings}`` for every named option -- what the JS reads to
+    start the tool in the caller's chosen state.
+    """
     if options is None:
-        resolved = []
+        given = {}
     elif isinstance(options, str):
         raise TypeError(
             f"options= takes a list of names, not the bare string {options!r} "
             f"-- did you mean options=[{options!r}]?"
         )
+    elif isinstance(options, dict):
+        given = dict(options)
     else:
-        resolved = list(dict.fromkeys(options))
-    unknown = [o for o in resolved if o not in _INTERACTIVE_OPTIONS]
+        given = {name: None for name in options}
+    unknown = [o for o in given if o not in _INTERACTIVE_OPTIONS]
     if unknown:
         raise ValueError(
             f"unknown interactive option(s) {unknown!r}; valid options are "
             f"{list(_INTERACTIVE_OPTIONS)!r}"
         )
-    return resolved
+    config = {}
+    for name, settings in given.items():
+        if settings is None or settings is True:
+            settings = {}
+        if not isinstance(settings, dict):
+            raise TypeError(
+                f"options[{name!r}] must be a dict of settings (or True/None "
+                f"for the defaults), got {settings!r}")
+        keys = _OPTION_KEYS[name]
+        bad_keys = [k for k in settings if k not in keys]
+        if bad_keys:
+            raise ValueError(
+                f"unknown setting(s) {bad_keys!r} for option {name!r}; valid "
+                f"settings are {sorted(keys)!r}")
+        for k, v in settings.items():
+            _check_option_value(name, k, keys[k], v)
+        if settings.get("range") == "custom" and not (
+                "range_min" in settings and "range_max" in settings
+                and settings["range_min"] < settings["range_max"]):
+            raise ValueError(
+                f"options[{name!r}]: range='custom' needs range_min and "
+                f"range_max, with range_min < range_max")
+        config[name] = dict(settings)
+    return list(config), config
 
 
 def _sanitize_nan(obj):
