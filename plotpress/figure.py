@@ -2217,8 +2217,9 @@ class Figure:
         pins onto the profile), ``range``
         (``"auto"``/``"colorbar"``/``"custom"``, the last with
         ``range_min``/``range_max``), ``index`` (the starting row/column),
-        and ``panel_size`` (the companion strip's fraction of the axes,
-        0.1-0.6, default 0.3). The embedded
+        ``panel_size`` (the companion strip's fraction of the axes,
+        0.1-0.6, default 0.3), and ``axes`` (``"all"``, or a list of the axes --
+        or their indices -- to slice; the rest stay plain heatmaps). The embedded
         data payloads are the same either way, so :func:`load_data` reads any
         interactive HTML back regardless of which options it was saved with.
 
@@ -2297,6 +2298,23 @@ class Figure:
         requests" guarantee intact regardless of what it contains.
         """
         opts, opt_config = _resolve_options(options)
+        listed = opt_config.get("slice", {}).get("axes")
+        if isinstance(listed, (list, tuple)):
+            resolved = []
+            for a in listed:
+                if isinstance(a, Axes):
+                    if a not in self.axes:
+                        raise ValueError(
+                            "options['slice']['axes'] names an axes that isn't part of this figure")
+                    a = self.axes.index(a)
+                elif a >= len(self.axes):
+                    raise ValueError(
+                        f"options['slice']['axes'] has index {a}, but this figure has "
+                        f"{len(self.axes)} axes")
+                resolved.append(a)
+            opt_config["slice"]["axes"] = resolved
+        elif listed == "all":
+            del opt_config["slice"]["axes"]
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
@@ -3319,6 +3337,7 @@ _OPTION_KEYS = {
         "panel_size": "fraction",
         "link_all": bool,
         "snap_pins": bool,
+        "axes": "axes",
         "range": ("auto", "colorbar", "custom"),
         "range_min": "number",
         "range_max": "number",
@@ -3344,6 +3363,12 @@ def _check_option_value(option, key, spec, value):
     elif spec == "index":
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise bad("a non-negative integer")
+    elif spec == "axes":
+        listed = isinstance(value, (list, tuple))
+        if not (value == "all" or (listed and all(
+                isinstance(v, Axes) or (isinstance(v, int) and not isinstance(v, bool) and v >= 0)
+                for v in value))):
+            raise bad('"all", or a list of axes (or axes indices)')
     elif spec == "fraction":
         if isinstance(value, bool) or not isinstance(value, (int, float))                 or not 0.1 <= value <= 0.6:
             raise bad("a number between 0.1 and 0.6")

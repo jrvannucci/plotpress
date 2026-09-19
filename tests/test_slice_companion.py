@@ -908,3 +908,129 @@ def test_a_strip_pin_follows_an_animated_meshs_frame_slider(page, tmp_path):
         s => s.textContent.includes('frame')); const r = s.querySelector('input[type=range]');
         r.value = 3; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
     assert _parse(_pin_labels(page)[0])["z"] == 3.0 and before != 3.0
+
+
+# ---- choosing which axes to slice ----------------------------------------------------
+
+def _row_fig(n=3):
+    fig, axs = plotpress.subplots(1, n, figsize=(4 * n, 4))
+    x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
+    for i, ax in enumerate(axs):
+        ax.pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10) + i)
+    fig.tight_layout()
+    return fig, list(axs)
+
+
+def _strips(page):
+    return page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length")
+
+
+def _scope_radio(page, label):
+    page.evaluate("""(label) => Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-scope"]')).find(
+        r => r.parentNode.textContent.includes(label)).click()""", label)
+
+
+def test_axes_setting_accepts_axes_objects_and_indices():
+    fig, axs = _row_fig()
+    cfg = _config(fig.to_html(options={"slice": {"axes": [axs[0], 2]}}))
+    assert cfg["slice"]["axes"] == [0, 2]
+    assert "axes" not in _config(fig.to_html(options={"slice": {"axes": "all"}}))["slice"]
+
+
+@pytest.mark.parametrize("bad, message", [
+    ("some", 'must be "all"'),
+    ([9], "has index 9"),
+    ([-1], 'must be "all"'),
+    ([1.5], 'must be "all"'),
+])
+def test_bad_axes_settings_are_rejected(bad, message):
+    fig, _ = _row_fig()
+    with pytest.raises(ValueError, match=message):
+        fig.to_html(options={"slice": {"axes": bad}})
+
+
+def test_an_axes_from_another_figure_is_rejected():
+    fig, _ = _row_fig()
+    _, other = _row_fig()
+    with pytest.raises(ValueError, match="isn't part of this figure"):
+        fig.to_html(options={"slice": {"axes": [other[0]]}})
+
+
+@pytest.mark.browser
+def test_default_scope_is_all_axes(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    radios = page.evaluate("""() => Object.fromEntries(Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-scope"]')).map(r => [r.parentNode.textContent.trim(), r.checked]))""")
+    assert radios == {"All axes": True, "Selected axes": False}
+    assert _strips(page) == 3
+
+
+@pytest.mark.browser
+def test_axes_setting_slices_only_the_chosen_axes(page, tmp_path):
+    fig, axs = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0], axs[2]]}})
+    assert _strips(page) == 2
+    assert page.evaluate("document.querySelectorAll('.plotpress-slider').length") == 2
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-cursor').length") == 2
+    # the unchosen middle axes is a plain heatmap: full-size clip, no strip
+    _load(page, tmp_path, fig)
+    full = page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')")
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0], axs[2]]}})
+    assert page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')") == pytest.approx(full)
+    # the chosen ones are outlined
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select rect').length") == 2
+
+
+@pytest.mark.browser
+def test_choosing_axes_by_clicking_them(page, tmp_path):
+    fig, axs = _row_fig()
+    _load(page, tmp_path, fig)
+    rects = _axes_rects(page)
+    plain_height = page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')")
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    assert _strips(page) == 3
+    _scope_radio(page, "Selected axes")
+    mode_text = page.evaluate("document.querySelector('.plotpress-mode-indicator').textContent")
+    assert "Choose slice axes" in mode_text
+    assert _strips(page) == 0                              # nothing chosen yet: nothing sliced
+    x0, y0, x1, y1 = rects[1]
+    page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)         # choose the middle axes
+    assert _strips(page) == 1
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select rect[stroke=\"#2b6cff\"]').length") == 1
+    x0, y0, x1, y1 = rects[2]
+    page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)         # and the last
+    assert _strips(page) == 2
+    x0, y0, x1, y1 = rects[1]
+    page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)         # click the middle again: drop it
+    assert _strips(page) == 1
+    assert page.evaluate("+document.querySelector('#clip1 rect').getAttribute('height')") == pytest.approx(plain_height)
+    _scope_radio(page, "All axes")
+    assert _strips(page) == 3
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-select').length") == 0
+
+
+@pytest.mark.browser
+def test_link_all_couples_only_the_chosen_axes(page, tmp_path):
+    fig, axs = _row_fig()
+    _load(page, tmp_path, fig, options={"slice": {
+        "enabled": True, "link_all": True, "axes": [axs[0], axs[1]]}})
+    label = page.evaluate("document.querySelector('.plotpress-sliders .val').textContent")
+    assert "(2 axes)" in label
+    assert page.evaluate("document.querySelectorAll('.plotpress-slider').length") == 1
+
+
+@pytest.mark.browser
+def test_choosing_another_axes_keeps_the_slider_where_it_was(page, tmp_path):
+    fig, axs = _row_fig()
+    rects = _axes_rects(_load(page, tmp_path, fig))
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 5, "axes": [axs[0]]}})
+    # Already in "Selected axes" from the setting, so re-enter choosing with the button.
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button'))
+        .find(b => b.textContent === 'Choose axes on figure').click()""")
+    x0, y0, x1, y1 = rects[1]
+    page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)
+    assert _strips(page) == 2
+    vals = page.evaluate("Array.from(document.querySelectorAll('.plotpress-slider input[type=range]')).map(r => r.value)")
+    assert vals == ["5", "5"]

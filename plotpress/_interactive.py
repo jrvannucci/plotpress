@@ -571,6 +571,8 @@ _JS_SOURCE = r"""
     '.plotpress-menu-divider{height:1px;background:#e4e6ea;margin:4px 2px}' +
     '.plotpress-menu-heading{font:600 11px system-ui,sans-serif;color:#6b7280;' +
     'padding:4px 10px 2px}' +
+    '.plotpress-menu-note{font:11px system-ui,sans-serif;color:#6b7280;' +
+    'padding:0 10px 4px;max-width:210px}' +
     '.plotpress-mode-indicator{display:flex;align-items:center;gap:6px;' +
     'margin-left:auto;padding:4px 10px 4px 8px;background:#eef2ff;' +
     'border-radius:999px;font:500 11px system-ui,sans-serif;color:#2b5bd7;' +
@@ -881,6 +883,16 @@ _JS_SOURCE = r"""
   var SLICE_VIEW_ON = SLICE_VIEW === 'replace';
   var SLICE_COMPANION_ON = SLICE_VIEW === 'companion';
   var SLICE_SNAP = SLICE_CFG.snap_pins === true;   // see syncSnappedPins()
+  // Which axes get sliced: every slice-eligible mesh ('all'), or only the ones
+  // the user chose ('selected') -- picked by clicking axes on the figure
+  // (mode 'slice-select', see toggleSliceAxis) or given up front by the
+  // caller's `axes` setting. Axes outside the scope are left as plain
+  // heatmaps: no slider, cursor or strip, and not part of any link group.
+  var SLICE_SCOPE = Array.isArray(SLICE_CFG.axes) ? 'selected' : 'all';
+  var SLICE_SELECTED = {};   // axes key -> true
+  if (Array.isArray(SLICE_CFG.axes)) {
+    SLICE_CFG.axes.forEach(function (k) { SLICE_SELECTED[String(k)] = true; });
+  }
   var SLICE_COMPANION_FRAC = isFinite(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
@@ -1080,6 +1092,52 @@ _JS_SOURCE = r"""
     snapLabel.appendChild(document.createTextNode(' Snap pins to slice'));
     sliceMenu.appendChild(snapLabel);
 
+    // Which axes are sliced: all of them, or only the ones chosen by clicking
+    // them on the figure -- see SLICE_SCOPE.
+    var scopeDivider = document.createElement('div');
+    scopeDivider.className = 'plotpress-menu-divider';
+    sliceMenu.appendChild(scopeDivider);
+    var scopeHeading = document.createElement('div');
+    scopeHeading.className = 'plotpress-menu-heading';
+    scopeHeading.textContent = 'Axes to slice';
+    sliceMenu.appendChild(scopeHeading);
+    var scopeRow = document.createElement('div');
+    scopeRow.className = 'plotpress-slice-orient';
+    var scopeRadios = [];
+    [['all', 'All axes'], ['selected', 'Selected axes']].forEach(function (pair) {
+      var scopeKey = pair[0];
+      var lbl = document.createElement('label');
+      var radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'plotpress-slice-scope';
+      radio.checked = (scopeKey === SLICE_SCOPE);
+      radio.addEventListener('change', function () {
+        SLICE_SCOPE = scopeKey;
+        // Picking "Selected axes" goes straight to choosing on the figure.
+        if (scopeKey === 'selected') { setMode('slice-select'); closeAllMenus(); }
+        else if (mode === 'slice-select') setMode(null);
+        applySliceScope();
+      });
+      lbl.appendChild(radio);
+      lbl.appendChild(document.createTextNode(' ' + pair[1]));
+      scopeRow.appendChild(lbl);
+      scopeRadios.push(radio);
+    });
+    sliceMenu.appendChild(scopeRow);
+    scopeStatusEl = document.createElement('div');
+    scopeStatusEl.className = 'plotpress-menu-note';
+    sliceMenu.appendChild(scopeStatusEl);
+    var chooseBtn = document.createElement('button');
+    chooseBtn.textContent = 'Choose axes on figure';
+    chooseBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (SLICE_SCOPE !== 'selected') return;
+      setMode('slice-select');
+      closeAllMenus();
+    });
+    sliceMenu.appendChild(chooseBtn);
+    updateScopeStatus();
+
     var topDivider = document.createElement('div');
     topDivider.className = 'plotpress-menu-divider';
     sliceMenu.appendChild(topDivider);
@@ -1200,6 +1258,8 @@ _JS_SOURCE = r"""
       orientRadios.forEach(function (r) { r.disabled = !on; });
       linkAllCb.disabled = !on;
       snapCb.disabled = !on;
+      scopeRadios.forEach(function (r) { r.disabled = !on; });
+      chooseBtn.disabled = !on;
       rangeRadios.forEach(function (r) { r.disabled = !on; });
       customMinInput.disabled = customMaxInput.disabled =
         !on || SLICE_RANGE_MODE !== 'custom';
@@ -1273,6 +1333,7 @@ _JS_SOURCE = r"""
 
   function modeLabel(m) {
     if (!m) return 'No tool active';
+    if (m === 'slice-select') return 'Choose slice axes';
     for (var i = 0; i < TOOLS.length; i++) {
       if (TOOLS[i].mode === m) return TOOLS[i].label;
     }
@@ -1317,7 +1378,7 @@ _JS_SOURCE = r"""
     var custom = mode && CUSTOM_MODES[mode];
     svg.style.cursor =
       mode === 'span' ? 'grab' :
-      mode === 'zoom' ? 'crosshair' :
+      (mode === 'zoom' || mode === 'slice-select') ? 'crosshair' :
       mode === 'magnify' ? 'zoom-in' :
       isAnnotateMode(mode) ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';
@@ -1329,6 +1390,7 @@ _JS_SOURCE = r"""
     // Inert (no mode) leaves normal text selection alone.
     svg.style.userSelect = mode ? 'none' : '';
     refreshDragReady();
+    drawSliceSelection();
   }
   setMode(null);  // start inert with an arrow cursor
 
@@ -1549,8 +1611,89 @@ _JS_SOURCE = r"""
   // "one shared global slider per group" case (buildSliceSliders(), when
   // SLICE_LINK_ALL) needs the full member list per group instead, which a
   // flattened index map can't give back.
+  function sliceScopeKeys() {
+    var keys = Object.keys(SLICE_AXES);
+    return SLICE_SCOPE === 'selected' ? keys.filter(function (k) { return SLICE_SELECTED[k]; }) : keys;
+  }
+  var scopeStatusEl = null;
+  function updateScopeStatus() {
+    if (!scopeStatusEl) return;
+    var n = Object.keys(SLICE_SELECTED).filter(function (k) { return SLICE_AXES[k]; }).length;
+    scopeStatusEl.textContent = SLICE_SCOPE === 'all' ? 'Slicing every mesh'
+      : n ? n + ' selected \u2014 click an axes to add or remove it'
+          : 'None selected \u2014 click axes on the figure';
+  }
+  // Outlines the chosen axes (solid, blue) -- and, while choosing, the
+  // choosable ones (dashed) -- in the outer <svg>, over the axes' own
+  // original rect, so the selection stays visible in every view.
+  function drawSliceSelection() {
+    var old = svg.querySelector('g.plotpress-slice-select');
+    if (old) old.remove();
+    // setMode(null) runs at startup, before any of the Slice state exists.
+    if (SLICE_SCOPE !== 'selected' || !sliceMenuNeeded) return;
+    var g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('class', 'plotpress-slice-select');
+    g.setAttribute('pointer-events', 'none');
+    var choosing = mode === 'slice-select';
+    Object.keys(SLICE_AXES).forEach(function (k) {
+      var o = META[k], on = !!SLICE_SELECTED[k];
+      if (!o || (!on && !choosing)) return;
+      var r = document.createElementNS(SVGNS, 'rect');
+      r.setAttribute('x', o.x + 1); r.setAttribute('y', o.y + 1);
+      r.setAttribute('width', o.w - 2); r.setAttribute('height', o.h - 2);
+      if (on) {
+        r.setAttribute('fill', 'rgba(43,108,255,0.07)');
+        r.setAttribute('stroke', '#2b6cff'); r.setAttribute('stroke-width', 2);
+      } else {
+        r.setAttribute('fill', 'none');
+        r.setAttribute('stroke', '#9ca3af'); r.setAttribute('stroke-width', 1);
+        r.setAttribute('stroke-dasharray', '4,3');
+      }
+      g.appendChild(r);
+    });
+    svg.appendChild(g);
+  }
+  function currentSliceIndex() {
+    var ks = Object.keys(SLICE_SLIDERS);
+    return ks.length ? SLICE_SLIDERS[ks[0]].api.i : null;
+  }
+  function restoreSliceIndex(index) {
+    var started = [];
+    Object.keys(SLICE_SLIDERS).forEach(function (k) {
+      var built = SLICE_SLIDERS[k];
+      if (started.indexOf(built) !== -1) return;
+      started.push(built);
+      var top = +built.box.querySelector('input[type=range]').max;
+      built.api.external(Math.max(0, Math.min(index, top)));
+    });
+  }
+  // The scope changed: redraw the outlines and, if Slice is on, rebuild the
+  // sliders for just the axes now in scope -- keeping the slider where it was
+  // rather than snapping back to the first row/column.
+  function applySliceScope() {
+    drawSliceSelection();
+    updateScopeStatus();
+    if (!SLICE_ENABLED) return;
+    var keep = currentSliceIndex();
+    buildSliceSliders();
+    if (keep !== null) restoreSliceIndex(keep);
+  }
+  // A click in 'slice-select' mode toggles the (topmost) mesh axes under it.
+  function toggleSliceAxis(e) {
+    var p = toUser(e), hit = null;
+    Object.keys(SLICE_AXES).map(Number).sort(function (a, b) { return b - a; }).some(function (k) {
+      var o = META[k];
+      if (o && p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + o.h) {
+        hit = String(k); return true;
+      }
+      return false;
+    });
+    if (hit === null) return;
+    if (SLICE_SELECTED[hit]) delete SLICE_SELECTED[hit]; else SLICE_SELECTED[hit] = true;
+    applySliceScope();
+  }
   function computeSliceLinkGroups(orientation) {
-    var keys = Object.keys(SLICE_AXES), groups = [];
+    var keys = sliceScopeKeys(), groups = [];
     keys.forEach(function (k) {
       for (var g = 0; g < groups.length; g++) {
         if (edgesMatch(k, groups[g][0], orientation)) { groups[g].push(k); return; }
@@ -2374,26 +2517,33 @@ _JS_SOURCE = r"""
   // teardownSliceSliders() by the "Enable Slice" checkbox's off handler so
   // unchecking it leaves nothing behind at all, the same figure this would
   // have rendered if Slice didn't exist.
+  function teardownAxesVisuals(key) {
+    removeCompanion(key);
+    var st = SLICE_STATE[key];
+    if (!st) return;
+    // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
+    // own comment on this same selector.
+    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    meshEls.forEach(function (im) { im.style.display = ''; });
+    var origTicks = document.getElementById('ticks' + key);
+    if (origTicks) origTicks.style.display = '';
+    if (st.cursorEl) st.cursorEl.remove();
+    if (st.sliceEl) st.sliceEl.remove();
+    if (st.tickGroup) st.tickGroup.remove();
+    delete SLICE_STATE[key];
+  }
   function teardownSliceVisuals() {
-    Object.keys(SLICE_STATE).forEach(function (key) {
-      removeCompanion(key);
-      var st = SLICE_STATE[key];
-      // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
-      // own comment on this same selector.
-      var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
-      meshEls.forEach(function (im) { im.style.display = ''; });
-      var origTicks = document.getElementById('ticks' + key);
-      if (origTicks) origTicks.style.display = '';
-      if (st.cursorEl) st.cursorEl.remove();
-      if (st.sliceEl) st.sliceEl.remove();
-      if (st.tickGroup) st.tickGroup.remove();
-    });
+    Object.keys(SLICE_STATE).forEach(teardownAxesVisuals);
     SLICE_STATE = {};
   }
 
   function buildSliceSliders() {
     teardownSliceSliders();
     ensureSvgWrap();
+    // An axes that has left the scope goes back to a plain heatmap.
+    var inScope = {};
+    sliceScopeKeys().forEach(function (k) { inScope[k] = true; });
+    Object.keys(SLICE_STATE).forEach(function (k) { if (!inScope[k]) teardownAxesVisuals(k); });
 
     var groups = computeSliceLinkGroups(SLICE_ORIENTATION);
     var linkIndexOf = sliceLinkIndexOf(groups);
@@ -4570,6 +4720,7 @@ _JS_SOURCE = r"""
   svg.addEventListener('click', function (e) {
     if (moved) return;
     if (e.target.closest('.plotpress-legend') || e.target.closest('.plotpress-pin')) return;
+    if (mode === 'slice-select') { toggleSliceAxis(e); return; }
     if (mode === 'note-plain') { addPlainNote(e); return; }
     if (mode === 'note-free') { addFreeNote(e); return; }
     if (mode === 'note-point') { addPointNote(e); return; }
@@ -4856,18 +5007,10 @@ _JS_SOURCE = r"""
   // Start Slice in the caller's chosen state (options={"slice": {"enabled":
   // True, ...}}) -- the menu controls above already read the same variables,
   // so this only has to build what "enabled" implies.
+  if (sliceMenuNeeded) drawSliceSelection();
   if (sliceMenuNeeded && SLICE_ENABLED) {
     buildSliceSliders();
-    if (isFinite(SLICE_CFG.index)) {
-      var startedSliders = [];
-      Object.keys(SLICE_SLIDERS).forEach(function (k) {
-        var built = SLICE_SLIDERS[k];
-        if (startedSliders.indexOf(built) !== -1) return;
-        startedSliders.push(built);
-        var top = +built.box.querySelector('input[type=range]').max;
-        built.api.external(Math.min(+SLICE_CFG.index, top));
-      });
-    }
+    if (isFinite(SLICE_CFG.index)) restoreSliceIndex(+SLICE_CFG.index);
   }
   var savedStateEl = document.getElementById('plotpress-saved-state');
   if (savedStateEl) applySavedState(JSON.parse(savedStateEl.textContent));
