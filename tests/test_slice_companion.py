@@ -645,3 +645,26 @@ def test_strip_pin_labels_leave_out_the_slices_own_coordinate(page, tmp_path):
     # ...while Extract still returns the full record.
     (rec,) = page.evaluate("window.plotpressGetMarkers()")
     assert {"x", "y", "z"} <= set(rec)
+
+
+@pytest.mark.browser
+def test_a_pin_dropped_off_scale_is_red_immediately(page, tmp_path):
+    # Not only after the next slider step: the very first layout must paint it.
+    _load(page, tmp_path, _ramp_fig(), options={"slice": {**_RANGE, "index": 7}})
+    _enter_pick_mode(page)
+    # The whole profile is off the scale here, so aim at the strip itself
+    # rather than at the (clipped-away) line.
+    x, y = page.evaluate("""() => { const c = document.getElementById('plotpress-svg').getScreenCTM();
+        const r = document.querySelector('#sliceclip0 rect');
+        return [(+r.getAttribute('x') + +r.getAttribute('width') / 2) * c.a + c.e,
+                (+r.getAttribute('y') + +r.getAttribute('height') / 2) * c.d + c.f]; }""")
+    page.mouse.click(x, y)
+    assert _strip_pin_state(page)["red"] == "#ff6b6b"
+
+
+@pytest.mark.browser
+def test_a_mirror_of_an_off_scale_pin_is_red_immediately(page, tmp_path):
+    _load(page, tmp_path, _ramp_fig(), options={"slice": {**_RANGE, "index": 7, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.5, 0.5)
+    assert _strip_pin_state(page)["red"] == "#ff6b6b"

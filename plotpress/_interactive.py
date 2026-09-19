@@ -3775,7 +3775,6 @@ _JS_SOURCE = r"""
     var g = addPin(a.px, a.py, text !== undefined ? text : a.label, anchor.axes);
     g.dataset.kind = anchor.kind;
     g.dataset.index = a.index;
-    applySliceVisibility(g);
     if (text !== undefined) { g.dataset.customLabel = text; g.classList.add('plotpress-note'); }
     if (anchor.kind === 'frame') {
       g.dataset.frameId = anchor.id; g.dataset.frameUnit = anchor.unit;
@@ -3798,6 +3797,9 @@ _JS_SOURCE = r"""
     // boxDraggableNow() itself keys its point-picking-vs-annotation split
     // on, so it has to run again now that it's actually set.
     if (text !== undefined) refreshOneDragReady(g);
+    // Needs dataset.axes (set above), which layoutPin's own call in addPin
+    // ran too early to see.
+    applySliceVisibility(g);
     if (SLICE_SNAP && (anchor.kind === 'mesh' || anchor.kind === 'meshframe')) syncSnappedPins();
     return g;
   }
