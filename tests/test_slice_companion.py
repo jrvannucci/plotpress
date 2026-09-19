@@ -546,3 +546,91 @@ def test_a_pins_link_color_survives_another_pin_being_deleted(page, tmp_path):
     page.evaluate("""() => document.querySelector('.plotpress-pin:not([data-snapped])')
         .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}))""")
     assert [f for s_, f in _label_fills(page) if not s_] == [second]
+
+
+# ---- a strip pin whose value leaves the strip / disappears / scrolls away ----------
+
+def _ramp_fig(nan_at=None):
+    """z[row, col] = 10*row + col, so each slider step moves the whole profile up."""
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    z = np.arange(80, dtype=float).reshape(8, 10)
+    if nan_at is not None:
+        z[nan_at] = np.nan
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9), z)
+    fig.tight_layout()
+    return fig
+
+
+def _set_slider(page, row):
+    page.evaluate("""(row) => { const r = document.querySelector('input[type=range]');
+        r.value = row; r.dispatchEvent(new Event('input', {bubbles: true})); }""", row)
+
+
+def _strip_pin_state(page):
+    """{top, bottom, dot_y, display, red} for the one strip pin, in screen pixels."""
+    return page.evaluate("""() => {
+      const pin = document.querySelector('.plotpress-pin[data-kind="slice"]');
+      const svg = document.getElementById('plotpress-svg'), c = svg.getScreenCTM();
+      const r = document.querySelector('#sliceclip0 rect');
+      const y = +r.getAttribute('y'), h = +r.getAttribute('height');
+      const dot = pin.querySelector('circle').getBoundingClientRect();
+      const red = pin.querySelector('tspan');
+      return {top: y * c.d + c.f, bottom: (y + h) * c.d + c.f,
+              dot_y: dot.top + dot.height / 2, display: pin.style.display,
+              red: red ? red.getAttribute('fill') : null,
+              label: pin.textContent.trim()};
+    }""")
+
+
+_RANGE = {"enabled": True, "range": "custom", "range_min": 0, "range_max": 20}
+
+
+@pytest.mark.browser
+def test_a_pin_whose_value_leaves_the_range_clamps_to_the_strip_with_a_red_value(page, tmp_path):
+    _load(page, tmp_path, _ramp_fig(), options={"slice": dict(_RANGE)})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    inside = _strip_pin_state(page)
+    assert inside["top"] <= inside["dot_y"] <= inside["bottom"]
+    assert inside["red"] is None                       # in range: an ordinary label
+
+    _set_slider(page, 7)                               # row 7 is 70+, far past range_max=20
+    over = _strip_pin_state(page)
+    assert over["top"] - 1 <= over["dot_y"] <= over["bottom"] + 1   # stays on the strip
+    assert over["dot_y"] < inside["dot_y"]             # pinned at the top edge
+    assert over["red"] == "#ff6b6b"                    # the value is red
+    assert _parse(over["label"])["z"] >= 70            # and still the true value
+
+    _set_slider(page, 0)                               # back in range
+    assert _strip_pin_state(page)["red"] is None
+
+
+@pytest.mark.browser
+def test_a_pin_is_hidden_while_its_sample_has_no_value(page, tmp_path):
+    fig = _ramp_fig(nan_at=(3, 5))
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.55)                           # a sample in column 5
+    assert _parse(_pin_labels(page)[0])["x"] == pytest.approx(5.5)
+    assert _strip_pin_state(page)["display"] == ""
+    _set_slider(page, 3)                               # z[3, 5] is NaN
+    assert _strip_pin_state(page)["display"] == "none"
+    _set_slider(page, 4)
+    assert _strip_pin_state(page)["display"] == ""
+
+
+@pytest.mark.browser
+def test_a_pin_is_hidden_once_zoomed_out_of_the_strips_view(page, tmp_path):
+    _load(page, tmp_path, _ramp_fig(), options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.1)                            # a sample near the left edge
+    assert _strip_pin_state(page)["display"] == ""
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
+        .find(b => b.textContent === 'Axis Zoom').click()""")
+    box = page.evaluate("""() => { const r = document.querySelector('.plotpress-mesh')
+        .getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }""")
+    page.mouse.move(box[0] + box[2] * 0.6, box[1] + box[3] * 0.3)   # zoom into the right side
+    page.mouse.down()
+    page.mouse.move(box[0] + box[2] * 0.95, box[1] + box[3] * 0.7, steps=4)
+    page.mouse.up()
+    assert _strip_pin_state(page)["display"] == "none"

@@ -71,8 +71,12 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     mirror on the shown profile, at the same position along the shared axis.
     The heatmap pin stays where it is; each pin and its mirror share a label
     color so you can see they're linked, and the mirror follows the slider
-    and is left out of Extract. Pins on the
-    "replaces heatmap" profile aren't supported. Axes with fixed ticks
+    and is left out of Extract. A pin whose value moves past the
+    profile's range (a fixed ``"colorbar"`` or ``"custom"`` range, while the
+    slider plays) stays on the strip's edge with its value shown in red rather
+    than leaving the axes; it's hidden while its sample has no value or has
+    been zoomed out of view. Pins on the "replaces heatmap" profile aren't
+    supported. Axes with fixed ticks
     (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep the
     plain cursor and slider, since their ticks can't be redrawn around a
     shrunken heatmap.

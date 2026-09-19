@@ -1733,6 +1733,11 @@ _JS_SOURCE = r"""
     return {
       s: s, isX: isX, vmin: vmin, vmax: vmax, off: off,
       strip: isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h },
+      // Where sample j sits along the shared axis (the heatmap's own x for an
+      // X slice, y for a Y slice) -- independent of its value.
+      along: function (j) {
+        return isX ? toPixel(m, slice.xs[j], m.ymin).x : toPixel(m, m.xmin, slice.xs[j]).y;
+      },
       // Pixel position of sample j; null if its value is missing.
       at: function (j) {
         var v = slice.ys[j];
@@ -1812,14 +1817,50 @@ _JS_SOURCE = r"""
     var pl = slice && companionPlacer(key, slice);
     if (!pl) return null;
     j = Math.max(0, Math.min(slice.xs.length - 1, j));
-    var q = pl.at(j);
-    if (!q) return null;
-    var isX = SLICE_ORIENTATION === 'x';
+    var o = META[key], isX = SLICE_ORIENTATION === 'x';
+    var v = slice.ys[j], finite = isFiniteNum(v);
+    var al = pl.along(j), lo = isX ? o.x : o.y, hi = isX ? o.x + o.w : o.y + o.h;
+    // Hidden -- not drawn at all -- while there's nothing to point at: the
+    // sample has no value right now (NaN under the slider), or it's been
+    // panned/zoomed out of the strip's own extent along the shared axis.
+    var hidden = !finite || al < lo || al > hi;
+    // A value past the strip's range (a fixed colorbar/custom range, while
+    // the slider plays) would put the pin outside the strip, where the line
+    // itself is clipped away. It stays on the strip's edge instead, its label
+    // still carrying the true value -- with the value drawn red (see
+    // applySliceVisibility) to say it's off the scale.
+    var off = finite ? pl.off(v) : pl.s / 2, edge = 2, past = null;
+    if (off > pl.s - edge) { off = pl.s - edge; past = 'hi'; }
+    else if (off < edge) { off = edge; past = 'lo'; }
+    al = Math.max(lo, Math.min(hi, al));
+    var q = isX ? { px: al, py: o.y + pl.s - off } : { px: o.x + off, py: al };
     var entry = meshEntryForAxes(key) || {};
     var name = entry.name || 'z';
     var x = isX ? slice.xs[j] : slice.fixedCoord, y = isX ? slice.fixedCoord : slice.xs[j];
-    return { px: q.px, py: q.py, index: j, x: x, y: y, z: slice.ys[j], name: name,
-             label: 'x=' + fmt(x) + ', y=' + fmt(y) + ', ' + name + '=' + fmt(slice.ys[j]) };
+    return { px: q.px, py: q.py, index: j, x: x, y: y, z: v, name: name,
+             hidden: hidden, past: past,
+             label: 'x=' + fmt(x) + ', y=' + fmt(y) + ', ' + name + '=' + fmt(v) };
+  }
+  // Per-slice state of a strip pin, applied after every layout: hidden while
+  // there is nothing to point at, and the value in its label drawn red while
+  // it's clamped to the strip's edge (off the scale). The label is one <text>,
+  // so the value is split out into its own red <tspan> here.
+  function applySliceVisibility(g) {
+    if (g.dataset.kind !== 'slice') return;
+    var sp = slicePinPoint(g.dataset.axes, +g.dataset.index);
+    g.style.display = (sp && sp.hidden) ? 'none' : '';
+    var text = g.querySelector('text');
+    if (!text) return;
+    var plain = text.textContent, m = /^(.*, )([^,=]+=[^,]*)$/.exec(plain);
+    text.textContent = plain;
+    if (sp && sp.past && m) {
+      text.textContent = '';
+      text.appendChild(document.createTextNode(m[1]));
+      var red = document.createElementNS(SVGNS, 'tspan');
+      red.setAttribute('fill', '#ff6b6b'); red.setAttribute('font-weight', 'bold');
+      red.textContent = m[2];
+      text.appendChild(red);
+    }
   }
   function sliceStripPick(p) {
     var best = null;
@@ -3368,6 +3409,7 @@ _JS_SOURCE = r"""
     syncPinArrow(g);
     g.dataset.anchorX = px; g.dataset.anchorY = py;
     updatePinTransform(g);
+    applySliceVisibility(g);
   }
 
   // Re-lays-out just the leader line, from whatever the box/dot's own
@@ -3731,6 +3773,7 @@ _JS_SOURCE = r"""
     var g = addPin(a.px, a.py, text !== undefined ? text : a.label, anchor.axes);
     g.dataset.kind = anchor.kind;
     g.dataset.index = a.index;
+    applySliceVisibility(g);
     if (text !== undefined) { g.dataset.customLabel = text; g.classList.add('plotpress-note'); }
     if (anchor.kind === 'frame') {
       g.dataset.frameId = anchor.id; g.dataset.frameUnit = anchor.unit;

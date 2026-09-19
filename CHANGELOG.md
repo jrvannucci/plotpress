@@ -33,7 +33,8 @@ anywhere in the source.
   (the default), the profile replacing the heatmap, and a cursor-only heatmap.
   Point Picking works on the strip -- a click pins the nearest profile sample
   (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
-  arrow keys, and extracts as a `"slice"` record -- and **Snap pins to slice** (a checkbox
+  arrow keys (staying on the strip's edge, value in red, if it goes off the
+  range), and extracts as a `"slice"` record -- and **Snap pins to slice** (a checkbox
   in the menu's own "Slice view" group) mirrors each heatmap pin onto the
   shown profile while the heatmap pin stays put.
 - **Startup settings for a tool.** Pass `options` as a dict to start a tool in
