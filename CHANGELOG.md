@@ -68,6 +68,15 @@ anywhere in the source.
   "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --
   rather than switched off; values are validated up front.
 
+- **Gridlines on the Slice profile.** A "Gridlines on profile" checkbox (and a
+  `grid` startup setting, default on) draws light lines on the strip and on the
+  profile-replaces-heatmap view at both the value ticks and the heatmap's own ticks.
+- **Docs: Slice examples.** Four examples in the gridded-data gallery (a heatmap
+  row, columns with the replace view, linked meshes, chosen axes) and one at scale
+  (a thousand meshes). Every live pcolormesh/image figure in the plot-type
+  reference and real-application galleries now opens with Slice enabled, and an
+  example can set its own state with `_gallery_interactive_options`.
+
 ### Performance
 
 - **Slice on a figure with ~1000 pcolormeshes.** Enabling Slice went from ~14 s

@@ -1668,3 +1668,72 @@ def test_a_wide_grid_gets_a_strip_for_every_axes_quickly(page, tmp_path):
     page.evaluate("""() => { const r = document.querySelector('.plotpress-slider input[type=range]');
         r.value = 3; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
     assert time.time() - t0 < 2.0
+
+
+# ---- gridlines on the profile ----------------------------------------------------
+
+def _grid_checkbox(page, checked=None):
+    return page.evaluate("""(want) => {
+      const cb = Array.from(document.querySelectorAll('.plotpress-menu-dropdown label')).find(
+          l => l.textContent.includes('Gridlines on profile')).querySelector('input');
+      if (want !== null && cb.checked !== want) cb.click();
+      return cb.checked;
+    }""", checked)
+
+
+def _strip_line_count(page):
+    return page.evaluate("document.querySelector('.plotpress-slice-companion g[stroke=\"#e3e3e3\"]')"
+                         " ? document.querySelectorAll('.plotpress-slice-companion g[stroke=\"#e3e3e3\"] line').length : 0")
+
+
+def test_grid_must_be_a_bool():
+    with pytest.raises(ValueError):
+        _grid_fig().to_html(options={"slice": {"grid": "yes"}})
+    assert _config(_grid_fig().to_html(options={"slice": {"grid": False}}))["slice"] == {"grid": False}
+
+
+@pytest.mark.browser
+def test_the_grid_checkbox_toggles_the_strip_gridlines(page, tmp_path):
+    _load(page, tmp_path, _grid_fig((1, 2)), options={"slice": {"enabled": True}})
+    assert _grid_checkbox(page) is True
+    on = _strip_line_count(page)
+    assert on > 0
+    _grid_checkbox(page, False)
+    assert _strip_line_count(page) == 0
+    _grid_checkbox(page, True)
+    assert _strip_line_count(page) == on
+
+
+@pytest.mark.browser
+def test_the_strip_grid_has_lines_along_both_directions(page, tmp_path):
+    # Value guides alone would all share one orientation; the spatial ones cross them.
+    _load(page, tmp_path, _grid_fig((1, 1)), options={"slice": {"enabled": True, "orientation": "x"}})
+    horiz, vert = page.evaluate("""() => {
+      const ls = Array.from(document.querySelectorAll('.plotpress-slice-companion g[stroke="#e3e3e3"] line'));
+      return [ls.filter(l => l.getAttribute('y1') === l.getAttribute('y2')).length,
+              ls.filter(l => l.getAttribute('x1') === l.getAttribute('x2')).length];
+    }""")
+    assert horiz > 0 and vert > 0
+
+
+@pytest.mark.browser
+def test_the_replace_view_draws_its_grid_under_the_profile(page, tmp_path):
+    _load(page, tmp_path, _grid_fig((1, 1)), options={"slice": {"enabled": True, "view": "replace"}})
+    order = page.evaluate("""() => { const svg = document.getElementById('plotpress-svg');
+      const kids = Array.from(svg.children);
+      const g = kids.findIndex(k => k.classList.contains('plotpress-slice-ticks'));
+      const l = kids.findIndex(k => k.classList.contains('plotpress-slice-line'));
+      return [g, l, document.querySelectorAll('.plotpress-slice-grid').length]; }""")
+    assert order[0] != -1 and order[0] < order[1] and order[2] == 1
+    _grid_checkbox(page, False)
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-grid').length") == 0
+
+
+@pytest.mark.browser
+def test_grid_off_at_startup_and_kept_by_save(page, tmp_path):
+    _load(page, tmp_path, _grid_fig((1, 1)), options={"slice": {"enabled": True, "grid": False}})
+    assert _grid_checkbox(page) is False
+    assert _strip_line_count(page) == 0
+    _save_and_reopen(page, tmp_path)
+    assert _grid_checkbox(page) is False
+    assert _strip_line_count(page) == 0

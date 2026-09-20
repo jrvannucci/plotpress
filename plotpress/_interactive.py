@@ -888,6 +888,10 @@ _JS_SOURCE = r"""
   var SLICE_VIEW_ON = SLICE_VIEW === 'replace';
   var SLICE_COMPANION_ON = SLICE_VIEW === 'companion';
   var SLICE_SNAP = SLICE_CFG.snap_pins === true;   // see syncSnappedPins()
+  // Light gridlines on the profile (the strip or the replace view): at the value
+  // ticks, and at the spatial ticks the heatmap's own axis carries. On unless
+  // switched off, since the strip has always drawn its value guides.
+  var SLICE_GRID = SLICE_CFG.grid !== false;
   // Which axes get sliced: every slice-eligible mesh ('all'), or only the ones
   // the user chose ('selected') -- picked by clicking axes on the figure
   // (mode 'slice-select', see toggleSliceAxis) or given up front by the
@@ -1087,6 +1091,18 @@ _JS_SOURCE = r"""
       viewRow.appendChild(lbl);
     });
     sliceMenu.appendChild(viewRow);
+
+    var gridLabel = document.createElement('label');
+    var gridCb = document.createElement('input');
+    gridCb.type = 'checkbox';
+    gridCb.checked = SLICE_GRID;
+    gridCb.addEventListener('change', function () {
+      SLICE_GRID = gridCb.checked;
+      rerenderAllSlices();
+    });
+    gridLabel.appendChild(gridCb);
+    gridLabel.appendChild(document.createTextNode(' Gridlines on profile'));
+    sliceMenu.appendChild(gridLabel);
 
     // Mirrors each heatmap pin onto the shown profile -- see syncSnappedPins().
     var snapLabel = document.createElement('label');
@@ -2100,7 +2116,24 @@ _JS_SOURCE = r"""
           labels.push('<text x="' + gx.toFixed(2) + '" y="' + (o.y + o.h + fs + 3) + '" text-anchor="middle">' + tk.labels[j] + '</text>');
         }
       }
-      parts.push('<g stroke="#e3e3e3" stroke-width="0.8">' + guides.join('') + '</g>');
+      if (SLICE_GRID) {
+        // Along the shared axis too: the heatmap's own tick positions, so a
+        // vertical (X slice) or horizontal (Y slice) line lines up with its ticks.
+        var mm = CUR[key];
+        var lo2 = isX ? Math.min(mm.xmin, mm.xmax) : Math.min(mm.ymin, mm.ymax);
+        var hi2 = isX ? Math.max(mm.xmin, mm.xmax) : Math.max(mm.ymin, mm.ymax);
+        var stk2 = axisTicks(lo2, hi2, isX ? mm.xscale : mm.yscale);
+        for (var g2 = 0; g2 < stk2.ticks.length; g2++) {
+          if (isX) {
+            var ax2 = toPixel(mm, stk2.ticks[g2], mm.ymin).x;
+            guides.push('<line x1="' + ax2.toFixed(2) + '" y1="' + o.y + '" x2="' + ax2.toFixed(2) + '" y2="' + (o.y + s) + '"/>');
+          } else {
+            var ay2 = toPixel(mm, mm.xmin, stk2.ticks[g2]).y;
+            guides.push('<line x1="' + o.x + '" y1="' + ay2.toFixed(2) + '" x2="' + (o.x + s) + '" y2="' + ay2.toFixed(2) + '"/>');
+          }
+        }
+        parts.push('<g stroke="#e3e3e3" stroke-width="0.8" clip-path="' + companionClip(key, pl.strip) + '">' + guides.join('') + '</g>');
+      }
       // Inside the strip with a white halo, not out in the gutter: the gap
       // between neighboring axes is too narrow to hold a value label.
       parts.push('<g font-size="' + fs + '" fill="' + txtCol
@@ -2463,8 +2496,16 @@ _JS_SOURCE = r"""
     st.tickGroup = document.createElementNS(SVGNS, 'g');
     st.tickGroup.setAttribute('class', 'plotpress-slice-ticks');
     var tk = axisTicks(vmin, vmax, 'linear');
+    var gridPath = '';   // gridlines share the tick positions computed below
+    var gridLine = function (x1, y1, x2, y2) {
+      gridPath += 'M' + x1.toFixed(2) + ',' + y1.toFixed(2) + 'L' + x2.toFixed(2) + ',' + y2.toFixed(2);
+    };
     for (var j = 0; j < tk.ticks.length; j++) {
       var frac2 = (tk.ticks[j] - vmin) / (vmax - vmin);
+      if (SLICE_GRID) {
+        if (SLICE_ORIENTATION === 'x') gridLine(m.x, m.y + m.h - frac2 * m.h, m.x + m.w, m.y + m.h - frac2 * m.h);
+        else gridLine(m.x + frac2 * m.w, m.y, m.x + frac2 * m.w, m.y + m.h);
+      }
       var txt = document.createElementNS(SVGNS, 'text');
       if (SLICE_ORIENTATION === 'x') {
         txt.setAttribute('x', m.x - 6); txt.setAttribute('y', (m.y + m.h - frac2 * m.h + 3).toFixed(2));
@@ -2482,6 +2523,10 @@ _JS_SOURCE = r"""
     var stk = axisTicks(spatialLo, spatialHi, spatialScale);
     for (var k = 0; k < stk.ticks.length; k++) {
       var sp = (SLICE_ORIENTATION === 'x') ? toPixel(m, stk.ticks[k], m.ymin) : toPixel(m, m.xmin, stk.ticks[k]);
+      if (SLICE_GRID) {
+        if (SLICE_ORIENTATION === 'x') gridLine(sp.x, m.y, sp.x, m.y + m.h);
+        else gridLine(m.x, sp.y, m.x + m.w, sp.y);
+      }
       var stxt = document.createElementNS(SVGNS, 'text');
       if (SLICE_ORIENTATION === 'x') {
         stxt.setAttribute('x', sp.x.toFixed(2)); stxt.setAttribute('y', m.y + m.h + 12);
@@ -2493,7 +2538,16 @@ _JS_SOURCE = r"""
       stxt.textContent = stk.labels[k];
       st.tickGroup.appendChild(stxt);
     }
-    svg.appendChild(st.tickGroup);
+    if (gridPath) {
+      // Clipped to the axes and drawn under the profile line.
+      var grid = document.createElementNS(SVGNS, 'path');
+      grid.setAttribute('class', 'plotpress-slice-grid');
+      grid.setAttribute('d', gridPath); grid.setAttribute('fill', 'none');
+      grid.setAttribute('stroke', '#e3e3e3'); grid.setAttribute('stroke-width', 0.8);
+      grid.setAttribute('clip-path', 'url(#clip' + key + ')');
+      st.tickGroup.insertBefore(grid, st.tickGroup.firstChild);
+    }
+    svg.insertBefore(st.tickGroup, st.sliceEl);
   }
 
   // One docked play/step control, modeled directly on buildSlider() (same
@@ -4753,7 +4807,7 @@ _JS_SOURCE = r"""
   // {"slice": {...}}) takes -- see buildSaveHTML.
   function sliceSaveConfig() {
     var c = { enabled: SLICE_ENABLED, view: SLICE_VIEW, orientation: SLICE_ORIENTATION,
-              link_all: SLICE_LINK_ALL, snap_pins: SLICE_SNAP, range: SLICE_RANGE_MODE,
+              link_all: SLICE_LINK_ALL, snap_pins: SLICE_SNAP, grid: SLICE_GRID, range: SLICE_RANGE_MODE,
               panel_size: SLICE_COMPANION_FRAC };
     if (SLICE_RANGE_MODE === 'custom' && isFiniteNum(SLICE_CUSTOM_MIN) && isFiniteNum(SLICE_CUSTOM_MAX)) {
       c.range_min = SLICE_CUSTOM_MIN; c.range_max = SLICE_CUSTOM_MAX;

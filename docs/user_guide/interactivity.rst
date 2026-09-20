@@ -91,6 +91,11 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     or an axes that has one, keeps the plain cursor and slider. When an axes holds several meshes (overlaid on one
     another), only the first one is sliced.
 
+**Gridlines on the profile.** A "Gridlines on profile" checkbox in the Slice view
+group draws light lines on the strip (or on the profile in the replace view) at
+the value ticks and at the heatmap's own ticks, so a value can be read straight
+across. It is on by default; ``"grid": False`` starts with it off.
+
 **Choosing which axes to slice.** A pair of radios under "Axes to slice" picks
 between **All axes** and **Selected axes**. Choosing "Selected axes" drops into a
 click-to-choose mode: click a mesh's axes on the figure to add or remove it
@@ -113,11 +118,24 @@ whose values are its settings::
     })
 
 The settings are ``enabled``, ``view`` (``"companion"``/``"replace"``/
-``"cursor"``), ``orientation`` (``"x"``/``"y"``), ``link_all``, ``range``
+``"cursor"``), ``orientation`` (``"x"``/``"y"``), ``link_all``, ``snap_pins``,
+``grid``, ``range``
 (``"auto"``/``"colorbar"``/``"custom"``, the last with
 ``range_min``/``range_max``), ``index`` (the starting row/column), and
 ``panel_size`` (the strip's share of the axes, 0.1-0.6). Values are checked
 when the page is built, so a typo raises ``ValueError`` immediately.
+
+Worked examples, each live with Slice on: reading a row of a heatmap
+(:doc:`../auto_examples/gridded_data/plot_14_slice_a_heatmap`), slicing columns
+with the profile in the heatmap's place and gridlines
+(:doc:`../auto_examples/gridded_data/plot_15_slice_profile_replaces_heatmap`),
+several meshes scrubbed by one slider
+(:doc:`../auto_examples/gridded_data/plot_16_slice_linked_meshes`), choosing which
+axes of a grid to slice
+(:doc:`../auto_examples/gridded_data/plot_17_slice_chosen_axes`), and a thousand
+meshes on one figure (:doc:`../auto_scale/plot_11_slice_a_thousand_meshes`). In the
+gallery, every live pcolormesh or image figure in the plot-type reference and the
+real applications opens with Slice already enabled.
 
 An unknown name raises ``ValueError`` listing the valid ones. The choice only
 changes which tools the page builds: the embedded data is identical either

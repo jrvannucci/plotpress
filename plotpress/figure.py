@@ -2215,7 +2215,8 @@ class Figure:
         "orientation": "y", "link_all": True, "range": "colorbar"}}``.
         The settings are ``enabled``, ``view``, ``orientation``
         (``"x"``/``"y"``), ``link_all``, ``snap_pins`` (mirror Point Picking
-        pins onto the profile), ``range``
+        pins onto the profile), ``grid`` (gridlines on the profile, default
+        ``True``), ``range``
         (``"auto"``/``"colorbar"``/``"custom"``, the last with
         ``range_min``/``range_max``), ``index`` (the starting row/column),
         ``panel_size`` (the companion strip's fraction of the axes,
@@ -3338,6 +3339,7 @@ _OPTION_KEYS = {
         "panel_size": "fraction",
         "link_all": bool,
         "snap_pins": bool,
+        "grid": bool,
         "axes": "axes",
         "range": ("auto", "colorbar", "custom"),
         "range_min": "number",
