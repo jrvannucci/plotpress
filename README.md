@@ -78,13 +78,14 @@ range, so the line moves through the field instead of rescaling each step:
 
 **At scale**, every gesture above still works the same way on a figure with
 hundreds of axes — zoom from the full grid down into a handful of panels, pan,
-pick a value off a mesh cell, then hand one single panel to Slice by clicking
-it on the figure and read the profile through it, while the other 499 are left
-alone (the figure is
+pick a value off a mesh cell and walk it to another with the arrow keys, then
+hand that one panel to Slice by clicking it on the figure, read the profile
+through it, and project the pin onto that profile so the same point is marked
+on both. The other 499 panels are left alone throughout (the figure is
 [`docs/figure_layout/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_figure_layout/grouping/plot_13_full_scale_demo.html) —
 500 `pcolormesh` panels, 250 groups, each with its own colorbar):
 
-![Zooming from a 500-panel figure into a handful of panels, panning, picking a value that reports x, y and z, then choosing one panel on the figure and reading its slice in a companion strip while every other panel stays unchanged](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
+![Zooming from a 500-panel figure into a handful of panels, panning, picking a value that reports x, y and z, stepping it cell by cell with the arrow keys, then choosing one panel on the figure, reading its slice in a companion strip, and projecting the pin onto the profile so both carry the same point in a matching colour](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
 
 ## One figure. Many destinations.
 

@@ -88,6 +88,13 @@ def axes_click_point(page, index):
       return null; }""", index)
 
 
+def pin_label(page):
+    """The text of the first Point Picking pin, or None if nothing is pinned."""
+    return page.evaluate("""() => { const p = document.querySelector(
+        '.plotpress-pin:not(.plotpress-snapped)');
+        return p ? p.textContent.trim() : null; }""")
+
+
 def click_toolbar(page, label):
     page.evaluate("""(l) => { const b = Array.from(
         document.querySelectorAll('.plotpress-menubar button')).find(
@@ -135,34 +142,36 @@ def record(url):
 
         # --- the whole 500-panel grid -------------------------------------
         click_toolbar(page, "Fit Width")
-        hold(3, 500)
+        hold(2, 450)
 
-        # --- zoom in on it ------------------------------------------------
-        # 12 wheel steps is the useful depth here: it leaves about three whole
-        # panels in view at ~160px each, wide enough for a pin label to read.
-        # Much past that and no panel is fully on screen any more.
+        # --- zoom and pan, briskly ----------------------------------------
+        # Every frame costs the same 360 ms on screen, so the getting-there
+        # part is captured sparsely: the wheel still turns twelve steps, but
+        # only every fourth one is photographed. Otherwise the opening runs
+        # twice as long as any other GIF in the README before anything is
+        # actually demonstrated.
         click_toolbar(page, "Pan/Zoom")
         page.mouse.move(W * 0.44, H * 0.46)
-        for _ in range(7):
+        for step in range(7):
             page.mouse.wheel(0, -260)
-            hold(1, 90)
+            page.wait_for_timeout(55)
+            if step % 3 == 2:
+                hold(1)
 
-        # Pan here rather than at full zoom: with only about three whole panels
-        # on screen at the end, any drag at that depth leaves none of them
-        # fully in view for the pick below to aim at.
         page.mouse.move(W * 0.62, H * 0.58)
         page.mouse.down()
-        for t in (0.34, 0.67, 1.0):
+        for t in (0.5, 1.0):
             page.mouse.move(W * (0.62 - 0.20 * t), H * (0.58 - 0.13 * t))
-            hold(1, 70)
+            hold(1, 55)
         page.mouse.up()
-        hold(1, 180)
 
-        for _ in range(5):
+        for step in range(5):
             page.mouse.move(W * 0.46, H * 0.48)
             page.mouse.wheel(0, -260)
-            hold(1, 90)
-        hold(2, 250)
+            page.wait_for_timeout(55)
+            if step % 2 == 1:
+                hold(1)
+        hold(1, 220)
 
         panels = panels_in_view(page)
         if not panels:
@@ -172,31 +181,42 @@ def record(url):
 
         # --- pick a value, and let the pin sit long enough to read ---------
         click_toolbar(page, "Point Picking")
-        hold(2, 150)                       # mode selected, nothing picked yet
-        page.mouse.click(target["left"] + target["w"] * 0.32,
-                         target["top"] + target["h"] * 0.58)
-        hold(6, 260)                       # <- the pin itself
-        pins = page.evaluate("() => document.querySelectorAll('.plotpress-pin').length")
-        print(f"  pins on the figure: {pins} (expect 1)")
-        if not pins:
+        page.mouse.click(target["left"] + target["w"] * 0.30,
+                         target["top"] + target["h"] * 0.62)
+        hold(4, 260)                       # <- the pin itself
+        label = pin_label(page)
+        print(f"  picked: {label!r}")
+        if not label:
             raise SystemExit("the pick landed nothing -- the GIF would lie")
 
-        # --- turn Slice on: every mesh in view sprouts a strip -------------
-        # The scope radios are deliberately disabled until Slice is enabled,
-        # so this has to come first -- and it makes the narrowing below read.
-        open_menu(page, "Slice")
+        # --- move it: arrow keys walk the pin cell by cell -----------------
+        for _ in range(5):
+            page.keyboard.press("ArrowRight")
+            hold(1, 110)
+        for _ in range(3):
+            page.keyboard.press("ArrowUp")
+            hold(1, 110)
+        moved = pin_label(page)
+        print(f"  stepped to: {moved!r}")
+        if moved == label:
+            raise SystemExit("arrow keys did not move the pin")
         hold(2, 200)
-        menu_checkbox(page, "Enable Slice")
-        hold(3, 700)
 
-        # --- narrow it to ONE of the 500 axes ------------------------------
-        menu_radio(page, "scope", "Selected axes")   # enters choose-axes mode
-        hold(3, 450)                       # strips gone, every candidate dashed
+        # --- turn Slice on, then narrow it to this one axes ----------------
+        # The scope radios stay disabled until Slice is enabled, so this order
+        # is forced -- and it reads better anyway: every mesh slices, then all
+        # but the chosen one drops away.
+        open_menu(page, "Slice")
+        hold(1, 180)
+        menu_checkbox(page, "Enable Slice")
+        hold(2, 700)
+        menu_radio(page, "scope", "Selected axes")
+        hold(2, 420)                       # strips gone, candidates dashed
         here = axes_click_point(page, target["i"])
         if not here:
             raise SystemExit(f"no clickable spot left in axes {target['i']}")
         page.mouse.click(here["cx"], here["cy"])
-        hold(4, 450)                       # only the chosen axes carries a strip
+        hold(3, 420)                       # only the chosen axes carries a strip
 
         n = page.evaluate("() => document.querySelectorAll("
                           "'.plotpress-slice-companion').length")
@@ -204,15 +224,28 @@ def record(url):
         if n != 1:
             raise SystemExit(f"chose {n} axes, not 1 -- the click missed")
 
-        # --- scrub that one panel's slice ----------------------------------
+        # --- project the pin onto the profile ------------------------------
+        open_menu(page, "Slice")
+        hold(1, 180)
+        menu_checkbox(page, "Snap pins to slice")
+        hold(1, 150)
+        page.evaluate("() => document.body.click()")     # get the menu out of the way
+        hold(3, 450)                       # the mirror, sharing the pin's colour
+        mirrors = page.evaluate(
+            "() => document.querySelectorAll('.plotpress-snapped').length")
+        print(f"  mirrored pins on the profile: {mirrors} (expect 1)")
+        if not mirrors:
+            raise SystemExit("the pin was not projected onto the slice")
+
+        # --- scrub: the slice moves, the mirror rides along ----------------
         rows = page.evaluate(
             "() => +document.querySelector('.plotpress-slider input[type=range]').max")
-        for r in np.linspace(1, rows - 1, 8).astype(int):
+        for r in np.linspace(1, rows - 1, 7).astype(int):
             page.evaluate("""(r) => { const s = document.querySelector(
                 '.plotpress-slider input[type=range]');
                 s.value = r; s.dispatchEvent(new Event('input', {bubbles: true})); }""",
                 int(r))
-            hold(1, 90)
+            hold(1, 85)
         hold(3, 200)
         browser.close()
     return frames
