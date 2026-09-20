@@ -43,6 +43,8 @@ anywhere in the source.
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.
+- **A colorbar shared by several axes shrinks with their heatmaps** when every one of
+  them gets a strip (it stays as drawn if only some do).
 - **Save / Save As keep the Slice state.** A saved page reopens with Slice enabled,
   in the same view and orientation, on the same chosen axes, with the same link/snap
   settings, value range and slider position, and with its profile pins.

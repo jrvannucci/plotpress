@@ -1590,3 +1590,44 @@ def test_a_profile_pin_survives_save_as(page, tmp_path):
     pins = _pins(page)
     assert [(k, s) for k, s, _ in pins] == [("slice", False)]
     assert pins[0][2] == label                                          # same sample, same value
+
+
+# ---- a colorbar shared by several axes ---------------------------------------------------
+
+def _shared_cbar_fig():
+    fig, axs = plotpress.subplots(1, 2, figsize=(11, 4.5))
+    x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
+    m = axs[0].pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10))
+    axs[1].pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10) + 5)
+    fig.colorbar(m, ax=list(axs))
+    fig.tight_layout()
+    return fig, list(axs)
+
+
+def _shared_cbar_geometry(page):
+    return page.evaluate("""() => { const g = document.querySelector('g.plotpress-colorbar');
+        const i = g.querySelector('image').getBoundingClientRect();
+        const tops = Array.from(document.querySelectorAll('.plotpress-mesh')).map(m => m.getBoundingClientRect().top);
+        return {parents: g.dataset.parents, top: i.top, bottom: i.bottom, meshTops: tops}; }""")
+
+
+@pytest.mark.browser
+def test_a_shared_colorbar_shrinks_when_all_its_axes_have_strips(page, tmp_path):
+    fig, _ = _shared_cbar_fig()
+    _load(page, tmp_path, fig)
+    plain = _shared_cbar_geometry(page)
+    assert plain["parents"] == "0,1"
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    g = _shared_cbar_geometry(page)
+    assert g["top"] == pytest.approx(g["meshTops"][0], abs=1.5)      # lines up with both heatmaps' tops
+    assert g["top"] > plain["top"] + 20
+
+
+@pytest.mark.browser
+def test_a_shared_colorbar_stays_put_unless_all_its_axes_change_alike(page, tmp_path):
+    fig, axs = _shared_cbar_fig()
+    _load(page, tmp_path, fig)
+    plain = _shared_cbar_geometry(page)
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0]]}})   # only one of the two
+    g = _shared_cbar_geometry(page)
+    assert g["top"] == pytest.approx(plain["top"], abs=1.0) and g["bottom"] == pytest.approx(plain["bottom"], abs=1.0)

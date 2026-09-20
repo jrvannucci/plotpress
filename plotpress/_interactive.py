@@ -1854,12 +1854,24 @@ _JS_SOURCE = r"""
   // tick spacing scale with it, while the tick labels are counter-scaled
   // around their own anchor so the text isn't squashed.
   function alignColorbars(key) {
-    var o = META[key], c = CUR[key];
-    var bars = svg.querySelectorAll('g.plotpress-colorbar[data-parent="' + key + '"]');
-    if (!bars.length || !o || !c) return;
-    var sy = c.h / o.h, ty = c.y - o.y * sy;
-    var same = Math.abs(sy - 1) < 1e-9 && Math.abs(ty) < 1e-6;
-    bars.forEach(function (g) {
+    var rectMap = function (k) {   // how axes k's rect changed: y' = ty + y * sy
+      var o = META[k], c = CUR[k];
+      if (!o || !c) return null;
+      var sy = c.h / o.h;
+      return { sy: sy, ty: c.y - o.y * sy };
+    };
+    document.querySelectorAll('g.plotpress-colorbar').forEach(function (g) {
+      var parents = (g.getAttribute('data-parents') || '').split(',');
+      if (parents.indexOf(String(key)) === -1) return;
+      // A colorbar shared by several axes only follows when they all changed the
+      // same way (e.g. a row of meshes all sliced); otherwise it stays as drawn.
+      var first = rectMap(parents[0]), agree = !!first;
+      parents.forEach(function (k) {
+        var m = rectMap(k);
+        if (!m || !first || Math.abs(m.sy - first.sy) > 1e-9 || Math.abs(m.ty - first.ty) > 1e-6) agree = false;
+      });
+      var sy = agree ? first.sy : 1, ty = agree ? first.ty : 0;
+      var same = Math.abs(sy - 1) < 1e-9 && Math.abs(ty) < 1e-6;
       if (same) g.removeAttribute('transform');
       else g.setAttribute('transform', 'matrix(1,0,0,' + sy + ',0,' + ty + ')');
       g.querySelectorAll('text').forEach(function (t) {
