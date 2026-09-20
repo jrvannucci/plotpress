@@ -62,29 +62,33 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     - **Profile replaces heatmap**: the profile is drawn in the heatmap's place.
     - **Heatmap with cursor**: no profile, just a dashed cursor on the slice.
 
-    Point Picking works on the companion strip: click anywhere along the
-    profile to pin the nearest sample, which reads ``x``, ``y`` and the value
-    there. The pin rides the line through pan, zoom, and slider steps
-    (reporting the value the slice holds *now*), arrow keys step it along
-    the profile, and Extract leaves profile pins out (the heatmap carries the data --
-    see below). **Snap pins to slice** (a checkbox
-    under "Slice view") links heatmap pins and profile pins in both directions:
-    a Point Picking pin on the heatmap gets a mirror on the shown profile, and a
-    pin you place on the profile gets a mirror on the heatmap cell it points at
-    (on the row or column the slider is showing, so it moves as the slider
-    does). The pin you placed stays where it is; each pin and its mirror share
-    a label color so you can see they're linked, and mirrors are left out of
-    Extract; a pin placed on the profile is extracted as the heatmap cell its
-    mirror sits on, and no cell is ever reported twice. If profile pins were left out because Snap is off,
-    the Extract panel says so and names the setting to turn on. A pin whose value moves past the
-    profile's range (a fixed ``"colorbar"`` or ``"custom"`` range, while the
-    slider plays) stays on the strip's edge with its value shown in red rather
-    than leaving the axes; it's hidden while its sample has no value or has
-    been zoomed out of view. Pins on the "replaces heatmap" profile aren't
-    supported. Axes with fixed ticks
-    (``set_xticks``/``set_yticks``), ``axis("off")``, or a twin axis keep the
-    plain cursor and slider, since their ticks can't be redrawn around a
-    shrunken heatmap.
+    Point Picking works on the profile: click anywhere along it to pin the nearest
+    sample, which reads the position along the profile and the value there. In the
+    "Profile replaces heatmap" view the whole axes is the profile, so a click picks
+    a profile sample rather than a (hidden) heatmap cell. The pin rides the line
+    through pan, zoom, and slider steps (reporting the value the slice holds
+    *now*), carries across a switch between the two profile views, and arrow keys
+    step it along the profile. A pin whose value moves past the profile's range (a
+    fixed ``"colorbar"`` or ``"custom"`` range, while the slider plays) stays on
+    the profile's edge with its value shown in red rather than leaving the axes;
+    it's hidden while its sample has no value or has been zoomed out of view.
+
+    Extract leaves profile pins out -- the heatmap carries the data. **Snap pins
+    to slice** (a checkbox under "Slice view", companion panel only) links heatmap
+    pins and profile pins in both directions: a Point Picking pin on the heatmap
+    gets a mirror on the shown profile, and a pin you place on the profile gets a
+    mirror on the heatmap cell it points at (on the row or column the slider is
+    showing, so it moves as the slider does). The pin you placed stays where it
+    is; each pin and its mirror share a label color so you can see they're linked,
+    and mirrors are left out of Extract. A pin placed on the profile is extracted
+    as the heatmap cell its mirror sits on, and no cell is ever reported twice; if
+    profile pins were left out because Snap is off, the Extract panel says so and
+    names the setting to turn on.
+
+    Axes with fixed ticks (``set_xticks``/``set_yticks``), ``axis("off")``, or a
+    twin or secondary axis get a strip too (a twin shrinks together with its
+    parent, and fixed ticks are remapped to the smaller heatmap). An inset axes,
+    or an axes that has one, keeps the plain cursor and slider.
 
 **Choosing which axes to slice.** A pair of radios under "Axes to slice" picks
 between **All axes** and **Selected axes**. Choosing "Selected axes" drops into a

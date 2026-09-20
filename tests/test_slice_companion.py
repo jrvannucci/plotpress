@@ -1449,3 +1449,69 @@ def test_a_twins_labels_stay_on_the_right_under_a_strip(page, tmp_path):
     twin_labels = page.evaluate("""() => Array.from(document.querySelectorAll('#ticks1 text')).map(
         t => t.getBoundingClientRect().left)""")
     assert twin_labels and all(x > mesh["right"] for x in twin_labels)   # only its own (right) y-axis
+
+
+# ---- pins on the "Profile replaces heatmap" view ---------------------------------------
+
+def _click_axes_middle(page, frac_x=0.5, frac_y=0.5):
+    b = page.evaluate("""() => { const c = document.getElementById('plotpress-svg').getScreenCTM();
+        const r = document.querySelector('#clip0 rect');
+        return [(+r.getAttribute('x') + +r.getAttribute('width') * %f) * c.a + c.e,
+                (+r.getAttribute('y') + +r.getAttribute('height') * %f) * c.d + c.f]; }""" % (frac_x, frac_y))
+    page.mouse.click(*b)
+
+
+@pytest.mark.browser
+def test_clicking_the_replace_view_picks_a_profile_sample_not_a_hidden_cell(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "view": "replace", "index": 3}})
+    _enter_pick_mode(page)
+    _click_axes_middle(page)
+    pins = _pins(page)
+    assert [(k, s) for k, s, _ in pins] == [("slice", False)]        # never a "mesh" pin on the hidden heatmap
+    got = _parse(pins[0][2])
+    assert got["z"] == z[3, int(got["x"])]                            # the profile's own value
+
+
+@pytest.mark.browser
+def test_a_replace_view_pin_follows_the_slider(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "view": "replace", "index": 1}})
+    _enter_pick_mode(page)
+    _click_axes_middle(page, 0.3)
+    col = int(_parse(_pins(page)[0][2])["x"])
+    _set_slider(page, 6)
+    assert _parse(_pins(page)[0][2])["z"] == z[6, col]
+
+
+@pytest.mark.browser
+def test_pins_carry_across_the_two_profile_views_but_not_to_cursor_only(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 2}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)                                            # a pin on the companion strip
+    x = _parse(_pins(page)[0][2])["x"]
+    _pick_view(page, "replace")
+    assert len(_pins(page)) == 1
+    assert _parse(_pins(page)[0][2])["x"] == x                         # same sample, now on the replace profile
+    assert page.evaluate("document.querySelector('.plotpress-pin').style.display") == ""
+    _pick_view(page, "Companion")
+    assert len(_pins(page)) == 1 and _parse(_pins(page)[0][2])["z"] == z[2, int(x)]
+    _pick_view(page, "cursor")
+    assert _pins(page) == []                                           # no profile left to point at
+
+
+@pytest.mark.browser
+def test_a_replace_view_pin_clamps_and_goes_red_when_off_range(page, tmp_path):
+    _load(page, tmp_path, _ramp_fig(), options={"slice": {**_RANGE, "view": "replace", "index": 0}})
+    _enter_pick_mode(page)
+    _click_axes_middle(page, 0.5, 0.5)
+    _set_slider(page, 7)                                              # values 70+, far past range_max=20
+    state = page.evaluate("""() => { const pin = document.querySelector('.plotpress-pin[data-kind="slice"]');
+        const c = document.getElementById('plotpress-svg').getScreenCTM();
+        const r = document.querySelector('#clip0 rect');
+        const top = +r.getAttribute('y') * c.d + c.f, bottom = (+r.getAttribute('y') + +r.getAttribute('height')) * c.d + c.f;
+        const dot = pin.querySelector('circle').getBoundingClientRect();
+        return {inside: dot.top + dot.height / 2 >= top - 1 && dot.top + dot.height / 2 <= bottom + 1,
+                red: !!pin.querySelector('tspan')}; }""")
+    assert state == {"inside": True, "red": True}

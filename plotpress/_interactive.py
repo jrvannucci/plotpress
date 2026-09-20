@@ -1047,6 +1047,7 @@ _JS_SOURCE = r"""
       Object.keys(SLICE_SLIDERS).forEach(function (k) {
         renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
       });
+      relayoutSlicePins(Object.keys(SLICE_SLIDERS));   // pins carried across a view switch
       syncSnappedPins();
     };
     // How the slice is shown -- see SLICE_VIEW. Radios, not independent
@@ -1950,7 +1951,9 @@ _JS_SOURCE = r"""
     var st = SLICE_STATE[key];
     if (st && st.compGroup) {
       st.compGroup.remove(); st.compGroup = null;
-      removeSlicePins(key);   // nothing left for them to point at
+      // Nothing left for them to point at -- unless the replace view is taking over
+      // as the profile, in which case they carry across.
+      if (!SLICE_VIEW_ON) removeSlicePins(key);
     }
     var o = META[key], c = CUR[key];
     if (!o || !c) return;
@@ -1979,17 +1982,31 @@ _JS_SOURCE = r"""
   // the strip's geometry, shared by drawing the profile and by Point Picking
   // pins on it (slicePinPoint), so a pin can never disagree with the line it
   // sits on. Null when the whole slice is NaN.
-  function companionPlacer(key, slice) {
+  // Which profile view (if any) is currently showing for an axes -- the strip
+  // beside the heatmap, or the profile drawn in the heatmap's place.
+  function profileMode(key) {
+    var st = SLICE_STATE[key];
+    if (!st || typeof st.index !== 'number') return null;
+    if (st.compGroup) return 'companion';
+    if (SLICE_VIEW_ON && st.sliceEl) return 'replace';
+    return null;
+  }
+  function companionPlacer(key, slice, mode) {
     var o = META[key], m = CUR[key];
     var finiteYs = slice.ys.filter(isFiniteNum);
     if (!finiteYs.length) return null;
-    var s = companionSize(key), pad = 4, isX = SLICE_ORIENTATION === 'x';
+    var isX = SLICE_ORIENTATION === 'x', replace = mode === 'replace';
+    // The area the profile is drawn in: the strip carved out of the axes, or (for
+    // the replace view) the whole heatmap rect -- with no inner margin there,
+    // matching how renderMeshOrSlice draws that line.
+    var s = replace ? (isX ? m.h : m.w) : companionSize(key), pad = replace ? 0 : 4;
+    var R = replace ? { x: m.x, y: m.y, w: m.w, h: m.h }
+                    : (isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h });
     var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
     var span = s - 2 * pad;
     var off = function (v) { return pad + (v - vmin) / (vmax - vmin) * span; };
     return {
-      s: s, isX: isX, vmin: vmin, vmax: vmax, off: off,
-      strip: isX ? { x: o.x, y: o.y, w: o.w, h: s } : { x: o.x, y: o.y, w: s, h: o.h },
+      s: s, isX: isX, vmin: vmin, vmax: vmax, off: off, strip: R,
       // Where sample j sits along the shared axis (the heatmap's own x for an
       // X slice, y for a Y slice) -- independent of its value.
       along: function (j) {
@@ -2000,7 +2017,7 @@ _JS_SOURCE = r"""
         var v = slice.ys[j];
         if (!isFiniteNum(v)) return null;
         var along = isX ? toPixel(m, slice.xs[j], m.ymin).x : toPixel(m, m.xmin, slice.xs[j]).y;
-        return isX ? { px: along, py: o.y + s - off(v) } : { px: o.x + off(v), py: along };
+        return isX ? { px: along, py: R.y + R.h - off(v) } : { px: R.x + off(v), py: along };
       }
     };
   }
@@ -2068,15 +2085,15 @@ _JS_SOURCE = r"""
   // companion strip is pickable this way -- the in-place 1-D view isn't wired
   // up -- and a pin is dropped when its strip goes away.
   function slicePinPoint(key, j) {
-    var st = SLICE_STATE[key];
-    if (!st || !st.compGroup || typeof st.index !== 'number') return null;
+    var st = SLICE_STATE[key], mode = profileMode(key);
+    if (!mode) return null;
     var slice = computeSliceByIndex(key, SLICE_ORIENTATION, st.index);
-    var pl = slice && companionPlacer(key, slice);
+    var pl = slice && companionPlacer(key, slice, mode);
     if (!pl) return null;
     j = Math.max(0, Math.min(slice.xs.length - 1, j));
-    var o = META[key], isX = SLICE_ORIENTATION === 'x';
+    var R = pl.strip, isX = SLICE_ORIENTATION === 'x';
     var v = slice.ys[j], finite = isFiniteNum(v);
-    var al = pl.along(j), lo = isX ? o.x : o.y, hi = isX ? o.x + o.w : o.y + o.h;
+    var al = pl.along(j), lo = isX ? R.x : R.y, hi = isX ? R.x + R.w : R.y + R.h;
     // Hidden -- not drawn at all -- while there's nothing to point at: the
     // sample has no value right now (NaN under the slider), or it's been
     // panned/zoomed out of the strip's own extent along the shared axis.
@@ -2090,7 +2107,7 @@ _JS_SOURCE = r"""
     if (off > pl.s - edge) { off = pl.s - edge; past = 'hi'; }
     else if (off < edge) { off = edge; past = 'lo'; }
     al = Math.max(lo, Math.min(hi, al));
-    var q = isX ? { px: al, py: o.y + pl.s - off } : { px: o.x + off, py: al };
+    var q = isX ? { px: al, py: R.y + R.h - off } : { px: R.x + off, py: al };
     var entry = meshEntryForAxes(key) || {};
     var name = entry.name || 'z';
     var x = isX ? slice.xs[j] : slice.fixedCoord, y = isX ? slice.fixedCoord : slice.xs[j];
@@ -2128,16 +2145,17 @@ _JS_SOURCE = r"""
   function sliceStripPick(p) {
     var best = null;
     Object.keys(SLICE_STATE).forEach(function (key) {
-      var st = SLICE_STATE[key], o = META[key];
-      if (!st || !st.compGroup || !o || (CUR[key] && CUR[key].pickable === false)) return;
-      var s = companionSize(key), isX = SLICE_ORIENTATION === 'x';
-      var inStrip = isX ? (p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + s)
-                        : (p.x >= o.x && p.x <= o.x + s && p.y >= o.y && p.y <= o.y + o.h);
-      if (!inStrip) return;
+      var st = SLICE_STATE[key], mode = profileMode(key);
+      if (!mode || (CUR[key] && CUR[key].pickable === false)) return;
       var slice = computeSliceByIndex(key, SLICE_ORIENTATION, st.index);
-      var pl = slice && companionPlacer(key, slice);
+      var pl = slice && companionPlacer(key, slice, mode);
       if (!pl) return;
-      var m = CUR[key], lo = isX ? o.x : o.y, hi = isX ? o.x + o.w : o.y + o.h;
+      // The profile's own area: the strip, or -- in the replace view, where the
+      // heatmap is hidden -- the whole axes, so a click anywhere in it picks the
+      // nearest sample of the profile rather than a hidden heatmap cell.
+      var R = pl.strip, isX = pl.isX;
+      if (!(p.x >= R.x && p.x <= R.x + R.w && p.y >= R.y && p.y <= R.y + R.h)) return;
+      var lo = isX ? R.x : R.y, hi = isX ? R.x + R.w : R.y + R.h;
       for (var j = 0; j < slice.xs.length; j++) {
         var q = pl.at(j);
         if (!q) continue;
@@ -2323,7 +2341,10 @@ _JS_SOURCE = r"""
     if (!SLICE_VIEW_ON) {
       meshEls.forEach(function (im) { im.style.display = ''; });
       if (origTicks) origTicks.style.display = '';
-      if (st.sliceEl) { st.sliceEl.remove(); st.sliceEl = null; }
+      if (st.sliceEl) {
+        st.sliceEl.remove(); st.sliceEl = null;
+        if (!SLICE_COMPANION_ON) removeSlicePins(key);   // (the strip, if it's next, keeps them)
+      }
       if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
       var slice0 = computeSliceByIndex(key, SLICE_ORIENTATION, index);
       // The panel first: it shrinks CUR[key] to the heatmap's share of the

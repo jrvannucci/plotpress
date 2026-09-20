@@ -43,6 +43,9 @@ anywhere in the source.
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.
+- **Point Picking works on the "Profile replaces heatmap" view too.** A click picks a
+  profile sample instead of a hidden heatmap cell, and pins carry across a switch
+  between the two profile views.
 - **The companion strip now works on more axes.** Axes with fixed ticks
   (`set_xticks`/`set_yticks`), `axis("off")`, and axes with a `twinx`/`twiny`
   or secondary axes (which shrink together with their parent) get a strip too;
