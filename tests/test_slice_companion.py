@@ -1737,3 +1737,30 @@ def test_grid_off_at_startup_and_kept_by_save(page, tmp_path):
     _save_and_reopen(page, tmp_path)
     assert _grid_checkbox(page) is False
     assert _strip_line_count(page) == 0
+
+
+# ---- inset axes are left out of Slice ---------------------------------------------
+
+def _fig_with_meshed_inset():
+    fig, axs = plotpress.subplots(1, 2, figsize=(10, 4))
+    x, y = np.linspace(0, 1, 11), np.linspace(0, 1, 9)
+    for ax in axs:
+        ax.pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10))
+    axs[0].inset_axes([0.6, 0.6, 0.3, 0.3]).pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10)[::-1])
+    fig.tight_layout()
+    return fig
+
+
+def test_an_inset_names_its_parent_in_the_metadata():
+    html = _fig_with_meshed_inset().to_html(interactive=True)
+    meta = json.loads(re.search(r'id="plotpress-meta"[^>]*>(.*?)</script>', html, re.S).group(1))
+    assert "inset_of" in json.dumps(meta)
+
+
+@pytest.mark.browser
+def test_an_inset_mesh_gets_no_slider_or_cursor(page, tmp_path):
+    # Two ordinary meshes plus a mesh drawn in an inset of the first: only the two
+    # ordinary ones are sliced.
+    _load(page, tmp_path, _fig_with_meshed_inset(), options={"slice": {"enabled": True}})
+    assert page.evaluate("document.querySelectorAll('.plotpress-slider').length") == 2
+    assert page.evaluate("document.querySelectorAll('.plotpress-slice-cursor, [class*=slice-cursor]').length") == 2

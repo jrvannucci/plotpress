@@ -54,8 +54,9 @@ anywhere in the source.
 - **The companion strip now works on more axes.** Axes with fixed ticks
   (`set_xticks`/`set_yticks`), `axis("off")`, and axes with a `twinx`/`twiny`
   or secondary axes (which shrink together with their parent) get a strip too;
-  their static ticks are remapped to the smaller heatmap. Only an inset (or an
-  axes that is itself an inset) still gets just the cursor and slider. Also
+  their static ticks are remapped to the smaller heatmap. An inset axes is left
+  out of Slice altogether, and the axes it sits on still gets just the cursor and
+  slider. Also
   fixes a twin's ticks being redrawn on the wrong edge (and its parent's axis
   doubled) when the view changed.
 - **Choose which axes to slice.** The Slice menu has an "Axes to slice" radio --

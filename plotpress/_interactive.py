@@ -831,8 +831,12 @@ _JS_SOURCE = r"""
   // drag. "pcolormesh"/"image" (see svg.py's pick_data()) share one entry
   // shape (z/xedges/yedges), so both slice identically -- Slice doesn't
   // otherwise care which produced the data.
+  // An inset axes is left out: it's a small overlay on another axes, not a
+  // heatmap to scrub, and a cursor/slider on it would sit on top of its parent's.
+  var isInsetAxes = function (k) { return !!META[k] && META[k].inset_of != null; };
   var SLICE_AXES = {};
   for (var sliceKey in PICK) {
+    if (isInsetAxes(sliceKey)) continue;
     var sliceMeshes = (PICK[sliceKey] && PICK[sliceKey].meshes) || [];
     for (var smi = 0; smi < sliceMeshes.length; smi++) {
       var sme = sliceMeshes[smi];
@@ -844,7 +848,7 @@ _JS_SOURCE = r"""
   }
   if (FRAMES) {
     for (var frameSliceKey in FRAMES) {
-      if (SLICE_AXES[frameSliceKey]) continue;   // already has a static mesh
+      if (SLICE_AXES[frameSliceKey] || isInsetAxes(frameSliceKey)) continue;   // already has a static mesh / an inset
       var frameEntries = FRAMES[frameSliceKey];
       for (var fei = 0; fei < frameEntries.length; fei++) {
         var fe = frameEntries[fei];

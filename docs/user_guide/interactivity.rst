@@ -87,8 +87,9 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
 
     Axes with fixed ticks (``set_xticks``/``set_yticks``), ``axis("off")``, or a
     twin or secondary axis get a strip too (a twin shrinks together with its
-    parent, and fixed ticks are remapped to the smaller heatmap). An inset axes,
-    or an axes that has one, keeps the plain cursor and slider. When an axes holds several meshes (overlaid on one
+    parent, and fixed ticks are remapped to the smaller heatmap). An inset axes
+    (``inset_axes()``) is left out of Slice altogether and stays a plain mesh; the axes
+    it sits on keeps the plain cursor and slider, with no strip. When an axes holds several meshes (overlaid on one
     another), only the first one is sliced.
 
 **Gridlines on the profile.** A "Gridlines on profile" checkbox in the Slice view

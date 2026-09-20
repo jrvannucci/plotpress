@@ -553,6 +553,9 @@ def axes_metadata(fig, idx_of=None):
             # or when the linked axes isn't itself in this payload (e.g. it
             # was hidden) -- see `_interactive.py`'s `syncLinked`.
             "twin_of": idx_of.get(id(ax._twin_of)) if ax._twin_of is not None else None,
+            # The axes this is an inset_axes() of (Slice leaves an inset out).
+            "inset_of": (idx_of.get(id(ax._inset_parent))
+                         if ax._inset_parent is not None else None),
             "twin_shared": ax._twin_shared,
             "secondary_of": (idx_of.get(id(ax._secondary_of))
                              if ax._secondary_of is not None else None),
