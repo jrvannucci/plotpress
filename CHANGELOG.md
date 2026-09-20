@@ -34,10 +34,11 @@ anywhere in the source.
   Point Picking works on the strip -- a click pins the nearest profile sample
   (`x`, `y`, value), which follows the slider and pan/zoom, steps with the
   arrow keys (staying on the strip's edge, value in red, if it goes off the
-  range), and extracts as a `"slice"` record -- and **Snap pins to
+  range) -- and **Snap pins to
   slice** (a checkbox in the menu's own "Slice view" group) links pins in both
   directions: a heatmap pin gets a mirror on the shown profile, and a pin placed
-  on the profile gets one on the heatmap cell it points at. The original stays
+  on the profile gets one on the heatmap cell it points at. Extract ignores profile
+  pins and reports the heatmap cell instead (never the same cell twice). The original stays
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.

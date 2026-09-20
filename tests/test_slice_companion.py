@@ -1124,3 +1124,63 @@ def test_axes_setting_accepts_numpy_integers():
     fig, _ = _row_fig()
     cfg = _config(fig.to_html(options={"slice": {"axes": [np.int64(1), np.int32(2)]}}))
     assert cfg["slice"]["axes"] == [1, 2]        # plain ints in the emitted JSON
+
+
+# ---- Extract ignores slice pins (the heatmap carries the data) --------------------------
+
+def _extract(page):
+    """Run the Extract button and return the records it hands to the host."""
+    page.evaluate("""() => { window.__extracted = null;
+        window.pywebview = {api: {extract: (recs) => { window.__extracted = recs; }}}; }""")
+    assert _menu_button(page, "Extract")
+    return page.evaluate("window.__extracted")
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("snap", [True, False])
+def test_extract_of_a_heatmap_pin_is_one_record_with_or_without_snap(page, tmp_path, snap):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3, "snap_pins": snap}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.55, 0.3)
+    recs = _extract(page)
+    assert [r["kind"] for r in recs] == ["mesh"]            # the mirror on the profile is not a 2nd record
+
+
+@pytest.mark.browser
+def test_extract_reports_the_heatmap_cell_for_a_pin_placed_on_the_slice(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    recs = _extract(page)
+    assert [r["kind"] for r in recs] == ["mesh"]            # never "slice"
+    r = recs[0]
+    assert r["y"] == pytest.approx(3.5)                     # the row the slice was showing
+    assert r["z"] == z[3, int(r["x"])]                      # and that cell's value
+
+
+@pytest.mark.browser
+def test_extract_does_not_report_the_same_cell_twice(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)                                 # heatmap cell (row 3, col c) via its mirror
+    heat = _parse(next(l for k, s, l in _pins(page) if k == "mesh"))
+    # ...now pick that very cell on the heatmap directly
+    box = page.evaluate("""() => { const r = document.querySelector('.plotpress-mesh').getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height]; }""")
+    page.mouse.click(box[0] + box[2] * (heat["x"] / 10), box[1] + box[3] * (1 - heat["y"] / 8))
+    recs = _extract(page)
+    keys = [(r["axes"], r["kind"], r["index"]) for r in recs]
+    assert len(keys) == len(set(keys)) == 1                 # one cell, one record
+
+
+@pytest.mark.browser
+def test_extract_leaves_out_slice_pins_when_snap_is_off(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)                                 # a profile pin with no heatmap mirror
+    _click_heatmap(page, 0.4, 0.6)
+    assert [r["kind"] for r in _extract(page)] == ["mesh"]  # only the heatmap pin

@@ -66,14 +66,16 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     profile to pin the nearest sample, which reads ``x``, ``y`` and the value
     there. The pin rides the line through pan, zoom, and slider steps
     (reporting the value the slice holds *now*), arrow keys step it along
-    the profile, and Extract returns it as a ``"slice"`` record. **Snap pins to slice** (a checkbox
+    the profile, and Extract leaves profile pins out (the heatmap carries the data --
+    see below). **Snap pins to slice** (a checkbox
     under "Slice view") links heatmap pins and profile pins in both directions:
     a Point Picking pin on the heatmap gets a mirror on the shown profile, and a
     pin you place on the profile gets a mirror on the heatmap cell it points at
     (on the row or column the slider is showing, so it moves as the slider
     does). The pin you placed stays where it is; each pin and its mirror share
     a label color so you can see they're linked, and mirrors are left out of
-    Extract. A pin whose value moves past the
+    Extract; a pin placed on the profile is extracted as the heatmap cell its
+    mirror sits on, and no cell is ever reported twice. A pin whose value moves past the
     profile's range (a fixed ``"colorbar"`` or ``"custom"`` range, while the
     slider plays) stays on the strip's edge with its value shown in red rather
     than leaving the axes; it's hidden while its sample has no value or has

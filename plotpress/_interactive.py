@@ -4298,9 +4298,29 @@ _JS_SOURCE = r"""
   // one line doing that filtering -- getMarkers() above (and every other
   // .plotpress-pin selector in this file that isn't already kind-specific,
   // like drag-ready and clearAllPins) deliberately still covers both kinds.
+  // Slice profile pins are left out: a point picked on the profile is the same
+  // point as a cell of the heatmap, and the heatmap is where the data lives, so
+  // Extract reports the heatmap side only. With Snap pins to slice on, a pin
+  // placed on the profile has a heatmap mirror (marked .plotpress-snapped) and
+  // *that* is what's extracted for it -- unless a heatmap pin already covers the
+  // same cell, so no point is ever reported twice.
   function doExtract() {
-    var records = Array.prototype.map.call(
-      document.querySelectorAll('.plotpress-pin:not(.plotpress-note):not(.plotpress-snapped)'), markerRecord);
+    var pins = Array.prototype.slice.call(document.querySelectorAll(
+      '.plotpress-pin:not(.plotpress-note):not([data-kind="slice"])'));
+    var recKey = function (r) { return r.axes + '|' + r.kind + '|' + r.index; };
+    var have = {};
+    pins.forEach(function (pin) {
+      if (!pin.classList.contains('plotpress-snapped')) have[recKey(markerRecord(pin))] = true;
+    });
+    var records = [];
+    pins.forEach(function (pin) {
+      var rec = markerRecord(pin);
+      if (pin.classList.contains('plotpress-snapped')) {
+        if (have[recKey(rec)]) return;
+        have[recKey(rec)] = true;
+      }
+      records.push(rec);
+    });
     // Hand off to Python when running inside the native (pywebview) window.
     try {
       if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
