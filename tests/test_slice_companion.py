@@ -1631,3 +1631,40 @@ def test_a_shared_colorbar_stays_put_unless_all_its_axes_change_alike(page, tmp_
     _load(page, tmp_path, fig, options={"slice": {"enabled": True, "axes": [axs[0]]}})   # only one of the two
     g = _shared_cbar_geometry(page)
     assert g["top"] == pytest.approx(plain["top"], abs=1.0) and g["bottom"] == pytest.approx(plain["bottom"], abs=1.0)
+
+
+# ---- scale: eligibility and pin relayout survive the perf rewrites -------------
+
+def _mesh_fig_with_inset():
+    fig, axs = plotpress.subplots(1, 2, figsize=(10, 4))
+    x, y = np.linspace(0, 1, 11), np.linspace(0, 1, 9)
+    for ax in axs:
+        ax.pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10))
+    axs[0].inset_axes([0.6, 0.6, 0.3, 0.3]).plot([0, 1], [0, 1])
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+def test_an_inset_still_blocks_a_strip_but_only_on_its_own_axes(page, tmp_path):
+    # Eligibility is computed in one bucketed pass now; the nested-axes rule
+    # must still hold, and must not spill onto the neighbouring axes.
+    _load(page, tmp_path, _mesh_fig_with_inset(), options={"slice": {"enabled": True}})
+    assert _strips(page) == 1
+
+
+@pytest.mark.browser
+def test_a_wide_grid_gets_a_strip_for_every_axes_quickly(page, tmp_path):
+    # 200 coupled meshes: a per-axes document scan (the old shape) made enabling
+    # take many seconds; this guards against the quadratic version coming back.
+    fig, axs = plotpress.subplots(8, 25, figsize=(25, 8))
+    x, y = np.linspace(0, 1, 6), np.linspace(0, 1, 5)
+    for ax in np.ravel(axs):
+        ax.pcolormesh(x, y, np.arange(20, dtype=float).reshape(4, 5))
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "link_all": True}})
+    assert _strips(page) == 200
+    import time
+    t0 = time.time()
+    page.evaluate("""() => { const r = document.querySelector('.plotpress-slider input[type=range]');
+        r.value = 3; r.dispatchEvent(new Event('input', {bubbles: true})); }""")
+    assert time.time() - t0 < 2.0

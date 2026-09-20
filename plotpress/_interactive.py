@@ -289,6 +289,7 @@ _JS_SOURCE = r"""
   }
 
   function applyZoomSize() {
+    sliceScaleCache = null;
     // Zooming *out* (scale < 1) still needs an explicit smaller size applied
     // -- shrinking a figure that overflows the viewport back down to where
     // it fits is exactly the point -- so this checks "not at natural size"
@@ -379,13 +380,17 @@ _JS_SOURCE = r"""
     if (!wrap || !dockedSliders.length) return;
     var wr = wrap.getBoundingClientRect();
     var ctm = svg.getScreenCTM();
-    dockedSliders.forEach(function (ds) {
+    // All the reads (each box's width) before any write: a style write after
+    // every offsetWidth read forced a fresh layout per slider -- seconds, with a
+    // thousand docked sliders.
+    var widths = dockedSliders.map(function (ds) { return ds.box.offsetWidth; });
+    dockedSliders.forEach(function (ds, i) {
       var m = META[ds.axesKey];
       if (!m) return;
       var pt = svg.createSVGPoint();
       pt.x = m.x + m.w / 2; pt.y = m.y + m.h;
       var s = pt.matrixTransform(ctm);
-      ds.box.style.left = Math.round(s.x - wr.left - ds.box.offsetWidth / 2) + 'px';
+      ds.box.style.left = Math.round(s.x - wr.left - widths[i] / 2) + 'px';
       ds.box.style.top = Math.round(s.y - wr.top + 30) + 'px';
     });
   }
@@ -1418,6 +1423,19 @@ _JS_SOURCE = r"""
     pt.x = e.clientX; pt.y = e.clientY;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
+  // pxPerUser() reads the svg's rendered size, which forces a synchronous layout
+  // -- and drawing one Slice cursor per axes after each other's DOM writes turned
+  // that into one forced layout *per axes* (seconds, at a thousand). The scale
+  // can't change mid-task, so it's read once per task and reused; applyZoomSize()
+  // (the only thing that resizes the svg) clears it.
+  var sliceScaleCache = null;
+  function sliceScale() {
+    if (sliceScaleCache === null) {
+      sliceScaleCache = pxPerUser();
+      Promise.resolve().then(function () { sliceScaleCache = null; });
+    }
+    return sliceScaleCache;
+  }
   function pxPerUser() {
     return svg.getBoundingClientRect().width / view[2];
   }
@@ -1744,7 +1762,7 @@ _JS_SOURCE = r"""
       svg.appendChild(el);
       st.cursorEl = el;
     }
-    st.cursorEl.setAttribute('stroke-width', 1 / pxPerUser());
+    st.cursorEl.setAttribute('stroke-width', 1 / sliceScale());
     if (orientation === 'x') {
       var py = toPixel(m, m.xmin, coord).y;
       st.cursorEl.setAttribute('x1', m.x); st.cursorEl.setAttribute('x2', m.x + m.w);
@@ -1794,46 +1812,60 @@ _JS_SOURCE = r"""
   // profile is positioned with the same CUR limits along the shared axis, so
   // it stays aligned with the heatmap through every pan/zoom.
   //
-  // Skipped (the axes keeps the plain cursor + slider) for an axes whose
-  // ticks rebuildTicks() can't redraw -- axis_off, or explicitly fixed
-  // set_xticks/set_yticks -- and for a twin/secondary (or its parent), whose
-  // rect is shared and synced from the other's limits.
-  var COMPANION_OK = {};
+  // Skipped (the axes keeps the plain cursor + slider) only for an inset, or an
+  // axes that has one -- see computeCompanionEligibility(). Twin/secondary axes
+  // shrink together with their parent (overlaysOf), and fixed ticks are remapped
+  // (remapFixedTicks).
   // Axes drawn on top of `key` in exactly its rect (twinx/twiny, secondary axes):
   // they share the layout, so they shrink with it.
+  var OVERLAYS = null;
   function overlaysOf(key) {
-    var out = [];
-    for (var mk in META) {
-      var m = META[mk];
-      if ((m.twin_of != null && String(m.twin_of) === String(key)) ||
-          (m.secondary_of != null && String(m.secondary_of) === String(key))) out.push(String(mk));
-    }
-    return out;
-  }
-  function companionEligible(key) {
-    if (COMPANION_OK[key] !== undefined) return COMPANION_OK[key];
-    var om = META[key];
-    // (An axis_off axes or one with fixed ticks is fine: axis_off draws no ticks
-    // to align, and fixed static ticks are remapped by remapFixedTicks.)
-    var ok = !!om && om.secondary_of == null && om.twin_of == null;
-    if (ok) {
-      // Any other axes nested inside this one's rect -- an inset -- is laid out
-      // in the *original* rect and would no longer line up with a shrunken
-      // heatmap; and this axes being nested inside another (an inset itself)
-      // is the same problem. Twin/secondary overlays are not that: they share
-      // the layout (see overlaysOf).
-      var overlays = overlaysOf(key);
-      var inside = function (a, b) {   // is rect a within rect b (1px slack)?
-        return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
-      };
+    if (OVERLAYS === null) {
+      OVERLAYS = {};
       for (var mk in META) {
-        if (String(mk) === String(key) || overlays.indexOf(String(mk)) !== -1) continue;
-        var other = META[mk];
-        if (inside(other, om) || inside(om, other)) { ok = false; break; }
+        var m = META[mk], parent = m.twin_of != null ? m.twin_of : m.secondary_of;
+        if (parent != null) (OVERLAYS[String(parent)] = OVERLAYS[String(parent)] || []).push(String(mk));
       }
     }
-    COMPANION_OK[key] = ok;
-    return ok;
+    return OVERLAYS[String(key)] || [];
+  }
+  // Which axes can take a companion strip, for all of them in one pass (a
+  // per-axes scan of every other axes is quadratic -- a million rect tests at a
+  // thousand axes). An axes is ruled out if it's a twin/secondary itself, or if
+  // another (non-overlay) axes is nested inside it or it inside another -- an
+  // inset, laid out in the original rect, wouldn't line up with a shrunken
+  // heatmap. Axes are bucketed by center so only near neighbors are compared.
+  // (An axis_off axes is fine: no ticks to align. Fixed ticks are remapped by
+  // remapFixedTicks.)
+  var COMPANION_OK = null;
+  function computeCompanionEligibility() {
+    COMPANION_OK = {};
+    var keys = Object.keys(META), CELL = 64, buckets = {};
+    var inside = function (a, b) {   // is rect a within rect b (1px slack)?
+      return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
+    };
+    keys.forEach(function (k) {
+      var m = META[k];
+      COMPANION_OK[k] = m.secondary_of == null && m.twin_of == null;
+      var bk = Math.floor((m.x + m.w / 2) / CELL) + ',' + Math.floor((m.y + m.h / 2) / CELL);
+      (buckets[bk] = buckets[bk] || []).push(k);
+    });
+    keys.forEach(function (a) {
+      var A = META[a], overlays = overlaysOf(a);
+      // Any axes nested in A has its center inside A: look only at the buckets A covers.
+      for (var cx = Math.floor(A.x / CELL); cx <= Math.floor((A.x + A.w) / CELL); cx++) {
+        for (var cy = Math.floor(A.y / CELL); cy <= Math.floor((A.y + A.h) / CELL); cy++) {
+          (buckets[cx + ',' + cy] || []).forEach(function (b) {
+            if (b === a || overlays.indexOf(b) !== -1 || overlaysOf(b).indexOf(a) !== -1) return;
+            if (inside(META[b], A)) { COMPANION_OK[a] = false; COMPANION_OK[b] = false; }
+          });
+        }
+      }
+    });
+  }
+  function companionEligible(key) {
+    if (COMPANION_OK === null) computeCompanionEligibility();
+    return !!COMPANION_OK[key];
   }
   function companionSize(key) {
     var o = META[key];
@@ -1853,6 +1885,7 @@ _JS_SOURCE = r"""
   // the heatmap gets (y' = c.y + (y - o.y) * c.h/o.h); the gradient and the
   // tick spacing scale with it, while the tick labels are counter-scaled
   // around their own anchor so the text isn't squashed.
+  var COLORBAR_GROUPS = null;
   function alignColorbars(key) {
     var rectMap = function (k) {   // how axes k's rect changed: y' = ty + y * sy
       var o = META[k], c = CUR[k];
@@ -1860,7 +1893,9 @@ _JS_SOURCE = r"""
       var sy = c.h / o.h;
       return { sy: sy, ty: c.y - o.y * sy };
     };
-    document.querySelectorAll('g.plotpress-colorbar').forEach(function (g) {
+    if (COLORBAR_GROUPS === null) COLORBAR_GROUPS = Array.prototype.slice.call(
+      document.querySelectorAll('g.plotpress-colorbar'));   // static: indexed once
+    COLORBAR_GROUPS.forEach(function (g) {
       var parents = (g.getAttribute('data-parents') || '').split(',');
       if (parents.indexOf(String(key)) === -1) return;
       // A colorbar shared by several axes only follows when they all changed the
@@ -2180,9 +2215,10 @@ _JS_SOURCE = r"""
     return best ? best.ref : null;
   }
   function relayoutSlicePins(keys) {
-    var pins = document.querySelectorAll('.plotpress-pin[data-kind="slice"]');
+    var pins = livePins();
     for (var i = 0; i < pins.length; i++) {
       var pin = pins[i];
+      if (pin.dataset.kind !== 'slice') continue;
       if (keys.indexOf(String(pin.dataset.axes)) === -1) continue;
       var a = resolve(pinAnchor(pin), +pin.dataset.index);
       if (a) layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
@@ -3471,8 +3507,20 @@ _JS_SOURCE = r"""
       return String(FRAME_INDEX[pin.dataset.frameId].axesKey);
     return null;
   }
+  // Every pin ever added (see addPin), so relayoutPins() -- run once per axes, and
+  // the Slice layout runs it for a thousand at a time -- walks the handful of pins
+  // there are instead of scanning the whole document for them each time. Removed
+  // pins are dropped lazily, by their isConnected flag.
+  var PIN_REGISTRY = [];
+  function livePins() {
+    if (PIN_REGISTRY.length) {
+      var live = PIN_REGISTRY.filter(function (p) { return p.isConnected; });
+      if (live.length !== PIN_REGISTRY.length) PIN_REGISTRY = live;
+    }
+    return PIN_REGISTRY;
+  }
   function relayoutPins(key) {
-    document.querySelectorAll('.plotpress-pin').forEach(function (pin) {
+    livePins().forEach(function (pin) {
       if (pinAxesKey(pin) !== String(key)) return;
       var anchor = pinAnchor(pin);
       if (anchor) {
@@ -3496,10 +3544,20 @@ _JS_SOURCE = r"""
   // same as a title, tick label, or point-pick pin already does. Unlike a
   // marker (a footprint *on* the data, deliberately scaling with the axis --
   // see the marker-scaling fix), a label exists to be read.
+  // The data-anchored text groups are part of the static render and never come or
+  // go, so they're indexed by axes once instead of being searched for per call.
+  var CSCALE_BY_AXES = null;
   function relayoutTextCounterScale(key) {
+    if (CSCALE_BY_AXES === null) {
+      CSCALE_BY_AXES = {};
+      document.querySelectorAll('.plotpress-cscale').forEach(function (g) {
+        (CSCALE_BY_AXES[g.dataset.axes] = CSCALE_BY_AXES[g.dataset.axes] || []).push(g);
+      });
+    }
+    var groups = CSCALE_BY_AXES[String(key)];
+    if (!groups) return;
     var t = zoomAffine(key);
-    document.querySelectorAll('.plotpress-cscale').forEach(function (g) {
-      if (g.dataset.axes !== String(key)) return;
+    groups.forEach(function (g) {
       var x0 = +g.dataset.x0, y0 = +g.dataset.y0;
       var isx = t.sx ? 1 / t.sx : 1, isy = t.sy ? 1 / t.sy : 1;
       g.setAttribute('transform',
@@ -3900,6 +3958,7 @@ _JS_SOURCE = r"""
 
   function addPin(px, py, label, axesKey, plain) {
     var g = document.createElementNS(SVGNS, 'g');
+    PIN_REGISTRY.push(g);
     g.setAttribute('class', 'plotpress-pin'); g.style.cursor = 'pointer';
     var r = pinRadius(axesKey);
     g.dataset.pinR = r;

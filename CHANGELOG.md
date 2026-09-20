@@ -68,6 +68,14 @@ anywhere in the source.
   "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --
   rather than switched off; values are validated up front.
 
+### Performance
+
+- **Slice on a figure with ~1000 pcolormeshes.** Enabling Slice went from ~14 s
+  (without "Link all") to under a second, a linked slider step from ~3 s to under
+  0.1 s, and view/orientation switches from 7-9 s to under 0.5 s. Choosing a subset
+  of axes stays at tens of milliseconds per step. The cost was layout thrashing
+  (measuring while writing) and per-axes scans of the whole document.
+
 ### Changed
 
 - **The Extract panel now shows JSON by default**, with CSV/JSON radios to switch
