@@ -11,6 +11,8 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-09-20
+
 ### Added
 
 - **Interactive Slice tool for pcolormesh/imshow** (`options=["slice"]`).
@@ -91,6 +93,66 @@ anywhere in the source.
 - **The Extract panel now shows JSON by default**, with CSV/JSON radios to switch
   the text, and its "Copy CSV" button is now "Copy" (it copies whichever format is
   showing). The two download buttons are unchanged.
+- **New logo, docs sidebar image and favicon.** Refreshed artwork for the three
+  images already wired in (`assets/plotpress-logo.png`, `docs/_static/logo.png`,
+  `docs/_static/favicon.png`); nothing that references them changed.
+
+### Fixed
+
+- **Slice: a strip could take more than its own axes.** The strip's 28px
+  legibility floor ignored how tall the axes actually was, so on a stack of short
+  panels (14 rows in a 5in figure is ~23px each) it claimed more than the whole
+  rect and left the heatmap with a negative one -- which draws nothing at all,
+  silently, since a negative width/height raises no error. The floor now gives way
+  on an axes too small to hold both.
+- **Slice: an all-NaN row showed the previous row's profile.** Under "Profile
+  replaces heatmap", stepping onto a row with no values left the last row's line on
+  screen: the slider read row 4 while the profile plotted row 3. A pin on such a
+  slice likewise stayed visible, still reporting the value it last read.
+- **Slice no longer fights the legend.** Slice and the legend's click-to-hide
+  toggle both wrote a mesh's own `style.display`, so a slider step brought back a
+  mesh the reader had just hidden. Each now has its own channel, and a mesh stays
+  hidden while either wants it hidden.
+- **Tick labels stayed put through a zoom.** Three long-standing divergences
+  between the labels Python renders and the ones the interactive view recomputes:
+  an axis with a fractional `set_xlocator` base relabelled 0/2.5/5/7.5/10 as
+  0/3/5/8/10 after the first pan; a lone tick at 0 rendered `0e0`; and a tick at
+  exactly +-0.5 read `0`/`-0` as drawn but `1`/`-1` once zoomed, because
+  JavaScript rounds a halfway value away from zero where Python rounds half to
+  even. A new 2,707-case parity sweep (`tests/test_tick_parity_node.py`) covers
+  the whole range x locator x format x date x categorical x log grid.
+- **Tick positions land on their exact step multiples.** `nice_ticks` and
+  `multiple_ticks` accumulated their step by repeated addition, so a tick that
+  should be 5.5 came out at 5.499999999999998 and one that should be 0 at
+  -3.4e-13 -- the latter printed as a literal `-3.4e-13` axis label in the static
+  SVG.
+
+## [0.40.1] - 2026-09-19
+
+### Fixed
+
+- **A filled path with an outline lost its fill.** Any series carrying both a fill
+  and a stroke rendered stroke-only in SVG; fill and stroke are now emitted
+  independently, so each is present exactly when it was asked for.
+
+## [0.40.0] - 2026-09-15
+
+### Added
+
+- **`size=`/`fontsize=` on `Axes.set_xlabel()`/`set_ylabel()`,** matching
+  `set_title()`'s existing per-axes override and wired through layout margins,
+  SVG/PNG rendering, `align_xlabels()`/`align_ylabels()`, `auto_label_scale=`, and
+  the template save/load round trip.
+
+### Fixed
+
+- **Group boxes kept their shape as member axes were removed.** A group's box used
+  to freeze at whatever the layout looked like when its *last* member left,
+  shrinking through each intermediate removal down to that lone survivor's cell.
+  `Axes.remove()` now freezes on the first departure, and a later `tight_layout()`
+  repositions the frozen box at its former cells' current geometry. Also fixes
+  `tight_layout()` skipping margin reservation for a fully-emptied group's title
+  band, which let it overlap the row above.
 
 ## [0.39.0] - 2026-09-13
 
