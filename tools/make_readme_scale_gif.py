@@ -95,6 +95,20 @@ def pin_label(page):
         return p ? p.textContent.trim() : null; }""")
 
 
+def pin_box(page):
+    """The Point Picking pin's label box on screen, and its dragged offset.
+
+    The box is the drag handle -- the dot underneath it stays put -- so a drag
+    has to press on this rect, not on the marker.
+    """
+    return page.evaluate("""() => {
+      const g = document.querySelector('.plotpress-pin:not(.plotpress-snapped)');
+      if (!g) return null;
+      const r = g.querySelector('rect').getBoundingClientRect();
+      return {cx: r.left + r.width / 2, cy: r.top + r.height / 2,
+              w: r.width, h: r.height, dx: g.dataset.boxDx || null}; }""")
+
+
 def click_toolbar(page, label):
     page.evaluate("""(l) => { const b = Array.from(
         document.querySelectorAll('.plotpress-menubar button')).find(
@@ -201,6 +215,26 @@ def record(url):
         if moved == label:
             raise SystemExit("arrow keys did not move the pin")
         hold(2, 200)
+
+        # --- drag the label off the dot ------------------------------------
+        # The box is the handle; the marker stays on its datum and a leader
+        # arrow grows between the two. Dragged down-left on purpose: the Slice
+        # strip appears *above* the heatmap later, so the label has to end up
+        # somewhere it will not collide with it.
+        box = pin_box(page)
+        if not box:
+            raise SystemExit("no pin label box to drag")
+        page.mouse.move(box["cx"], box["cy"])
+        page.mouse.down()
+        for t in (0.34, 0.67, 1.0):
+            page.mouse.move(box["cx"] - 74 * t, box["cy"] + 52 * t)
+            hold(1, 80)
+        page.mouse.up()
+        hold(3, 260)
+        dragged = pin_box(page)
+        print(f"  label offset after drag: {dragged['dx']}")
+        if dragged["dx"] is None:
+            raise SystemExit("the label box did not move")
 
         # --- turn Slice on, then narrow it to this one axes ----------------
         # The scope radios stay disabled until Slice is enabled, so this order
