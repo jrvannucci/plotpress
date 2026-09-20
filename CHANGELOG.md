@@ -11,6 +11,8 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-09-20
+
 ### Added
 
 - **`subplot_size=` on `subplots()`/`subplots_from_groups()`** -- give the size
@@ -41,6 +43,17 @@ anywhere in the source.
   does not scroll with the page, the eight sliders above the top edge could not
   be reached at all. The bar is now capped to the room it actually has and
   scrolls inside itself, and re-caps when the window resizes.
+
+### Documentation
+
+- **A worked example for `subplot_size=`**, which opens by multiplying out a
+  `figsize` the obvious way and printing what the panels actually came to
+  (1.00 x 0.45in where 1.40 x 1.10 was intended), then states the same
+  requirement with `subplot_size=` and holds it across three grid sizes and a
+  per-axes colorbar. The 500-panel grouped demo and the 500-panel scale example
+  now use it too -- both were hand-multiplying `figsize=(NCOLS * 1.6,
+  NROWS * 1.6)`, the pattern this replaces, and neither was getting the panel
+  size it named.
 
 ## [0.41.1] - 2026-09-20
 
