@@ -69,7 +69,14 @@ def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
         step = 10 * mag
 
     start = math.ceil(vmin / step) * step
-    ticks = np.arange(start, vmax + step * 0.5, step)
+    # start + i * step per tick, with arange's own half-open count. np.arange
+    # accumulates instead, so a [5, 5.5] axis' last tick came out at
+    # 5.499999999999998 rather than 5.5 -- invisible in position, but it
+    # rounds to "5" under a 0-decimal format where the true 5.5 rounds to "6",
+    # and the interactive rebuild (which computes start + i * step) then
+    # disagreed with the label this render had already drawn.
+    count = max(0, math.ceil((vmax + step * 0.5 - start) / step))
+    ticks = start + np.arange(count) * step
     # Snap the near-zero tick to exactly zero. For an unlucky step (0.02, say)
     # np.arange lands it at ~1e-17 instead of 0, which then formats as "1.4e-17".
     # A real tick is a multiple of step, so only the zero tick can be this close.
@@ -254,8 +261,14 @@ def multiple_ticks(vmin: float, vmax: float, base: float, offset: float = 0.0) -
         vmin, vmax = vmax, vmin
     if not (base > 0):
         raise ValueError(f"multiple locator: base must be > 0, got {base!r}")
-    start = math.ceil((vmin - offset) / base) * base + offset
-    ticks = np.arange(start, vmax + base * 1e-9, base)
+    # Each tick as its own integer multiple, not a running sum: stepping from
+    # `start` by `base` accumulates rounding, so the multiple that should land
+    # exactly on 0 came out at -3.4e-13 for base=pi/2 over [-100, 100] -- and
+    # format_tick then faithfully printed "-3.4e-13" where the axis reads 0.
+    # n * base is exact at n = 0 and carries no accumulated error elsewhere.
+    n0 = math.ceil((vmin - offset) / base)
+    n1 = math.floor((vmax + base * 1e-9 - offset) / base)
+    ticks = np.arange(n0, n1 + 1, dtype=float) * base + offset
     ticks = ticks[(ticks >= vmin - base * 1e-6) & (ticks <= vmax + base * 1e-6)]
     # A zoom/pan window that lands entirely between two multiples of `base`
     # has none inside it -- fall back to the bare range rather than an axis

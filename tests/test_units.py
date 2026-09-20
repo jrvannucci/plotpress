@@ -161,3 +161,29 @@ def test_apply_colormap_nan_is_transparent():
     assert rgba.shape == (2, 2, 4)
     assert rgba[0, 1, 3] == 0     # NaN -> alpha 0
     assert rgba[0, 0, 3] == 255   # finite -> opaque
+
+
+# ---- tick locations are computed, not accumulated ---------------------------
+
+def test_nice_ticks_lands_on_the_exact_step_multiples():
+    """Stepping by repeated addition drifts: a [5, 5.5] axis' last tick came
+    out at 5.499999999999998, which rounds to "5" under a 0-decimal format
+    where the true 5.5 rounds to "6" -- so the static render and the
+    interactive rebuild disagreed on a label."""
+    ticks = nice_ticks(5, 5.5)
+    assert ticks[-1] == 5.5
+    assert list(ticks) == [5.0, 5.1, 5.2, 5.3, 5.4, 5.5]
+
+
+def test_multiple_ticks_puts_the_zero_tick_exactly_on_zero():
+    """Same drift, via the multiple locator: base=pi/2 over [-100, 100] put
+    the multiple that should be 0 at -3.4e-13, and format_tick then printed
+    "-3.4e-13" as an axis label."""
+    import math
+
+    from plotpress.ticker import multiple_ticks
+
+    ticks = multiple_ticks(-100, 100, math.pi / 2)
+    nearest = min(ticks, key=abs)
+    assert nearest == 0.0
+    assert format_tick(nearest) == "0"

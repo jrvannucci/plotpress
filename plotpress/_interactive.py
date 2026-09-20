@@ -626,6 +626,13 @@ _JS_SOURCE = r"""
     // Hide Points/Hide Annotations toggle independently -- one class per
     // kind, keyed the same way Clear Points/Clear Annotations and
     // isAnnotationPin() already split .plotpress-pin by .plotpress-note.
+    // Slice hides a mesh through this class, never through the element's
+    // own style.display -- that one already belongs to the legend's
+    // click-to-hide toggle, and whichever of the two wrote last simply
+    // undid the other (a slider step brought back a mesh the legend had
+    // hidden). With the two on separate channels, a mesh stays hidden
+    // while *either* wants it hidden, which is what both actually mean.
+    '.plotpress-slice-hidden{display:none}' +
     '.plotpress-hide-points .plotpress-pin:not(.plotpress-note){display:none}' +
     '.plotpress-hide-annotations .plotpress-pin.plotpress-note{display:none}' +
     // "move" only on the box itself (not the dot, which stays a plain
@@ -1036,123 +1043,114 @@ _JS_SOURCE = r"""
     // vanish).
     sliceMenu.addEventListener('click', function (e) { e.stopPropagation(); });
 
+    // The menu below is four radio groups, four checkboxes and three section
+    // headings, every one of them the same handful of createElement calls --
+    // these three build one each, appended to the menu in call order.
+    var menuSection = function (title) {
+      var divider = document.createElement('div');
+      divider.className = 'plotpress-menu-divider';
+      sliceMenu.appendChild(divider);
+      if (!title) return;
+      var heading = document.createElement('div');
+      heading.className = 'plotpress-menu-heading';
+      heading.textContent = title;
+      sliceMenu.appendChild(heading);
+    };
+    var menuCheckbox = function (text, checked, onChange) {
+      var lbl = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = checked;
+      cb.addEventListener('change', function () { onChange(cb.checked); });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' ' + text));
+      sliceMenu.appendChild(lbl);
+      return cb;
+    };
+    // One row of mutually exclusive radios: `pairs` is [[value, text], ...],
+    // `current` the value to start checked, and onPick(value) fires for
+    // whichever becomes checked. Returns the inputs, so
+    // setSliceControlsEnabled() can grey a whole group out at once.
+    var menuRadios = function (name, pairs, current, onPick) {
+      var row = document.createElement('div');
+      row.className = 'plotpress-slice-orient';
+      var radios = pairs.map(function (pair) {
+        var lbl = document.createElement('label');
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'plotpress-slice-' + name;
+        radio.checked = (pair[0] === current);
+        radio.addEventListener('change', function () { onPick(pair[0]); });
+        lbl.appendChild(radio);
+        lbl.appendChild(document.createTextNode(' ' + pair[1]));
+        row.appendChild(lbl);
+        return radio;
+      });
+      sliceMenu.appendChild(row);
+      return radios;
+    };
+
     // Top section: the two controls that matter before anything else --
     // whether Slice does anything at all, and (once it does) which of its
     // two views is showing. Everything below is scoped under "Enable
     // Slice" (disabled, not hidden, while it's off, so the rest of the
     // menu still explains itself) and rebuilt fresh whenever it toggles
     // back on.
-    var enableLabel = document.createElement('label');
-    var enableCb = document.createElement('input');
-    enableCb.type = 'checkbox';
-    enableCb.checked = SLICE_ENABLED;
-    enableCb.addEventListener('change', function () {
-      SLICE_ENABLED = enableCb.checked;
-      setSliceControlsEnabled(SLICE_ENABLED);
-      if (SLICE_ENABLED) buildSliceSliders();
+    menuCheckbox('Enable Slice', SLICE_ENABLED, function (on) {
+      SLICE_ENABLED = on;
+      setSliceControlsEnabled(on);
+      if (on) buildSliceSliders();
       else { teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins(); }
     });
-    enableLabel.appendChild(enableCb);
-    enableLabel.appendChild(document.createTextNode(' Enable Slice'));
-    sliceMenu.appendChild(enableLabel);
 
+    // Redraws every slice at its slider's current index, then puts the pins
+    // back on the line it just moved: a strip pin's position is a function of
+    // the profile's own geometry (companionPlacer's value range and the strip
+    // rect), so *any* menu change that redraws a profile -- the view radio,
+    // gridlines, the value range -- has to re-resolve them, or they sit where
+    // the old scale put them until something else happens to lay them out.
     var rerenderAllSlices = function () {
-      Object.keys(SLICE_SLIDERS).forEach(function (k) {
-        renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
-      });
-      relayoutSlicePins(Object.keys(SLICE_SLIDERS));   // pins carried across a view switch
+      var keys = Object.keys(SLICE_SLIDERS);
+      keys.forEach(function (k) { renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i); });
+      relayoutSlicePins(keys);
       syncSnappedPins();
     };
     // How the slice is shown -- see SLICE_VIEW. Radios, not independent
     // checkboxes: the three are alternatives, and picking one has to end the
     // others. The red cursor only ever shows with the heatmap, so it isn't
     // drawn under 'replace'.
-    var viewDivider = document.createElement('div');
-    viewDivider.className = 'plotpress-menu-divider';
-    sliceMenu.appendChild(viewDivider);
-    var viewHeading = document.createElement('div');
-    viewHeading.className = 'plotpress-menu-heading';
-    viewHeading.textContent = 'Slice view';
-    sliceMenu.appendChild(viewHeading);
-    var viewRow = document.createElement('div');
-    viewRow.className = 'plotpress-slice-orient';
-    [['cursor', 'Heatmap with cursor'], ['companion', 'Companion panel'],
-     ['replace', 'Profile replaces heatmap']].forEach(function (pair) {
-      var viewKey = pair[0];
-      var lbl = document.createElement('label');
-      var radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'plotpress-slice-view';
-      radio.checked = (viewKey === SLICE_VIEW);
-      radio.addEventListener('change', function () {
-        SLICE_VIEW = viewKey;
-        SLICE_VIEW_ON = viewKey === 'replace';
-        SLICE_COMPANION_ON = viewKey === 'companion';
-        rerenderAllSlices();
-      });
-      lbl.appendChild(radio);
-      lbl.appendChild(document.createTextNode(' ' + pair[1]));
-      viewRow.appendChild(lbl);
-    });
-    sliceMenu.appendChild(viewRow);
-
-    var gridLabel = document.createElement('label');
-    var gridCb = document.createElement('input');
-    gridCb.type = 'checkbox';
-    gridCb.checked = SLICE_GRID;
-    gridCb.addEventListener('change', function () {
-      SLICE_GRID = gridCb.checked;
+    menuSection('Slice view');
+    menuRadios('view', [['cursor', 'Heatmap with cursor'],
+                        ['companion', 'Companion panel'],
+                        ['replace', 'Profile replaces heatmap']],
+               SLICE_VIEW, function (viewKey) {
+      SLICE_VIEW = viewKey;
+      SLICE_VIEW_ON = viewKey === 'replace';
+      SLICE_COMPANION_ON = viewKey === 'companion';
       rerenderAllSlices();
     });
-    gridLabel.appendChild(gridCb);
-    gridLabel.appendChild(document.createTextNode(' Gridlines on profile'));
-    sliceMenu.appendChild(gridLabel);
-
+    menuCheckbox('Gridlines on profile', SLICE_GRID, function (on) {
+      SLICE_GRID = on;
+      rerenderAllSlices();
+    });
     // Mirrors each heatmap pin onto the shown profile -- see syncSnappedPins().
-    var snapLabel = document.createElement('label');
-    var snapCb = document.createElement('input');
-    snapCb.type = 'checkbox';
-    snapCb.checked = SLICE_SNAP;
-    snapCb.addEventListener('change', function () {
-      SLICE_SNAP = snapCb.checked;
+    var snapCb = menuCheckbox('Snap pins to slice', SLICE_SNAP, function (on) {
+      SLICE_SNAP = on;
       syncSnappedPins();
     });
-    snapLabel.appendChild(snapCb);
-    snapLabel.appendChild(document.createTextNode(' Snap pins to slice'));
-    sliceMenu.appendChild(snapLabel);
 
     // Which axes are sliced: all of them, or only the ones chosen by clicking
     // them on the figure -- see SLICE_SCOPE.
-    var scopeDivider = document.createElement('div');
-    scopeDivider.className = 'plotpress-menu-divider';
-    sliceMenu.appendChild(scopeDivider);
-    var scopeHeading = document.createElement('div');
-    scopeHeading.className = 'plotpress-menu-heading';
-    scopeHeading.textContent = 'Axes to slice';
-    sliceMenu.appendChild(scopeHeading);
-    var scopeRow = document.createElement('div');
-    scopeRow.className = 'plotpress-slice-orient';
-    var scopeRadios = [];
-    [['all', 'All axes'], ['selected', 'Selected axes']].forEach(function (pair) {
-      var scopeKey = pair[0];
-      var lbl = document.createElement('label');
-      var radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'plotpress-slice-scope';
-      radio.checked = (scopeKey === SLICE_SCOPE);
-      radio.addEventListener('change', function () {
-        SLICE_SCOPE = scopeKey;
-        // Picking "Selected axes" goes straight to choosing on the figure.
-        if (scopeKey === 'selected') { setMode('slice-select'); closeAllMenus(); }
-        else if (mode === 'slice-select') setMode(null);
-        applySliceScope();
-      });
-      lbl.appendChild(radio);
-      lbl.appendChild(document.createTextNode(' ' + pair[1]));
-      scopeRow.appendChild(lbl);
-      scopeRadios.push(radio);
+    menuSection('Axes to slice');
+    var scopeRadios = menuRadios('scope', [['all', 'All axes'],
+                                           ['selected', 'Selected axes']],
+                                 SLICE_SCOPE, function (scopeKey) {
+      SLICE_SCOPE = scopeKey;
+      // Picking "Selected axes" goes straight to choosing on the figure.
+      if (scopeKey === 'selected') { setMode('slice-select'); closeAllMenus(); }
+      else if (mode === 'slice-select') setMode(null);
+      applySliceScope();
     });
-    sliceMenu.appendChild(scopeRow);
     scopeStatusEl = document.createElement('div');
     scopeStatusEl.className = 'plotpress-menu-note';
     sliceMenu.appendChild(scopeStatusEl);
@@ -1171,9 +1169,7 @@ _JS_SOURCE = r"""
     sliceMenu.appendChild(chooseBtn);
     updateScopeStatus();
 
-    var topDivider = document.createElement('div');
-    topDivider.className = 'plotpress-menu-divider';
-    sliceMenu.appendChild(topDivider);
+    menuSection(null);
 
     // Orientation is figure-wide, not per-axes: switching it rebuilds every
     // mesh's own slider from scratch (buildSliceSliders(), defined with the
@@ -1181,46 +1177,25 @@ _JS_SOURCE = r"""
     // row/column count (ny vs. nx) and can change which axes are even
     // compatible to link, so there's no sensible way to adjust an existing
     // slider in place.
-    var orientRow = document.createElement('div');
-    orientRow.className = 'plotpress-slice-orient';
-    var orientRadios = [];
-    [['x', 'Slice X (horizontal cursor)'], ['y', 'Slice Y (vertical cursor)']]
-      .forEach(function (pair) {
-        var axKey = pair[0];
-        var lbl = document.createElement('label');
-        var radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'plotpress-slice-orient';
-        radio.checked = (axKey === SLICE_ORIENTATION);
-        radio.addEventListener('change', function () {
-          SLICE_ORIENTATION = axKey;
-          if (SLICE_ENABLED) buildSliceSliders();
-        });
-        lbl.appendChild(radio);
-        lbl.appendChild(document.createTextNode(' ' + pair[1]));
-        orientRow.appendChild(lbl);
-        orientRadios.push(radio);
+    var orientRadios = menuRadios('orient',
+      [['x', 'Slice X (horizontal cursor)'], ['y', 'Slice Y (vertical cursor)']],
+      SLICE_ORIENTATION, function (axKey) {
+        SLICE_ORIENTATION = axKey;
+        if (SLICE_ENABLED) buildSliceSliders();
       });
-    sliceMenu.appendChild(orientRow);
 
     // Collapses every compatible group's sliders into one shared global
     // slider instead of one docked slider per axes each needing its own
     // link checkbox checked by hand -- see SLICE_LINK_ALL's own comment.
-    var linkAllLabel = document.createElement('label');
-    var linkAllCb = document.createElement('input');
-    linkAllCb.type = 'checkbox';
-    linkAllCb.checked = SLICE_LINK_ALL;
-    linkAllCb.addEventListener('change', function () {
-      SLICE_LINK_ALL = linkAllCb.checked;
-      if (SLICE_ENABLED) buildSliceSliders();
-    });
-    linkAllLabel.appendChild(linkAllCb);
-    linkAllLabel.appendChild(document.createTextNode(' Link all matching axes'));
-    sliceMenu.appendChild(linkAllLabel);
+    var linkAllCb = menuCheckbox('Link all matching axes', SLICE_LINK_ALL,
+      function (on) {
+        SLICE_LINK_ALL = on;
+        // Same row/column, just driven from one slider instead of many --
+        // see rebuildSliceSlidersKeepingIndex().
+        if (SLICE_ENABLED) rebuildSliceSlidersKeepingIndex();
+      });
 
-    var rangeDivider = document.createElement('div');
-    rangeDivider.className = 'plotpress-menu-divider';
-    sliceMenu.appendChild(rangeDivider);
+    menuSection(null);
 
     // Value axis range for the slice view -- 'auto' (default) reads *that*
     // row/column's own min/max most clearly but rescales on every step,
@@ -1232,34 +1207,15 @@ _JS_SOURCE = r"""
     // two number fields below instead -- for comparing against a range
     // that's neither of the other two (a different mesh's own scale, a
     // fixed domain-specific reference band).
-    var refreshAllSlices = function () {
-      Object.keys(SLICE_SLIDERS).forEach(function (k) {
-        renderMeshOrSlice(k, SLICE_SLIDERS[k].api.i);
+    var rangeRadios = menuRadios('range-mode',
+      [['auto', 'Auto (per slice)'], ['colorbar', 'Colorbar range'],
+       ['custom', 'Custom:']],
+      SLICE_RANGE_MODE, function (modeKey) {
+        SLICE_RANGE_MODE = modeKey;
+        customMinInput.disabled = customMaxInput.disabled =
+          !SLICE_ENABLED || modeKey !== 'custom';
+        rerenderAllSlices();
       });
-    };
-    var rangeRow = document.createElement('div');
-    rangeRow.className = 'plotpress-slice-orient';
-    var rangeRadios = [];
-    [['auto', 'Auto (per slice)'], ['colorbar', 'Colorbar range'], ['custom', 'Custom:']]
-      .forEach(function (pair) {
-        var modeKey = pair[0];
-        var lbl = document.createElement('label');
-        var radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'plotpress-slice-range-mode';
-        radio.checked = (modeKey === SLICE_RANGE_MODE);
-        radio.addEventListener('change', function () {
-          SLICE_RANGE_MODE = modeKey;
-          customMinInput.disabled = customMaxInput.disabled =
-            !SLICE_ENABLED || modeKey !== 'custom';
-          refreshAllSlices();
-        });
-        lbl.appendChild(radio);
-        lbl.appendChild(document.createTextNode(' ' + pair[1]));
-        rangeRow.appendChild(lbl);
-        rangeRadios.push(radio);
-      });
-    sliceMenu.appendChild(rangeRow);
 
     var customRow = document.createElement('div');
     customRow.className = 'plotpress-slice-custom-range';
@@ -1274,17 +1230,19 @@ _JS_SOURCE = r"""
       input.addEventListener('change', function () {
         SLICE_CUSTOM_MIN = customMinInput.value === '' ? null : +customMinInput.value;
         SLICE_CUSTOM_MAX = customMaxInput.value === '' ? null : +customMaxInput.value;
-        if (SLICE_RANGE_MODE === 'custom') refreshAllSlices();
+        if (SLICE_RANGE_MODE === 'custom') rerenderAllSlices();
       });
       customRow.appendChild(input);
     });
     sliceMenu.appendChild(customRow);
 
-    // Enables/disables every control below "Enable Slice" itself (that
-    // checkbox and "Show slice view" excepted -- those two stay live
-    // always, per the user's own "in their own section" grouping) --
-    // greyed out rather than hidden while Slice is off, so the menu still
-    // explains what turning it on will offer. The custom min/max inputs
+    // Enables/disables the controls that only mean something once Slice is
+    // actually running. The "Slice view" section stays live always ("Enable
+    // Slice" itself, the three view radios and "Gridlines on profile"), per
+    // the user's own "in their own section" grouping: those only record what
+    // the next enable will draw, so there's nothing to grey out. Everything
+    // else is greyed out rather than hidden while Slice is off, so the menu
+    // still explains what turning it on will offer. The custom min/max inputs
     // fold in their own second condition (only live under 'custom' range
     // mode to begin with) rather than simply mirroring `on`.
     function setSliceControlsEnabled(on) {
@@ -1605,7 +1563,7 @@ _JS_SOURCE = r"""
       return {
         xedges: e.xedges, yedges: e.yedges, xc: e.xc, yc: e.yc,
         shape: e.shape, z: e.z[CURRENT_FRAME[e.unit] || 0],
-        vmin: e.vmin, vmax: e.vmax, curvilinear: e.curvilinear,
+        vmin: e.vmin, vmax: e.vmax, curvilinear: e.curvilinear, name: e.name,
       };
     }
     var meshes = (PICK[key] && PICK[key].meshes) || [];
@@ -1716,16 +1674,24 @@ _JS_SOURCE = r"""
       built.api.external(Math.max(0, Math.min(index, top)));
     });
   }
-  // The scope changed: redraw the outlines and, if Slice is on, rebuild the
-  // sliders for just the axes now in scope -- keeping the slider where it was
-  // rather than snapping back to the first row/column.
-  function applySliceScope() {
-    drawSliceSelection();
-    updateScopeStatus();
-    if (!SLICE_ENABLED) return;
+  // Rebuild every slider but leave the slice where the user had it. For a
+  // change that alters how many sliders there are without changing what an
+  // index *means* -- the scope, or "Link all matching axes" collapsing a
+  // group's sliders into one -- snapping back to the first row/column throws
+  // away the position they scrubbed to for no reason. An orientation change
+  // is deliberately not one of these: index 5 is row 5 one way and column 5
+  // the other, so that one does start over.
+  function rebuildSliceSlidersKeepingIndex() {
     var keep = currentSliceIndex();
     buildSliceSliders();
     if (keep !== null) restoreSliceIndex(keep);
+  }
+  // The scope changed: redraw the outlines and, if Slice is on, rebuild the
+  // sliders for just the axes now in scope.
+  function applySliceScope() {
+    drawSliceSelection();
+    updateScopeStatus();
+    if (SLICE_ENABLED) rebuildSliceSlidersKeepingIndex();
   }
   // A click in 'slice-select' mode toggles the (topmost) mesh axes under it.
   function toggleSliceAxis(e) {
@@ -1798,6 +1764,24 @@ _JS_SOURCE = r"""
   // shared by the in-place 1-D view and the companion strip so both read the
   // same 'auto'/'colorbar'/'custom' choice identically. Never degenerate
   // (vmin === vmax would divide by zero placing anything on it).
+  // The *unsliced* (shared) axis' own ticks -- exactly the ones rebuildTicks
+  // draws on the heatmap, so the strip's gridlines sit on the heatmap's ticks
+  // and the replace view relabels that axis the way it was already labelled.
+  // resolveAxisTicks, not axisTicks: the latter only knows "nice numbers" plus
+  // log, and silently drops this axis' categories, locator, date handling and
+  // format -- an axes with set_xlocator({"kind": "multiple", "base": 2.5})
+  // ticked 0/2.5/5/7.5/10 on the heatmap and 0/2/4/6/8/10 here. Limits are
+  // passed in CUR's own order (not min/max-normalized) for the same reason
+  // rebuildTicks does: an inverted axis must resolve to the same ticks there
+  // as here, and toPixel already places them correctly either way.
+  // Null for an axes rebuildTicks itself leaves alone -- fixed ticks or
+  // axis_off -- where nothing here can reproduce what is actually drawn.
+  function spatialTicks(key, isX) {
+    var om = META[key], m = CUR[key];
+    if (!om || !m || om.axis_off || om.xfixed || om.yfixed) return null;
+    return isX ? resolveAxisTicks(om, m.xmin, m.xmax, m.xscale, true)
+               : resolveAxisTicks(om, m.ymin, m.ymax, m.yscale, false);
+  }
   function sliceValueRange(key, finiteYs) {
     var entryForRange = meshEntryForAxes(key);
     var vmin, vmax;
@@ -1887,10 +1871,20 @@ _JS_SOURCE = r"""
     if (COMPANION_OK === null) computeCompanionEligibility();
     return !!COMPANION_OK[key];
   }
+  // How much of the axes the strip takes: the caller's own panel_size share,
+  // raised to a 28px floor so a strip on an ordinary axes stays legible --
+  // but never past half the axes (or the caller's share, if they asked for
+  // more than half), because that floor is a *minimum* for a normal-sized
+  // panel, not a claim on one too small to hold it. Without the cap, a stack
+  // of short panels (14 rows in a 5-inch figure is ~23px each) gave the strip
+  // more than the whole axes and left the heatmap with a negative rect --
+  // silently, since a negative width/height throws nothing, it just draws
+  // nothing at all.
   function companionSize(key) {
     var o = META[key];
     var span = SLICE_ORIENTATION === 'x' ? o.h : o.w;
-    return Math.max(28, Math.round(span * SLICE_COMPANION_FRAC));
+    var want = Math.round(span * SLICE_COMPANION_FRAC);
+    return Math.max(1, Math.min(Math.max(28, want), Math.max(want, Math.floor(span / 2))));
   }
   function setClipRect(key, r) {
     var cr = document.querySelector('#clip' + key + ' rect');
@@ -2002,16 +1996,30 @@ _JS_SOURCE = r"""
     relayoutTextCounterScale(k);
     alignColorbars(k);
   }
+  // Puts `key` and every axes overlaid on it (twinx/twiny, secondary) in the
+  // rect (ex, ey, ew, eh), skipping whichever are already there. Each is
+  // checked on its own rather than gating all of them on the parent's rect:
+  // resetAxesOne() puts a single axes back in META's full rect (a double-click
+  // reset, or Reset All Axes reaching the twin after the parent), so "the
+  // parent already matches" is no reason to leave a twin stranded unsplit,
+  // with its ticks spread over a rect its parent's heatmap no longer fills.
+  function setAxesRectWithOverlays(key, ex, ey, ew, eh, anchor) {
+    [key].concat(overlaysOf(key)).forEach(function (k) {
+      var c = CUR[k];
+      if (!c) return;
+      if (c.x !== ex || c.y !== ey || c.w !== ew || c.h !== eh
+          || (anchor === null) !== (c.tickAnchorX == null)) {
+        setAxesRect(k, ex, ey, ew, eh, anchor);
+      }
+    });
+  }
   function ensureCompanionLayout(key) {
-    var o = META[key], c = CUR[key];
+    var o = META[key];
     var s = companionSize(key);
     var ex = o.x, ey = o.y, ew = o.w, eh = o.h, anchor = null;
     if (SLICE_ORIENTATION === 'x') { ey = o.y + s; eh = o.h - s; }
     else { ex = o.x + s; ew = o.w - s; anchor = o.x; }
-    if (c.x !== ex || c.y !== ey || c.w !== ew || c.h !== eh) {
-      setAxesRect(key, ex, ey, ew, eh, anchor);
-      overlaysOf(key).forEach(function (k) { setAxesRect(k, ex, ey, ew, eh, anchor); });
-    }
+    setAxesRectWithOverlays(key, ex, ey, ew, eh, anchor);
     return s;
   }
   function removeCompanion(key) {
@@ -2022,12 +2030,9 @@ _JS_SOURCE = r"""
       // as the profile, in which case they carry across.
       if (!SLICE_VIEW_ON) removeSlicePins(key);
     }
-    var o = META[key], c = CUR[key];
-    if (!o || !c) return;
-    if (c.x !== o.x || c.y !== o.y || c.w !== o.w || c.h !== o.h || c.tickAnchorX != null) {
-      setAxesRect(key, o.x, o.y, o.w, o.h, null);
-      overlaysOf(key).forEach(function (k) { setAxesRect(k, o.x, o.y, o.w, o.h, null); });
-    }
+    var o = META[key];
+    if (!o || !CUR[key]) return;
+    setAxesRectWithOverlays(key, o.x, o.y, o.w, o.h, null);
   }
   function companionClip(key, r) {
     var id = 'sliceclip' + key;
@@ -2122,11 +2127,12 @@ _JS_SOURCE = r"""
       }
       if (SLICE_GRID) {
         // Along the shared axis too: the heatmap's own tick positions, so a
-        // vertical (X slice) or horizontal (Y slice) line lines up with its ticks.
+        // vertical (X slice) or horizontal (Y slice) line lines up with its
+        // ticks. None when spatialTicks() can't say where those are (fixed
+        // ticks, axis_off) -- a guide that claims to mark a tick and doesn't
+        // is worse than no guide, so only the value guides are drawn there.
         var mm = CUR[key];
-        var lo2 = isX ? Math.min(mm.xmin, mm.xmax) : Math.min(mm.ymin, mm.ymax);
-        var hi2 = isX ? Math.max(mm.xmin, mm.xmax) : Math.max(mm.ymin, mm.ymax);
-        var stk2 = axisTicks(lo2, hi2, isX ? mm.xscale : mm.yscale);
+        var stk2 = spatialTicks(key, isX) || { ticks: [] };
         for (var g2 = 0; g2 < stk2.ticks.length; g2++) {
           if (isX) {
             var ax2 = toPixel(mm, stk2.ticks[g2], mm.ymin).x;
@@ -2208,7 +2214,12 @@ _JS_SOURCE = r"""
   function applySliceVisibility(g) {
     if (g.dataset.kind !== 'slice') return;
     var sp = slicePinPoint(g.dataset.axes, +g.dataset.index);
-    g.style.display = (sp && sp.hidden) ? 'none' : '';
+    // No sp at all -- the whole slice is NaN, so companionPlacer() has no
+    // value range to place anything against -- is just as much "nothing to
+    // point at" as one missing sample (sp.hidden) is. Treating it as "leave
+    // the pin alone" left it sitting over a blank profile, still showing the
+    // value from the last row that had one.
+    g.style.display = (!sp || sp.hidden) ? 'none' : '';
     var text = g.querySelector('text');
     if (!text) return;
     var plain = text.textContent, m = /^(.*, )([^,=]+=[^,]*)$/.exec(plain);
@@ -2258,7 +2269,11 @@ _JS_SOURCE = r"""
       if (pin.dataset.kind !== 'slice') continue;
       if (keys.indexOf(String(pin.dataset.axes)) === -1) continue;
       var a = resolve(pinAnchor(pin), +pin.dataset.index);
+      // layoutPin() ends in applySliceVisibility(); when there is nothing to
+      // resolve to at all there is no layout to do, but the pin still has to
+      // be told to hide itself -- so call it directly on that path.
       if (a) layoutPin(pin, a.px, a.py, pinLabel(pin, a.label));
+      else applySliceVisibility(pin);
     }
   }
   function removeSlicePins(key) {
@@ -2424,7 +2439,7 @@ _JS_SOURCE = r"""
     var origTicks = document.getElementById('ticks' + key);
 
     if (!SLICE_VIEW_ON) {
-      meshEls.forEach(function (im) { im.style.display = ''; });
+      meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
       if (origTicks) origTicks.style.display = '';
       if (st.sliceEl) {
         st.sliceEl.remove(); st.sliceEl = null;
@@ -2452,9 +2467,21 @@ _JS_SOURCE = r"""
     var slice = computeSliceByIndex(key, SLICE_ORIENTATION, index);
     if (!slice) return;
     var finiteYs = slice.ys.filter(isFiniteNum);
-    if (!finiteYs.length) return;
+    if (!finiteYs.length) {
+      // Nothing to draw on this row/column -- every value is NaN. Returning
+      // here without clearing left the *previous* row's line and value ticks
+      // on screen under the new slider position: the reader saw a profile
+      // that said row 4 and plotted row 3. Blank the view instead, the same
+      // as the companion strip does (drawCompanion's own `if (pl)`), keeping
+      // the heatmap hidden since this view is still standing in for it.
+      meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+      if (origTicks) origTicks.style.display = 'none';
+      if (st.sliceEl) st.sliceEl.setAttribute('d', '');
+      if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
+      return;
+    }
     var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
-    meshEls.forEach(function (im) { im.style.display = 'none'; });
+    meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
 
     var d = '', started = false;
     for (var i = 0; i < slice.xs.length; i++) {
@@ -2521,10 +2548,11 @@ _JS_SOURCE = r"""
       txt.textContent = tk.labels[j];
       st.tickGroup.appendChild(txt);
     }
-    var spatialLo = SLICE_ORIENTATION === 'x' ? Math.min(m.xmin, m.xmax) : Math.min(m.ymin, m.ymax);
-    var spatialHi = SLICE_ORIENTATION === 'x' ? Math.max(m.xmin, m.xmax) : Math.max(m.ymin, m.ymax);
-    var spatialScale = SLICE_ORIENTATION === 'x' ? m.xscale : m.yscale;
-    var stk = axisTicks(spatialLo, spatialHi, spatialScale);
+    // The unsliced dimension keeps its own real ticks -- see spatialTicks(),
+    // which resolves them the same way the heatmap's own rebuild does. Empty
+    // for a fixed-tick/axis_off axes, whose statically-rendered ticks nothing
+    // here can reproduce; that axes keeps the value ticks only.
+    var stk = spatialTicks(key, SLICE_ORIENTATION === 'x') || { ticks: [], labels: [] };
     for (var k = 0; k < stk.ticks.length; k++) {
       var sp = (SLICE_ORIENTATION === 'x') ? toPixel(m, stk.ticks[k], m.ymin) : toPixel(m, m.xmin, stk.ticks[k]);
       if (SLICE_GRID) {
@@ -2727,7 +2755,7 @@ _JS_SOURCE = r"""
     // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
     // own comment on this same selector.
     var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
-    meshEls.forEach(function (im) { im.style.display = ''; });
+    meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
     var origTicks = document.getElementById('ticks' + key);
     if (origTicks) origTicks.style.display = '';
     if (st.cursorEl) st.cursorEl.remove();
@@ -2965,21 +2993,87 @@ _JS_SOURCE = r"""
     var mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag, step;
     if (norm < 1.5) step = mag; else if (norm < 3) step = 2 * mag;
     else if (norm < 7) step = 5 * mag; else step = 10 * mag;
-    var out = [];
-    for (var v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) out.push(v);
+    // start + i * step per tick, and the half-open < hi + step/2 bound, both
+    // mirroring ticker.nice_ticks' own np.arange: accumulating v += step
+    // drifts by a different last bit than numpy's multiply, and a tick landing
+    // one ulp either side of a .5 boundary then rounds to a different label
+    // here than the static render already drew.
+    var start = Math.ceil(lo / step) * step, out = [];
+    for (var i = 0; start + i * step < hi + step * 0.5; i++) {
+      var v = start + i * step;
+      // nice_ticks' own zero snap: an unlucky step (0.02, say) lands the zero
+      // tick at ~1e-17, a real position error, not just a label one.
+      if (Math.abs(v) < step * 1e-6) v = 0;
+      if (v >= lo - step * 1e-6 && v <= hi + step * 1e-6) out.push(v);
+    }
     return { ticks: out, step: step };
   }
   // Match the Python renderer's exponential style: "1e5", "1.2e-4".
+  // Number.toFixed() rounds a halfway value away from zero; Python's own
+  // %-operator and f-strings -- which every tick label in the static render
+  // came from -- round half to *even*. Ordinary "nice" ticks land on halves
+  // constantly (a [-1, 1] axis ticks at +-0.5), so under a 0-decimal format
+  // the same tick read "0" as rendered and "1" after the first zoom. Only the
+  // exactly-halfway case differs, so everything else defers to toFixed, which
+  // already rounds the decimal representation correctly.
+  // The halfway test runs on the value's *exact* decimal expansion, never on
+  // v * 10^d: that product re-rounds, and reports 1.234575 -- a double whose
+  // exact value is 1.23457499... -- as halfway at 5 decimals, where Python
+  // rounds it down. toFixed(d + 25) spells out enough of the expansion to
+  // tell a true "...5000" tail from a "...49999" one at every magnitude a
+  // tick label stays in fixed notation for (fmtTick hands anything outside
+  // 1e-3..1e5 to expFmt instead).
+  function pyFixed(v, d) {
+    if (!isFinite(v)) return v.toFixed(d);
+    var neg = v < 0, a = Math.abs(v);
+    var ext = a.toFixed(Math.min(100, d + 25));
+    var dot = ext.indexOf('.');
+    var digits = ext.slice(0, dot) + ext.slice(dot + 1), keep = dot + d;
+    var out;
+    if (/^50*$/.test(digits.slice(keep))) {
+      var kept = digits.slice(0, keep).split('');
+      if ((kept[keep - 1].charCodeAt(0) - 48) % 2 === 1) {   // odd: step to even
+        var i = keep - 1;
+        while (i >= 0 && kept[i] === '9') { kept[i] = '0'; i--; }
+        if (i < 0) kept.unshift('1'); else kept[i] = String(+kept[i] + 1);
+      }
+      var s = kept.join('');
+      out = d ? (s.slice(0, s.length - d) || '0') + '.' + s.slice(s.length - d) : s;
+    } else {
+      out = a.toFixed(d);
+    }
+    // Python keeps the sign of a negative value that rounded to zero ("-0").
+    return (neg ? '-' : '') + out;
+  }
   function expFmt(v, digits) {
     var p = v.toExponential(digits).split('e');
     return p[0].replace(/\.?0+$/, '') + 'e' + parseInt(p[1], 10);
   }
+  // Mirrors ticker.format_tick(), which formats a value on its own: six
+  // decimals with the trailing zeros stripped, so 2.5 stays "2.5" and 5.0
+  // prints "5". `step` is only the zero guard -- a tick that should be
+  // exactly 0 but carries float noise (1e-17 off a 0.1 step) has to read "0",
+  // not "1e-17", which Python gets for free from an exact `v == 0`.
+  //
+  // Deriving the decimal count from `step` instead (step >= 1 -> none) held
+  // only while every step was a "nice" 1/2/5x10^n one. resolveAxisTicks()
+  // back-fills step = ticks[1] - ticks[0] for *minor* ticks' benefit, which
+  // hands this a 2.5 or a pi/2 from set_xlocator({"kind": "multiple", ...})
+  // -- and "step >= 1 so no decimals" then rounded the labels themselves:
+  // an axis Python rendered 0/2.5/5/7.5/10 came back 0/3/5/8/10 after the
+  // first pan, wrong numbers under ticks still in the right places.
   function fmtTick(v, step) {
-    if (Math.abs(v) < step * 1e-6) return '0';
+    // `v === 0` is Python's own rule, and the only one that holds when there
+    // is no step to scale a tolerance by: resolveAxisTicks leaves step null
+    // for a single-tick set (zoom far enough under a coarse locator and one
+    // tick is all that is left), and `0 < null * 1e-6` is `0 < 0` -- false,
+    // so a tick at 0 fell through to the small-magnitude branch and rendered
+    // "0e0". The step term stays for the other case it was written for: a
+    // tick that should be 0 but carries float noise off a real step.
+    if (v === 0 || (step > 0 && Math.abs(v) < step * 1e-6)) return '0';
     var a = Math.abs(v);
     if (a >= 1e5 || a < 1e-3) return expFmt(v, 1);
-    var dec = step >= 1 ? 0 : Math.min(6, Math.ceil(-Math.log10(step)));
-    var out = v.toFixed(dec);
+    var out = pyFixed(v, 6);
     return out.indexOf('.') >= 0 ? out.replace(/0+$/, '').replace(/\.$/, '') : out;
   }
   function fmtNum(v) {
@@ -3018,7 +3112,7 @@ _JS_SOURCE = r"""
   }
   // Format v against a shared exponent: "1.002e5". Mirrors ticker._sci_tick.
   function sciShared(v, exp, dec) {
-    var mant = (v / Math.pow(10, exp)).toFixed(dec);
+    var mant = pyFixed(v / Math.pow(10, exp), dec);
     if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
     return mant + 'e' + exp;
   }
@@ -3140,9 +3234,14 @@ _JS_SOURCE = r"""
   function jsMultipleTicks(lo, hi, base, offset) {
     offset = offset || 0;
     if (!(base > 0)) return null;
-    var start = Math.ceil((lo - offset) / base) * base + offset;
+    // n * base per tick, not a running v += base -- mirrors
+    // ticker.multiple_ticks()'s own integer-multiple form, which it uses so
+    // the multiple that should land on 0 lands there exactly instead of on
+    // accumulated rounding noise.
+    var n0 = Math.ceil((lo - offset) / base);
+    var n1 = Math.floor((hi + base * 1e-9 - offset) / base);
     var out = [];
-    for (var v = start; v <= hi + base * 1e-9; v += base) out.push(v);
+    for (var n = n0; n <= n1; n++) out.push(n * base + offset);
     var kept = out.filter(function (v) { return v >= lo - base * 1e-6 && v <= hi + base * 1e-6; });
     // Mirrors ticker.multiple_ticks()'s own fallback: a view with no
     // multiple of base inside it gets the bare range instead of no ticks.
@@ -3159,7 +3258,7 @@ _JS_SOURCE = r"""
   function jsEngTick(v, decimals) {
     if (v === 0) return '0';
     var exp3 = Math.max(-8, Math.min(8, Math.floor(Math.log10(Math.abs(v)) / 3)));
-    var mant = (v / Math.pow(10, exp3 * 3)).toFixed(decimals);
+    var mant = pyFixed(v / Math.pow(10, exp3 * 3), decimals);
     if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
     return mant + SI_PREFIXES[String(exp3)];
   }
@@ -3207,7 +3306,7 @@ _JS_SOURCE = r"""
     return den === 1 ? (sign + numStr + 'π') : (sign + numStr + 'π/' + den);
   }
   function commaFmt(v, decimals) {
-    var s = v.toFixed(decimals), neg = s.charAt(0) === '-';
+    var s = pyFixed(v, decimals), neg = s.charAt(0) === '-';
     if (neg) s = s.slice(1);
     var parts = s.split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -3225,7 +3324,7 @@ _JS_SOURCE = r"""
       s = s.replace(/(\.\d*?)0+e/, '$1e').replace(/\.e/, 'e');
       s = s.replace(/e([+-])(\d)$/, 'e$10$2');   // Python zero-pads to 2 exponent digits
     } else {
-      s = v.toFixed(Math.max(0, sig - 1 - exp));
+      s = pyFixed(v, Math.max(0, sig - 1 - exp));
       if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
     }
     return upper ? s.toUpperCase() : s;
@@ -3249,7 +3348,7 @@ _JS_SOURCE = r"""
     } else if (conv === 'd') {
       out = String(Math.trunc(v));
     } else if (conv === 'f') {
-      out = v.toFixed(prec != null ? prec : 6);
+      out = pyFixed(v, prec != null ? prec : 6);
     } else if (conv === 'e' || conv === 'E') {
       out = v.toExponential(prec != null ? prec : 6).replace(/e([+-])(\d)$/, 'e$10$2');
       if (conv === 'E') out = out.toUpperCase();
@@ -3284,7 +3383,7 @@ _JS_SOURCE = r"""
     else { kind = spec; opts = {}; }
     if (kind === 'percent') {
       var decP = opts.decimals != null ? opts.decimals : 0;
-      return values.map(function (v) { return (v * 100).toFixed(decP) + '%'; });
+      return values.map(function (v) { return pyFixed(v * 100, decP) + '%'; });
     }
     if (kind === 'comma' || kind === 'thousands') {
       var decC = opts.decimals != null ? opts.decimals : 0;
@@ -3683,6 +3782,13 @@ _JS_SOURCE = r"""
     // secondary snaps the parent back but leaves the other one stranded at
     // whatever view it last drifted to.
     syncLinked(key); resyncSlice(key);
+    // Copying META's rect back above also undid any Slice companion layout:
+    // an axes under a strip belongs in the heatmap's *share* of that rect,
+    // not the whole thing. resyncSlice() just re-applied it for a sliced
+    // axes itself; a twin/secondary has no slice of its own, so ask the
+    // parent that owns the split to re-apply it (for both of them).
+    var om = META[key], owner = om.twin_of != null ? om.twin_of : om.secondary_of;
+    if (owner != null) resyncSlice(String(owner));
   }
   function resetAxes() { Object.keys(META).forEach(resetAxesOne); }
 

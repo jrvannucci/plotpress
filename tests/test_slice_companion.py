@@ -1764,3 +1764,242 @@ def test_an_inset_mesh_gets_no_slider_or_cursor(page, tmp_path):
     _load(page, tmp_path, _fig_with_meshed_inset(), options={"slice": {"enabled": True}})
     assert page.evaluate("document.querySelectorAll('.plotpress-slider').length") == 2
     assert page.evaluate("document.querySelectorAll('.plotpress-slice-cursor, [class*=slice-cursor]').length") == 2
+
+
+# ---- a menu change that moves the profile has to bring the pins along ----------------
+
+def _pick_range(page, label):
+    page.evaluate("""(label) => Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-range-mode"]')).find(
+        r => r.parentNode.textContent.includes(label)).click()""", label)
+
+
+def _profile_y_at(page, x):
+    """The profile path's own y at user-space x -- where a pin there belongs."""
+    return page.evaluate("""(x) => {
+      const d = document.querySelector(
+          '.plotpress-slice-companion path').getAttribute('d');
+      let best = null, bd = Infinity;
+      d.slice(1).split(/[ML]/).forEach(s => {
+        const [px, py] = s.split(',').map(Number);
+        if (Math.abs(px - x) < bd) { bd = Math.abs(px - x); best = py; }
+      });
+      return best; }""", x)
+
+
+@pytest.mark.browser
+def test_changing_the_value_range_keeps_strip_pins_on_the_profile(page, tmp_path):
+    # The value range rescales the profile, so a pin on it has to be re-resolved
+    # -- it used to stay at the pixel the *old* range put it at.
+    _load(page, tmp_path, _ramp_fig(), options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    pin_x = page.evaluate(
+        "+document.querySelector('.plotpress-pin[data-kind=\"slice\"]').dataset.anchorX")
+    pin_y = page.evaluate(
+        "+document.querySelector('.plotpress-pin[data-kind=\"slice\"]').dataset.anchorY")
+    assert pin_y == pytest.approx(_profile_y_at(page, pin_x), abs=1)
+
+    page.evaluate("""() => { const ins = document.querySelectorAll(
+        '.plotpress-slice-custom-range input');
+        ins[0].value = -200; ins[1].value = 200;
+        ins.forEach(i => i.dispatchEvent(new Event('change', {bubbles: true}))); }""")
+    _pick_range(page, "Custom")
+    moved_y = _profile_y_at(page, pin_x)
+    pin_y2 = page.evaluate(
+        "+document.querySelector('.plotpress-pin[data-kind=\"slice\"]').dataset.anchorY")
+    assert moved_y != pytest.approx(pin_y, abs=2), "the profile should have rescaled"
+    assert pin_y2 == pytest.approx(moved_y, abs=1)
+
+
+@pytest.mark.browser
+def test_link_all_keeps_the_slice_where_it_was(page, tmp_path):
+    # Collapsing a group's sliders into one changes how a row is driven, not
+    # which row is showing -- it used to snap every slice back to row 0.
+    _load(page, tmp_path, _grid_fig(), options={"slice": {"enabled": True, "index": 5}})
+    values = lambda: page.evaluate(  # noqa: E731
+        """() => Array.from(document.querySelectorAll(
+            '.plotpress-slider input[type=range]')).map(r => +r.value)""")
+    assert values() and all(v == 5 for v in values())
+    page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown label')).find(
+        l => l.textContent.includes('Link all matching axes')
+        ).querySelector('input').click()""")
+    assert values() and all(v == 5 for v in values())
+
+
+@pytest.mark.browser
+def test_resetting_the_axes_keeps_a_twin_split_with_its_parent(page, tmp_path):
+    # Reset All Axes (and a double-click reset) puts one axes back in its full,
+    # original rect -- but under a companion strip the parent's heatmap only
+    # owns part of that rect, so the twin used to come back spread over the
+    # whole of it, its ticks running up into the strip.
+    _load(page, tmp_path, _twin_fig(), options={"slice": {"enabled": True}})
+    twin_ticks = lambda: page.evaluate(  # noqa: E731
+        """() => Array.from(document.querySelectorAll('#ticks1 text')).map(
+            t => Math.round(t.getBoundingClientRect().top))""")
+    before = twin_ticks()
+    assert before
+    page.evaluate("""() => Array.from(document.querySelectorAll('button')).find(
+        b => b.textContent.trim() === 'Reset All Axes').click()""")
+    assert twin_ticks() == before
+
+
+# ---- an axes too small to hold the strip's own legibility floor -------------
+
+@pytest.mark.browser
+@pytest.mark.parametrize("orient", ["x", "y"])
+def test_a_strip_never_takes_more_than_its_own_axes(page, tmp_path, orient):
+    # The strip's 28px floor is a minimum for a normal panel, not a claim on a
+    # tiny one: a stack of ~23px panels used to give the strip more than the
+    # whole axes, leaving the heatmap with a negative rect and drawing nothing
+    # -- silently, since a negative width/height throws no error.
+    if orient == "x":
+        fig, axs = plotpress.subplots(14, 1, figsize=(6, 5))
+    else:
+        fig, axs = plotpress.subplots(1, 14, figsize=(6, 5))
+    x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
+    for ax in np.ravel(axs):
+        ax.pcolormesh(x, y, np.arange(80, dtype=float).reshape(8, 10))
+        ax.axis("off")
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, fig,
+          options={"slice": {"enabled": True, "orientation": orient}})
+    rects = page.evaluate(r"""() => Array.from(document.querySelectorAll('clipPath'))
+        .filter(c => /^clip\d+$/.test(c.id))
+        .map(c => [+c.firstChild.getAttribute('width'),
+                   +c.firstChild.getAttribute('height')])""")
+    assert errs == [], errs
+    assert rects and all(w > 0 and h > 0 for w, h in rects), rects
+
+
+# ---- a slice with no finite values at all ----------------------------------
+
+def _nan_row_fig(row=4):
+    z = np.arange(80, dtype=float).reshape(8, 10)
+    z[row] = np.nan
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9), z)
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+def test_an_all_nan_row_blanks_the_replace_profile(page, tmp_path):
+    # Stepping onto a row with no values used to leave the *previous* row's
+    # line on screen: the slider said row 4 while the profile plotted row 3.
+    _load(page, tmp_path, _nan_row_fig(),
+          options={"slice": {"enabled": True, "view": "replace", "index": 3}})
+    line_d = lambda: page.evaluate(  # noqa: E731
+        """() => { const l = document.querySelector('.plotpress-slice-line');
+           return l ? l.getAttribute('d') : null; }""")
+    row3 = line_d()
+    assert row3
+    _set_slider(page, 4)
+    assert line_d() == ""                       # nothing to draw, and nothing stale
+    _set_slider(page, 3)
+    assert line_d() == row3                     # and it comes back
+
+
+@pytest.mark.browser
+def test_a_strip_pin_hides_over_an_all_nan_slice_and_returns(page, tmp_path):
+    # slicePinPoint() returns null when the whole slice is NaN (no value range
+    # to place against); that used to leave the pin visible, still showing the
+    # value it read on the last row that had one.
+    _load(page, tmp_path, _nan_row_fig(),
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    state = lambda: page.evaluate(  # noqa: E731
+        """() => { const p = document.querySelector('.plotpress-pin[data-kind="slice"]');
+           return p && {display: p.style.display, label: p.textContent.trim()}; }""")
+    on_row_3 = state()
+    assert on_row_3["display"] == ""
+    _set_slider(page, 4)
+    assert state()["display"] == "none"
+    _set_slider(page, 3)
+    assert state() == on_row_3
+
+
+# ---- the unsliced axis keeps its own ticks ---------------------------------
+
+def _locator_mesh_fig():
+    """A mesh whose x axis ticks every 2.5 by locator, not by "nice numbers"."""
+    fig, ax = plotpress.subplots(figsize=(8, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9),
+                  np.arange(80, dtype=float).reshape(8, 10))
+    ax.set_xlocator({"kind": "multiple", "base": 2.5})
+    fig.tight_layout()
+    return fig
+
+
+def _heatmap_xticks(page):
+    return page.evaluate("""() => Array.from(document.querySelectorAll('#ticks0 text'))
+        .filter(t => t.getAttribute('text-anchor') === 'middle')
+        .map(t => [t.textContent, Math.round(+t.getAttribute('x'))])""")
+
+
+@pytest.mark.browser
+def test_strip_gridlines_sit_on_the_heatmaps_own_ticks(page, tmp_path):
+    # The shared-axis guides are there to line up with the heatmap's ticks;
+    # they used to be re-derived as plain "nice numbers", losing this axis'
+    # locator (and equally its categories, date handling or format).
+    _load(page, tmp_path, _locator_mesh_fig(), options={"slice": {"enabled": True}})
+    tick_x = sorted(x for _, x in _heatmap_xticks(page))
+    grid_x = page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-slice-companion g[clip-path] line'))
+        .filter(l => l.getAttribute('x1') === l.getAttribute('x2'))
+        .map(l => Math.round(+l.getAttribute('x1'))).sort((a, b) => a - b)""")
+    assert grid_x == tick_x, (grid_x, tick_x)
+
+
+@pytest.mark.browser
+def test_the_replace_view_keeps_the_unsliced_axis_ticks_as_they_were(page, tmp_path):
+    _load(page, tmp_path, _locator_mesh_fig(),
+          options={"slice": {"enabled": True, "view": "cursor"}})
+    before = _heatmap_xticks(page)
+    assert [lab for lab, _ in before] == ["0", "2.5", "5", "7.5", "10"], before
+    _pick_view(page, "replaces")
+    after = page.evaluate("""() => Array.from(document.querySelectorAll(
+        '.plotpress-slice-ticks text'))
+        .filter(t => t.getAttribute('text-anchor') === 'middle')
+        .map(t => [t.textContent, Math.round(+t.getAttribute('x'))])""")
+    assert after == before, (after, before)
+
+
+# ---- Slice's mesh hiding must not collide with the legend's ----------------
+
+@pytest.mark.browser
+def test_a_slider_step_leaves_a_legend_hidden_mesh_hidden(page, tmp_path):
+    # Slice and the legend's click-to-hide toggle both used to write the
+    # element's own style.display, so whichever ran last undid the other: a
+    # slider step brought back a mesh the reader had just hidden.
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9),
+                  np.arange(80, dtype=float).reshape(8, 10), label="grid")
+    ax.plot([0, 10], [0, 8], label="line")
+    ax.legend()
+    fig.tight_layout()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "view": "cursor"}})
+    shown = lambda: page.evaluate(  # noqa: E731
+        "() => getComputedStyle(document.querySelector('.plotpress-mesh')).display")
+    assert shown() != "none"
+    page.evaluate("""() => { const t = Array.from(document.querySelectorAll(
+        '.plotpress-legend text')).find(t => t.textContent === 'grid');
+        t.dispatchEvent(new MouseEvent('click', {bubbles: true})); }""")
+    assert shown() == "none"
+    _set_slider(page, 5)
+    assert shown() == "none", "a slider step un-hid a legend-hidden mesh"
+
+
+@pytest.mark.browser
+def test_the_replace_view_still_hides_the_mesh_it_stands_in_for(page, tmp_path):
+    # The other half of the same split: Slice's own hiding still has to work.
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "view": "replace"}})
+    shown = lambda: page.evaluate(  # noqa: E731
+        "() => getComputedStyle(document.querySelector('.plotpress-mesh')).display")
+    assert shown() == "none"
+    _pick_view(page, "cursor")
+    assert shown() != "none"
