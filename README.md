@@ -586,6 +586,14 @@ to first/last/min/max per pixel column before serializing, which is visually
 lossless (spikes preserved), keeps the output **vector**, and needs no compiled
 backend. Coordinate formatting itself is already vectorized with `numpy.char`.
 
+**Pure Python, and staying that way.** Every number above comes from NumPy, not
+from native code — plotpress has no compiled extension and is not going to grow
+one. Curvilinear and Gouraud meshes scan-convert in NumPy for the same reason:
+where a faster path would need a C extension, the NumPy one is what gets
+written. Installing everywhere pip does, with no build toolchain and no
+per-platform wheels, is a first-class feature here rather than a trade-off made
+to get it.
+
 ## Architecture notes
 
 `plotpress/` layout:
