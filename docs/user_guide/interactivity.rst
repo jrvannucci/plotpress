@@ -347,7 +347,8 @@ Extracting markers to Python
 The **Extract** button (in the Point Picking menu) opens a panel to
 copy/download the current Point Picking markers -- not annotation notes,
 which have nothing to "extract" in the same sense a picked data value does
--- as **CSV or JSON**. Each record is a dict: the picked value itself
+-- as **JSON (the default) or CSV**, switched by a pair of radios in the panel
+(**Copy** copies whichever is showing; the two download buttons save each format). Each record is a dict: the picked value itself
 (``x``/``y``, plus ``z``/``c``/any ``values=`` dimension), ``axes`` and
 ``kind``, and then every piece of labelling context that axes and figure
 carry, so a row lifted out of the file still says what it means::

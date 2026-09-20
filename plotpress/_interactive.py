@@ -4263,20 +4263,38 @@ _JS_SOURCE = r"""
     head.style.cssText = 'font-weight:600;margin-bottom:6px';
     head.textContent = records.length + ' marker' + (records.length === 1 ? '' : 's');
     var ta = document.createElement('textarea');
-    ta.readOnly = true; ta.value = csv || '(no markers)';
+    ta.readOnly = true;
+    // The text shown (and copied) follows the format radios; JSON is the default.
+    var format = 'json';
+    var current = function () { return format === 'json' ? json : (csv || '(no markers)'); };
+    ta.value = current();
+    var formats = document.createElement('div');
+    formats.style.cssText = 'display:flex;gap:12px;margin-bottom:6px;font-size:12px';
+    [['json', 'JSON'], ['csv', 'CSV']].forEach(function (pair) {
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer';
+      var radio = document.createElement('input');
+      radio.type = 'radio'; radio.name = 'plotpress-extract-format';
+      radio.checked = (pair[0] === format);
+      radio.addEventListener('change', function () {
+        format = pair[0]; ta.value = current(); ta.select();
+      });
+      lbl.appendChild(radio); lbl.appendChild(document.createTextNode(pair[1]));
+      formats.appendChild(lbl);
+    });
     var btns = document.createElement('div');
     btns.style.cssText = 'display:flex;gap:6px;margin-top:6px;flex-wrap:wrap';
     function mk(txt, fn) {
       var b = document.createElement('button');
       b.textContent = txt; b.addEventListener('click', fn); return b;
     }
-    var copy = mk('Copy CSV', function () {
+    var copy = mk('Copy', function () {
       ta.select();
       var done = function () {
         copy.textContent = 'Copied!';
-        setTimeout(function () { copy.textContent = 'Copy CSV'; }, 1200);
+        setTimeout(function () { copy.textContent = 'Copy'; }, 1200);
       };
-      if (navigator.clipboard) navigator.clipboard.writeText(csv).then(done, function () {
+      if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, function () {
         try { document.execCommand('copy'); done(); } catch (e) {}
       });
       else { try { document.execCommand('copy'); done(); } catch (e) {} }
@@ -4294,7 +4312,7 @@ _JS_SOURCE = r"""
       warn.textContent = notice;
       panel.appendChild(warn);
     }
-    panel.appendChild(ta); panel.appendChild(btns);
+    panel.appendChild(formats); panel.appendChild(ta); panel.appendChild(btns);
     document.body.appendChild(panel);
     ta.focus(); ta.select();
   }

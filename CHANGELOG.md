@@ -53,6 +53,12 @@ anywhere in the source.
   "companion", "orientation": "y", "link_all": True, "range": "colorbar"}}` --
   rather than switched off; values are validated up front.
 
+### Changed
+
+- **The Extract panel now shows JSON by default**, with CSV/JSON radios to switch
+  the text, and its "Copy CSV" button is now "Copy" (it copies whichever format is
+  showing). The two download buttons are unchanged.
+
 ## [0.39.0] - 2026-09-13
 
 ### Added

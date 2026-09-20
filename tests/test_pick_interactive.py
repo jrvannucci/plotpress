@@ -774,6 +774,9 @@ def test_extract_csv_escapes_commas_and_quotes(page, tmp_path):
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
             if (b.textContent === 'Extract') b.click();
           });
+          // JSON is the panel's default; these tests read the CSV form.
+          Array.from(document.querySelectorAll('input[name="plotpress-extract-format"]'))
+            .find(r => r.parentNode.textContent === 'CSV').click();
           return document.querySelector('.plotpress-extract textarea').value;
         }""")
 
@@ -2581,6 +2584,9 @@ def test_annotate_point_never_appears_in_extract(page, tmp_path):
           document.querySelectorAll('.plotpress-toolbar button').forEach(b => {
             if (b.textContent === 'Extract') b.click();
           });
+          // JSON is the panel's default; these tests read the CSV form.
+          Array.from(document.querySelectorAll('input[name="plotpress-extract-format"]'))
+            .find(r => r.parentNode.textContent === 'CSV').click();
           return document.querySelector('.plotpress-extract textarea').value;
         }""")
     rows = list(csv_mod.reader(io.StringIO(csv_text)))

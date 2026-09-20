@@ -1246,3 +1246,49 @@ def test_turning_snap_on_after_the_warning_extracts_the_pins(page, tmp_path):
     _set_snap(page, True)
     recs = _extract(page)
     assert [r["kind"] for r in recs] == ["mesh"] and _notice(page) is None
+
+
+# ---- the Extract panel: JSON by default, radios to switch, one Copy button --------------
+
+def _panel(page):
+    return page.evaluate("""() => { const p = document.querySelector('.plotpress-extract');
+        return {text: p.querySelector('textarea').value,
+                formats: Array.from(p.querySelectorAll('input[name="plotpress-extract-format"]'))
+                    .map(r => [r.parentNode.textContent, r.checked]),
+                buttons: Array.from(p.querySelectorAll('button')).map(b => b.textContent)}; }""")
+
+
+@pytest.mark.browser
+def test_extract_panel_defaults_to_json_with_radios_and_a_plain_copy_button(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig)
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    _menu_button(page, "Extract")
+    panel = _panel(page)
+    assert panel["formats"] == [["JSON", True], ["CSV", False]]
+    assert json.loads(panel["text"])[0]["kind"] == "mesh"          # JSON showing by default
+    assert "Copy" in panel["buttons"] and "Copy CSV" not in panel["buttons"]
+
+
+@pytest.mark.browser
+def test_extract_panel_radios_switch_the_text_and_back(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig)
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    _menu_button(page, "Extract")
+    click = lambda label: page.evaluate("""(label) => Array.from(document.querySelectorAll(
+        'input[name="plotpress-extract-format"]')).find(r => r.parentNode.textContent === label).click()""", label)
+    click("CSV")
+    assert _panel(page)["text"].splitlines()[0].startswith("axes,")      # a CSV header row
+    click("JSON")
+    assert json.loads(_panel(page)["text"])[0]["kind"] == "mesh"
+
+
+@pytest.mark.browser
+def test_extract_panel_with_no_markers_is_an_empty_json_list(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig)
+    _menu_button(page, "Extract")
+    assert json.loads(_panel(page)["text"]) == []
