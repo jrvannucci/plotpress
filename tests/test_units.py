@@ -199,8 +199,13 @@ def test_pow10_is_the_correctly_rounded_decade():
 
     for exp in range(-300, 301):
         assert pow10(exp) == float(f"1e{exp}"), exp
-    assert pow10(23) != 10.0 ** 23        # the cases `**` gets wrong
-    assert pow10(126) != 10.0 ** 126
+
+    # Which exponents `**` actually gets wrong is itself platform-dependent
+    # (10.0**126 misses on Windows but not on the Linux CI runners), so that
+    # is reported, not asserted -- the contract is only that pow10 is the
+    # correctly rounded literal everywhere, which the loop above pins.
+    drifts = [e for e in range(-300, 301) if 10.0 ** e != pow10(e)]
+    print(f"`**` differs from the correctly rounded decade at: {drifts}")
 
 
 def test_nice_ticks_keeps_the_first_tick_on_a_narrow_offset_range():
