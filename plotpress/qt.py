@@ -47,7 +47,7 @@ import types
 # file must outlive the load. Cleaned up per-widget and again at interpreter exit.
 #
 # A deliberate, narrow exception to "no module-level mutable state" (see
-# CLAUDE.md and tests/test_no_global_state.py): this is process-wide *resource
+# AGENTS.md and tests/test_no_global_state.py): this is process-wide *resource
 # cleanup bookkeeping*, not figure-rendering state -- it never makes one
 # PlotPressWidget's behavior depend on another's, only ensures every widget's
 # own temp file still gets removed at interpreter exit even if its widget
