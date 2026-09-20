@@ -29,6 +29,17 @@ anywhere in the source.
   reflects the labels actually set rather than a guess made before they
   existed.
 
+### Fixed
+
+- **The global slider bar could grow off the top of the window.** "Link all
+  matching axes" makes one global slider per compatible group, so a figure
+  whose meshes come in many different grid shapes stacks many of them in the
+  bar fixed to the bottom of the window. Nothing bounded that column: 24 groups
+  made a 1319px bar in a 900px viewport, and since a `position: fixed` element
+  does not scroll with the page, the eight sliders above the top edge could not
+  be reached at all. The bar is now capped to the room it actually has and
+  scrolls inside itself, and re-caps when the window resizes.
+
 ## [0.41.1] - 2026-09-20
 
 ### Documentation

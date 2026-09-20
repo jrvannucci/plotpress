@@ -2064,3 +2064,57 @@ def test_a_tall_viewport_leaves_the_menu_unclamped(page, tmp_path):
         assert fit["overflowBottom"] <= 0, fit
     finally:
         page.set_viewport_size(original)
+
+
+# ---- the global slider bar at scale ----------------------------------------
+
+def _mixed_shape_fig(nrows, ncols, shapes):
+    """A grid whose meshes come in `shapes` distinct grid shapes, so Slice's
+    link grouping produces that many compatible groups."""
+    fig, arr = plotpress.subplots(nrows, ncols, subplot_size=(0.9, 0.7),
+                                  squeeze=False)
+    rng = np.random.default_rng(0)
+    for i, ax in enumerate(ax for row in arr for ax in row):
+        n = 6 + (i % shapes)
+        ax.pcolormesh(np.linspace(0, 1, 13), np.linspace(0, 1, n + 1),
+                      rng.normal(size=(n, 12)))
+        ax.tick_params(labelsize=4)
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("shapes, height", [(16, 504), (24, 900)])
+def test_the_global_slider_bar_stays_reachable_at_scale(page, tmp_path,
+                                                        shapes, height):
+    # "Link all matching axes" makes one global slider per compatible group, so
+    # a figure whose meshes come in many grid shapes stacks many of them in the
+    # bar fixed to the bottom of the window. With nothing bounding that column
+    # it grew off the *top* of the window -- 24 groups made a 1319px bar in a
+    # 900px viewport -- and a position:fixed element does not scroll with the
+    # page, so those sliders could not be reached at all.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1000, "height": height})
+        _load(page, tmp_path, _mixed_shape_fig(6, 8, shapes),
+              options={"slice": {"enabled": True, "link_all": True}})
+        state = page.evaluate(r"""() => {
+          const bar = document.querySelector('.plotpress-sliders');
+          const sliders = Array.from(
+            document.querySelectorAll('.plotpress-slider'));
+          const vh = document.documentElement.clientHeight;
+          const br = bar.getBoundingClientRect();
+          let unreachable = 0;
+          for (const s of sliders) {           // scroll each into the bar
+            bar.scrollTop = s.offsetTop;
+            const r = s.getBoundingClientRect();
+            if (r.top < br.top - 1 || r.bottom > br.bottom + 1) unreachable++;
+          }
+          bar.scrollTop = 0;
+          return {sliders: sliders.length, unreachable,
+                  barOffscreen: br.top < -1 || br.bottom > vh + 1}; }""")
+        assert state["sliders"] == shapes, state
+        assert not state["barOffscreen"], state
+        assert state["unreachable"] == 0, state
+    finally:
+        page.set_viewport_size(original)

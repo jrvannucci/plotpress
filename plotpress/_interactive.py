@@ -588,9 +588,17 @@ _JS_SOURCE = r"""
     'white-space:nowrap}' +
     '.plotpress-mode-dot{width:6px;height:6px;border-radius:50%;' +
     'background:#2b6cff;flex:none}' +
+    // overflow-y on the bar itself, with the height bound set by
+    // reflowGlobalBars: "Link all matching axes" makes one global
+    // slider per compatible group, so a figure whose meshes come in
+    // many different grid shapes gets many of them stacked here. Fixed
+    // to the bottom with nothing bounding the column, the stack simply
+    // grew off the top of the window -- 24 groups made a 1319px bar in
+    // a 900px viewport and put eight sliders somewhere no one could
+    // reach, since a fixed element does not scroll with the page.
     '.plotpress-sliders{position:fixed;bottom:12px;left:50%;' +
     'transform:translateX(-50%);display:flex;flex-direction:column;' +
-    'gap:6px;z-index:1000}' +
+    'gap:6px;z-index:1000;overflow-y:auto;overscroll-behavior:contain}' +
     '.plotpress-slider{display:flex;align-items:center;gap:12px;' +
     'background:#fff;padding:8px 16px;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.2);' +
@@ -2746,12 +2754,23 @@ _JS_SOURCE = r"""
   // slider's own global bar (if any) is always built once at load.
   function reflowGlobalBars() {
     var bars = document.querySelectorAll('.plotpress-sliders');
-    var offset = 12;
+    var offset = 12, vh = document.documentElement.clientHeight;
     bars.forEach(function (b) {
       b.style.bottom = offset + 'px';
+      // Never taller than the room left above this bar's own bottom edge:
+      // past that the column grows off the top of the window, where a
+      // position:fixed element cannot be scrolled to. Capped, it scrolls
+      // inside itself instead (see the CSS above). MARGIN keeps the top
+      // slider clear of the toolbar.
+      var MARGIN = 46;
+      b.style.maxHeight = Math.max(72, vh - offset - MARGIN) + 'px';
       offset += b.getBoundingClientRect().height + 6;
     });
   }
+  // A bar sized to the window has to be re-capped when the window changes --
+  // positionDocked() is already wired to resize for the docked sliders, so
+  // this rides along with it rather than adding a second listener.
+  function reflowOnResize() { reflowGlobalBars(); positionDocked(); }
 
   // (Re)builds every mesh axes' own slice slider from scratch -- torn down
   // and rebuilt rather than adjusted in place, since a changed orientation
@@ -2915,7 +2934,7 @@ _JS_SOURCE = r"""
   // checkbox handler would mean re-registering (and so double-firing after
   // a second toggle) instead of once.
   if (sliceMenuNeeded) {
-    window.addEventListener('resize', positionDocked);
+    window.addEventListener('resize', reflowOnResize);
   }
 
   // Double-click a plot (while panning/zooming) resets just that plot's view.
