@@ -20,7 +20,9 @@ OUT = "assets/readme_slice.gif"
 
 def build_figure(path):
     """Two heatmaps whose rows differ strongly, so the profile visibly moves."""
-    fig, axs = plotpress.subplots(1, 2, figsize=(12.0, 3.6))
+    # Short enough that the fixed global slider bar at the bottom of the
+    # viewport clears the x tick labels rather than sitting on them.
+    fig, axs = plotpress.subplots(1, 2, figsize=(12.0, 3.15))
     x = np.linspace(0, 200, 121)
     y = np.linspace(0, 60, 61)
     X, Y = np.meshgrid((x[:-1] + x[1:]) / 2, (y[:-1] + y[1:]) / 2)
@@ -45,8 +47,14 @@ def build_figure(path):
     # bounds, so the line sweeps through the field instead of the axis
     # rescaling to each row -- a 0.03-wide auto range makes a tiny ripple look
     # like a canyon.
+    # link_all couples every mesh sharing a grid to ONE slider -- the point of
+    # the tool on a multi-panel figure, and what the recording should show.
+    # range="colorbar" holds the profile's value axis at the colour scale's own
+    # bounds, so the line sweeps through the field instead of the axis
+    # rescaling to each row -- a 0.03-wide auto range makes a tiny ripple look
+    # like a canyon.
     fig.save(path, interactive=True,
-             options={"slice": {"range": "colorbar"}})
+             options={"slice": {"range": "colorbar", "link_all": True}})
 
 
 def shot(page):
@@ -83,8 +91,13 @@ def record(url):
         hold(1)
 
         # Scrub down through the section: the profile follows the cursor line.
+        # One global slider now drives both meshes (link_all), so there is a
+        # single range input to move rather than one per axes.
         rows = page.evaluate(
             "() => +document.querySelector('.plotpress-slider input[type=range]').max")
+        n_sliders = page.evaluate(
+            "() => document.querySelectorAll('.plotpress-slider').length")
+        print(f"  sliders on the page: {n_sliders} (expect 1 with link_all)")
         for r in list(np.linspace(2, rows - 2, 14).astype(int)):
             page.evaluate("""(r) => document.querySelectorAll(
                 '.plotpress-slider input[type=range]').forEach(s => {

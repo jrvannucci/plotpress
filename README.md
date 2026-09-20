@@ -68,12 +68,13 @@ point it's pinned to:
 
 ![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
 
-**Slicing a heatmap**, scrubbing a row through a `pcolormesh` and reading the
-profile in a strip carved out of the same axes — the companion view of the
-opt-in Slice tool, with the value axis pinned to the colorbar's range so the
-line sweeps through the section instead of rescaling on every step:
+**Slicing a heatmap**, reading a row of a `pcolormesh` as a profile in a strip
+carved out of the same axes — the companion view of the opt-in Slice tool. One
+slider drives every mesh sharing the grid, so both sections stay on the same
+row as it sweeps down; the profile's value axis is pinned to the colorbar's
+range, so the line moves through the field instead of rescaling each step:
 
-![Turning on the Slice tool, then scrubbing a row down through two heatmaps while the profile above each one follows the cursor line](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_slice.gif)
+![Turning on the Slice tool, then dragging one coupled slider to sweep a row down through two heatmaps at once while the profile above each follows its cursor line](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_slice.gif)
 
 **At scale**, every gesture above still works the same way on a figure with
 hundreds of axes — zoom from the full grid into a handful of panels, pan,
