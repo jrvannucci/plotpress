@@ -163,9 +163,8 @@ round-trip itself uses. See the
 
 ## What makes it different
 
-Most plotting libraries leave behind pixels. plotpress can leave behind a
-recoverable artifact: the figure stores its plotted data, layout, and styling
-together in the same file.
+plotpress can leave behind a recoverable artifact: the figure stores its
+plotted data, layout, and styling together in the same file.
 
 1. **Return to the analysis, not just the image.** A saved interactive figure
    carries its plotted series alongside its structure and styling. Long after
