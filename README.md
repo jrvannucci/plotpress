@@ -388,7 +388,11 @@ can be linked by a shared index.
 
 ## Supported plot types
 
-plotpress covers the core of matplotlib's "Plot types" reference grid:
+plotpress covers the core of matplotlib's "Plot types" reference grid, plus the
+axis, layout and color machinery a real figure needs. Each table below is one
+grouping.
+
+### Plots
 
 | | | |
 |---|---|---|
@@ -403,43 +407,104 @@ plotpress covers the core of matplotlib's "Plot types" reference grid:
 | `stairs` | `axline` | `barbs` |
 | `ecdfplot` | `kdeplot` | `pcolormesh_frames` (slider) |
 
-**Signal processing** (pure-NumPy Welch estimators): `psd`, `csd`, `cohere`,
-`magnitude_spectrum`, `angle_spectrum`, `phase_spectrum`, `specgram`, `xcorr`,
-`acorr`.
+### Signal processing
 
-**Polar** (`projection="polar"`): `plot`, `scatter`, `fill`, with
-`set_rmax`/`set_rlim`/`set_rticks`/`set_thetagrids` and orientation control,
-projected onto the 2-D core — see the
+Pure-NumPy Welch estimators — no SciPy required.
+
+| | | |
+|---|---|---|
+| `psd` | `csd` | `cohere` |
+| `magnitude_spectrum` | `angle_spectrum` | `phase_spectrum` |
+| `specgram` | `xcorr` | `acorr` |
+
+### Polar
+
+Created with `projection="polar"`, projected onto the 2-D core rather than a
+dedicated pipeline — see the
 [limitations docs](https://jrvannucci.github.io/plotpress/user_guide/limitations.html)
-for the caveats. No 3-D (see below).
+for the caveats.
 
-Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
-`fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
-**log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
-**`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
-`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `margins`, `grid`,
-`set_axis_off`, **`subplots(sharex=…, sharey=…)`** (plus post-hoc
-`sharex()`/`sharey()`), and **`twinx`/`twiny`** (overlaid axes with a second
-y/x axis), `tick_params` (per-axes, per-x/y-axis tick styling), and
-matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
-(auto-margins so labels never overflow) and **`fig.subplots_adjust(...)`** /
-**`GridSpec`** row/column spans for direct margin control, `ax.spines`
-(per-side visible/color/linewidth), `secondary_xaxis`/`secondary_yaxis`
-(a mirrored, unit-converted second axis) and `inset_axes` (a nested axes),
-`align_xlabels`/`align_ylabels`, text (`ax.text`, `ax.annotate` with
-arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
-`fig.colorbar(...)` (single **or shared across a list of axes**),
-`legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and
-**27 built-in colormaps** (perceptually-uniform `viridis`/`plasma`/`inferno`/
-`magma`/`cividis`; diverging `coolwarm`/`RdBu`/`Spectral`/`PiYG`/`BrBG`/
-`seismic`; sequential `Blues`/`Greens`/`Oranges`/`Reds`/`Purples`/`YlOrRd`/
-`gray`/`hot`/`cool`; cyclic `twilight`; rainbow `jet`/`turbo`; plus
-qualitative/categorical `tab10`/`tab20`/`Set1`/`Dark2` for class labels with
-no natural ordering) + any `_r` reversed variant, with `Normalize`,
-`LogNorm`, `PowerNorm`, `SymLogNorm`, `TwoSlopeNorm` (a diverging colormap's
-midpoint pinned to a real center value), or `BoundaryNorm` (discrete bins)
-scaling, and `plotpress.make_cmap()`/`register_cmap()` for a custom one from
-any list of colors.
+| | | |
+|---|---|---|
+| `plot` | `scatter` | `fill` |
+| `set_rmax` / `set_rlim` | `set_rticks` | `set_thetagrids` |
+
+### Reference marks and fills
+
+| | | |
+|---|---|---|
+| `axhline` / `axvline` | `axhspan` / `axvspan` | `hlines` / `vlines` |
+| `fill` | `fill_between` | `fill_betweenx` |
+
+### Axis control
+
+| Call | What it does |
+|------|--------------|
+| `set_xscale` / `set_yscale` / `loglog` / `semilogx` / `semilogy` | log scales |
+| `set_aspect("equal")` | equal data aspect |
+| `set_xlim` / `set_ylim` | limits |
+| `set_xticks` / `set_yticks` | fixed tick locations |
+| `set_xticklabels` / `set_yticklabels` | fixed tick labels |
+| `invert_xaxis` / `invert_yaxis` | reversed direction |
+| `margins` / `grid` / `set_axis_off` | padding, gridlines, hiding the frame |
+| `tick_params` | per-axes, per-axis tick styling |
+
+### More than one axes
+
+| Call | What it does |
+|------|--------------|
+| `subplots(sharex=…, sharey=…)` | shared limits across a grid |
+| `ax.sharex(other)` / `ax.sharey(other)` | the same, applied after the fact |
+| `twinx` / `twiny` | an overlaid axes with a second y/x axis |
+| `secondary_xaxis` / `secondary_yaxis` | a mirrored, unit-converted second axis |
+| `inset_axes` | a nested axes inside another |
+
+### Figure layout
+
+| Call | What it does |
+|------|--------------|
+| `fig.tight_layout()` | auto-margins, so labels never overflow |
+| `fig.subplots_adjust(...)` | direct margin control |
+| `GridSpec` (`plotpress.figure`) | row/column spans |
+| `ax.spines` | per-side visible / color / linewidth |
+| `align_xlabels` / `align_ylabels` | line labels up across panels |
+
+### Text, legends and colorbars
+
+| Call | What it does |
+|------|--------------|
+| `ax.text` / `ax.annotate` | text, with optional arrows |
+| `suptitle` / `supxlabel` / `supylabel` | figure-level titles and labels |
+| `legend(loc=…, ncol=…, title=…)` | per-axes legend |
+| `fig.colorbar(...)` | one colorbar, or one shared across a list of axes |
+
+### Colormaps
+
+27 built-in, plus any `_r` reversed variant, named colors (`"red"`, `"k"`, …)
+and the matplotlib `"C0"`..`"CN"` cycle. `plotpress.make_cmap()` /
+`register_cmap()` build a custom one from any list of colors.
+
+| Family | Colormaps |
+|--------|-----------|
+| Perceptually uniform | `viridis`, `plasma`, `inferno`, `magma`, `cividis` |
+| Diverging | `coolwarm`, `RdBu`, `Spectral`, `PiYG`, `BrBG`, `seismic` |
+| Sequential | `Blues`, `Greens`, `Oranges`, `Reds`, `Purples`, `YlOrRd`, `gray`, `hot`, `cool` |
+| Cyclic | `twilight` |
+| Rainbow | `jet`, `turbo` |
+| Qualitative | `tab10`, `tab20`, `Set1`, `Dark2` — for class labels with no natural ordering |
+
+### Normalization
+
+| Class | Scaling |
+|-------|---------|
+| `Normalize` | linear |
+| `LogNorm` | logarithmic |
+| `PowerNorm` | gamma |
+| `SymLogNorm` | log, through zero |
+| `TwoSlopeNorm` | diverging, midpoint pinned to a real center value |
+| `BoundaryNorm` | discrete bins |
+
+### Runnable examples
 
 ```bash
 python examples/plot_types.py    # plot / scatter / bar / hist / pie / imshow / ...
@@ -447,9 +512,11 @@ python examples/plot_types_2.py  # boxplot / violin / quiver / contour / hist2d 
 python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
-**Not yet implemented** (would need new primitives): `streamplot`,
-triangulation (`tri*`), and geographic / map projections. These are the main
-remaining plot-type gaps vs matplotlib's full gallery.
+### Not yet implemented
+
+`streamplot`, triangulation (`tri*`), and geographic / map projections — each
+would need new primitives. These are the main remaining plot-type gaps against
+matplotlib's full gallery.
 
 ## Testing
 
@@ -510,31 +577,6 @@ it's now a win via **min/max path decimation** — a monotonic-x line is reduced
 to first/last/min/max per pixel column before serializing, which is visually
 lossless (spikes preserved), keeps the output **vector**, and needs no compiled
 backend. Coordinate formatting itself is already vectorized with `numpy.char`.
-
-## Roadmap
-
-**Done:** pure-Python core with a self-contained object model; static SVG,
-interactive HTML, and native-window output; PNG + vector-PDF export; the full
-"Plot types" grid above; log scales and equal aspect; `tight_layout`; text /
-annotations and figure-level titles; per-axes **data** zoom / pan / box-zoom with
-live ticks, point-picking + extraction, in-browser annotation, sliders for
-3-D data, and an opt-in Slice tool for scrubbing a heatmap's rows/columns as
-1-D profiles.
-
-**Pure Python, and staying that way.** plotpress is deliberately pure Python +
-NumPy with no compiled extension — it installs everywhere pip does, no build
-toolchain, no per-platform wheels. Speed comes from NumPy, not native code:
-coordinate formatting is vectorized, huge lines are min/max-decimated (the
-100k-point line runs ~5.6× vs matplotlib), and curvilinear / Gouraud meshes
-scan-convert in NumPy. The "installs everywhere" promise is a first-class
-feature, not a trade-off.
-
-**Next:**
-- Finish unifying the SVG and raster renderers behind the shared primitive
-  layer (pure Python) so features aren't implemented twice.
-- More plot types: `streamplot` and triangulation (`tri*`).
-- Deeper polar (polar bars, cross-collection depth sorting).
-- Hover tooltips; decimation for huge scatter collections.
 
 ## Architecture notes
 
