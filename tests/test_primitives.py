@@ -7,7 +7,7 @@ incidentally through axes.py/svg.py/vega*.py tests, several layers removed
 from where a bug in the geometry itself would actually originate. Focuses on
 what's genuinely untested elsewhere: the min/max line-decimation algorithm
 (a real performance feature, not just an implementation detail -- see
-CLAUDE.md), and the three small shared-math helpers (pie / tick-edge) that
+AGENTS.md), and the three small shared-math helpers (pie / tick-edge) that
 now have call sites in three-plus modules apiece.
 """
 import numpy as np
@@ -47,7 +47,7 @@ def test_decimate_minmax_keeps_first_and_last_point():
 def test_decimate_minmax_preserves_spikes():
     """A single huge outlier in the middle of an otherwise flat line must
     survive decimation -- that's the whole point of min/max-per-column
-    over naive subsampling (CLAUDE.md: "visually lossless, spikes
+    over naive subsampling (AGENTS.md: "visually lossless, spikes
     preserved")."""
     n = 20_000
     x = np.linspace(0.0, 1.0, n)

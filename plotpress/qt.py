@@ -47,7 +47,7 @@ import types
 # file must outlive the load. Cleaned up per-widget and again at interpreter exit.
 #
 # A deliberate, narrow exception to "no module-level mutable state" (see
-# CLAUDE.md and tests/test_no_global_state.py): this is process-wide *resource
+# AGENTS.md and tests/test_no_global_state.py): this is process-wide *resource
 # cleanup bookkeeping*, not figure-rendering state -- it never makes one
 # PlotPressWidget's behavior depend on another's, only ensures every widget's
 # own temp file still gets removed at interpreter exit even if its widget
@@ -122,11 +122,14 @@ class PlotPressWidget(_QT.QWidget):
         Decimal places for the embedded point-pick data (see
         :meth:`plotpress.Figure.to_html`). Lower it to shrink mesh-heavy
         figures.
+    options : list of str, optional
+        Optional extra toolbar menus to include (see :meth:`plotpress.Figure.to_html`).
     """
 
     def __init__(self, figure=None, parent=None, interactive=True,
-                 pick_precision=6):
+                 pick_precision=6, options=None):
         super().__init__(parent)
+        self._options = options
         self._interactive = interactive
         self._pick_precision = pick_precision
         self._temp = None
@@ -147,7 +150,8 @@ class PlotPressWidget(_QT.QWidget):
         if pick_precision is not None:
             self._pick_precision = pick_precision
         html = figure.to_html(interactive=self._interactive,
-                              pick_precision=self._pick_precision)
+                              pick_precision=self._pick_precision,
+                              options=self._options)
         self._load_html(html)
         # A sensible default size from the figure's pixel dimensions.
         w = int(figure.figsize[0] * figure.style.dpi)

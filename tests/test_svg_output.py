@@ -202,12 +202,16 @@ def test_vector_mesh_size_warning_hedges_the_rect_count():
 def test_pcolormesh_label_toggles_in_the_legend_whether_raster_or_vector():
     """A pcolormesh(label=...) legend entry must be targetable by the click-to-
     hide toggle (class=plotpress-series + data-label) regardless of whether
-    the mesh happened to render as an <image> or a <g> of <rect>s."""
+    the mesh happened to render as an <image> or a <g> of <rect>s. Both also
+    carry plotpress-mesh (the interactive Slice tool's own hook for hiding
+    whichever one a mesh actually used -- see _interactive.py's
+    renderMeshOrSlice), so class is checked as a token set, not a literal
+    string, to allow for that on top of plotpress-series."""
     fig_raster, ax_raster = plotpress.subplots()
     ax_raster.pcolormesh(np.random.rand(4, 4), label="raster_mesh")  # uniform -> raster
     root = _parse(fig_raster.to_svg())
     img = root.find(".//" + NS + "image")
-    assert img.attrib.get("class") == "plotpress-series"
+    assert set(img.attrib.get("class", "").split()) == {"plotpress-series", "plotpress-mesh"}
     assert img.attrib.get("data-label") == "raster_mesh"
 
     edges, y_edges, field = _nonuniform_extreme()
@@ -215,7 +219,8 @@ def test_pcolormesh_label_toggles_in_the_legend_whether_raster_or_vector():
     ax_vec.pcolormesh(edges, y_edges, field, label="vector_mesh")  # auto -> vector
     g = [e for e in _parse(fig_vec.to_svg()).iter(NS + "g")
          if e.get("data-label") == "vector_mesh"]
-    assert len(g) == 1 and g[0].get("class") == "plotpress-series"
+    assert len(g) == 1
+    assert set(g[0].get("class", "").split()) == {"plotpress-series", "plotpress-mesh"}
 
 
 def test_pcolormesh_frames_has_no_rasterized_kwarg_but_still_warns():

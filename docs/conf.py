@@ -11,7 +11,9 @@ import plotpress  # noqa: E402
 # Shared with Figure.to_html/Report.save so a gallery/usage embed's iframe is
 # sized by the exact same toolbar/slider clearance math the embedded document
 # itself uses, rather than a second, easily-drifting guess -- see there.
-from plotpress.figure import _json_payload, _toolbar_clearance  # noqa: E402
+from plotpress.figure import (  # noqa: E402
+    _INTERACTIVE_OPTIONS as _ALL_INTERACTIVE_OPTIONS, _json_payload, _toolbar_clearance,
+)
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey  # noqa: E402
 
 # -- Project information ------------------------------------------------------
@@ -188,7 +190,38 @@ def _static_prefix(src_file):
     return "../" * depth
 
 
-def _interactive_embed(fig, image_path, src_file):
+# Galleries whose mesh figures open with the Slice tool already switched on: the
+# plot-type reference and the real applications, where a reader is looking at a
+# heatmap and the profile through it is the point of having a live copy at all.
+# (Other galleries keep Slice available but off; an example can set its own
+# state with ``_gallery_interactive_options``, see _plotpress_scraper.)
+_SLICE_ON_ROOTS = (
+    os.path.join(_DOCS_DIR, "examples"),
+    os.path.join(_DOCS_DIR, "applications"),
+)
+
+
+def _has_mesh(fig):
+    from plotpress.artists import FrameQuadMesh, Image, QuadMesh
+
+    return any(isinstance(a, (QuadMesh, FrameQuadMesh, Image))
+               for ax in fig.axes for a in ax.artists)
+
+
+def _default_interactive_options(fig, src_file):
+    """The ``options=`` a gallery figure's live copy is built with.
+
+    Every tool is offered; for a figure holding a pcolormesh/image under
+    :data:`_SLICE_ON_ROOTS`, Slice also starts enabled.
+    """
+    options = {name: {} for name in _ALL_INTERACTIVE_OPTIONS}
+    ap = os.path.abspath(src_file)
+    if any(ap.startswith(root + os.sep) for root in _SLICE_ON_ROOTS) and _has_mesh(fig):
+        options["slice"] = {"enabled": True}
+    return options
+
+
+def _interactive_embed(fig, image_path, src_file, options=None):
     """Write ``fig`` as self-contained interactive HTML; return an RST raw block.
 
     The standalone file is always written -- a large figure's link (below)
@@ -212,8 +245,10 @@ def _interactive_embed(fig, image_path, src_file):
     # standalone=True document only reserves toolbar/slider clearance via
     # flex-centering slack, which splits evenly top and bottom and so can't
     # express "112px above, 0-or-more below" -- exactly what's needed here.
+    if options is None:
+        options = _default_interactive_options(fig, src_file)
     with open(os.path.join(_INTERACTIVE_DIR, name), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True, standalone=False))
+        fh.write(fig.to_html(interactive=True, standalone=False, options=options))
 
     src = _static_prefix(src_file) + "_static/interactive/" + name
     n_axes = sum(1 for ax in fig.axes if not ax._is_colorbar)
@@ -234,7 +269,10 @@ def _interactive_embed(fig, image_path, src_file):
 
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
-    top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}))
+    # An enabled Slice tool docks its own slider strip at the bottom, built
+    # client-side, so it is not in fig._sliders -- but needs the same room.
+    slice_on = bool((options.get("slice") or {}).get("enabled")) and _has_mesh(fig)
+    top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}) + slice_on)
     height = int(round(fig.figsize[1] * dpi)) + top_pad + bottom_pad
     return "\n".join([
         ".. raw:: html",
@@ -574,7 +612,8 @@ def _write_usage_demo(fig, name, caption):
     # asymmetric top/bottom body padding for the toolbar/slider clearance,
     # which flex-centering's evenly-split slack can't express.
     with open(os.path.join(_INTERACTIVE_DIR, name + ".html"), "w", encoding="utf-8") as fh:
-        fh.write(fig.to_html(interactive=True, standalone=False))
+        fh.write(fig.to_html(interactive=True, standalone=False,
+                          options=_ALL_INTERACTIVE_OPTIONS))
     dpi = fig.style.dpi
     width = int(round(fig.figsize[0] * dpi))
     top_pad, bottom_pad = _toolbar_clearance(True, len(fig._sliders or {}))
@@ -800,7 +839,9 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
             # small enough for a fixed-size iframe to still be worth
             # exploring, linked to its own full page otherwise (see
             # _interactive_embed's own docstring for the threshold).
-            embeds.append(_interactive_embed(value, path, block_vars["src_file"]))
+            embeds.append(_interactive_embed(
+                value, path, block_vars["src_file"],
+                options=block_vars["example_globals"].get("_gallery_interactive_options")))
             if vega:
                 link = _vega_embed(value, path, block_vars["src_file"])
                 if link:
@@ -817,6 +858,9 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     # own frames (plotpress.raster.figure_to_image) into this list instead;
     # stitch it into a GIF through the same path iterator so it lands in the
     # gallery -- and gets thumbnailed -- exactly like any other animation.
+    # (An example can also set ``_gallery_interactive_options`` -- the ``options=``
+    # dict its own ``fig.save(..., interactive=True, options=...)`` would take --
+    # so its live copy above starts in that tool state rather than switched off.)
     frames = block_vars["example_globals"].get("_gallery_gif_frames")
     if frames:
         path = os.path.splitext(next(it))[0] + ".gif"

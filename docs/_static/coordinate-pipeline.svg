@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 250" role="img" aria-labelledby="title desc">
+  <title id="title">Coordinate rendering pipeline</title>
+  <desc id="desc">Caller supplied x and y data pass through the axis scale, limits, and layout into one shared floating-point coordinate transform used by SVG and raster output.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <rect x="20" y="82" width="170" height="86" rx="8" fill="#e8f2fb" stroke="#2980b9" stroke-width="2"/>
+    <text x="105" y="116" font-size="18" font-weight="bold" fill="#1f2937">Your data</text>
+    <text x="105" y="143" font-size="16" fill="#374151">x, y coordinates</text>
+
+    <path d="M 190 125 H 244" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="245" y="62" width="210" height="126" rx="8" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+    <text x="350" y="96" font-size="18" font-weight="bold" fill="#1f2937">Transform</text>
+    <text x="350" y="123" font-size="15" fill="#374151">scale + limits</text>
+    <text x="350" y="147" font-size="15" fill="#374151">inversion + aspect</text>
+    <text x="350" y="171" font-size="15" fill="#374151">axes rectangle</text>
+
+    <path d="M 455 125 H 509" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="510" y="62" width="210" height="126" rx="8" fill="#eaf7ef" stroke="#27ae60" stroke-width="2"/>
+    <text x="615" y="100" font-size="18" font-weight="bold" fill="#1f2937">Shared transform</text>
+    <text x="615" y="129" font-size="15" fill="#374151">data x, y to pixel x, y</text>
+    <text x="615" y="154" font-size="15" fill="#374151">one map for both paths</text>
+
+    <path d="M 720 104 H 774" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 720 148 H 774" fill="none" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="775" y="56" width="125" height="58" rx="8" fill="#fff4e6" stroke="#d97706" stroke-width="2"/>
+    <text x="837.5" y="91" font-size="17" font-weight="bold" fill="#1f2937">SVG</text>
+    <rect x="775" y="136" width="125" height="58" rx="8" fill="#fff4e6" stroke="#d97706" stroke-width="2"/>
+    <text x="837.5" y="171" font-size="17" font-weight="bold" fill="#1f2937">PNG / PDF</text>
+  </g>
+</svg>

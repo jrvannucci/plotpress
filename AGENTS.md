@@ -139,6 +139,20 @@ artifact (git-ignored). Don't hand-edit it or add a literal to `__init__.py`.
   `auto_live_streaming/`, `auto_applications/`** are written by sphinx-gallery at
   build time. Edit the source scripts, not the generated pages.
 
+## Deferred design work
+
+**Overlaid meshes in Slice.** The interactive Slice tool (`_interactive.py`) slices
+only the *first* mesh of an axes; a second mesh drawn into the same axes (e.g. a
+translucent field over a base map) is ignored, so the strip can disagree with what
+the heatmap shows. This is a known limitation, deliberately left for a designed
+tool rather than patched: the intended shape is one line per mesh in the strip
+(own colour and legend key), a line absent wherever its mesh doesn't cover the
+cursor. That needs the cursor to become a *data coordinate* (each mesh snapping to
+its own nearest row/column) instead of an index into the first mesh's grid, and
+pins/Extract to record which mesh a sample came from. Don't bolt a partial version
+onto the index-based slider; design it as a whole when it's picked up. (Inset axes
+are a different case: they are left out of Slice on purpose.)
+
 ## Releasing
 
 Tagging and publishing are deliberately separate steps, because a PyPI version

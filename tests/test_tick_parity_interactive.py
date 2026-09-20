@@ -133,3 +133,70 @@ def test_date_axis_ticks_match_after_a_real_zoom(page, tmp_path):
     xmin, xmax = out["xrange"]
     ticks = resolve_axis_ticks(xmin, xmax, is_date=True)
     _assert_labels_match(out, resolve_axis_tick_labels(ticks, is_date=True), "date")
+
+
+def test_unformatted_fractional_locator_matches_after_a_real_zoom(page, tmp_path):
+    """Regresses fmtTick's step-derived decimal count.
+
+    Every other locator case in this file pairs its locator with a
+    ``set_xformat``, which routes labels through ``jsApplyFormat`` and skips
+    ``fmtTick`` entirely. A *bare* locator -- no format -- falls through to
+    ``fmtTickSet(ticks, step)``, and ``resolveAxisTicks`` back-fills that
+    ``step`` as ``ticks[1] - ticks[0]`` for the benefit of minor ticks. For a
+    fractional base >= 1 (2.5 here) that handed ``fmtTick`` a step of 2.5,
+    whose old "step >= 1 so no decimals" rule rounded the labels themselves:
+    an axis Python renders 0/2.5/5/7.5/10 came back 0/3/5/8/10 after the
+    first pan or zoom -- wrong numbers under ticks still in the right places.
+    """
+    fig, ax = plotpress.subplots()
+    ax.plot(np.linspace(0, 10, 11), np.linspace(0, 10, 11))
+    ax.set_xlim(0, 10)
+    ax.set_xlocator({"kind": "multiple", "base": 2.5})
+
+    out = _zoom_and_read(page, tmp_path, fig, "fractional_locator_zoom")
+    xmin, xmax = out["xrange"]
+    ticks = resolve_axis_ticks(xmin, xmax, locator={"kind": "multiple", "base": 2.5})
+    _assert_labels_match(out, resolve_axis_tick_labels(ticks), "fractional locator")
+
+
+def test_a_lone_tick_at_zero_matches_after_a_real_zoom(page, tmp_path):
+    """Regresses fmtTick's zero guard.
+
+    ``resolveAxisTicks`` only back-fills ``step`` when it has two ticks to
+    subtract, so a single-tick set leaves it null -- and the guard
+    ``Math.abs(v) < step * 1e-6`` then reads ``0 < 0``, which is false. A tick
+    at exactly 0 fell through to the small-magnitude branch and rendered
+    "0e0" where Python's ``format_tick`` says "0". Reached by zooming far
+    enough under a coarse locator that one tick is all that survives.
+    """
+    fig, ax = plotpress.subplots()
+    ax.plot(np.linspace(-100, 100, 11), np.linspace(-1, 1, 11))
+    ax.set_xlim(-100, 100)
+    ax.set_xlocator({"kind": "multiple", "base": 100})
+
+    out = _zoom_and_read(page, tmp_path, fig, "lone_zero_tick_zoom")
+    xmin, xmax = out["xrange"]
+    ticks = resolve_axis_ticks(xmin, xmax, locator={"kind": "multiple", "base": 100})
+    _assert_labels_match(out, resolve_axis_tick_labels(ticks), "lone zero tick")
+    assert "0e0" not in out["labels"], out["labels"]
+
+
+def test_halfway_ticks_round_the_python_way_after_a_real_zoom(page, tmp_path):
+    """Regresses the toFixed-vs-Python rounding split.
+
+    JS ``Number.toFixed`` rounds a halfway value away from zero; Python's
+    ``%``-operator and f-strings -- which drew every label in the static
+    render -- round half to *even*. "Nice" ticks land on halves constantly, so
+    under a 0-decimal format a tick at +-0.5 read "0"/"-0" as rendered and
+    "1"/"-1" the moment the reader zoomed.
+    """
+    fig, ax = plotpress.subplots()
+    ax.plot([-1, 0, 1], [-1, 0, 1])
+    ax.set_xlim(-1, 1)
+    ax.set_yformat("%.0f")
+
+    out = _zoom_and_read(page, tmp_path, fig, "halfway_rounding_zoom")
+    ymin, ymax = out["yrange"]
+    ticks = resolve_axis_ticks(ymin, ymax)
+    _assert_labels_match(out, resolve_axis_tick_labels(ticks, fmt="%.0f"),
+                         "halfway rounding")

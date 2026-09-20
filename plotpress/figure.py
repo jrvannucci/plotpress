@@ -16,6 +16,7 @@ import os
 import re
 import time
 import warnings
+from numbers import Integral
 
 import numpy as np
 
@@ -2235,8 +2236,34 @@ class Figure:
                 pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
                 pick_max_points: int = 20000, binary_pick_data: bool = True,
                 standalone: bool = True, include_default_js: bool = True,
-                extra_js: str = None) -> str:
+                extra_js: str = None, options=None) -> str:
         """Serialize to a self-contained HTML document.
+
+        ``options`` adds optional toolbar menus, by name. Every page already
+        has Pan/Zoom, Home, Fit Width, Axes, Point Picking, Annotate, and
+        File; the rest are opt-in:
+
+        - ``"slice"`` -- the Slice menu, scrubbing a row/column of a
+          pcolormesh/imshow as a 1-D profile (shown only when the figure has
+          a mesh to slice). A radio in the menu picks how the profile is
+          shown: in a strip beside the heatmap (``"companion"``, the
+          default), in the heatmap's place (``"replace"``), or not at all
+          with just a cursor on the heatmap (``"cursor"``).
+
+        Pass a list of names, or a dict to also set the tool's startup
+        state: ``options={"slice": {"enabled": True, "view": "companion",
+        "orientation": "y", "link_all": True, "range": "colorbar"}}``.
+        The settings are ``enabled``, ``view``, ``orientation``
+        (``"x"``/``"y"``), ``link_all``, ``snap_pins`` (mirror Point Picking
+        pins onto the profile), ``grid`` (gridlines on the profile, default
+        ``True``), ``range``
+        (``"auto"``/``"colorbar"``/``"custom"``, the last with
+        ``range_min``/``range_max``), ``index`` (the starting row/column),
+        ``panel_size`` (the companion strip's fraction of the axes,
+        0.1-0.6, default 0.3), and ``axes`` (``"all"``, or a list of the axes --
+        or their indices -- to slice; the rest stay plain heatmaps). The embedded
+        data payloads are the same either way, so :func:`load_data` reads any
+        interactive HTML back regardless of which options it was saved with.
 
         ``standalone`` (default) centers the figure at its natural pixel size
         on a full-height page -- right for a file opened directly in its own
@@ -2312,6 +2339,24 @@ class Figure:
         inlined the same as plotpress's own JS, keeping the "no external
         requests" guarantee intact regardless of what it contains.
         """
+        opts, opt_config = _resolve_options(options)
+        listed = opt_config.get("slice", {}).get("axes")
+        if isinstance(listed, (list, tuple)):
+            resolved = []
+            for a in listed:
+                if isinstance(a, Axes):
+                    if a not in self.axes:
+                        raise ValueError(
+                            "options['slice']['axes'] names an axes that isn't part of this figure")
+                    a = self.axes.index(a)
+                elif int(a) >= len(self.axes):
+                    raise ValueError(
+                        f"options['slice']['axes'] has index {a}, but this figure has "
+                        f"{len(self.axes)} axes")
+                resolved.append(int(a))
+            opt_config["slice"]["axes"] = resolved
+        elif listed == "all":
+            del opt_config["slice"]["axes"]
         svg = figure_to_svg(self)
         # Tag the root <svg> so the JS can grab it.
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
@@ -2371,6 +2416,9 @@ class Figure:
                 )
             config = ("<script>window.PLOTPRESS_WAIT_EXTRACT=true;</script>"
                       if wait_extract else "")
+            config += ("<script>window.PLOTPRESS_OPTIONS="
+                       f"{json.dumps(opts)};window.PLOTPRESS_OPTION_CONFIG="
+                       f"{json.dumps(opt_config)};</script>")
             script = config + payloads
             if include_default_js:
                 from ._interactive import INTERACTIVE_JS
@@ -2475,7 +2523,8 @@ class Figure:
              pick_max_points: int = 20000, binary_pick_data: bool = True,
              fps: int = 10, slider_unit: str = "main", label_frames: bool = True,
              include_default_js: bool = True, extra_js: str = None,
-             dpi: float = None, transparent: bool = False, format: str = None):
+             dpi: float = None, transparent: bool = False, format: str = None,
+             options=None):
         """Save by extension: ``.svg``, ``.html``, ``.png``, ``.pdf``,
         ``.gif``, ``.eps``, ``.jpg``/``.jpeg``, or ``.webp``.
 
@@ -2536,7 +2585,7 @@ class Figure:
                                    pick_max_points=pick_max_points,
                                    binary_pick_data=binary_pick_data,
                                    include_default_js=include_default_js,
-                                   extra_js=extra_js)
+                                   extra_js=extra_js, options=options)
         elif ext == "svg":
             content = self.to_svg()
         elif ext == "png":
@@ -2584,7 +2633,8 @@ class Figure:
         return self.save(path, **kwargs)
 
     # -- display ------------------------------------------------------------
-    def show(self, interactive: bool = True, wait_for_extract: bool = False):
+    def show(self, interactive: bool = True, wait_for_extract: bool = False,
+             options=None):
         """Display in a native pop-up window (via pywebview if installed).
 
         Returns the list of markers the user extracted in the window (each a
@@ -2605,7 +2655,8 @@ class Figure:
         the figure in the default browser and returns ``None`` (use the in-page
         Extract panel to copy/download).
         """
-        html = self.to_html(interactive=interactive, wait_extract=wait_for_extract)
+        html = self.to_html(interactive=interactive, wait_extract=wait_for_extract,
+                            options=options)
         w = int(self.figsize[0] * self.style.dpi) + 40
         h = int(self.figsize[1] * self.style.dpi) + 60
         try:
@@ -2656,7 +2707,8 @@ class Figure:
     def show_in_jupyter(self, width=None, height=None, interactive: bool = True,
                         pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
                         pick_max_points: int = 20000, binary_pick_data: bool = True,
-                        include_default_js: bool = True, extra_js: str = None):
+                        include_default_js: bool = True, extra_js: str = None,
+                        options=None):
         """Display inline in a notebook cell with the full interactive toolbar.
 
         Evaluating a figure directly (``fig`` as a cell's last expression)
@@ -2702,6 +2754,7 @@ class Figure:
             pick_precision=pick_precision, pick_max_mesh_cells=pick_max_mesh_cells,
             pick_max_points=pick_max_points, binary_pick_data=binary_pick_data,
             include_default_js=include_default_js, extra_js=extra_js,
+            options=options,
         ).replace('"', "&quot;")
         return HTML(
             f'<iframe srcdoc="{html}" width="{width}" height="{height}" '
@@ -3318,6 +3371,112 @@ def _axes_summary_lines(ax, gaps=None):
         for msg in gaps["vega_lite"]:
             lines.append(f"    - [vega-lite] {msg}")
     return lines
+
+
+#: Optional toolbar add-ons for interactive HTML (``options=`` on
+#: :meth:`Figure.to_html`/``save``/``show``...). The toolbar every page gets
+#: -- Pan/Zoom, Home, Fit Width, Axes, Point Picking, Annotate, File -- is
+#: not an option; each name here adds a whole extra menu on top of it, so
+#: nothing newer changes an existing figure unless asked for.
+_INTERACTIVE_OPTIONS = ("slice",)
+
+# Startup settings an option accepts (``options={"slice": {...}}``): the
+# state its menu would otherwise begin in.
+_OPTION_KEYS = {
+    "slice": {
+        "enabled": bool,
+        "orientation": ("x", "y"),
+        "view": ("cursor", "companion", "replace"),
+        "panel_size": "fraction",
+        "link_all": bool,
+        "snap_pins": bool,
+        "grid": bool,
+        "axes": "axes",
+        "range": ("auto", "colorbar", "custom"),
+        "range_min": "number",
+        "range_max": "number",
+        "index": "index",
+    },
+}
+
+
+def _check_option_value(option, key, spec, value):
+    def bad(expected):
+        return ValueError(
+            f"options[{option!r}][{key!r}] must be {expected}, got {value!r}")
+
+    if spec is bool:
+        if not isinstance(value, bool):
+            raise bad("True or False")
+    elif isinstance(spec, tuple):
+        if value not in spec:
+            raise bad("one of " + ", ".join(repr(v) for v in spec))
+    elif spec == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float))                 or not math.isfinite(value):
+            raise bad("a finite number")
+    elif spec == "index":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise bad("a non-negative integer")
+    elif spec == "axes":
+        listed = isinstance(value, (list, tuple))
+        if not (value == "all" or (listed and all(
+                isinstance(v, Axes) or (isinstance(v, Integral) and not isinstance(v, bool) and v >= 0)
+                for v in value))):
+            raise bad('"all", or a list of axes (or axes indices)')
+    elif spec == "fraction":
+        if isinstance(value, bool) or not isinstance(value, (int, float))                 or not 0.1 <= value <= 0.6:
+            raise bad("a number between 0.1 and 0.6")
+
+
+def _resolve_options(options):
+    """Validate ``options=``; return ``(names, config)``.
+
+    ``options`` is a list of option names, or a dict mapping a name to its
+    startup settings (``True``/``None``/``{}`` for the defaults). ``config``
+    is ``{name: settings}`` for every named option -- what the JS reads to
+    start the tool in the caller's chosen state.
+    """
+    if options is None:
+        given = {}
+    elif isinstance(options, str):
+        raise TypeError(
+            f"options= takes a list of names, not the bare string {options!r} "
+            f"-- did you mean options=[{options!r}]?"
+        )
+    elif isinstance(options, dict):
+        given = dict(options)
+    else:
+        given = {name: None for name in options}
+    unknown = [o for o in given if o not in _INTERACTIVE_OPTIONS]
+    if unknown:
+        raise ValueError(
+            f"unknown interactive option(s) {unknown!r}; valid options are "
+            f"{list(_INTERACTIVE_OPTIONS)!r}"
+        )
+    config = {}
+    for name, settings in given.items():
+        if settings is None or settings is True:
+            settings = {}
+        if not isinstance(settings, dict):
+            raise TypeError(
+                f"options[{name!r}] must be a dict of settings (or True/None "
+                f"for the defaults), got {settings!r}")
+        keys = _OPTION_KEYS[name]
+        bad_keys = [k for k in settings if k not in keys]
+        if bad_keys:
+            raise ValueError(
+                f"unknown setting(s) {bad_keys!r} for option {name!r}; valid "
+                f"settings are {sorted(keys)!r}")
+        for k, v in settings.items():
+            _check_option_value(name, k, keys[k], v)
+        if settings.get("range") == "custom" and not (
+                "range_min" in settings and "range_max" in settings
+                and settings["range_min"] < settings["range_max"]):
+            raise ValueError(
+                f"options[{name!r}]: range='custom' needs range_min and "
+                f"range_max, with range_min < range_max")
+        config[name] = dict(settings)
+    return list(config), config
 
 
 def _sanitize_nan(obj):
@@ -4088,7 +4247,7 @@ class Report:
     def save(self, path: str, interactive: bool = True,
              pick_precision: int = 6, pick_max_mesh_cells: int = 250000,
              pick_max_points: int = 20000, binary_pick_data: bool = True,
-             collapsed: bool = False) -> str:
+             collapsed: bool = False, options=None) -> str:
         """Write every added figure, in order, to one self-contained HTML file.
 
         ``interactive`` and the ``pick_*``/``binary_pick_data`` arguments are
@@ -4136,7 +4295,7 @@ class Report:
                                  pick_max_mesh_cells=pick_max_mesh_cells,
                                  pick_max_points=pick_max_points,
                                  binary_pick_data=binary_pick_data,
-                                 standalone=False)
+                                 standalone=False, options=options)
             dpi = figure.style.dpi
             natural_w = figure.figsize[0] * dpi
             natural_h = figure.figsize[1] * dpi

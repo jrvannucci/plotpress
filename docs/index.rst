@@ -300,6 +300,7 @@ Explore it in a browser. Share the file. Archive it. Load it again.
    user_guide/output
    user_guide/viewing
    user_guide/interactivity
+   user_guide/coordinate_accuracy
    user_guide/architecture
 
 .. toctree::

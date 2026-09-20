@@ -37,6 +37,112 @@ Point Picking, sliders, all of it -- works exactly as it does in a saved
 (``figsize`` x ``style.dpi``) and can be overridden --
 ``fig.show_in_jupyter(width=900, height=600)``.
 
+Choosing your tools
+-------------------
+
+Every interactive page gets the same core toolbar -- Pan/Zoom, Home, Fit
+Width, **Axes**, **Point Picking**, **Annotate**, and **File**. Anything
+beyond that is opt-in, by name, through ``options=`` on ``to_html``,
+``save``, ``show``, ``show_in_jupyter``, and ``Report.save``::
+
+    fig.save("fig.html", interactive=True)                    # the core toolbar
+    fig.save("fig.html", interactive=True, options=["slice"]) # + Slice
+
+``"slice"``
+    The **Slice** menu -- scrub a row or column of a pcolormesh/imshow as a
+    1-D profile, coupled across as many axes as share the same grid. It only
+    appears when the figure actually has a pcolormesh or imshow to slice. A
+    radio in the menu picks how the profile is shown:
+
+    - **Companion panel** (the default): the profile is drawn in a strip
+      carved out of the mesh's own axes -- above the heatmap for an X slice,
+      to its left for a Y slice -- so both are visible at once, aligned
+      through every pan and zoom. The heatmap gives up 30% of its axes to the
+      strip (``panel_size``).
+    - **Profile replaces heatmap**: the profile is drawn in the heatmap's place.
+    - **Heatmap with cursor**: no profile, just a dashed cursor on the slice.
+
+    Point Picking works on the profile: click anywhere along it to pin the nearest
+    sample, which reads the position along the profile and the value there. In the
+    "Profile replaces heatmap" view the whole axes is the profile, so a click picks
+    a profile sample rather than a (hidden) heatmap cell. The pin rides the line
+    through pan, zoom, and slider steps (reporting the value the slice holds
+    *now*), carries across a switch between the two profile views, and arrow keys
+    step it along the profile. A pin whose value moves past the profile's range (a
+    fixed ``"colorbar"`` or ``"custom"`` range, while the slider plays) stays on
+    the profile's edge with its value shown in red rather than leaving the axes;
+    it's hidden while its sample has no value or has been zoomed out of view.
+
+    Extract leaves profile pins out -- the heatmap carries the data. **Snap pins
+    to slice** (a checkbox under "Slice view", companion panel only) links heatmap
+    pins and profile pins in both directions: a Point Picking pin on the heatmap
+    gets a mirror on the shown profile, and a pin you place on the profile gets a
+    mirror on the heatmap cell it points at (on the row or column the slider is
+    showing, so it moves as the slider does). The pin you placed stays where it
+    is; each pin and its mirror share a label color so you can see they're linked,
+    and mirrors are left out of Extract. A pin placed on the profile is extracted
+    as the heatmap cell its mirror sits on, and no cell is ever reported twice; if
+    profile pins were left out because Snap is off, the Extract panel says so and
+    names the setting to turn on.
+
+    Axes with fixed ticks (``set_xticks``/``set_yticks``), ``axis("off")``, or a
+    twin or secondary axis get a strip too (a twin shrinks together with its
+    parent, and fixed ticks are remapped to the smaller heatmap). An inset axes
+    (``inset_axes()``) is left out of Slice altogether and stays a plain mesh; the axes
+    it sits on keeps the plain cursor and slider, with no strip. When an axes holds several meshes (overlaid on one
+    another), only the first one is sliced.
+
+**Gridlines on the profile.** A "Gridlines on profile" checkbox in the Slice view
+group draws light lines on the strip (or on the profile in the replace view) at
+the value ticks and at the heatmap's own ticks, so a value can be read straight
+across. It is on by default; ``"grid": False`` starts with it off.
+
+**Choosing which axes to slice.** A pair of radios under "Axes to slice" picks
+between **All axes** and **Selected axes**. Choosing "Selected axes" drops into a
+click-to-choose mode: click a mesh's axes on the figure to add or remove it
+(the ones still choosable are dashed while you choose; the others stay plain
+heatmaps with no slider, cursor, or strip, and only the chosen ones are linked together by "Link all
+matching axes"). "Choose axes on figure" re-enters that mode later, and adding
+or removing an axes leaves the slider where it was.
+
+**Save and Save As keep the Slice state.** The saved file reopens with Slice
+enabled or not, the view, orientation, chosen axes, link and snap settings, value
+range, and slider position as you left them (its startup settings are rewritten to
+match), and pins on the profile come back too.
+
+To have Slice start in a chosen state instead of switched off, pass a dict
+whose values are its settings::
+
+    fig.save("fig.html", interactive=True, options={
+        "slice": {"enabled": True, "view": "companion", "orientation": "y",
+                  "link_all": True, "range": "colorbar"},
+    })
+
+The settings are ``enabled``, ``view`` (``"companion"``/``"replace"``/
+``"cursor"``), ``orientation`` (``"x"``/``"y"``), ``link_all``, ``snap_pins``,
+``grid``, ``range``
+(``"auto"``/``"colorbar"``/``"custom"``, the last with
+``range_min``/``range_max``), ``index`` (the starting row/column), and
+``panel_size`` (the strip's share of the axes, 0.1-0.6). Values are checked
+when the page is built, so a typo raises ``ValueError`` immediately.
+
+Worked examples, each live with Slice on: reading a row of a heatmap
+(:doc:`../auto_examples/gridded_data/plot_14_slice_a_heatmap`), slicing columns
+with the profile in the heatmap's place and gridlines
+(:doc:`../auto_examples/gridded_data/plot_15_slice_profile_replaces_heatmap`),
+several meshes scrubbed by one slider
+(:doc:`../auto_examples/gridded_data/plot_16_slice_linked_meshes`), choosing which
+axes of a grid to slice
+(:doc:`../auto_examples/gridded_data/plot_17_slice_chosen_axes`), and a thousand
+meshes on one figure (:doc:`../auto_scale/plot_11_slice_a_thousand_meshes`). In the
+gallery, every live pcolormesh or image figure in the plot-type reference and the
+real applications opens with Slice already enabled.
+
+An unknown name raises ``ValueError`` listing the valid ones. The choice only
+changes which tools the page builds: the embedded data is identical either
+way, so ``load_data()`` reads back any interactive HTML regardless of which
+options it was saved with.
+
 The toolbar
 -----------
 
@@ -270,7 +376,8 @@ Extracting markers to Python
 The **Extract** button (in the Point Picking menu) opens a panel to
 copy/download the current Point Picking markers -- not annotation notes,
 which have nothing to "extract" in the same sense a picked data value does
--- as **CSV or JSON**. Each record is a dict: the picked value itself
+-- as **JSON (the default) or CSV**, switched by a pair of radios in the panel
+(**Copy** copies whichever is showing; the two download buttons save each format). Each record is a dict: the picked value itself
 (``x``/``y``, plus ``z``/``c``/any ``values=`` dimension), ``axes`` and
 ``kind``, and then every piece of labelling context that axes and figure
 carry, so a row lifted out of the file still says what it means::
