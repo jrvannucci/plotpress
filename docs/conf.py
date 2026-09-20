@@ -190,18 +190,9 @@ def _static_prefix(src_file):
     return "../" * depth
 
 
-# Galleries whose mesh figures open with the Slice tool already switched on: the
-# plot-type reference and the real applications, where a reader is looking at a
-# heatmap and the profile through it is the point of having a live copy at all.
-# (Other galleries keep Slice available but off; an example can set its own
-# state with ``_gallery_interactive_options``, see _plotpress_scraper.)
-_SLICE_ON_ROOTS = (
-    os.path.join(_DOCS_DIR, "examples"),
-    os.path.join(_DOCS_DIR, "applications"),
-)
-
-
 def _has_mesh(fig):
+    """Whether ``fig`` holds anything Slice can slice -- used to size the
+    embed, since an enabled Slice docks a slider strip of its own."""
     from plotpress.artists import FrameQuadMesh, Image, QuadMesh
 
     return any(isinstance(a, (QuadMesh, FrameQuadMesh, Image))
@@ -211,14 +202,17 @@ def _has_mesh(fig):
 def _default_interactive_options(fig, src_file):
     """The ``options=`` a gallery figure's live copy is built with.
 
-    Every tool is offered; for a figure holding a pcolormesh/image under
-    :data:`_SLICE_ON_ROOTS`, Slice also starts enabled.
+    Every tool is *offered*, none is switched on. A gallery figure should
+    first read as the figure the example is about: Slice reshapes the axes it
+    is enabled on (carving out a strip, docking a slider), so starting it on
+    meant a reader met a modified figure before choosing to modify it. The
+    menu is there either way, one click from the profile.
+
+    An example that is specifically demonstrating a tool turns it on itself
+    with ``_gallery_interactive_options`` (see _plotpress_scraper) -- the five
+    Slice examples do exactly that.
     """
-    options = {name: {} for name in _ALL_INTERACTIVE_OPTIONS}
-    ap = os.path.abspath(src_file)
-    if any(ap.startswith(root + os.sep) for root in _SLICE_ON_ROOTS) and _has_mesh(fig):
-        options["slice"] = {"enabled": True}
-    return options
+    return {name: {} for name in _ALL_INTERACTIVE_OPTIONS}
 
 
 def _interactive_embed(fig, image_path, src_file, options=None):

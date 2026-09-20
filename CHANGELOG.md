@@ -13,7 +13,25 @@ anywhere in the source.
 
 ## [0.41.1] - 2026-09-20
 
+### Changed
+
+- **Gallery figures no longer open with Slice switched on.** Every tool is still
+  offered in the toolbar; none starts active. Slice reshapes the axes it runs on
+  (carving out a companion strip, docking a slider), so starting it enabled meant
+  a reader met a modified figure before choosing to modify it. The five examples
+  that specifically demonstrate Slice still turn it on themselves.
+
 ### Fixed
+
+- **A toolbar menu could open past the edge of an embedded figure.** A figure
+  embedded in a page -- a `Report` panel, a docs gallery iframe -- gets whatever
+  height the host gave it, and the Slice menu is the tallest of them. With
+  nothing bounding it, the bottom of the list fell outside the document: clipped
+  away rather than scrolled off, since an iframe has no viewport of its own to
+  scroll, leaving those options unreachable. An open menu is now measured and
+  kept inside the viewport -- scrolling internally, or flipping above its button
+  when that side has more room -- and the same clamp keeps a menu near the right
+  edge on screen.
 
 - **Tick decades are computed from the decimal literal, not `pow`.** Neither
   Python's `**` nor JavaScript's `Math.pow` is required to return the correctly

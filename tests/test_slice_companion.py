@@ -2003,3 +2003,64 @@ def test_the_replace_view_still_hides_the_mesh_it_stands_in_for(page, tmp_path):
     assert shown() == "none"
     _pick_view(page, "cursor")
     assert shown() != "none"
+
+
+# ---- the menu has to stay inside a short embed ------------------------------
+
+def _open_menu(page, label):
+    page.evaluate("""(l) => Array.from(document.querySelectorAll(
+        '.plotpress-menu-label')).find(
+        b => b.textContent.trim().startsWith(l)).click()""", label)
+
+
+def _open_dropdown_fit(page):
+    return page.evaluate("""() => {
+      const d = document.querySelector(
+        '.plotpress-menu.open .plotpress-menu-dropdown');
+      if (!d) return null;
+      const r = d.getBoundingClientRect();
+      const items = d.querySelectorAll('label, button, input');
+      d.scrollTop = d.scrollHeight;                 // scroll to the end
+      const last = items[items.length - 1].getBoundingClientRect();
+      return {overflowBottom: Math.round(r.bottom - document.documentElement.clientHeight),
+              overflowRight: Math.round(r.right - document.documentElement.clientWidth),
+              scrolls: d.scrollHeight > d.clientHeight + 1,
+              lastReachable: last.bottom <= r.bottom + 1 && last.top >= r.top - 1}; }""")
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("height", [560, 420, 320])
+def test_the_slice_menu_stays_inside_a_short_embedded_figure(page, tmp_path, height):
+    # A figure embedded in a page (a Report panel, a docs gallery iframe) gets
+    # whatever height the host gave it. The Slice menu is the tallest one, and
+    # with nothing bounding it the bottom of the list fell outside the document
+    # -- clipped away rather than scrolled off, since an iframe has no viewport
+    # of its own to scroll, so those options could not be reached at all.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1064, "height": height})
+        _load(page, tmp_path, _grid_fig(), options={"slice": {}})
+        _open_menu(page, "Slice")
+        fit = _open_dropdown_fit(page)
+        assert fit is not None, "the Slice menu did not open"
+        assert fit["overflowBottom"] <= 0, fit
+        assert fit["overflowRight"] <= 0, fit
+        assert fit["lastReachable"], fit
+    finally:
+        page.set_viewport_size(original)
+
+
+@pytest.mark.browser
+def test_a_tall_viewport_leaves_the_menu_unclamped(page, tmp_path):
+    # The clamp is only for the cramped case; with room to spare the menu must
+    # still render at its natural height, with no internal scrollbar.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1280, "height": 1000})
+        _load(page, tmp_path, _grid_fig(), options={"slice": {}})
+        _open_menu(page, "Slice")
+        fit = _open_dropdown_fit(page)
+        assert fit["scrolls"] is False, fit
+        assert fit["overflowBottom"] <= 0, fit
+    finally:
+        page.set_viewport_size(original)

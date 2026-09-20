@@ -530,9 +530,13 @@ _JS_SOURCE = r"""
     '.plotpress-menu.open .plotpress-menu-label{background:#e8eeff;' +
     'color:#2b5bd7}' +
     '.plotpress-chev{font-size:9px;opacity:.6}' +
+    // box-sizing so fitDropdown's max-height bounds the whole box: with the
+    // default content-box it bounded the item list alone, and the 5px padding
+    // plus 1px border still pushed the menu past the viewport edge.
     '.plotpress-menu-dropdown{position:absolute;top:calc(100% + 5px);' +
     'left:0;min-width:170px;background:#fff;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.16);padding:5px;' +
+    'box-sizing:border-box;' +
     'display:none;flex-direction:column;gap:1px;z-index:1000}' +
     '.plotpress-menu.open .plotpress-menu-dropdown{display:flex}' +
     // .plotpress-toolbar now names a dropdown's own item list -- kept as
@@ -680,6 +684,49 @@ _JS_SOURCE = r"""
   function closeAllMenus() {
     menuNodes.forEach(function (m) { m.classList.remove('open'); });
   }
+  // Keep an open dropdown inside the viewport. A figure embedded in a page
+  // (a Report panel, a docs gallery iframe) gets whatever height the host
+  // gave it, which can be barely taller than the figure itself -- and the
+  // Slice menu is the tallest of them. Absolutely positioned at
+  // top:100% with nothing bounding it, the bottom of the list simply fell
+  // outside the document: not scrolled off, *clipped away*, since an iframe
+  // has no viewport of its own to scroll and the items were unreachable.
+  // So it is measured on open and given a real max-height, scrolling
+  // internally when that is all the room there is -- and flipped above the
+  // button instead when that side has meaningfully more space. The same
+  // clamp keeps a menu near the right edge from running off the side.
+  function fitDropdown(btn, dropdown) {
+    dropdown.style.maxHeight = '';
+    dropdown.style.overflowY = '';
+    dropdown.style.top = '';
+    dropdown.style.bottom = '';
+    dropdown.style.left = '';
+    var GAP = 5, MARGIN = 4;
+    var b = btn.getBoundingClientRect();
+    var vh = document.documentElement.clientHeight;
+    var vw = document.documentElement.clientWidth;
+    var below = vh - b.bottom - GAP - MARGIN, above = b.top - GAP - MARGIN;
+    var needed = dropdown.scrollHeight;
+    // Flip up only when below genuinely cannot hold it and above is roomier;
+    // otherwise stay put, so a menu doesn't jump sides for a few pixels.
+    if (needed > below && above > below) {
+      dropdown.style.top = 'auto';
+      dropdown.style.bottom = 'calc(100% + ' + GAP + 'px)';
+      if (needed > above) {
+        dropdown.style.maxHeight = Math.max(80, above) + 'px';
+        dropdown.style.overflowY = 'auto';
+      }
+    } else if (needed > below) {
+      dropdown.style.maxHeight = Math.max(80, below) + 'px';
+      dropdown.style.overflowY = 'auto';
+    }
+    // Horizontal: nudge left so the right edge stays on screen.
+    var d = dropdown.getBoundingClientRect();
+    var overflowRight = d.right - (vw - MARGIN);
+    if (overflowRight > 0) {
+      dropdown.style.left = Math.round(-Math.min(overflowRight, b.left - MARGIN)) + 'px';
+    }
+  }
   function buildMenu(label) {
     var menu = document.createElement('div');
     menu.className = 'plotpress-menu';
@@ -694,7 +741,7 @@ _JS_SOURCE = r"""
       e.stopPropagation();
       var willOpen = !menu.classList.contains('open');
       closeAllMenus();
-      if (willOpen) menu.classList.add('open');
+      if (willOpen) { menu.classList.add('open'); fitDropdown(labelBtn, dropdown); }
     });
     var dropdown = document.createElement('div');
     dropdown.className = 'plotpress-toolbar plotpress-menu-dropdown';
