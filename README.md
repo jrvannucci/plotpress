@@ -48,8 +48,8 @@ connection, just a browser. Email it, drop it in a chat, put it on a USB
 stick — it still works. Send someone a file, not a service they have to
 install.
 
-A README on PyPI or GitHub can't run that page's script, so the four GIFs
-below are recordings of it rather than the real thing. For the live version,
+A README on PyPI or GitHub can't run that page's script, so the GIFs below
+are recordings of it rather than the real thing. For the live version,
 open a saved file yourself or visit the
 [real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html),
 where every figure is embedded exactly this way.
@@ -67,6 +67,13 @@ line's `x`/`y` — then extracting every picked point as CSV/JSON:
 point it's pinned to:
 
 ![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
+
+**Slicing a heatmap**, scrubbing a row through a `pcolormesh` and reading the
+profile in a strip carved out of the same axes — the companion view of the
+opt-in Slice tool, with the value axis pinned to the colorbar's range so the
+line sweeps through the section instead of rescaling on every step:
+
+![Turning on the Slice tool, then scrubbing a row down through two heatmaps while the profile above each one follows the cursor line](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_slice.gif)
 
 **At scale**, every gesture above still works the same way on a figure with
 hundreds of axes — zoom from the full grid into a handful of panels, pan,
