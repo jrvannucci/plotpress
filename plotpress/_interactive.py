@@ -2990,7 +2990,7 @@ _JS_SOURCE = r"""
   function jsNiceTicks(lo, hi, n) {
     if (lo === hi) { lo -= 0.5; hi += 0.5; }
     var raw = (hi - lo) / (n || 5);
-    var mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag, step;
+    var mag = pow10(Math.floor(Math.log10(raw))), norm = raw / mag, step;
     if (norm < 1.5) step = mag; else if (norm < 3) step = 2 * mag;
     else if (norm < 7) step = 5 * mag; else step = 10 * mag;
     // start + i * step per tick, and the half-open < hi + step/2 bound, both
@@ -3016,6 +3016,17 @@ _JS_SOURCE = r"""
   // the same tick read "0" as rendered and "1" after the first zoom. Only the
   // exactly-halfway case differs, so everything else defers to toFixed, which
   // already rounds the decimal representation correctly.
+  // 10**exp as the *correctly rounded* double, for an integer exp -- mirrors
+  // ticker.pow10(). Math.pow(10, e) is not required to give it and really does
+  // vary: a CI runner's V8 returned a different double for 10**-5 than the
+  // author's machine, which moved Math.ceil(lo / step) to the next integer and
+  // dropped an axis' whole first tick. (Python's own ** misses at 1e23/1e126,
+  // so neither side can simply be trusted.) Parsing the decimal literal is
+  // correctly rounded by spec in both languages, so it is the one definition
+  // that agrees everywhere.
+  function pow10(e) {
+    return Number.isInteger(e) ? +('1e' + e) : Math.pow(10, e);
+  }
   // The halfway test runs on the value's *exact* decimal expansion, never on
   // v * 10^d: that product re-rounds, and reports 1.234575 -- a double whose
   // exact value is 1.23457499... -- as halfway at 5 decimals, where Python
@@ -3095,12 +3106,12 @@ _JS_SOURCE = r"""
       return keep;
     }
     var decades = [];
-    for (e = e0; e <= e1; e++) decades.push(Math.pow(10, e));
+    for (e = e0; e <= e1; e++) decades.push(pow10(e));
     var out = inside(decades);
     if (out.length >= 3) return out;
     var fine = [], mant = [1, 2, 5];
     for (e = e0; e <= e1; e++)
-      for (i = 0; i < 3; i++) fine.push(mant[i] * Math.pow(10, e));
+      for (i = 0; i < 3; i++) fine.push(mant[i] * pow10(e));
     fine.sort(function (a, b) { return a - b; });
     out = inside(fine);
     return out.length >= 2 ? out : jsNiceTicks(lo, hi, 5).ticks;
@@ -3112,7 +3123,7 @@ _JS_SOURCE = r"""
   }
   // Format v against a shared exponent: "1.002e5". Mirrors ticker._sci_tick.
   function sciShared(v, exp, dec) {
-    var mant = pyFixed(v / Math.pow(10, exp), dec);
+    var mant = pyFixed(v / pow10(exp), dec);
     if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
     return mant + 'e' + exp;
   }
@@ -3258,7 +3269,7 @@ _JS_SOURCE = r"""
   function jsEngTick(v, decimals) {
     if (v === 0) return '0';
     var exp3 = Math.max(-8, Math.min(8, Math.floor(Math.log10(Math.abs(v)) / 3)));
-    var mant = pyFixed(v / Math.pow(10, exp3 * 3), decimals);
+    var mant = pyFixed(v / pow10(exp3 * 3), decimals);
     if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
     return mant + SI_PREFIXES[String(exp3)];
   }
@@ -3477,13 +3488,13 @@ _JS_SOURCE = r"""
       var e0 = Math.floor(Math.log10(lo)), e1 = Math.ceil(Math.log10(hi)), out = [];
       for (var e = e0; e <= e1; e++)
         for (var d = 2; d <= 9; d++) {
-          var v = d * Math.pow(10, e);
+          var v = d * pow10(e);
           if (v >= lo && v <= hi) out.push(v);
         }
       return out;
     }
     if (majorTicks.length < 2 || !step) return [];
-    var mag = Math.pow(10, Math.floor(Math.log10(Math.abs(step))));
+    var mag = pow10(Math.floor(Math.log10(Math.abs(step))));
     var lead = Math.round(Math.abs(step) / mag);
     var n = lead === 2 ? 4 : 5;   // 1->5, 2->4, 5->5 (and any other lead->5)
     var substep = step / n;

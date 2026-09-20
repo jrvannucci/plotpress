@@ -24,6 +24,24 @@ from typing import List
 import numpy as np
 
 
+def pow10(exp: int) -> float:
+    """``10**exp`` as the *correctly rounded* double, for an integer ``exp``.
+
+    Neither Python's ``**`` nor JavaScript's ``Math.pow`` is required to give
+    the correctly rounded power of ten, and both really do miss: ``10.0**23``
+    and ``10.0**126`` differ from the ``1e23``/``1e126`` literals here, and a
+    CI runner's V8 returned a different double for ``10**-5`` than the
+    author's machine did -- which shifted a whole axis' first tick, because
+    ``ceil(vmin / step)`` landed on a different integer.
+
+    Parsing the decimal literal is correctly rounded by both languages'
+    specs, so it is the one definition that agrees everywhere. Tick decades
+    go through this on both sides (see ``_interactive.py``'s own ``pow10``)
+    so the static render and the interactive rebuild cannot drift apart.
+    """
+    return float(f"1e{int(exp)}")
+
+
 def log_floor(vmax: float) -> float:
     """A sensible positive floor for a log-scale bound that reached zero or
     negative -- three decades below ``vmax`` (or ``1e-3`` if ``vmax`` itself
@@ -56,7 +74,7 @@ def nice_ticks(vmin: float, vmax: float, n: int = 5) -> np.ndarray:
 
     span = vmax - vmin
     raw_step = span / max(n, 1)
-    mag = 10 ** math.floor(math.log10(raw_step))
+    mag = pow10(math.floor(math.log10(raw_step)))
     norm = raw_step / mag
     # Snap to a nice multiple of the magnitude.
     if norm < 1.5:
@@ -127,12 +145,12 @@ def log_ticks(vmin: float, vmax: float) -> np.ndarray:
     # Three decades is the point where powers of ten alone label an axis well.
     # Two -- a range like 2 um to 120 um -- leaves a wide axis carrying "10" and
     # "100" and nothing else, so subdivide instead.
-    ticks = _inside(np.power(10.0, exps))
+    ticks = _inside(np.array([pow10(e) for e in exps]))
     if ticks.size >= 3:
         return ticks
 
     # Sub-decade range: 1-2-5 within each decade the range touches.
-    fine = np.concatenate([np.array([1.0, 2.0, 5.0]) * 10.0 ** e
+    fine = np.concatenate([np.array([1.0, 2.0, 5.0]) * pow10(e)
                            for e in np.arange(lo, hi + 1)])
     fine = _inside(np.sort(fine))
     if fine.size >= 2:
@@ -156,7 +174,7 @@ def minor_ticks(major: np.ndarray, vmin: float, vmax: float,
             vmin = log_floor(vmax)
         lo = math.floor(math.log10(vmin))
         hi = math.ceil(math.log10(vmax))
-        fine = np.concatenate([np.arange(2, 10) * 10.0 ** e
+        fine = np.concatenate([np.arange(2, 10) * pow10(e)
                                for e in np.arange(lo, hi + 1)])
         fine = fine[(fine >= vmin) & (fine <= vmax)]
         return np.sort(fine)
@@ -167,7 +185,7 @@ def minor_ticks(major: np.ndarray, vmin: float, vmax: float,
     step = float(major[1] - major[0])
     if step == 0:
         return np.empty(0, dtype=float)
-    mag = 10 ** math.floor(math.log10(abs(step)))
+    mag = pow10(math.floor(math.log10(abs(step))))
     lead = round(abs(step) / mag)
     n = {1: 5, 2: 4, 5: 5}.get(lead, 5)
     substep = step / n
@@ -204,7 +222,7 @@ def format_tick(v: float) -> str:
 
 def _sci_tick(v: float, exp: int, decimals: int) -> str:
     """Format ``v`` against a *shared* exponent, e.g. ``1.002e5`` for exp=5."""
-    mant = f"{v / 10.0 ** exp:.{decimals}f}"
+    mant = f"{v / pow10(exp):.{decimals}f}"
     if "." in mant:
         mant = mant.rstrip("0").rstrip(".")
     return f"{mant}e{exp}"
@@ -331,7 +349,7 @@ def _engineering_tick(v: float, decimals: int) -> str:
     if v == 0:
         return "0"
     exp3 = max(-8, min(8, math.floor(math.log10(abs(v)) / 3)))
-    mant = f"{v / 10.0 ** (exp3 * 3):.{decimals}f}"
+    mant = f"{v / pow10(exp3 * 3):.{decimals}f}"
     if "." in mant:
         mant = mant.rstrip("0").rstrip(".")
     return f"{mant}{_SI_PREFIXES[exp3]}"

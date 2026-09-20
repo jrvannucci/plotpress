@@ -187,3 +187,24 @@ def test_multiple_ticks_puts_the_zero_tick_exactly_on_zero():
     nearest = min(ticks, key=abs)
     assert nearest == 0.0
     assert format_tick(nearest) == "0"
+
+
+def test_pow10_is_the_correctly_rounded_decade():
+    """Neither `**` nor JavaScript's Math.pow is required to give the correctly
+    rounded power of ten, and both miss in practice -- 10.0**23 and 10.0**126
+    are not the 1e23/1e126 literals, and a CI runner's V8 returned a different
+    double for 10**-5 than the development machine, which moved
+    ceil(vmin / step) to the next integer and dropped an axis' first tick."""
+    from plotpress.ticker import pow10
+
+    for exp in range(-300, 301):
+        assert pow10(exp) == float(f"1e{exp}"), exp
+    assert pow10(23) != 10.0 ** 23        # the cases `**` gets wrong
+    assert pow10(126) != 10.0 ** 126
+
+
+def test_nice_ticks_keeps_the_first_tick_on_a_narrow_offset_range():
+    """[1, 1.0001] ticks from 1.0; a decade off by one ulp pushed
+    ceil(vmin / step) up an integer and lost that first tick entirely."""
+    assert list(nice_ticks(1, 1.0001)) == [1.0, 1.00002, 1.00004,
+                                           1.00006, 1.00008, 1.0001]
