@@ -11,6 +11,24 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Added
+
+- **`subplot_size=` on `subplots()`/`subplots_from_groups()`** -- give the size
+  of one subplot in inches and have `figsize` solved for it, instead of sizing
+  the whole figure and discovering what that left each panel::
+
+      fig, axes = plotpress.subplots(20, 25, subplot_size=(1.2, 0.9))
+
+  A readable panel is a fixed size, so on a large grid what a caller knows is
+  how big one panel should be -- not what 500 of them plus their tick labels,
+  titles, colorbars, group boxes and `supxlabel` add up to.
+  `figsize=(ncols * 1.2, nrows * 0.9)` is the usual guess and is always wrong,
+  because none of that surrounding furniture scales with the grid the way the
+  panels do. The room it needs is measured and added on top, so the panels come
+  out the size asked for. `tight_layout()` does the solving, so the answer
+  reflects the labels actually set rather than a guess made before they
+  existed.
+
 ## [0.41.1] - 2026-09-20
 
 ### Documentation

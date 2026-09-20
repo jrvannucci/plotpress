@@ -216,6 +216,17 @@ class GroupLayout:
         self.nrows, self.ncols = nrows, ncols
         self._cells = {}   # (row, col) -> dict; see add()
 
+    def _super_shape(self):
+        """The flat grid this layout resolves to -- the same lcm-of-inner-shapes
+        maths ``_build`` does, wanted before building so ``subplot_size=`` knows
+        how many subplots a dimension actually holds. ``(nrows, ncols)`` of the
+        outer grid alone if there are no groups yet."""
+        if not self._cells:
+            return self.nrows, self.ncols
+        Lr = math.lcm(*(c["mask"].shape[0] for c in self._cells.values()))
+        Lc = math.lcm(*(c["mask"].shape[1] for c in self._cells.values()))
+        return self.nrows * Lr, self.ncols * Lc
+
     def add_group(self, row: int, col: int, nrows: int = None, ncols: int = None,
                  mask=None, axes_ids=None, axes_titles=None, title: str = None,
                  id=None, linestyle="--", color="black", linewidth=1.5,
@@ -451,10 +462,16 @@ class GroupLayout:
 
 def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style = None,
                          facecolor=None, squeeze=True, sharex=False, sharey=False,
-                         projection=None):
+                         projection=None, subplot_size=None):
     """Build a figure from a :class:`GroupLayout` -- see there for how to
     describe the outer/inner grid shapes. Mirrors :func:`subplots`'s own
     signature and creates a fresh, independent ``Figure`` the same way.
+
+    ``subplot_size=(w, h)`` works as it does on :func:`subplots` -- see there
+    -- and sizes one *axes*, not one group: a layout of 2x1 groups asked for
+    ``subplot_size=(1.6, 1.6)`` gives 1.6in-square panels, with each group box
+    ending up twice that tall plus its title band. The space those boxes and
+    their titles need is measured and added, not taken out of the panels.
 
     Returns ``(fig, axes)``: ``axes`` is shaped like ``layout``'s own outer
     grid (a bare value for a 1x1 layout, a 1-D array for a single outer
@@ -479,7 +496,13 @@ def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style =
     :func:`figure_from_template`'s own flat-list fallback, not reconstructed
     back into this same nested shape.
     """
+    # The super-grid a GroupLayout resolves to, not its outer group grid: one
+    # subplot is one cell of that, which is what subplot_size= sizes.
+    super_rows, super_cols = layout._super_shape()
+    figsize, subplot_size = _resolve_subplot_size(
+        figsize, subplot_size, super_rows, super_cols)
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
+    fig._subplot_size = subplot_size
     axes = layout._build(fig, squeeze=squeeze, sharex=sharex, sharey=sharey,
                          projection=projection)
     if squeeze:
@@ -635,6 +658,10 @@ class Figure:
         # tight_layout() calls recompute growth from a fixed starting point
         # instead of compounding it onto an already-grown figsize.
         self._base_figsize = tuple(figsize)
+        # A per-subplot size the caller asked for instead of a whole-figure
+        # one; tight_layout() solves figsize backwards from it. None means
+        # figsize is taken literally, as it always was.
+        self._subplot_size = None
         self.style = (style or Style()).copy()
         if facecolor is not None:
             self.style.facecolor = facecolor
@@ -1789,8 +1816,73 @@ class Figure:
             # never needs a second correction once applied, and this also
             # bounds the recursion to exactly one extra pass.
             return self.tight_layout(pad=pad, collapse=collapse, auto_label_scale=False)
+        if self._subplot_size is not None:
+            resized = self._resize_for_subplot_size(nrows, ncols, axw, axh,
+                                                    pad, collapse)
+            if resized is not None:
+                return resized
         _warn_about_text_overflow(self, specs, Wpx, Hpx)
         return self
+
+    #: How many correction passes _resize_for_subplot_size() may take. Each is
+    #: a full tight_layout(); three is comfortably more than the two it takes
+    #: to land on the requested size to well under a thousandth of an inch,
+    #: even for a 20x25 grid with groups and a shared colorbar.
+    _SUBPLOT_SIZE_PASSES = 4
+
+    def _resize_for_subplot_size(self, nrows, ncols, axw, axh, pad, collapse):
+        """Grow or shrink figsize until each subplot is ``_subplot_size``.
+
+        tight_layout() reserves margins in *absolute* units -- a tick label is
+        as tall as its font whatever the figure measures -- while the grid
+        placement it produces is in figure *fractions*. So the subplot size a
+        given figsize yields cannot be written down in closed form: change
+        figsize and the margins stay put while the fractions move underneath
+        them.
+
+        It is, though, a contraction. Everything that is not subplot -- the
+        margins, the inter-subplot gaps, a suptitle's band, group title bands,
+        colorbars -- is measured here as one lump of inches, held fixed, and
+        figsize re-solved as ``n * wanted + that lump``. Re-fitting moves the
+        lump a little, so this repeats; in practice the second pass is already
+        correct to a ten-thousandth of an inch.
+
+        Returns the re-laid-out figure when it changed figsize (the caller
+        returns it straight on, since that pass has already finished the work),
+        or None once the size has settled.
+        """
+        want_w, want_h = self._subplot_size
+        # Two different sizes matter here. The subplot fractions are of the
+        # *final* figsize, so that is what turns them back into inches -- but
+        # tight_layout() grows figsize past _base_figsize to pay for
+        # group_spacing()'s reservations, and re-runs that growth from the base
+        # every call. Measuring the leftover against the grown size and then
+        # feeding it back as a base therefore double-counts the growth, leaving
+        # every subplot permanently growth/n too big. So: subplot size from the
+        # final figsize, everything-else from the base.
+        W, H = self.figsize
+        base_w, base_h = self._base_figsize
+        have_w, have_h = axw * W, axh * H
+        # A ten-thousandth of an inch is well under a device pixel at any sane
+        # dpi; chasing further just burns layout passes on float noise.
+        if abs(have_w - want_w) < 1e-4 and abs(have_h - want_h) < 1e-4:
+            return None
+        budget = getattr(self, "_subplot_size_budget", self._SUBPLOT_SIZE_PASSES)
+        if budget <= 0:
+            return None
+        # Everything the subplots themselves do not occupy, in inches.
+        extra_w = base_w - ncols * have_w
+        extra_h = base_h - nrows * have_h
+        target = (ncols * want_w + extra_w, nrows * want_h + extra_h)
+        if not (all(v > 0 for v in target) and all(math.isfinite(v) for v in target)):
+            return None
+        self.figsize = target
+        self._base_figsize = target
+        self._subplot_size_budget = budget - 1
+        try:
+            return self.tight_layout(pad=pad, collapse=collapse)
+        finally:
+            self._subplot_size_budget = self._SUBPLOT_SIZE_PASSES
 
     def _finish_grid_relayout(self, specs):
         """Shared tail of :meth:`tight_layout`/:meth:`subplots_adjust`.
@@ -3684,17 +3776,65 @@ def _flatten_axes(ax):
     return [a for a in np.asarray(ax, dtype=object).ravel()]
 
 
+def _resolve_subplot_size(figsize, subplot_size, nrows, ncols):
+    """Validate ``subplot_size=`` and pick the figsize to start solving from.
+
+    Returns ``(start_figsize, subplot_size or None)``. The start size only has
+    to be in the right region -- tight_layout() corrects it -- but starting
+    near the answer saves a pass, so it is the requested subplot size times the
+    grid plus a little room for the decorations around it.
+    """
+    if subplot_size is None:
+        return figsize, None
+    try:
+        w, h = subplot_size
+        w, h = float(w), float(h)
+    except (TypeError, ValueError):
+        raise TypeError(
+            "subplot_size= must be a (width, height) pair in inches, got "
+            f"{subplot_size!r}") from None
+    if not (w > 0 and h > 0 and math.isfinite(w) and math.isfinite(h)):
+        raise ValueError(
+            f"subplot_size= must be two positive, finite sizes in inches, got "
+            f"{subplot_size!r}")
+    return (ncols * w * 1.25 + 0.9, nrows * h * 1.25 + 0.9), (w, h)
+
+
 def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
              facecolor=None, squeeze=True, sharex=False, sharey=False,
-             projection=None):
+             projection=None, subplot_size=None):
     """Convenience constructor mirroring ``matplotlib.pyplot.subplots``.
 
     Unlike matplotlib, this creates and returns a fresh, fully independent
     figure -- there is no global state touched. ``sharex``/``sharey`` link the
     grid's limits and hide inner tick labels. ``projection='polar'`` makes the
     axes polar.
+
+    ``subplot_size=(w, h)`` sizes one *subplot* in inches instead of the whole
+    figure, and ``figsize`` is then solved for rather than given::
+
+        # every panel exactly 1.2 x 0.9in, whatever the grid costs around it
+        fig, axes = plotpress.subplots(20, 25, subplot_size=(1.2, 0.9))
+
+    This is the useful knob once a grid is large: a readable panel is a fixed
+    size, so what a caller actually knows is how big one panel should be, not
+    what the 500 of them plus their tick labels, titles, colorbars, group boxes
+    and ``supxlabel`` add up to. ``figsize=(ncols * 1.2, nrows * 0.9)`` is the
+    usual guess and it is always wrong, because none of that surrounding
+    furniture scales with the grid the way the panels do.
+
+    Whatever room the decorations need is measured and added on top, so the
+    panels come out the requested size rather than that size minus the
+    margins. :meth:`tight_layout` does the solving, so it has to run (it
+    already does at render time if you never call it yourself) -- and because
+    it measures real text, the answer accounts for the labels actually set,
+    not a guess made before they existed. ``figsize`` is ignored when
+    ``subplot_size`` is given, beyond seeding the first pass.
     """
+    figsize, subplot_size = _resolve_subplot_size(figsize, subplot_size,
+                                                 nrows, ncols)
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
+    fig._subplot_size = subplot_size
     axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex,
                         sharey=sharey, projection=projection)
     return fig, axes
