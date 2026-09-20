@@ -163,20 +163,28 @@ round-trip itself uses. See the
 
 ## What makes it different
 
-1. **No `pyplot`, no globals.** There is no "current figure/axes" and no global
-   `rcParams`. A `Figure` owns its axes and its own `Style`; two figures never
-   share mutable state. `plotpress.subplots()` returns `(fig, axes)` just like
-   `plt.subplots()` — but touches no global state.
-2. **matplotlib-*shaped* API** so moving code either direction is mostly
-   mechanical: `Figure`/`Axes`, `plot`, `scatter`, `pcolormesh`,
-   `set_xlabel/ylabel/title`, `set_xlim/ylim`, `grid`, `legend`, `colorbar`. It
-   is shaped, not drop-in — there's no `pyplot` state machine and not every
-   matplotlib keyword is present; treat the gallery as the compatibility surface.
-3. **SVG-first + built for speed.** Output is vector SVG; only mesh/image layers
-   are rasterized (as a single embedded `<image>`, not thousands of rects). Each
-   series is one `<path>`. It's **pure Python + NumPy** — vectorized coordinate
-   formatting, min/max-decimated huge lines — with **no compiled extension**, so
-   it installs everywhere pip does.
+Most plotting libraries leave behind pixels. plotpress can leave behind a
+recoverable artifact: the figure stores its plotted data, layout, and styling
+together in the same file.
+
+1. **Return to the analysis, not just the image.** A saved interactive figure
+   carries its plotted series alongside its structure and styling. Long after
+   the original Python session, notebook, or source dataset is gone, the file
+   can be read back to recover the data, inspect what was plotted, rebuild the
+   figure, continue the analysis, or create a new visualization. The output is
+   a durable analytical record rather than a screenshot at the end of a
+   workflow.
+2. **Share the artifact without sharing the environment.** Everything is
+   contained in one HTML file. A recipient can open it directly in a browser,
+   explore every axes, pick values, and add annotations without Python,
+   plotpress, a server, an account, or any code of their own. The file works
+   offline and can travel through email, chat, removable storage, a paper's
+   supplementary material, or a long-term archive.
+3. **Keep exploration, publication, and recovery connected.** The recoverable
+   interactive artifact comes from the same figure that exports to SVG, PNG,
+   PDF, Vega, or Vega-Lite. Collaborators can explore it now, a paper can use
+   its static rendering, and a future researcher can recover and analyze its
+   underlying data later—without maintaining separate plotting workflows.
 
 ## Scientific visualization, end to end
 
