@@ -11,6 +11,20 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-09-20
+
+### Fixed
+
+- **Tick decades are computed from the decimal literal, not `pow`.** Neither
+  Python's `**` nor JavaScript's `Math.pow` is required to return the correctly
+  rounded power of ten, and both miss: `10.0**23` and `10.0**126` differ from
+  their literals, and some JavaScript engines return a different double for
+  `10**-5` than others. On an engine that rounds it the other way, an axis over
+  `[1, 1.0001]` lost its first tick entirely once zoomed -- `ceil(vmin / step)`
+  landed on the next integer -- so the interactive view disagreed with the ticks
+  the static render had already drawn. Both sides now build a decade by parsing
+  the decimal literal, which is correctly rounded by spec in both languages.
+
 ## [0.41.0] - 2026-09-20
 
 ### Added
