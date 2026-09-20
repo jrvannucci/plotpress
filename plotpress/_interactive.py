@@ -4254,7 +4254,7 @@ _JS_SOURCE = r"""
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
   }
 
-  function showExtractPanel(records, csv, json) {
+  function showExtractPanel(records, csv, json, notice) {
     var old = document.querySelector('.plotpress-extract');
     if (old) old.remove();
     var panel = document.createElement('div');
@@ -4285,7 +4285,16 @@ _JS_SOURCE = r"""
     btns.appendChild(mk('Download CSV', function () { download('markers.csv', csv, 'text/csv'); }));
     btns.appendChild(mk('Download JSON', function () { download('markers.json', json, 'application/json'); }));
     btns.appendChild(mk('Close', function () { panel.remove(); }));
-    panel.appendChild(head); panel.appendChild(ta); panel.appendChild(btns);
+    panel.appendChild(head);
+    if (notice) {
+      var warn = document.createElement('div');
+      warn.className = 'plotpress-extract-notice';
+      warn.style.cssText = 'background:#fef3c7;color:#92400e;border:1px solid #f59e0b;' +
+        'border-radius:4px;padding:6px 8px;margin-bottom:6px;font-size:12px;line-height:1.35';
+      warn.textContent = notice;
+      panel.appendChild(warn);
+    }
+    panel.appendChild(ta); panel.appendChild(btns);
     document.body.appendChild(panel);
     ta.focus(); ta.select();
   }
@@ -4304,6 +4313,25 @@ _JS_SOURCE = r"""
   // placed on the profile has a heatmap mirror (marked .plotpress-snapped) and
   // *that* is what's extracted for it -- unless a heatmap pin already covers the
   // same cell, so no point is ever reported twice.
+  // Pins placed on the Slice profile are never extracted themselves, so one with
+  // no heatmap mirror to stand in for it is simply missing from the output --
+  // the user has to be told, not left to notice a short list. Returns the
+  // message, or '' when nothing was left out.
+  function sliceExtractNotice() {
+    var lost = 0;
+    document.querySelectorAll('.plotpress-pin[data-kind="slice"]:not(.plotpress-snapped)').forEach(function (p) {
+      var uid = p.dataset.snapUid;
+      if (uid === undefined || !document.querySelector('.plotpress-snapped[data-snap-of="' + uid + '"]')) lost++;
+    });
+    if (!lost) return '';
+    var what = lost + ' pin' + (lost === 1 ? '' : 's') + ' placed on the slice ' +
+               (lost === 1 ? 'was' : 'were') + ' not extracted. ';
+    return SLICE_SNAP
+      ? what + 'They have no heatmap point to extract (no value at that sample, or the ' +
+        'companion panel is off).'
+      : what + 'Slice pins are left out to avoid duplicating heatmap points -- turn on ' +
+        '"Snap pins to slice" in the Slice menu to extract them as heatmap points.';
+  }
   function doExtract() {
     var pins = Array.prototype.slice.call(document.querySelectorAll(
       '.plotpress-pin:not(.plotpress-note):not([data-kind="slice"])'));
@@ -4321,6 +4349,7 @@ _JS_SOURCE = r"""
       }
       records.push(rec);
     });
+    var notice = sliceExtractNotice();
     // Hand off to Python when running inside the native (pywebview) window.
     try {
       if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
@@ -4330,7 +4359,9 @@ _JS_SOURCE = r"""
     // In wait-for-extract mode the kernel closes the window on receipt, so skip
     // the panel; otherwise show it for copy/download.
     if (!window.PLOTPRESS_WAIT_EXTRACT) {
-      showExtractPanel(records, toCSV(records), JSON.stringify(records, null, 2));
+      showExtractPanel(records, toCSV(records), JSON.stringify(records, null, 2), notice);
+    } else if (notice && window.console) {
+      console.warn('plotpress: ' + notice);   // no panel to put it in
     }
   }
   window.plotpressExtract = doExtract;

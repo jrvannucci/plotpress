@@ -75,7 +75,8 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     does). The pin you placed stays where it is; each pin and its mirror share
     a label color so you can see they're linked, and mirrors are left out of
     Extract; a pin placed on the profile is extracted as the heatmap cell its
-    mirror sits on, and no cell is ever reported twice. A pin whose value moves past the
+    mirror sits on, and no cell is ever reported twice. If profile pins were left out because Snap is off,
+    the Extract panel says so and names the setting to turn on. A pin whose value moves past the
     profile's range (a fixed ``"colorbar"`` or ``"custom"`` range, while the
     slider plays) stays on the strip's edge with its value shown in red rather
     than leaving the axes; it's hidden while its sample has no value or has

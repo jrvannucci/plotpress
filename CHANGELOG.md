@@ -38,7 +38,8 @@ anywhere in the source.
   slice** (a checkbox in the menu's own "Slice view" group) links pins in both
   directions: a heatmap pin gets a mirror on the shown profile, and a pin placed
   on the profile gets one on the heatmap cell it points at. Extract ignores profile
-  pins and reports the heatmap cell instead (never the same cell twice). The original stays
+  pins and reports the heatmap cell instead (never the same cell twice). When profile pins are left out
+  (Snap off), the Extract panel warns and points to Snap pins to slice. The original stays
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.

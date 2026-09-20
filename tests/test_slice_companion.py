@@ -1184,3 +1184,65 @@ def test_extract_leaves_out_slice_pins_when_snap_is_off(page, tmp_path):
     _click_strip(page, 0.5)                                 # a profile pin with no heatmap mirror
     _click_heatmap(page, 0.4, 0.6)
     assert [r["kind"] for r in _extract(page)] == ["mesh"]  # only the heatmap pin
+
+
+# ---- Extract tells the user when slice pins were left out ------------------------------
+
+def _notice(page):
+    return page.evaluate("""() => { const n = document.querySelector('.plotpress-extract-notice');
+        return n ? n.textContent : null; }""")
+
+
+@pytest.mark.browser
+def test_extract_warns_when_slice_pins_were_left_out_because_snap_is_off(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _extract(page) == []
+    msg = _notice(page)
+    assert msg and "1 pin placed on the slice was not extracted" in msg
+    assert "Snap pins to slice" in msg                       # says how to get them extracted
+
+
+@pytest.mark.browser
+def test_extract_warns_with_the_right_count(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.2)
+    _click_strip(page, 0.8)
+    _extract(page)
+    assert "2 pins placed on the slice were not extracted" in _notice(page)
+
+
+@pytest.mark.browser
+def test_extract_has_no_warning_once_snap_is_on(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert len(_extract(page)) == 1                          # extracted via its heatmap mirror
+    assert _notice(page) is None
+
+
+@pytest.mark.browser
+def test_extract_has_no_warning_without_slice_pins(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    assert len(_extract(page)) == 1
+    assert _notice(page) is None
+
+
+@pytest.mark.browser
+def test_turning_snap_on_after_the_warning_extracts_the_pins(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _extract(page) == [] and _notice(page)
+    _set_snap(page, True)
+    recs = _extract(page)
+    assert [r["kind"] for r in recs] == ["mesh"] and _notice(page) is None
