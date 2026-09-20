@@ -1279,9 +1279,10 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
                 draw.text((xr + ts + 2, y), lab, fill=_rgb(st.text_color),
                           font=font, anchor="lm")
         if ax._shown_ylabel():
-            lx = xr + ts + (_max_ytick_width(ax, st) + st.label_size + 4) * S
+            ylabel_size = ax._ylabel_size or st.label_size
+            lx = xr + ts + (_max_ytick_width(ax, st) + ylabel_size + 4) * S
             _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
-                   _rgb(st.text_color), _font(st.label_size * S, st.font_family))
+                   _rgb(st.text_color), _font(ylabel_size * S, st.font_family))
     else:                                            # twiny: x-axis on the TOP
         for xt, lab in zip(xticks, ax._resolve_xticklabels(xticks)):
             x = float(tr.x(xt))
@@ -1293,44 +1294,47 @@ def _raster_twin_ticks(ax, st, tr, xticks, yticks, L, T, Wp, Hp, S, draw):
                 draw.text((x, T - ts - 1), lab, fill=_rgb(st.text_color),
                           font=font, anchor="md")
         if ax._shown_xlabel():
-            draw.text((L + Wp / 2.0, T - ts - fs - st.label_size * S),
+            xlabel_size = ax._xlabel_size or st.label_size
+            draw.text((L + Wp / 2.0, T - ts - fs - xlabel_size * S),
                       ax._xlabel, fill=_rgb(st.text_color),
-                      font=_font(st.label_size * S, st.font_family), anchor="md")
+                      font=_font(xlabel_size * S, st.font_family), anchor="md")
 
 
 def _raster_labels(ax, st, L, T, Wp, Hp, S, draw):
-    # See svg._render_labels: axis-label *text* always uses the figure
-    # default (label_size/text_color aren't tick_params() fields), but the
-    # offset clearing the tick marks/labels has to match tick_params()'s
-    # own per-axis override -- using the default regardless used to put
-    # the axis label on top of a tick label sized (or rotated) differently
-    # from it.
+    # See svg._render_labels: axis-label *text* uses the figure default
+    # unless this axes' own set_xlabel/set_ylabel gave it a size of its own
+    # (text_color still isn't a per-axes field), but the offset clearing
+    # the tick marks/labels has to match tick_params()'s own per-axis
+    # override -- using the default regardless used to put the axis label
+    # on top of a tick label sized (or rotated) differently from it.
     xst = st.copy(**ax._tick_overrides["x"]) if ax._tick_overrides["x"] else st
     yst = st.copy(**ax._tick_overrides["y"]) if ax._tick_overrides["y"] else st
     cx = L + Wp / 2.0
     if ax._shown_xlabel() and not ax._axis_off:
+        xlabel_size = ax._xlabel_size or st.label_size
         # Overrides (align_xlabels) are stamped in 1x figure-pixel space, like
         # the SVG backend's -- scale to this backend's supersampled space.
         if ax._xlabel_y_override is not None:
             y = ax._xlabel_y_override * S
         else:
             xdec = xst.tick_size + _xtick_label_extent(ax, xst)
-            y = (T - (xdec + st.label_size) * S if ax._xtick_side == "top"
-                else T + Hp + (xdec + st.label_size + 4) * S)
+            y = (T - (xdec + xlabel_size) * S if ax._xtick_side == "top"
+                else T + Hp + (xdec + xlabel_size + 4) * S)
         draw.text((cx, y), ax._xlabel, fill=_rgb(st.text_color),
-                  font=_font(st.label_size * S, st.font_family), anchor="mm")
+                  font=_font(xlabel_size * S, st.font_family), anchor="mm")
     if ax._shown_ylabel() and not ax._axis_off:
+        ylabel_size = ax._ylabel_size or st.label_size
         # Mirror svg._render_labels exactly: clear the *measured* tick labels.
         # Substituting the tick font size for their width put this up to ~9px
         # from where the SVG draws it, jammed against the figure edge.
         if ax._ylabel_x_override is not None:
             lx = ax._ylabel_x_override * S
         elif ax._ytick_side == "right":
-            lx = L + Wp + (yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4) * S
+            lx = L + Wp + (yst.tick_size + _max_ytick_width(ax, yst) + ylabel_size + 4) * S
         else:
-            lx = L - (yst.tick_size + _max_ytick_width(ax, yst) + st.label_size + 4) * S
+            lx = L - (yst.tick_size + _max_ytick_width(ax, yst) + ylabel_size + 4) * S
         _vtext(draw, ax._ylabel, lx, T + Hp / 2.0,
-               _rgb(st.text_color), _font(st.label_size * S, st.font_family))
+               _rgb(st.text_color), _font(ylabel_size * S, st.font_family))
     if ax._title:
         # Pillow refuses a bottom/baseline anchor on multiline text, and the
         # title is the only label that uses one -- so a "\n" in a title raised

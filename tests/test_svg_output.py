@@ -3305,19 +3305,19 @@ def test_group_box_freezes_in_place_once_its_last_axes_is_removed():
     the box's current rect (see svg._group_bbox) instead, so the box (and
     title) keep rendering exactly where they were, not vanishing. Compares
     the actual rendered rect right before the *last* axes leaves against
-    the rect afterward -- not the original, still-two-axes box, since
-    removing the first of the two already shrinks it to the survivor's own
-    bounds (see test_group_box_only_freezes_once_its_truly_last_axes_leaves)
-    -- the freeze itself must be pixel-identical, not merely present."""
+    the rect afterward -- both already frozen to the group's original,
+    still-two-axes box the moment the *first* one left (see
+    test_group_box_freezes_at_original_bounds_once_any_axes_leaves) -- the
+    freeze itself must be pixel-identical, not merely present."""
     fig, axes = _grid_2x2()
     fig.group("Top row", [axes[0, 0], axes[0, 1]], pad=5.0)
-    axes[0, 0].remove()   # one left: box already shrunk to axes[0, 1] alone
+    axes[0, 0].remove()   # one left: box already frozen to the original pair
     before_svg = fig.to_svg()
     before_box = [r for r in _parse(before_svg).findall(f".//{NS}rect")
                  if r.get("fill") == "none"][0]
     before = tuple(float(before_box.get(k)) for k in ("x", "y", "width", "height"))
 
-    axes[0, 1].remove()   # now zero: this is the removal that freezes it
+    axes[0, 1].remove()   # now zero: already frozen, this changes nothing
     assert fig.get_group(title="Top row").flat_axes() == []
 
     after_svg = fig.to_svg()
@@ -3328,29 +3328,72 @@ def test_group_box_freezes_in_place_once_its_last_axes_is_removed():
     assert "Top row" in [t.text for t in _parse(after_svg).findall(f".//{NS}text")]
 
 
-def test_group_box_only_freezes_once_its_truly_last_axes_leaves():
-    """A group with several axes keeps deriving its box live from whichever
-    still remain -- removing one of two shrinks the box to the survivor's
-    own bounds, not a frozen memory of the original pair. Only the removal
-    that empties the group entirely freezes anything."""
+def test_group_box_freezes_at_original_bounds_once_any_axes_leaves():
+    """A group's box used to keep deriving itself live from whichever axes
+    still remained -- removing one of two shrank it to the survivor's own
+    bounds, so by the time the group's *last* axes left, the box that froze
+    was just that lone survivor's rect, not the group's original footprint
+    (e.g. a whole row it was drawn around collapsing to one cell). Now the
+    first axes to leave freezes the box at its still-intact bounds (see
+    svg._group_bbox), and every removal after that -- down to and including
+    the last -- leaves it exactly where it was."""
     from plotpress.svg import _group_axes_extra, _pixel_rect
 
     fig, axes = _grid_2x2()
     fig.group("Top row", [axes[0, 0], axes[0, 1]])
+    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
+    st = fig.style
     fig.to_svg()   # settle layout before reading rects
+    r00, r01 = _pixel_rect(axes[0, 0], W, H), _pixel_rect(axes[0, 1], W, H)
+    e00, e01 = _group_axes_extra(axes[0, 0], st), _group_axes_extra(axes[0, 1], st)
+    expected_x0 = min(r00[0] - e00[2], r01[0] - e01[2]) - 8.0   # default pad
+    expected_x1 = max(r00[0] + r00[2] + e00[3], r01[0] + r01[2] + e01[3]) + 8.0
 
     axes[0, 0].remove()
     svg = fig.to_svg()
     box = [r for r in _parse(svg).findall(f".//{NS}rect") if r.get("fill") == "none"][0]
-
-    W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
-    st = fig.style
-    r01 = _pixel_rect(axes[0, 1], W, H)
-    e01 = _group_axes_extra(axes[0, 1], st)
-    expected_x0 = r01[0] - e01[2] - 8.0   # default pad
-    expected_x1 = r01[0] + r01[2] + e01[3] + 8.0
     assert float(box.get("x")) == pytest.approx(expected_x0, abs=0.5)
     assert float(box.get("width")) == pytest.approx(expected_x1 - expected_x0, abs=0.5)
+
+
+def test_emptied_group_box_tracks_tight_layout_reflow_like_its_siblings():
+    """A group frozen by Axes.remove() (see the two tests above) used to stay
+    pixel-locked to whatever the layout looked like the instant it emptied --
+    correct for the *shape* of the box (now, after the fix above, the full
+    original row rather than one lone survivor's cell), but wrong for its
+    *size*: a tight_layout() called afterward (the documented, recommended
+    order -- see docs/figure_layout/grouping/plot_20_...) re-measures every
+    remaining axes' own tick/title needs and re-derives the grid's row
+    heights and column widths from that, and a still-frozen sibling row
+    never got a share of that re-derivation at all. With three rows each in
+    their own group and the bottom row's axes removed before that
+    tight_layout() call, its box must come out exactly the same width and
+    height as its still-populated siblings', not whatever the pre-relayout
+    geometry happened to leave behind."""
+    fig, axes = plotpress.subplots(3, 3, figsize=(9, 6))
+    for i, ax in enumerate(axes.ravel()):
+        ax.set_title(f"panel {i}", fontsize=9)
+    for r in range(3):
+        fig.group(f"Row {r}", list(axes[r, :]))
+    for ax in list(axes[2, :]):
+        ax.remove()
+    fig.tight_layout()
+
+    root = _parse(fig.to_svg())
+    boxes = {t.text: box for t, box in zip(
+        (t for t in root.findall(f".//{NS}text") if t.text.startswith("Row")),
+        (r for r in root.findall(f".//{NS}rect") if r.get("fill") == "none"),
+    )}
+    assert set(boxes) == {"Row 0", "Row 1", "Row 2"}
+    dims = {name: (float(b.get("width")), float(b.get("height"))) for name, b in boxes.items()}
+    assert dims["Row 2"] == pytest.approx(dims["Row 0"], abs=0.5)
+    assert dims["Row 2"] == pytest.approx(dims["Row 1"], abs=0.5)
+    # And it must still sit directly below Row 1, same x and immediately
+    # after it in y (some gap is expected: Row 2's own title, drawn above
+    # its box by default, needs room between the two).
+    assert float(boxes["Row 2"].get("x")) == pytest.approx(float(boxes["Row 1"].get("x")), abs=0.5)
+    row1_bottom = float(boxes["Row 1"].get("y")) + float(boxes["Row 1"].get("height"))
+    assert row1_bottom < float(boxes["Row 2"].get("y")) < row1_bottom + 20
 
 
 def test_group_title_position_and_style():
