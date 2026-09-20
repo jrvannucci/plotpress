@@ -77,13 +77,14 @@ range, so the line moves through the field instead of rescaling each step:
 ![Turning on the Slice tool, then dragging one coupled slider to sweep a row down through two heatmaps at once while the profile above each follows its cursor line](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_slice.gif)
 
 **At scale**, every gesture above still works the same way on a figure with
-hundreds of axes — zoom from the full grid into a handful of panels, pan,
-pick a value, remove it, pick again and drag its label, pan to a distant
-group, annotate, then back Home (the figure is
+hundreds of axes — zoom from the full grid down into a handful of panels, pan,
+pick a value off a mesh cell, then hand one single panel to Slice by clicking
+it on the figure and read the profile through it, while the other 499 are left
+alone (the figure is
 [`docs/figure_layout/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_figure_layout/grouping/plot_13_full_scale_demo.html) —
 500 `pcolormesh` panels, 250 groups, each with its own colorbar):
 
-![Zooming from a 500-panel figure into a handful of panels, panning, picking a value, removing and re-picking it, dragging its label, panning to a distant group, annotating, then Home](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
+![Zooming from a 500-panel figure into a handful of panels, panning, picking a value that reports x, y and z, then choosing one panel on the figure and reading its slice in a companion strip while every other panel stays unchanged](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
 
 ## One figure. Many destinations.
 
@@ -577,9 +578,9 @@ both using the object-oriented API):
 | scatter, 5k points | ~15 ms | ~220 ms | **~14×** |
 | single line, 100k points | ~9 ms | ~48 ms | **~5.6×** |
 
-**Honest caveat:** plotpress's win comes from avoiding matplotlib's per-`Artist`
-Python overhead (many axes) and from rasterizing meshes to one `<image>` instead
-of tens of thousands of vector cells (pcolormesh). The *single huge polyline*
+**Where the win comes from:** avoiding matplotlib's per-`Artist` Python
+overhead (many axes), and rasterizing meshes to one `<image>` instead of tens
+of thousands of vector cells (pcolormesh). The *single huge polyline*
 case used to be a loss (pure-Python float→string serialization of 100k points);
 it's now a win via **min/max path decimation** — a monotonic-x line is reduced
 to first/last/min/max per pixel column before serializing, which is visually
