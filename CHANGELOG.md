@@ -43,6 +43,13 @@ anywhere in the source.
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.
+- **The companion strip now works on more axes.** Axes with fixed ticks
+  (`set_xticks`/`set_yticks`), `axis("off")`, and axes with a `twinx`/`twiny`
+  or secondary axes (which shrink together with their parent) get a strip too;
+  their static ticks are remapped to the smaller heatmap. Only an inset (or an
+  axes that is itself an inset) still gets just the cursor and slider. Also
+  fixes a twin's ticks being redrawn on the wrong edge (and its parent's axis
+  doubled) when the view changed.
 - **Choose which axes to slice.** The Slice menu has an "Axes to slice" radio --
   All axes or Selected axes -- where selecting axes is done by clicking them on the
   figure; only the chosen axes get a slider, cursor and strip,

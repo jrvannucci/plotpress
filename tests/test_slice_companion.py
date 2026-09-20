@@ -882,15 +882,6 @@ def _twin_fig():
 
 
 @pytest.mark.browser
-def test_an_axes_with_a_twin_keeps_the_plain_cursor_and_no_strip(page, tmp_path):
-    # A twin overlays the axes' original rect, so it wouldn't line up with a shrunken
-    # heatmap -- such an axes gets the cursor and slider only.
-    _load(page, tmp_path, _twin_fig(), options={"slice": {"enabled": True}})
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-companion').length") == 0
-    assert page.evaluate("document.querySelectorAll('.plotpress-slice-cursor').length") == 1
-
-
-@pytest.mark.browser
 def test_a_strip_pin_follows_an_animated_meshs_frame_slider(page, tmp_path):
     fig, ax = plotpress.subplots(figsize=(7, 5))
     x, y = np.linspace(0, 10, 11), np.linspace(0, 8, 9)
@@ -1355,3 +1346,106 @@ def test_wait_for_extract_sends_immediately_when_nothing_was_left_out(page, tmp_
     assert _menu_button(page, "Extract")
     recs = page.evaluate("window.__extracted")
     assert [r["kind"] for r in recs] == ["mesh"]
+
+
+# ---- axes that used to get only a cursor: axis off, fixed ticks, twin/secondary ---------
+
+def _fixed_tick_fig():
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9), np.arange(80, dtype=float).reshape(8, 10))
+    ax.set_xticks([0, 5, 10]); ax.set_yticks([0, 4, 8])
+    ax.grid(True)
+    fig.tight_layout()
+    return fig
+
+
+def _tick_label_centers(page):
+    """[(text, cx, cy)] in screen pixels for the static tick labels of axes 0 (x and y
+    labels can share text, e.g. both "0", so this is a list, not a dict)."""
+    return [tuple(v) for v in page.evaluate("""() => Array.from(document.querySelectorAll('#ticks0 text')).map(
+        t => { const r = t.getBoundingClientRect(); return [t.textContent, r.left + r.width / 2, r.top + r.height / 2]; })""")]
+
+
+def _mesh_box(page):
+    return page.evaluate("""() => { const r = document.querySelector('.plotpress-mesh').getBoundingClientRect();
+        return {left: r.left, right: r.right, top: r.top, bottom: r.bottom}; }""")
+
+
+@pytest.mark.browser
+def test_axis_off_axes_gets_a_strip(page, tmp_path):
+    fig, ax = plotpress.subplots(figsize=(7, 5))
+    ax.pcolormesh(np.linspace(0, 10, 11), np.linspace(0, 8, 9), np.arange(80, dtype=float).reshape(8, 10))
+    ax.axis("off")
+    fig.tight_layout()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    assert _strips(page) == 1
+
+
+@pytest.mark.browser
+def test_fixed_y_ticks_follow_the_shrunken_heatmap_under_an_x_strip(page, tmp_path):
+    fig = _fixed_tick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    assert _strips(page) == 1                                # fixed ticks no longer block the strip
+    mesh, labels = _mesh_box(page), _tick_label_centers(page)
+    left_side = {t: cy for t, cx, cy in labels if cx < mesh["left"]}   # the y-axis labels
+    assert left_side["8"] == pytest.approx(mesh["top"], abs=6)         # y=8 at the heatmap's top
+    assert left_side["0"] == pytest.approx(mesh["bottom"], abs=6)      # y=0 at its bottom
+    assert left_side["4"] == pytest.approx((left_side["0"] + left_side["8"]) / 2, abs=4)
+
+
+@pytest.mark.browser
+def test_fixed_x_ticks_follow_the_shrunken_heatmap_under_a_y_strip(page, tmp_path):
+    fig = _fixed_tick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "orientation": "y"}})
+    mesh, labels = _mesh_box(page), _tick_label_centers(page)
+    below = {t: cx for t, cx, cy in labels if cy > mesh["bottom"] + 4}    # the x-axis labels
+    assert below["0"] == pytest.approx(mesh["left"], abs=8)               # x=0 at the heatmap's left edge
+    assert below["10"] == pytest.approx(mesh["right"], abs=10)            # x=10 at its right edge
+    assert below["5"] == pytest.approx((below["0"] + below["10"]) / 2, abs=4)
+
+
+@pytest.mark.browser
+def test_fixed_ticks_go_back_when_the_strip_does(page, tmp_path):
+    fig = _fixed_tick_fig()
+    _load(page, tmp_path, fig)
+    plain = _tick_label_centers(page)
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True}})
+    _pick_view(page, "cursor")
+    back = _tick_label_centers(page)
+    assert len(back) == len(plain)
+    for (t0, x0, y0), (t1, x1, y1) in zip(plain, back):
+        assert t0 == t1 and x1 == pytest.approx(x0, abs=0.6) and y1 == pytest.approx(y0, abs=0.6)
+
+
+@pytest.mark.browser
+def test_a_twin_axes_shares_the_strip_layout(page, tmp_path):
+    _load(page, tmp_path, _twin_fig(), options={"slice": {"enabled": True}})
+    assert _strips(page) == 1                                # a twin no longer blocks the strip
+    h = page.evaluate("Array.from(document.querySelectorAll('clipPath')).filter(c => /^clip\\d+$/.test(c.id)).map(c => +c.firstChild.getAttribute('height'))")
+    assert len(h) == 2 and h[0] == pytest.approx(h[1])       # mesh axes and twin shrank together
+    _pick_view(page, "cursor")
+    h2 = page.evaluate("Array.from(document.querySelectorAll('clipPath')).filter(c => /^clip\\d+$/.test(c.id)).map(c => +c.firstChild.getAttribute('height'))")
+    assert h2[0] > h[0] and h2[0] == pytest.approx(h2[1])    # and grew back together
+
+
+def test_a_twins_tick_side_is_in_the_metadata():
+    # The client redraws a twin's ticks on pan/zoom from this; it used to say "left"
+    # for a twinx (drawn on the right), so zooming moved the twin's labels across the plot.
+    from plotpress.svg import axes_metadata
+
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1], [0, 1])
+    twx, twy = ax.twinx(), ax.twiny()
+    meta = axes_metadata(fig, idx_of={id(a): i for i, a in enumerate(fig.axes)})
+    assert meta[0]["yside"] == "left" and meta[0]["xside"] == "bottom"
+    assert meta[fig.axes.index(twx)]["yside"] == "right"
+    assert meta[fig.axes.index(twy)]["xside"] == "top"
+
+
+@pytest.mark.browser
+def test_a_twins_labels_stay_on_the_right_under_a_strip(page, tmp_path):
+    _load(page, tmp_path, _twin_fig(), options={"slice": {"enabled": True}})
+    mesh = _mesh_box(page)
+    twin_labels = page.evaluate("""() => Array.from(document.querySelectorAll('#ticks1 text')).map(
+        t => t.getBoundingClientRect().left)""")
+    assert twin_labels and all(x > mesh["right"] for x in twin_labels)   # only its own (right) y-axis

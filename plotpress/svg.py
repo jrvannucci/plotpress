@@ -503,7 +503,13 @@ def axes_metadata(fig, idx_of=None):
             "xlocator": ax._xlocator, "ylocator": ax._ylocator,
             "xformat": ax._xformat if not callable(ax._xformat) else None,
             "yformat": ax._yformat if not callable(ax._yformat) else None,
-            "xside": ax._xtick_side, "yside": ax._ytick_side,
+            # A twin never sets either side itself -- the static renderer draws a
+            # twinx's y-axis on the right and a twiny's x-axis on top regardless
+            # (see _group_axes_clearance) -- so the client's own tick rebuild
+            # (pan/zoom, the Slice companion layout) has to be told, or it redraws
+            # a twin's ticks on the wrong edge.
+            "xside": "top" if ax._twin_shared == "y" and ax._twin_of is not None else ax._xtick_side,
+            "yside": "right" if ax._twin_shared == "x" and ax._twin_of is not None else ax._ytick_side,
             "minor": bool(ax._minor_ticks_on),
             # Raw tick_params() overrides (Style field -> value), so the
             # client's pan/zoom tick-rebuild can reproduce a per-axis style

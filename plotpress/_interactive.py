@@ -1798,21 +1798,35 @@ _JS_SOURCE = r"""
   // set_xticks/set_yticks -- and for a twin/secondary (or its parent), whose
   // rect is shared and synced from the other's limits.
   var COMPANION_OK = {};
+  // Axes drawn on top of `key` in exactly its rect (twinx/twiny, secondary axes):
+  // they share the layout, so they shrink with it.
+  function overlaysOf(key) {
+    var out = [];
+    for (var mk in META) {
+      var m = META[mk];
+      if ((m.twin_of != null && String(m.twin_of) === String(key)) ||
+          (m.secondary_of != null && String(m.secondary_of) === String(key))) out.push(String(mk));
+    }
+    return out;
+  }
   function companionEligible(key) {
     if (COMPANION_OK[key] !== undefined) return COMPANION_OK[key];
     var om = META[key];
-    var ok = !!om && !om.axis_off && !om.xfixed && !om.yfixed
-             && om.secondary_of == null && om.twin_of == null;
+    // (An axis_off axes or one with fixed ticks is fine: axis_off draws no ticks
+    // to align, and fixed static ticks are remapped by remapFixedTicks.)
+    var ok = !!om && om.secondary_of == null && om.twin_of == null;
     if (ok) {
-      // Any axes sharing or nested inside this one's rect -- a twin/secondary
-      // (which overlays it exactly), an inset -- is laid out in the *original*
-      // rect and would no longer line up with a shrunken heatmap; and this axes
-      // being nested inside another (an inset itself) is the same problem.
+      // Any other axes nested inside this one's rect -- an inset -- is laid out
+      // in the *original* rect and would no longer line up with a shrunken
+      // heatmap; and this axes being nested inside another (an inset itself)
+      // is the same problem. Twin/secondary overlays are not that: they share
+      // the layout (see overlaysOf).
+      var overlays = overlaysOf(key);
       var inside = function (a, b) {   // is rect a within rect b (1px slack)?
         return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.w <= b.x + b.w + 1 && a.y + a.h <= b.y + b.h + 1;
       };
       for (var mk in META) {
-        if (String(mk) === String(key)) continue;
+        if (String(mk) === String(key) || overlays.indexOf(String(mk)) !== -1) continue;
         var other = META[mk];
         if (inside(other, om) || inside(om, other)) { ok = false; break; }
       }
@@ -1859,6 +1873,67 @@ _JS_SOURCE = r"""
       });
     });
   }
+  // Static tick marks/labels/grid of an axes with fixed ticks (set_xticks/
+  // set_yticks) can't be rebuilt from the view (rebuildTicks leaves them as
+  // rendered), so when the heatmap's rect shrinks they're remapped in place --
+  // only the coordinate along the shrinking dimension, and only for what sits
+  // over the heatmap: tick marks and labels on the far side of the axes stay
+  // with the frame. Originals are kept on the element so this is repeatable.
+  function remapFixedTicks(key) {
+    var om = META[key], c = CUR[key];
+    if (!om || !(om.xfixed || om.yfixed)) return;
+    var g = document.getElementById('ticks' + key);
+    if (!g) return;
+    var sx = c.w / om.w, sy = c.h / om.h, bottom = om.y + om.h, right = om.x + om.w;
+    var shrinkY = c.h !== om.h, shrinkX = c.w !== om.w;
+    var my = function (y) { return (y >= om.y - 0.01 && y <= bottom + 0.01) ? c.y + (y - om.y) * sy : y; };
+    var mx = function (x) { return (x >= om.x - 0.01 && x <= right + 0.01) ? c.x + (x - om.x) * sx : x; };
+    g.querySelectorAll('line').forEach(function (l) {
+      if (l.dataset.orig === undefined) {
+        l.dataset.orig = ['x1', 'y1', 'x2', 'y2'].map(function (a) { return l.getAttribute(a); }).join(',');
+      }
+      var v = l.dataset.orig.split(',').map(Number);
+      var x1 = v[0], y1 = v[1], x2 = v[2], y2 = v[3];
+      if (shrinkY) { y1 = my(y1); y2 = my(y2); }
+      if (shrinkX) {
+        if (v[1] === v[3]) {
+          // Horizontal: a line spanning the whole width is a grid line, which now
+          // starts at the heatmap's edge; a short one starting *at* the frame is a
+          // y-tick mark, which stays with the frame.
+          if (v[0] <= om.x + 0.5 && v[2] >= right - 0.5) { x1 = c.x; x2 = v[2]; }
+          else if (v[0] > om.x + 0.5) { x1 = mx(v[0]); x2 = mx(v[2]); }
+        } else {
+          x1 = mx(v[0]); x2 = mx(v[2]);
+        }
+      }
+      l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    });
+    g.querySelectorAll('text').forEach(function (t) {
+      if (t.dataset.orig === undefined) {
+        t.dataset.orig = t.getAttribute('x') + ',' + t.getAttribute('y') + ',' + (t.getAttribute('transform') || '');
+      }
+      var parts = t.dataset.orig.split(','), ox = +parts[0], oy = +parts[1];
+      var x = shrinkX ? mx(ox) : ox, y = shrinkY ? my(oy) : oy;
+      t.setAttribute('x', x); t.setAttribute('y', y);
+      if (parts.length > 2 && parts.slice(2).join(',')) {
+        // A rotated label pivots on its own anchor, which just moved.
+        t.setAttribute('transform', parts.slice(2).join(',').replace(
+          /rotate\(([-\d.]+)[ ,]+[-\d.]+[ ,]+[-\d.]+\)/, 'rotate($1 ' + x + ' ' + y + ')'));
+      }
+    });
+  }
+  // Puts one axes' rect (and everything derived from it) at (ex, ey, ew, eh).
+  function setAxesRect(k, ex, ey, ew, eh, anchor) {
+    var c = CUR[k];
+    c.x = ex; c.y = ey; c.w = ew; c.h = eh;
+    // A Y slice's strip sits between the y tick labels and the heatmap, so
+    // those stay at the axes' original left edge, not the heatmap's.
+    if (anchor === null) delete c.tickAnchorX; else c.tickAnchorX = anchor;
+    setClipRect(k, c);
+    applyAxesTransform(k); rebuildTicks(k); remapFixedTicks(k); relayoutPins(k);
+    relayoutTextCounterScale(k);
+    alignColorbars(k);
+  }
   function ensureCompanionLayout(key) {
     var o = META[key], c = CUR[key];
     var s = companionSize(key);
@@ -1866,14 +1941,8 @@ _JS_SOURCE = r"""
     if (SLICE_ORIENTATION === 'x') { ey = o.y + s; eh = o.h - s; }
     else { ex = o.x + s; ew = o.w - s; anchor = o.x; }
     if (c.x !== ex || c.y !== ey || c.w !== ew || c.h !== eh) {
-      c.x = ex; c.y = ey; c.w = ew; c.h = eh;
-      // A Y slice's strip sits between the y tick labels and the heatmap, so
-      // those stay at the axes' original left edge, not the heatmap's.
-      if (anchor === null) delete c.tickAnchorX; else c.tickAnchorX = anchor;
-      setClipRect(key, c);
-      applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
-      relayoutTextCounterScale(key);
-      alignColorbars(key);
+      setAxesRect(key, ex, ey, ew, eh, anchor);
+      overlaysOf(key).forEach(function (k) { setAxesRect(k, ex, ey, ew, eh, anchor); });
     }
     return s;
   }
@@ -1886,11 +1955,8 @@ _JS_SOURCE = r"""
     var o = META[key], c = CUR[key];
     if (!o || !c) return;
     if (c.x !== o.x || c.y !== o.y || c.w !== o.w || c.h !== o.h || c.tickAnchorX != null) {
-      c.x = o.x; c.y = o.y; c.w = o.w; c.h = o.h; delete c.tickAnchorX;
-      setClipRect(key, c);
-      applyAxesTransform(key); rebuildTicks(key); relayoutPins(key);
-      relayoutTextCounterScale(key);
-      alignColorbars(key);
+      setAxesRect(key, o.x, o.y, o.w, o.h, null);
+      overlaysOf(key).forEach(function (k) { setAxesRect(k, o.x, o.y, o.w, o.h, null); });
     }
   }
   function companionClip(key, r) {
@@ -3237,6 +3303,13 @@ _JS_SOURCE = r"""
     var m = CUR[key];
     var xr = resolveAxisTicks(om, m.xmin, m.xmax, m.xscale, true);
     var yr = resolveAxisTicks(om, m.ymin, m.ymax, m.yscale, false);
+    // A twinx draws only its y-axis (on the right), a twiny only its x-axis (on
+    // top) -- the other axis is the parent's, which draws it. Rebuilding both
+    // doubled the parent's labels and, for the y-axis, drew them on the wrong edge.
+    var twinOnlyY = om.twin_of != null && om.yside === 'right';
+    var twinOnlyX = om.twin_of != null && om.xside === 'top';
+    if (twinOnlyY) xr = { ticks: [], labels: [], step: xr.step };
+    if (twinOnlyX) yr = { ticks: [], labels: [], step: yr.step };
     var parts = [];
     var xTop = om.xside === 'top', yRight = om.yside === 'right';
     var xAxis = xTop ? m.y : m.y + m.h, xSign = xTop ? -1 : 1;
