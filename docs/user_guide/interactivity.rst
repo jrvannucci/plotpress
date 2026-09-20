@@ -88,7 +88,8 @@ beyond that is opt-in, by name, through ``options=`` on ``to_html``,
     Axes with fixed ticks (``set_xticks``/``set_yticks``), ``axis("off")``, or a
     twin or secondary axis get a strip too (a twin shrinks together with its
     parent, and fixed ticks are remapped to the smaller heatmap). An inset axes,
-    or an axes that has one, keeps the plain cursor and slider.
+    or an axes that has one, keeps the plain cursor and slider. When an axes holds several meshes (overlaid on one
+    another), only the first one is sliced.
 
 **Choosing which axes to slice.** A pair of radios under "Axes to slice" picks
 between **All axes** and **Selected axes**. Choosing "Selected axes" drops into a
