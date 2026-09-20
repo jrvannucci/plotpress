@@ -1118,3 +1118,9 @@ def test_choose_axes_button_is_highlighted_while_choosing(page, tmp_path):
     assert is_active()                                        # same highlight as Point Picking/Annotate
     page.keyboard.press("Escape")
     assert not is_active()
+
+
+def test_axes_setting_accepts_numpy_integers():
+    fig, _ = _row_fig()
+    cfg = _config(fig.to_html(options={"slice": {"axes": [np.int64(1), np.int32(2)]}}))
+    assert cfg["slice"]["axes"] == [1, 2]        # plain ints in the emitted JSON

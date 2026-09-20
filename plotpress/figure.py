@@ -16,6 +16,7 @@ import os
 import re
 import time
 import warnings
+from numbers import Integral
 
 import numpy as np
 
@@ -2307,11 +2308,11 @@ class Figure:
                         raise ValueError(
                             "options['slice']['axes'] names an axes that isn't part of this figure")
                     a = self.axes.index(a)
-                elif a >= len(self.axes):
+                elif int(a) >= len(self.axes):
                     raise ValueError(
                         f"options['slice']['axes'] has index {a}, but this figure has "
                         f"{len(self.axes)} axes")
-                resolved.append(a)
+                resolved.append(int(a))
             opt_config["slice"]["axes"] = resolved
         elif listed == "all":
             del opt_config["slice"]["axes"]
@@ -3366,7 +3367,7 @@ def _check_option_value(option, key, spec, value):
     elif spec == "axes":
         listed = isinstance(value, (list, tuple))
         if not (value == "all" or (listed and all(
-                isinstance(v, Axes) or (isinstance(v, int) and not isinstance(v, bool) and v >= 0)
+                isinstance(v, Axes) or (isinstance(v, Integral) and not isinstance(v, bool) and v >= 0)
                 for v in value))):
             raise bad('"all", or a list of axes (or axes indices)')
     elif spec == "fraction":
