@@ -43,6 +43,9 @@ anywhere in the source.
   put and each pair shares a label color.
   A colorbar attached to a sliced mesh shrinks to the heatmap's share of its axes
   when the strip is above it, so the two stay aligned.
+- **Save / Save As keep the Slice state.** A saved page reopens with Slice enabled,
+  in the same view and orientation, on the same chosen axes, with the same link/snap
+  settings, value range and slider position, and with its profile pins.
 - **Point Picking works on the "Profile replaces heatmap" view too.** A click picks a
   profile sample instead of a hidden heatmap cell, and pins carry across a switch
   between the two profile views.

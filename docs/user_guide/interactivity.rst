@@ -98,6 +98,11 @@ heatmaps with no slider, cursor, or strip, and only the chosen ones are linked t
 matching axes"). "Choose axes on figure" re-enters that mode later, and adding
 or removing an axes leaves the slider where it was.
 
+**Save and Save As keep the Slice state.** The saved file reopens with Slice
+enabled or not, the view, orientation, chosen axes, link and snap settings, value
+range, and slider position as you left them (its startup settings are rewritten to
+match), and pins on the profile come back too.
+
 To have Slice start in a chosen state instead of switched off, pass a dict
 whose values are its settings::
 

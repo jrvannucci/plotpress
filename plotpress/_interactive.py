@@ -4660,7 +4660,41 @@ _JS_SOURCE = r"""
     // appended after it, this element would not exist in the DOM yet at the
     // point document.getElementById('plotpress-saved-state') looks for it.
     doc.body.insertBefore(script, doc.body.firstChild);
+    // Slice starts from its startup settings (see PLOTPRESS_OPTION_CONFIG), so
+    // saving rewrites them to the current state -- enabled, view, chosen axes,
+    // slider position -- and the saved file simply reopens the way it was left.
+    if (hasOption('slice')) {
+      var optionScript = Array.prototype.slice.call(doc.querySelectorAll('script')).filter(function (sc) {
+        return sc.textContent.indexOf('window.PLOTPRESS_OPTIONS=') === 0;
+      })[0];
+      if (optionScript) {
+        var cfg = {};
+        for (var ok in OPTION_CONFIG) cfg[ok] = OPTION_CONFIG[ok];
+        cfg.slice = sliceSaveConfig();
+        optionScript.textContent = 'window.PLOTPRESS_OPTIONS=' + JSON.stringify(OPTIONS) +
+          ';window.PLOTPRESS_OPTION_CONFIG=' + JSON.stringify(cfg) + ';';
+      }
+    }
     return '<!doctype html>' + doc.documentElement.outerHTML;
+  }
+
+  // The Slice tool's current state, in the same shape Figure.to_html(options=
+  // {"slice": {...}}) takes -- see buildSaveHTML.
+  function sliceSaveConfig() {
+    var c = { enabled: SLICE_ENABLED, view: SLICE_VIEW, orientation: SLICE_ORIENTATION,
+              link_all: SLICE_LINK_ALL, snap_pins: SLICE_SNAP, range: SLICE_RANGE_MODE,
+              panel_size: SLICE_COMPANION_FRAC };
+    if (SLICE_RANGE_MODE === 'custom' && isFiniteNum(SLICE_CUSTOM_MIN) && isFiniteNum(SLICE_CUSTOM_MAX)) {
+      c.range_min = SLICE_CUSTOM_MIN; c.range_max = SLICE_CUSTOM_MAX;
+    } else if (SLICE_RANGE_MODE === 'custom') {
+      c.range = 'auto';   // nothing valid typed in yet: the same thing it drew
+    }
+    if (SLICE_SCOPE === 'selected') {
+      c.axes = Object.keys(SLICE_SELECTED).filter(function (k) { return SLICE_AXES[k]; }).map(Number);
+    }
+    var idx = currentSliceIndex();
+    if (idx !== null) c.index = idx;
+    return c;
   }
 
   function suggestedFilename() {

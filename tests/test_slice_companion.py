@@ -1515,3 +1515,78 @@ def test_a_replace_view_pin_clamps_and_goes_red_when_off_range(page, tmp_path):
         return {inside: dot.top + dot.height / 2 >= top - 1 && dot.top + dot.height / 2 <= bottom + 1,
                 red: !!pin.querySelector('tspan')}; }""")
     assert state == {"inside": True, "red": True}
+
+
+# ---- Save / Save As keeps the Slice state ---------------------------------------------------
+
+def _save_and_reopen(page, tmp_path):
+    page.evaluate("window.showSaveFilePicker = undefined")        # take the download path
+    with page.expect_download() as info:
+        assert _menu_button(page, "Save As")
+    saved = tmp_path / "saved.html"
+    info.value.save_as(str(saved))
+    page.goto(saved.as_uri())
+
+
+def _slice_state(page):
+    return page.evaluate("""() => ({
+      enabled: Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Enable Slice')).querySelector('input').checked,
+      view: (Array.from(document.querySelectorAll('input[name="plotpress-slice-view"]')).find(r => r.checked) || {parentNode: {textContent: ''}}).parentNode.textContent.trim(),
+      orient: (Array.from(document.querySelectorAll('input[name="plotpress-slice-orient"]')).find(r => r.checked) || {parentNode: {textContent: ''}}).parentNode.textContent.trim(),
+      scope: (Array.from(document.querySelectorAll('input[name="plotpress-slice-scope"]')).find(r => r.checked) || {parentNode: {textContent: ''}}).parentNode.textContent.trim(),
+      strips: document.querySelectorAll('.plotpress-slice-companion').length,
+      lines: document.querySelectorAll('.plotpress-slice-line').length,
+      sliders: document.querySelectorAll('.plotpress-slider').length,
+      values: Array.from(document.querySelectorAll('.plotpress-slider input[type=range]')).map(r => r.value),
+      snap: Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Snap pins')).querySelector('input').checked,
+      linkAll: Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Link all')).querySelector('input').checked,
+    })""")
+
+
+@pytest.mark.browser
+def test_save_as_reopens_with_the_slice_state_it_was_left_in(page, tmp_path):
+    fig, axs = _row_fig()
+    _load(page, tmp_path, fig, options=["slice"])                        # nothing enabled at load
+    page.evaluate("""() => { const L = t => Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes(t)).querySelector('input');
+        L('Enable Slice').click(); L('Link all matching axes').click(); L('Snap pins to slice').click(); }""")
+    _pick_view(page, "replace")
+    page.evaluate("""() => Array.from(document.querySelectorAll('input[name="plotpress-slice-orient"]')).find(
+        r => r.parentNode.textContent.includes('Slice Y')).click()""")
+    _scope_radio(page, "Selected axes")
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menu-dropdown button')).find(
+        b => b.textContent === 'Choose axes on figure').click()""")
+    plain = _axes_rects(page)
+    for i in (0, 2):
+        x0, y0, x1, y1 = plain[i]
+        page.mouse.click((x0 + x1) / 2, (y0 + y1) / 2)
+    page.keyboard.press("Escape")
+    _set_slider(page, 4)
+    before = _slice_state(page)
+    assert before["enabled"] and before["scope"] == "Selected axes" and before["values"] == ["4"]
+
+    _save_and_reopen(page, tmp_path)
+    after = _slice_state(page)
+    assert after == before                                             # everything as it was left
+
+
+@pytest.mark.browser
+def test_save_as_keeps_a_disabled_slice_disabled_and_the_options(page, tmp_path):
+    fig, _ = _row_fig()
+    _load(page, tmp_path, fig, options=["slice"])
+    _save_and_reopen(page, tmp_path)
+    state = _slice_state(page)
+    assert not state["enabled"] and state["sliders"] == 0
+    assert page.evaluate("Array.from(document.querySelectorAll('.plotpress-menubar button')).some(b => b.textContent.startsWith('Slice'))")
+
+
+@pytest.mark.browser
+def test_a_profile_pin_survives_save_as(page, tmp_path):
+    fig, z = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    label = _pins(page)[0][2]
+    _save_and_reopen(page, tmp_path)
+    pins = _pins(page)
+    assert [(k, s) for k, s, _ in pins] == [("slice", False)]
+    assert pins[0][2] == label                                          # same sample, same value
