@@ -13,6 +13,21 @@ anywhere in the source.
 
 ## [0.41.1] - 2026-09-20
 
+### Documentation
+
+- **README and docs homepage corrected and tidied.** Both still described the
+  toolbar as it stood before the Slice tool and `options=` existed; both are now
+  documented. Several claims had drifted and are fixed: 24 built-in colormaps
+  (the list beside it already named 27), "a hundred-odd" real-application
+  figures (there are over 160), "one font-metric family" (four are bundled), and
+  a homepage claim that 3-D axes project onto the 2-D core -- there is no 3-D at
+  all; polar is the thing that projects. `barbs` was listed as upcoming though it
+  ships, and the plot-types table was missing it along with `ecdfplot`,
+  `kdeplot` and `pcolormesh_frames`. "Supported plot types" is rewritten from a
+  single run-on paragraph into one table per grouping, the Roadmap section is
+  gone, and a new GIF shows the Slice companion panel driven by one coupled
+  slider across two panels.
+
 ### Changed
 
 - **Gallery figures no longer open with Slice switched on.** Every tool is still
