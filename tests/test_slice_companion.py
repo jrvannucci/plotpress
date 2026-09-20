@@ -1292,3 +1292,66 @@ def test_extract_panel_with_no_markers_is_an_empty_json_list(page, tmp_path):
     _load(page, tmp_path, fig)
     _menu_button(page, "Extract")
     assert json.loads(_panel(page)["text"]) == []
+
+
+# ---- gap fixes: zoom cursor, arrow keys on mirrors, wait-for-extract notice ----------------
+
+@pytest.mark.browser
+def test_axis_zoom_uses_the_two_tone_cursor_too(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig)
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-menubar button'))
+        .find(b => b.textContent === 'Axis Zoom').click()""")
+    cursor = page.evaluate("document.getElementById('plotpress-svg').style.cursor")
+    assert "data:image/svg+xml" in cursor and "crosshair" in cursor
+
+
+@pytest.mark.browser
+def test_arrow_keys_on_a_mirror_step_the_pin_it_mirrors(page, tmp_path):
+    fig, _ = _pick_fig()
+    _load(page, tmp_path, fig, options={"slice": {"enabled": True, "snap_pins": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    source_before = _parse(next(l for k, s, l in _pins(page) if k == "mesh"))
+    # select the mirror (on the strip) and press an arrow
+    page.evaluate("""() => document.querySelector('.plotpress-pin[data-snapped]')
+        .dispatchEvent(new MouseEvent('click', {bubbles: true}))""")
+    page.keyboard.press("ArrowRight")
+    pins = _pins(page)
+    source = _parse(next(l for k, s, l in pins if k == "mesh"))
+    mirror = _parse(next(l for k, s, l in pins if k == "slice"))
+    assert source["x"] == pytest.approx(source_before["x"] + 1)   # the heatmap pin moved...
+    assert mirror["x"] == source["x"]                              # ...and its mirror followed
+
+
+def _wait_page(page, tmp_path, options):
+    fig, _ = _pick_fig()
+    path = tmp_path / "w.html"
+    path.write_text(fig.to_html(interactive=True, wait_extract=True, options=options), encoding="utf-8")
+    page.goto(path.as_uri())
+    page.evaluate("""() => { window.__extracted = 'unsent';
+        window.pywebview = {api: {extract: (recs) => { window.__extracted = recs; }}}; }""")
+
+
+@pytest.mark.browser
+def test_wait_for_extract_holds_the_send_back_when_slice_pins_are_left_out(page, tmp_path):
+    _wait_page(page, tmp_path, {"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _menu_button(page, "Extract")
+    assert page.evaluate("window.__extracted") == "unsent"           # the window would have closed
+    assert "not extracted" in _notice(page)
+    assert "Extract without them" in _panel(page)["buttons"]
+    page.evaluate("""() => Array.from(document.querySelectorAll('.plotpress-extract button'))
+        .find(b => b.textContent === 'Extract without them').click()""")
+    assert page.evaluate("window.__extracted") == []
+
+
+@pytest.mark.browser
+def test_wait_for_extract_sends_immediately_when_nothing_was_left_out(page, tmp_path):
+    _wait_page(page, tmp_path, {"slice": {"enabled": True}})
+    _enter_pick_mode(page)
+    _click_heatmap(page, 0.4, 0.6)
+    assert _menu_button(page, "Extract")
+    recs = page.evaluate("window.__extracted")
+    assert [r["kind"] for r in recs] == ["mesh"]

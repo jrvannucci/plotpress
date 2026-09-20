@@ -1361,7 +1361,7 @@ _JS_SOURCE = r"""
   // The browser's own crosshair is drawn in one color, which vanishes against a
   // white figure (or a dark one); this draws a black cross with a white halo, so
   // it reads on either.
-  var SLICE_SELECT_CURSOR = 'url("data:image/svg+xml;utf8,' +
+  var TWO_TONE_CROSS = 'url("data:image/svg+xml;utf8,' +
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'>" +
     "<path d='M12 2v20M2 12h20' stroke='white' stroke-width='4'/>" +
     "<path d='M12 2v20M2 12h20' stroke='black' stroke-width='1.5'/></svg>" +
@@ -1394,8 +1394,8 @@ _JS_SOURCE = r"""
     var custom = mode && CUSTOM_MODES[mode];
     svg.style.cursor =
       mode === 'span' ? 'grab' :
-      mode === 'zoom' ? 'crosshair' :
-      mode === 'slice-select' ? SLICE_SELECT_CURSOR :
+      mode === 'zoom' ? TWO_TONE_CROSS :
+      mode === 'slice-select' ? TWO_TONE_CROSS :
       mode === 'magnify' ? 'zoom-in' :
       isAnnotateMode(mode) ? 'text' :
       (custom && custom.cursor) ? custom.cursor : 'default';
@@ -4254,7 +4254,7 @@ _JS_SOURCE = r"""
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
   }
 
-  function showExtractPanel(records, csv, json, notice) {
+  function showExtractPanel(records, csv, json, notice, sendAnyway) {
     var old = document.querySelector('.plotpress-extract');
     if (old) old.remove();
     var panel = document.createElement('div');
@@ -4302,6 +4302,11 @@ _JS_SOURCE = r"""
     btns.appendChild(copy);
     btns.appendChild(mk('Download CSV', function () { download('markers.csv', csv, 'text/csv'); }));
     btns.appendChild(mk('Download JSON', function () { download('markers.json', json, 'application/json'); }));
+    // Only in wait-for-extract mode, where sending closes the window: the user
+    // gets to read the notice first and choose to go ahead without those pins.
+    if (sendAnyway) {
+      btns.appendChild(mk('Extract without them', function () { panel.remove(); sendAnyway(); }));
+    }
     btns.appendChild(mk('Close', function () { panel.remove(); }));
     panel.appendChild(head);
     if (notice) {
@@ -4369,18 +4374,23 @@ _JS_SOURCE = r"""
     });
     var notice = sliceExtractNotice();
     // Hand off to Python when running inside the native (pywebview) window.
-    try {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
-        window.pywebview.api.extract(records);
-      }
-    } catch (e) {}
-    // In wait-for-extract mode the kernel closes the window on receipt, so skip
-    // the panel; otherwise show it for copy/download.
-    if (!window.PLOTPRESS_WAIT_EXTRACT) {
-      showExtractPanel(records, toCSV(records), JSON.stringify(records, null, 2), notice);
-    } else if (notice && window.console) {
-      console.warn('plotpress: ' + notice);   // no panel to put it in
+    var send = function () {
+      try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.extract) {
+          window.pywebview.api.extract(records);
+        }
+      } catch (e) {}
+    };
+    var csvText = toCSV(records), jsonText = JSON.stringify(records, null, 2);
+    if (window.PLOTPRESS_WAIT_EXTRACT) {
+      // The kernel closes this window on receipt, so a notice would vanish the
+      // moment it was sent: hold the send back behind a panel instead.
+      if (notice) showExtractPanel(records, csvText, jsonText, notice, send);
+      else send();
+      return;
     }
+    send();
+    showExtractPanel(records, csvText, jsonText, notice);
   }
   window.plotpressExtract = doExtract;
 
@@ -5081,7 +5091,17 @@ _JS_SOURCE = r"""
     if (!selectedPin) return;
     var dir = e.key === 'ArrowRight' ? 'right' : e.key === 'ArrowLeft' ? 'left' :
               e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : null;
-    if (dir) { e.preventDefault(); stepPin(selectedPin, dir); }
+    if (dir) {
+      e.preventDefault();
+      // A snapped mirror is rebuilt from its source pin, so stepping it directly
+      // would just be undone -- step the pin it mirrors, and the mirror follows.
+      var target = selectedPin;
+      if (target.classList.contains('plotpress-snapped')) {
+        var source = document.querySelector('.plotpress-pin[data-snap-uid="' + target.dataset.snapOf + '"]');
+        if (source) target = source;
+      }
+      stepPin(target, dir);
+    }
   });
 
   // Applied last: replays a Save/Save As from an earlier session (view,
