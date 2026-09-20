@@ -13,9 +13,14 @@ import plotpress
 TOL = 2e-3      # inches; well under a device pixel at any sane dpi
 
 
-def _panel_inches(fig):
-    gp = fig._grid_placement
-    return gp["axw"] * fig.figsize[0], gp["axh"] * fig.figsize[1]
+def _panel_inches(fig, ax=None):
+    """One subplot's *plotting box* in inches -- the axes' own rect, not the
+    grid cell it sits in, which is what subplot_size= promises."""
+    if ax is None:
+        ax = next(a for a in fig.axes
+                  if a._subplotspec is not None and not a._is_colorbar)
+    _, _, frac_w, frac_h = ax.get_position()
+    return frac_w * fig.figsize[0], frac_h * fig.figsize[1]
 
 
 def _grid(nrows, ncols, want, sup=False, colorbars=False, titles=True):
@@ -133,3 +138,66 @@ def test_figsize_is_still_honoured_when_no_subplot_size_is_given():
 def test_a_bad_subplot_size_is_rejected_up_front(bad, exc, message):
     with pytest.raises(exc, match=message):
         plotpress.subplots(2, 2, subplot_size=bad)
+
+
+@pytest.mark.parametrize("fraction", [0.08, 0.25])
+def test_a_colorbar_grows_the_figure_rather_than_eating_the_subplot(fraction):
+    """A colorbar is carved out of its axes' grid cell, so sizing the *cell*
+    would hand someone who asked for a 1.2in subplot a much narrower plot with
+    a colorbar where the rest went. subplot_size= sizes the plotting box, so
+    the colorbar widens the figure instead."""
+    want = (1.2, 0.9)
+    fig, axs = plotpress.subplots(3, 4, subplot_size=want, squeeze=False)
+    x = np.linspace(0, 1, 13)
+    for row in axs:
+        for ax in row:
+            mesh = ax.pcolormesh(x, x, np.zeros((12, 12)))
+            ax.tick_params(labelsize=6)
+            fig.colorbar(mesh, ax=ax, fraction=fraction)
+    fig.tight_layout()
+    pw, ph = _panel_inches(fig, axs[0][0])
+    assert pw == pytest.approx(want[0], abs=TOL)
+    assert ph == pytest.approx(want[1], abs=TOL)
+
+
+def test_a_wider_colorbar_widens_the_figure_not_the_panels():
+    def build(fraction):
+        fig, axs = plotpress.subplots(2, 3, subplot_size=(1.2, 0.9),
+                                      squeeze=False)
+        x = np.linspace(0, 1, 13)
+        for row in axs:
+            for ax in row:
+                mesh = ax.pcolormesh(x, x, np.zeros((12, 12)))
+                ax.tick_params(labelsize=6)
+                fig.colorbar(mesh, ax=ax, fraction=fraction)
+        fig.tight_layout()
+        return fig, axs[0][0]
+
+    narrow, narrow_ax = build(0.08)
+    wide, wide_ax = build(0.25)
+    assert wide.figsize[0] > narrow.figsize[0]          # the figure absorbed it
+    assert _panel_inches(wide, wide_ax)[0] == pytest.approx(
+        _panel_inches(narrow, narrow_ax)[0], abs=TOL)   # the panel did not
+
+
+def test_a_colorbar_added_after_tight_layout_is_still_accounted_for():
+    """The usual gallery order is build, tight_layout(), *then* colorbar --
+    and a shared colorbar squeezes the grid to make room, which would leave
+    the panels smaller than asked. The re-fit that runs at render time solves
+    again, so the size holds by the time anything is drawn."""
+    want = (0.9, 0.9)
+    fig, axes = plotpress.subplots(6, 8, subplot_size=want, squeeze=False)
+    x = np.linspace(0, 1, 13)
+    flat = [ax for row in axes for ax in row]
+    mesh = None
+    for ax in flat:
+        mesh = ax.pcolormesh(x, x, np.zeros((12, 12)))
+        ax.tick_params(labelsize=5)
+    fig.tight_layout()
+    fig.colorbar(mesh, ax=flat)            # squeezes the grid, after the solve
+    fig.suptitle("added afterwards")
+
+    fig.to_svg()                           # the deferred re-fit runs here
+    pw, ph = _panel_inches(fig)
+    assert pw == pytest.approx(want[0], abs=TOL)
+    assert ph == pytest.approx(want[1], abs=TOL)

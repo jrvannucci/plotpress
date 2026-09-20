@@ -1817,7 +1817,7 @@ class Figure:
             # bounds the recursion to exactly one extra pass.
             return self.tight_layout(pad=pad, collapse=collapse, auto_label_scale=False)
         if self._subplot_size is not None:
-            resized = self._resize_for_subplot_size(nrows, ncols, axw, axh,
+            resized = self._resize_for_subplot_size(nrows, ncols, specs,
                                                     pad, collapse)
             if resized is not None:
                 return resized
@@ -1830,7 +1830,7 @@ class Figure:
     #: even for a 20x25 grid with groups and a shared colorbar.
     _SUBPLOT_SIZE_PASSES = 4
 
-    def _resize_for_subplot_size(self, nrows, ncols, axw, axh, pad, collapse):
+    def _resize_for_subplot_size(self, nrows, ncols, specs, pad, collapse):
         """Grow or shrink figsize until each subplot is ``_subplot_size``.
 
         tight_layout() reserves margins in *absolute* units -- a tick label is
@@ -1860,9 +1860,10 @@ class Figure:
         # feeding it back as a base therefore double-counts the growth, leaving
         # every subplot permanently growth/n too big. So: subplot size from the
         # final figsize, everything-else from the base.
-        W, H = self.figsize
         base_w, base_h = self._base_figsize
-        have_w, have_h = axw * W, axh * H
+        have_w, have_h = _smallest_subplot_inches(self, specs)
+        if have_w is None:
+            return None
         # A ten-thousandth of an inch is well under a device pixel at any sane
         # dpi; chasing further just burns layout passes on float noise.
         if abs(have_w - want_w) < 1e-4 and abs(have_h - want_h) < 1e-4:
@@ -3774,6 +3775,32 @@ def _flatten_axes(ax):
     if isinstance(ax, Axes):
         return [ax]
     return [a for a in np.asarray(ax, dtype=object).ravel()]
+
+
+def _smallest_subplot_inches(fig, specs):
+    """The smallest plotting box among ``specs``, in inches.
+
+    Deliberately each axes' own rect rather than the grid cell it sits in. A
+    colorbar attached to an axes is carved out of that cell, so sizing the cell
+    would hand a caller who asked for a 1.2in-wide subplot a 0.9in-wide plot
+    with a colorbar where the rest went -- the furniture eating the panel,
+    which is the exact thing ``subplot_size=`` exists to stop. Sizing the
+    plotting box makes a colorbar grow the figure like every other decoration.
+
+    The *smallest*, because one grid has one cell size: if some axes carry
+    colorbars and others do not, their plotting boxes differ and only one of
+    them can be the requested size. Taking the smallest turns the promise into
+    "no subplot is smaller than this", which holds for every one of them.
+    """
+    boxes = []
+    for ax in specs:
+        _, _, frac_w, frac_h = ax.get_position()
+        if frac_w > 0 and frac_h > 0:
+            boxes.append((frac_w, frac_h))
+    if not boxes:
+        return None, None
+    return (min(b[0] for b in boxes) * fig.figsize[0],
+            min(b[1] for b in boxes) * fig.figsize[1])
 
 
 def _resolve_subplot_size(figsize, subplot_size, nrows, ncols):

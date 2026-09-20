@@ -27,7 +27,9 @@ anywhere in the source.
   panels do. The room it needs is measured and added on top, so the panels come
   out the size asked for. `tight_layout()` does the solving, so the answer
   reflects the labels actually set rather than a guess made before they
-  existed.
+  existed. A colorbar, a group box or a suptitle grows the figure rather than
+  eating into the panels -- `subplot_size` is the size of the *plotting box*,
+  not of the grid cell the colorbar is carved out of.
 
 ### Fixed
 
