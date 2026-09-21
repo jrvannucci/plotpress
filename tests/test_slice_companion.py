@@ -2118,3 +2118,135 @@ def test_the_global_slider_bar_stays_reachable_at_scale(page, tmp_path,
         assert state["unreachable"] == 0, state
     finally:
         page.set_viewport_size(original)
+
+
+# ---- what a rebuild does and does not do to profile pins -------------------
+
+def _slice_pin_count(page):
+    return page.evaluate(
+        "() => document.querySelectorAll('.plotpress-pin[data-kind=\"slice\"]').length")
+
+
+def _toggle_slice_label(page, text):
+    page.evaluate("""(t) => Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown label')).find(
+        l => l.textContent.includes(t)).querySelector('input').click()""", text)
+
+
+@pytest.mark.browser
+def test_link_all_and_scope_keep_profile_pins(page, tmp_path):
+    # buildSliceSliders() tears the sliders down and rebuilds them on every
+    # change, and that teardown used to delete every pin placed on a strip --
+    # so toggling "Link all matching axes", which changes nothing about what a
+    # pin points at, silently threw them away.
+    fig, _ = _pick_fig(), None
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    label = _pin_labels(page)[0]
+    assert _slice_pin_count(page) == 1
+
+    _toggle_slice_label(page, "Link all matching axes")
+    assert _slice_pin_count(page) == 1, "link-all wiped the pin"
+    assert _pin_labels(page)[0] == label
+
+    _toggle_slice_label(page, "Link all matching axes")      # and back
+    assert _slice_pin_count(page) == 1
+    assert _pin_labels(page)[0] == label
+
+
+@pytest.mark.browser
+def test_changing_orientation_drops_profile_pins(page, tmp_path):
+    # The other direction: a pin's index is a sample along the profile, and
+    # after switching orientation the profile runs along the other axis, so the
+    # same index would quietly point at a different datum.
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _slice_pin_count(page) == 1
+    page.evaluate("""() => Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-orient"]')).find(
+        r => r.parentNode.textContent.includes('Slice Y')).click()""")
+    assert _slice_pin_count(page) == 0
+
+
+@pytest.mark.browser
+def test_disabling_slice_drops_profile_pins(page, tmp_path):
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _slice_pin_count(page) == 1
+    _toggle_slice_label(page, "Enable Slice")
+    assert _slice_pin_count(page) == 0
+    assert page.evaluate(
+        "() => document.querySelectorAll('.plotpress-slice-companion').length") == 0
+
+
+# ---- a null in a hand-edited config must not read as a number --------------
+
+def _strip_size(page):
+    r = page.evaluate("""() => { const r = document.querySelector('#sliceclip0 rect');
+        return r ? [+r.getAttribute('width'), +r.getAttribute('height')] : null; }""")
+    return tuple(r) if r else None
+
+
+def _load_with_config(page, tmp_path, name, extra):
+    """Write the page, then splice ``extra`` into the embedded option config --
+    the way a reader poking at a saved file could, and the only way to get a
+    value past to_html()'s own validation."""
+    fig, _ = _pick_fig()
+    html = fig.to_html(interactive=True, options={"slice": {"enabled": True}})
+    marker = 'window.PLOTPRESS_OPTION_CONFIG={"slice": {'
+    assert marker in html, "the embedded config is not where this test expects"
+    edited = html.replace(marker, marker + extra)
+    path = tmp_path / name
+    path.write_text(edited, encoding="utf-8")
+    page.goto(path.as_uri())
+    page.wait_for_timeout(300)
+    return path
+
+
+@pytest.mark.browser
+def test_a_null_panel_size_falls_back_to_the_default(page, tmp_path):
+    """``isFinite(null)`` is true in JavaScript and ``+null`` is 0, so a null
+    read as a real number: panel_size became 0 and the strip fell back on its
+    own 28px floor instead of the 0.3 default. The floor hides how wrong the
+    value is, so this compares against the size the default actually gives."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _pick_fig()[0], options={"slice": {"enabled": True}})
+    default = _strip_size(page)
+
+    _load_with_config(page, tmp_path, "null_panel.html", '"panel_size": null, ')
+    nulled = _strip_size(page)
+    assert errs == [], errs
+    assert nulled == default, (
+        f"panel_size: null gave a {nulled} strip, not the default {default}")
+
+
+@pytest.mark.browser
+def test_a_null_custom_range_does_not_become_a_zero_range(page, tmp_path):
+    """range_min/range_max null used to read as 0/0, which is a degenerate
+    range the profile would then be drawn against."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load_with_config(page, tmp_path, "null_range.html",
+                      '"range": "custom", "range_min": null, "range_max": null, ')
+    d = page.evaluate("""() => { const p = document.querySelector(
+        '.plotpress-slice-companion path'); return p ? p.getAttribute('d') : null; }""")
+    assert errs == [], errs
+    assert d and "NaN" not in d and "Infinity" not in d, d
+
+
+@pytest.mark.browser
+def test_a_null_index_does_not_force_row_zero(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load_with_config(page, tmp_path, "null_index.html", '"index": null, ')
+    value = page.evaluate(
+        "() => +document.querySelector('.plotpress-slider input[type=range]').value")
+    assert errs == [], errs
+    assert value == 0        # the natural start, reached by defaulting not by +null

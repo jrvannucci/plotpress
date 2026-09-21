@@ -11,6 +11,26 @@ anywhere in the source.
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-09-20
+
+### Fixed
+
+- **Slice: rebuilding the sliders no longer throws away the profile pins.**
+  `buildSliceSliders()` tears the sliders down and rebuilds them on every
+  change, and that teardown deleted every pin placed on a companion strip -- so
+  toggling "Link all matching axes" or changing which axes are sliced silently
+  lost them, although neither changes what a pin points at. The two cases that
+  do are handled where they happen: switching Slice off (no profile left to
+  point at) and changing orientation (a pin's index means a sample along the
+  other axis afterwards). An axes leaving the scope still drops its own.
+- **Slice: a `null` in the embedded option config no longer reads as a number.**
+  `isFinite(null)` is true in JavaScript and `+null` is 0, so `panel_size`,
+  `range_min`/`range_max` and `index` each took a null as a real value --
+  `panel_size: null` collapsed the companion strip onto its minimum size
+  instead of the 0.3 default. `Figure.to_html()` rejects a null before it can
+  get there, so this only reached a saved page edited by hand, but the config
+  is read the same way either way.
+
 ## [0.42.0] - 2026-09-20
 
 ### Added

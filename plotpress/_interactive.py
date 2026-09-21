@@ -971,7 +971,11 @@ _JS_SOURCE = r"""
   if (Array.isArray(SLICE_CFG.axes)) {
     SLICE_CFG.axes.forEach(function (k) { SLICE_SELECTED[String(k)] = true; });
   }
-  var SLICE_COMPANION_FRAC = isFinite(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
+  // isFiniteNum, not the bare isFinite: isFinite(null) is true and +null is 0,
+  // so a null in the config read as a real number and gave, for instance, a
+  // zero-height companion strip. Figure.to_html()'s own validation rejects one
+  // before it can get here, but a saved page edited by hand has no such gate.
+  var SLICE_COMPANION_FRAC = isFiniteNum(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
   // opt-in and manual. On: skips the per-axes checkbox dance entirely --
@@ -990,8 +994,8 @@ _JS_SOURCE = r"""
   // or a domain-specific reference band).
   var SLICE_RANGE_MODE = (SLICE_CFG.range === 'colorbar' || SLICE_CFG.range === 'custom')
                          ? SLICE_CFG.range : 'auto';
-  var SLICE_CUSTOM_MIN = isFinite(SLICE_CFG.range_min) ? +SLICE_CFG.range_min : null;
-  var SLICE_CUSTOM_MAX = isFinite(SLICE_CFG.range_max) ? +SLICE_CFG.range_max : null;
+  var SLICE_CUSTOM_MIN = isFiniteNum(SLICE_CFG.range_min) ? +SLICE_CFG.range_min : null;
+  var SLICE_CUSTOM_MAX = isFiniteNum(SLICE_CFG.range_max) ? +SLICE_CFG.range_max : null;
   var SLICE_STATE = {};    // axesKey -> {orientation, index, fixedCoord, cursorEl, sliceEl, tickGroup}
   var SLICE_SLIDERS = {};  // axesKey -> {box, api} -- the docked play/step control
   var SLICE_LINKS = {};    // link index -> [slider api], mirrors frame sliders' LINKS
@@ -1155,7 +1159,11 @@ _JS_SOURCE = r"""
       SLICE_ENABLED = on;
       setSliceControlsEnabled(on);
       if (on) buildSliceSliders();
-      else { teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins(); }
+      else {
+        // Switched off: no profile left for a strip pin to sit on.
+        removeSlicePins();
+        teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins();
+      }
     });
 
     // Redraws every slice at its slider's current index, then puts the pins
@@ -1236,6 +1244,10 @@ _JS_SOURCE = r"""
       [['x', 'Slice X (horizontal cursor)'], ['y', 'Slice Y (vertical cursor)']],
       SLICE_ORIENTATION, function (axKey) {
         SLICE_ORIENTATION = axKey;
+        // A strip pin's index is a sample along the profile, and the profile
+        // now runs along the other axis -- the same number would silently
+        // point at a different datum, so the pins go rather than move.
+        removeSlicePins();
         if (SLICE_ENABLED) buildSliceSliders();
       });
 
@@ -2795,7 +2807,15 @@ _JS_SOURCE = r"""
   // buildSliceSliders() (about to replace them) and the "Enable Slice"
   // checkbox's own off handler (which tears down and stops there).
   function teardownSliceSliders() {
-    removeSlicePins();
+    // Deliberately does *not* drop the profile pins. buildSliceSliders() calls
+    // this on every rebuild, so doing it here meant changing the scope or
+    // toggling "Link all matching axes" deleted every pin a reader had placed
+    // on a strip -- neither of which changes what a pin points at. The two
+    // cases that do are handled at their own call sites: the "Enable Slice"
+    // off handler (nothing left to point at) and the orientation radio (a
+    // pin's index means a sample along the *other* axis afterwards). An axes
+    // merely leaving the scope still drops its own, via teardownAxesVisuals ->
+    // removeCompanion.
     Object.keys(SLICE_SLIDERS).forEach(function (k) {
       var s = SLICE_SLIDERS[k];
       if (s.box.parentNode) s.box.parentNode.removeChild(s.box);
@@ -5553,7 +5573,7 @@ _JS_SOURCE = r"""
   if (sliceMenuNeeded) drawSliceSelection();
   if (sliceMenuNeeded && SLICE_ENABLED) {
     buildSliceSliders();
-    if (isFinite(SLICE_CFG.index)) restoreSliceIndex(+SLICE_CFG.index);
+    if (isFiniteNum(SLICE_CFG.index)) restoreSliceIndex(SLICE_CFG.index);
   }
   var savedStateEl = document.getElementById('plotpress-saved-state');
   if (savedStateEl) applySavedState(JSON.parse(savedStateEl.textContent));
