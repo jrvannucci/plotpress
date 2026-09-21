@@ -9,7 +9,7 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
-## [Unreleased]
+## [0.42.2] - 2026-09-21
 
 ### Fixed
 
@@ -20,7 +20,9 @@ anywhere in the source.
   and saved it, which is exactly what its own documentation said would work.
   Asking for a subplot size now arms that re-fit. `subplots_adjust()` still
   overrides it, since that sets the margins directly and leaves nothing to
-  solve.
+  solve, and so does `set_size_inches()`: an explicit figure size is the caller
+  taking control back, and the pending solve would otherwise resize the figure
+  away from it on the next render.
 - **A wrong-typed `group=` now says so.** `remove_group()` and
   `set_group_visible()` accepted anything non-`None` in their `group=` slot and
   only failed later, somewhere else: `set_group_visible(grp, False)` -- a
