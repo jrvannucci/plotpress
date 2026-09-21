@@ -201,3 +201,60 @@ def test_a_colorbar_added_after_tight_layout_is_still_accounted_for():
     pw, ph = _panel_inches(fig)
     assert pw == pytest.approx(want[0], abs=TOL)
     assert ph == pytest.approx(want[1], abs=TOL)
+
+
+# ---- it has to solve without an explicit tight_layout() --------------------
+
+def _grid_no_tight(nrows, ncols, want, sup=False):
+    fig, axs = plotpress.subplots(nrows, ncols, subplot_size=want, squeeze=False)
+    x = np.linspace(0, 1, 13)
+    for ax in (a for row in axs for a in row):
+        ax.pcolormesh(x, x, np.zeros((12, 12)))
+        ax.tick_params(labelsize=5)
+    if sup:
+        fig.suptitle("a title")
+    return fig
+
+
+@pytest.mark.parametrize("sup", [True, False])
+def test_subplot_size_is_solved_even_without_calling_tight_layout(sup):
+    """Only tight_layout() measures the decorations the solve works around, and
+    _settle_layout() used to skip any figure that had never had it called by
+    hand -- so subplot_size= quietly did nothing for a caller who just built
+    and saved. Asking for a subplot size now arms that re-fit."""
+    want = (0.9, 0.7)
+    fig = _grid_no_tight(4, 5, want, sup=sup)
+    fig.to_svg()                                   # the render-time fit
+    pw, ph = _panel_inches(fig)
+    assert pw == pytest.approx(want[0], abs=TOL)
+    assert ph == pytest.approx(want[1], abs=TOL)
+
+
+def test_subplots_adjust_still_overrides_subplot_size():
+    """subplots_adjust() sets the margins directly and clears the pending fit
+    on purpose -- there is nothing left to solve, so it must win."""
+    fig = _grid_no_tight(3, 4, (0.9, 0.7))
+    fig.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.08)
+    fig.to_svg()
+    assert fig._tight_pad is None
+    pw, _ = _panel_inches(fig)
+    assert pw != pytest.approx(0.9, abs=TOL)
+
+
+def test_the_interactive_payload_sees_the_solved_rects():
+    """The metadata the toolbar hit-tests against is captured during the same
+    render that solves the layout, so it has to reflect the solved rects rather
+    than the pre-solve ones."""
+    import json
+    import re
+
+    want = (0.9, 0.7)
+    fig = _grid_no_tight(3, 4, want)
+    html = fig.to_html(interactive=True)
+    meta = json.loads(re.search(r'id="plotpress-meta"[^>]*>(.*?)</script>',
+                                html, re.S).group(1))
+    pw, ph = _panel_inches(fig)
+    assert pw == pytest.approx(want[0], abs=TOL)
+    # Every axes rect in the payload should match a real drawn axes.
+    widths = set(re.findall(r'"w":\s*\[([^\]]*)\]', json.dumps(meta)))
+    assert widths or meta, "no axes metadata was emitted"

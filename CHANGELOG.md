@@ -13,6 +13,14 @@ anywhere in the source.
 
 ### Fixed
 
+- **`subplot_size=` now works without an explicit `tight_layout()` call.** Only
+  `tight_layout()` measures the decorations the solve works around, and the
+  render-time re-fit skipped any figure that had never had it called by hand --
+  so `subplot_size=` quietly did nothing for a caller who just built the figure
+  and saved it, which is exactly what its own documentation said would work.
+  Asking for a subplot size now arms that re-fit. `subplots_adjust()` still
+  overrides it, since that sets the margins directly and leaves nothing to
+  solve.
 - **A wrong-typed `group=` now says so.** `remove_group()` and
   `set_group_visible()` accepted anything non-`None` in their `group=` slot and
   only failed later, somewhere else: `set_group_visible(grp, False)` -- a

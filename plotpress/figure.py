@@ -502,7 +502,7 @@ def subplots_from_groups(layout: GroupLayout, figsize=(6.4, 4.8), style: Style =
     figsize, subplot_size = _resolve_subplot_size(
         figsize, subplot_size, super_rows, super_cols)
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
-    fig._subplot_size = subplot_size
+    _arm_subplot_size(fig, subplot_size)
     axes = layout._build(fig, squeeze=squeeze, sharex=sharex, sharey=sharey,
                          projection=projection)
     if squeeze:
@@ -640,6 +640,12 @@ def _axes_class(projection):
         return PolarAxes
     raise ValueError(
         "unknown projection %r (use None or 'polar')" % projection)
+
+
+#: tight_layout()'s default pad, named so that asking for ``subplot_size=``
+#: -- which implies a tight layout, since nothing else measures the
+#: decorations it has to solve around -- fits with exactly the same one.
+_TIGHT_LAYOUT_PAD = 0.02
 
 
 class Figure:
@@ -1318,7 +1324,8 @@ class Figure:
 
         return _squeeze_grid(grid, nrows, ncols) if squeeze else grid
 
-    def tight_layout(self, pad=0.02, collapse=None, auto_label_scale=False):
+    def tight_layout(self, pad=_TIGHT_LAYOUT_PAD, collapse=None,
+                     auto_label_scale=False):
         """Auto-fit subplot margins so ticks/labels/titles never overflow.
 
         Measures each axes' decorations with the bundled font metrics and
@@ -3792,6 +3799,27 @@ def _flatten_axes(ax):
     return [a for a in np.asarray(ax, dtype=object).ravel()]
 
 
+def _arm_subplot_size(fig, subplot_size):
+    """Record ``subplot_size`` and make sure something will actually solve it.
+
+    Asking for a subplot size is asking for a solved layout, and only
+    tight_layout() measures the decorations it has to solve around -- so this
+    also arms the render-time re-fit. Without that, _settle_layout() skipped
+    the figure entirely (it only re-fits when ``_tight_pad`` is set, i.e. when
+    tight_layout() has already been called by hand) and ``subplot_size=``
+    quietly did nothing at all for a caller who never called it.
+
+    ``subplots_adjust()`` still wins if it is called afterwards: it clears
+    ``_tight_pad`` on purpose, which turns this back off. That is right --
+    it sets the margins directly, so there is nothing left to solve.
+    """
+    if subplot_size is None:
+        return
+    fig._subplot_size = subplot_size
+    fig._tight_pad = _TIGHT_LAYOUT_PAD
+    fig._layout_dirty = True
+
+
 def _smallest_subplot_inches(fig, specs):
     """The smallest plotting box among ``specs``, in inches.
 
@@ -3876,7 +3904,7 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     figsize, subplot_size = _resolve_subplot_size(figsize, subplot_size,
                                                  nrows, ncols)
     fig = Figure(figsize=figsize, style=style, facecolor=facecolor)
-    fig._subplot_size = subplot_size
+    _arm_subplot_size(fig, subplot_size)
     axes = fig.subplots(nrows, ncols, squeeze=squeeze, sharex=sharex,
                         sharey=sharey, projection=projection)
     return fig, axes
