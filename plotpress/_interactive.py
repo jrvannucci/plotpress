@@ -2495,18 +2495,28 @@ _JS_SOURCE = r"""
     if (!m) return;
     var st = SLICE_STATE[key] || (SLICE_STATE[key] = {});
     st.orientation = SLICE_ORIENTATION; st.index = index;
-    // .plotpress-mesh (not image.plotpress-series) -- a QuadMesh/Image
-    // artist reaches the page as either a raster <image> (large/uniform
-    // grids) or a vectorized <g> of <rect>s (a small non-uniform one, see
-    // artists._resolve_mesh_render); both carry this class precisely so
-    // Slice can hide whichever one this mesh actually used without caring
-    // which. image.plotpress-series alone missed the vectorized case
-    // entirely, leaving its rects visible underneath the slice line.
-    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    // Everything the axes draws in its own data space: the mesh, and anything
+    // overlaid on it (a plot() line, a scatter()). The replace view hides all
+    // of it, not just the mesh -- it re-labels the vertical axis in the
+    // slice's value, so a line drawn at y=0.5 would otherwise keep the y=0.5
+    // *pixel* while the ticks beside it started reading in z, claiming a
+    // value it never had. All-or-nothing on purpose: for an X slice the
+    // horizontal axis does survive, so a strictly vertical line would still
+    // have been readable, but singling those out would hide one series and
+    // keep another for reasons the reader cannot see.
+    // Both selectors are needed. A QuadMesh/Image artist reaches the page as
+    // either a raster <image> (large/uniform grids) or a vectorized <g> of
+    // <rect>s (a small non-uniform one, see artists._resolve_mesh_render);
+    // .plotpress-mesh is carried by both precisely so Slice can hide
+    // whichever one this mesh used, and the vectorized <g> is not itself a
+    // .plotpress-series -- matching on that alone missed it entirely, leaving
+    // its rects visible underneath the slice line.
+    var dataEls = svg.querySelectorAll(
+      '#zoom' + key + ' .plotpress-mesh, #zoom' + key + ' .plotpress-series');
     var origTicks = document.getElementById('ticks' + key);
 
     if (!SLICE_VIEW_ON) {
-      meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+      dataEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
       if (origTicks) origTicks.style.display = '';
       if (st.sliceEl) {
         st.sliceEl.remove(); st.sliceEl = null;
@@ -2541,14 +2551,14 @@ _JS_SOURCE = r"""
       // that said row 4 and plotted row 3. Blank the view instead, the same
       // as the companion strip does (drawCompanion's own `if (pl)`), keeping
       // the heatmap hidden since this view is still standing in for it.
-      meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+      dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
       if (origTicks) origTicks.style.display = 'none';
       if (st.sliceEl) st.sliceEl.setAttribute('d', '');
       if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
       return;
     }
     var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
-    meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+    dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
 
     var d = '', started = false;
     for (var i = 0; i < slice.xs.length; i++) {
@@ -2838,9 +2848,12 @@ _JS_SOURCE = r"""
     removeCompanion(key);
     var st = SLICE_STATE[key];
     if (!st) return;
-    // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
-    // own comment on this same selector.
-    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    // Both selectors -- see renderMeshOrSlice's own comment on them. This has
+    // to un-hide everything that view could have hidden, overlaid series
+    // included, or switching Slice off in the replace view would leave a
+    // line/scatter invisible with nothing left on screen to bring it back.
+    var meshEls = svg.querySelectorAll(
+      '#zoom' + key + ' .plotpress-mesh, #zoom' + key + ' .plotpress-series');
     meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
     var origTicks = document.getElementById('ticks' + key);
     if (origTicks) origTicks.style.display = '';

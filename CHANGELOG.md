@@ -9,6 +9,28 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Fixed
+
+- **Slice: the "profile replaces heatmap" view no longer leaves overlaid
+  series stranded on an axis that has changed meaning.** That view re-labels
+  the vertical axis in the slice's *value*, and hid the mesh but nothing else
+  drawn on the same axes -- so a `plot()` line at `y=0.5`, or a `scatter()` at
+  `y=0.25`, kept its old pixel position while the ticks beside it started
+  reading in z, showing a value it never had (a line marking `y=0.5` sat at
+  `0.41` on the new axis). The same rect was also claimed whole by the
+  profile's own hit-test, so those series could not be picked while the view
+  was on, and a click on one reported the mesh underneath at a shifted x.
+  Everything the axes draws in its own data space is now hidden with the mesh
+  and restored with it -- switching views, or switching Slice off entirely.
+  The companion and cursor views are untouched: they keep the heatmap and the
+  axis still reads in y, so an overlay is still meaningful there and still
+  picks. Note this is deliberately all-or-nothing: for an X slice the
+  horizontal axis does survive, so a strictly vertical reference line would
+  still have been readable, but singling those out would hide one series and
+  keep another for reasons invisible to the reader.
+
 ## [0.42.2] - 2026-09-21
 
 ### Fixed

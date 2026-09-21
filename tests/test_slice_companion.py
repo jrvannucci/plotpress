@@ -2250,3 +2250,135 @@ def test_a_null_index_does_not_force_row_zero(page, tmp_path):
         "() => +document.querySelector('.plotpress-slider input[type=range]').value")
     assert errs == [], errs
     assert value == 0        # the natural start, reached by defaulting not by +null
+
+
+# ---- overlaid series in the replace view -------------------------------------
+#
+# The replace view re-labels the vertical axis in the slice's *value*. Anything
+# the axes drew in its own data space -- a plot() line, a scatter() -- would
+# otherwise keep its old pixel position while the ticks beside it changed
+# meaning underneath it, showing a value it never had. It is hidden with the
+# mesh, and comes back with it.
+
+def _overlay_fig(legend=False):
+    fig, axs = plotpress.subplots(1, 1, figsize=(4.4, 3.4), squeeze=False)
+    x = np.linspace(0, 1, 13)
+    yy, xx = np.meshgrid(np.arange(12), np.arange(12), indexing="ij")
+    ax = axs[0][0]
+    ax.pcolormesh(x, x, np.sin(xx * (0.3 + 0.1 * yy)) * (1 + 0.3 * yy))
+    ax.plot(x, np.full_like(x, 0.5), color="k", linewidth=2, label="line")
+    ax.scatter(np.linspace(0.1, 0.9, 5), np.full(5, 0.25), s=30,
+               color="w", edgecolors="k", label="pts")
+    if legend:
+        ax.legend(fontsize=6)
+    fig.tight_layout()
+    return fig
+
+
+_VISIBLE_SERIES = r"""() => {
+  const vis = (e) => {
+    if (e.classList.contains('plotpress-slice-hidden')) return false;
+    for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (st.display === 'none' || st.visibility === 'hidden') return false;
+    }
+    return true; };
+  const g0 = document.querySelector('g[clip-path*="clip0"]');
+  const all = Array.from((g0 || document).querySelectorAll(
+    '.plotpress-series, .plotpress-mesh'));
+  return {lines: all.filter(e => e.tagName === 'path' && vis(e)).length,
+          markers: all.filter(
+            e => (e.getAttribute('class') || '').includes('marker') && vis(e)).length,
+          meshes: all.filter(
+            e => (e.getAttribute('class') || '').includes('mesh') && vis(e)).length,
+          profile: document.querySelectorAll(
+            '.plotpress-slice-line[d]:not([d=""])').length}; }"""
+
+
+def _slice_radio(page, label):
+    page.evaluate("""(t) => { const l = Array.from(
+        document.querySelectorAll('label')).find(
+        l => l.textContent.trim().startsWith(t));
+        if (!l) throw new Error('no label ' + t);
+        l.querySelector('input').click(); }""", label)
+    page.wait_for_timeout(700)
+
+
+@pytest.mark.browser
+def test_replace_view_hides_overlaid_series_with_the_mesh(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(), options={"slice": {"enabled": True}})
+    before = page.evaluate(_VISIBLE_SERIES)
+    _slice_radio(page, "Profile replaces heatmap")
+    after = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (before["lines"], before["markers"], before["meshes"]) == (1, 1, 1)
+    assert after["meshes"] == 0
+    assert after["lines"] == 0, "the overlaid line kept its y position"
+    assert after["markers"] == 0, "the overlaid markers kept their y position"
+    assert after["profile"] == 1, "the profile itself did not draw"
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("back_to", ["Companion panel", "Heatmap with cursor"])
+def test_leaving_the_replace_view_brings_the_overlay_back(page, tmp_path, back_to):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0
+    _slice_radio(page, back_to)
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_slice_off_from_the_replace_view_restores_the_overlay(page, tmp_path):
+    """teardownAxesVisuals() has to un-hide everything the view hid -- with
+    Slice off there is no control left on screen to bring a series back."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0
+    _slice_radio(page, "Enable Slice")
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_the_cursor_view_leaves_overlaid_series_alone(page, tmp_path):
+    """The cursor view keeps the heatmap and the axis still reads in y, so an
+    overlay is still meaningful there."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "cursor"}})
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_a_legend_hidden_series_stays_hidden_across_the_replace_view(page, tmp_path):
+    """Slice hides with a class, the legend with an inline style, so the two
+    compose: un-hiding on the way out must not resurrect what the legend hid."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(legend=True),
+          options={"slice": {"enabled": True}})
+    page.evaluate("""() => { const t = Array.from(document.querySelectorAll(
+        'text')).find(t => t.textContent === 'line');
+        if (!t) throw new Error('no legend entry');
+        t.dispatchEvent(new MouseEvent('click', {bubbles: true})); }""")
+    page.wait_for_timeout(400)
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0, "the legend hid nothing"
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert st["lines"] == 0, "Slice resurrected a line the legend had hidden"
+    assert st["markers"] == 1, "the markers should be unaffected"
