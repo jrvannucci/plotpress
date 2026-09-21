@@ -258,3 +258,25 @@ def test_the_interactive_payload_sees_the_solved_rects():
     # Every axes rect in the payload should match a real drawn axes.
     widths = set(re.findall(r'"w":\s*\[([^\]]*)\]', json.dumps(meta)))
     assert widths or meta, "no axes metadata was emitted"
+
+
+def test_set_size_inches_takes_control_back_from_subplot_size():
+    """An explicit resize is the caller overriding the solve. Leaving the
+    solve armed would quietly resize the figure away from what was just
+    asked for, on the next render."""
+    fig = _grid_no_tight(3, 4, (0.9, 0.7))
+    fig.to_svg()
+    assert _panel_inches(fig)[0] == pytest.approx(0.9, abs=TOL)
+    fig.set_size_inches(20, 14)
+    fig.to_svg()
+    assert fig.figsize == pytest.approx((20, 14), abs=1e-6)
+
+
+def test_set_dpi_does_not_disturb_the_solved_panel_size():
+    """dpi is pixels per inch; the panel was asked for in inches, so a dpi
+    change must move the pixel count and not the physical size."""
+    fig = _grid_no_tight(3, 4, (0.9, 0.7))
+    fig.to_svg()
+    fig.set_dpi(200)
+    fig.to_svg()
+    assert _panel_inches(fig) == pytest.approx((0.9, 0.7), abs=TOL)

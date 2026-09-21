@@ -1081,6 +1081,10 @@ class Figure:
             w, h = w
         self.figsize = (float(w), float(h))
         self._base_figsize = self.figsize
+        # An explicit size is the caller taking control back: a pending
+        # subplot_size= solve would otherwise quietly resize the figure away
+        # from what was just asked for.
+        self._subplot_size = None
         if self._tight_pad is not None:
             self._layout_dirty = True   # re-fit: tight_layout bakes absolute pixels
 
@@ -3900,6 +3904,8 @@ def subplots(nrows=1, ncols=1, figsize=(6.4, 4.8), style: Style = None,
     it measures real text, the answer accounts for the labels actually set,
     not a guess made before they existed. ``figsize`` is ignored when
     ``subplot_size`` is given, beyond seeding the first pass.
+    Calling :meth:`~Figure.set_size_inches` afterwards takes that control back:
+    the figure keeps the size you set and the panels land wherever they land.
     """
     figsize, subplot_size = _resolve_subplot_size(figsize, subplot_size,
                                                  nrows, ncols)
