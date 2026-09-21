@@ -910,6 +910,33 @@ class Figure:
             )
         return Group(matches[0])
 
+    def _resolve_group(self, who, group, title, id):
+        """The one group ``group``/``title``/``id`` names, or a clear error.
+
+        ``group is not None`` alone is not enough to accept that slot: every
+        falsy-but-present value passes it. ``set_group_visible(grp, False)`` --
+        a natural order to guess, since :meth:`remove_group` really does take
+        the group first -- bound ``group=False``, sailed through the
+        exactly-one-of check and only failed later on ``False._raw``. The same
+        way, ``remove_group("G0")`` bound the title positionally and died on
+        ``'str' object has no attribute 'flat_axes'``. Neither said anything
+        about what was actually wrong.
+        """
+        given = [group is not None, title is not None, id is not None]
+        if sum(given) != 1:
+            raise ValueError(
+                f"{who}(): pass exactly one of group=, title=, or id=")
+        if group is None:
+            return self.get_group(title=title, id=id)
+        if not isinstance(group, Group):
+            hint = (f" -- did you mean {who}(title={group!r})?"
+                    if isinstance(group, str) else "")
+            raise TypeError(
+                f"{who}(): group= must be a Group (as returned by "
+                f"fig.get_group(...)), got {type(group).__name__} "
+                f"{group!r}{hint}")
+        return group
+
     def remove_group(self, group: "Group" = None, title: str = None, id=None):
         """Remove a group entirely: every one of its axes (via
         :meth:`Axes.remove`, so ``sharex``/``sharey`` links and any id stay
@@ -925,13 +952,7 @@ class Figure:
         :doc:`/auto_figure_layout/grouping/plot_15_dashboard_mixed_shapes_and_masks`
         for a worked example.
         """
-        given = [group is not None, title is not None, id is not None]
-        if sum(given) != 1:
-            raise ValueError(
-                "remove_group(): pass exactly one of group=, title=, or id="
-            )
-        if group is None:
-            group = self.get_group(title=title, id=id)
+        group = self._resolve_group("remove_group", group, title, id)
         for ax in group.flat_axes():
             ax.remove()
         self._groups = [g for g in self._groups if g is not group._raw]
@@ -951,13 +972,7 @@ class Figure:
         :meth:`Axes.set_visible` uses), so toggling it back and forth
         doesn't reflow the rest of the grid each time.
         """
-        given = [group is not None, title is not None, id is not None]
-        if sum(given) != 1:
-            raise ValueError(
-                "set_group_visible(): pass exactly one of group=, title=, or id="
-            )
-        if group is None:
-            group = self.get_group(title=title, id=id)
+        group = self._resolve_group("set_group_visible", group, title, id)
         group._raw["visible"] = bool(visible)
 
     def get_ax(self, row: int = None, col: int = None, title: str = None,

@@ -11,6 +11,17 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A wrong-typed `group=` now says so.** `remove_group()` and
+  `set_group_visible()` accepted anything non-`None` in their `group=` slot and
+  only failed later, somewhere else: `set_group_visible(grp, False)` -- a
+  natural order to guess, since `remove_group()` really does take the group
+  first -- bound `group=False` and died on `'bool' object has no attribute
+  '_raw'`, and `remove_group("G0")` bound the title positionally and died on
+  `'str' object has no attribute 'flat_axes'`. Both now raise a `TypeError`
+  naming what was passed, and the string case suggests `title=` instead.
+
 ## [0.42.1] - 2026-09-20
 
 ### Fixed

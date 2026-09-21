@@ -809,3 +809,49 @@ def test_tight_layout_pad_still_works_alongside_collapse():
     axes[0, 0].remove()
     fig.tight_layout(pad=0.05, collapse="grid")
     fig.to_svg()   # must not raise
+
+
+# ---- a wrong-typed group= says so, instead of failing somewhere else -------
+
+def _two_group_fig():
+    layout = plotpress.GroupLayout(1, 2)
+    for col in range(2):
+        layout.add_group(0, col, 1, 1, title=f"G{col}")
+    fig, _ = plotpress.subplots_from_groups(layout, subplot_size=(0.8, 0.6))
+    return fig
+
+
+def test_set_group_visible_rejects_a_swapped_argument_order():
+    """set_group_visible() takes `visible` first while remove_group() takes the
+    group first, so `set_group_visible(grp, False)` is a natural thing to
+    write. `group is not None` accepted the False, and it only failed later on
+    `False._raw` -- an AttributeError that named nothing useful."""
+    fig = _two_group_fig()
+    group = fig.get_group(title="G0")
+    with pytest.raises(TypeError, match="group= must be a Group"):
+        fig.set_group_visible(group, False)
+    fig.set_group_visible(False, group)            # the right way still works
+
+
+def test_remove_group_rejects_a_title_passed_positionally():
+    """remove_group("G0") bound the title to group= and died on
+    `'str' object has no attribute 'flat_axes'`."""
+    fig = _two_group_fig()
+    with pytest.raises(TypeError, match=r"did you mean remove_group\(title='G0'\)"):
+        fig.remove_group("G0")
+    fig.remove_group(title="G0")                   # the right way still works
+
+
+@pytest.mark.parametrize("bad", [123, 0, False, "G0", [], {}])
+def test_a_non_group_group_argument_names_the_type_it_got(bad):
+    fig = _two_group_fig()
+    with pytest.raises(TypeError, match="group= must be a Group"):
+        fig.remove_group(bad)
+
+
+def test_passing_nothing_still_asks_for_one_of_the_three():
+    fig = _two_group_fig()
+    with pytest.raises(ValueError, match="exactly one of"):
+        fig.remove_group()
+    with pytest.raises(ValueError, match="exactly one of"):
+        fig.set_group_visible(False)
