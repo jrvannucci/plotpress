@@ -2304,6 +2304,25 @@ _JS_SOURCE = r"""
       text.appendChild(red);
     }
   }
+  // Pins anchored in an axes' own data space -- every kind but 'slice', plus
+  // the un-kinded geometric readout pins -- have nothing left to point at
+  // while the replace view stands in for that data: the series they sit on is
+  // hidden (see renderMeshOrSlice's dataEls) and the vertical axis now reads
+  // in the slice's value, so a label saying "y=0.125, z=1.212" would sit at
+  // the y=0.125 pixel of an axis that no longer means y. They are hidden with
+  // the same class the series use, which keeps this on its own channel:
+  // Hide Points' body class and the inline display applySliceVisibility()
+  // writes for 'slice' pins both still compose, and a pin stays hidden while
+  // any of the three wants it hidden. Hidden, never removed -- the reader
+  // gets their pins back on the way out of the view.
+  function setDataPinsHidden(key, hidden) {
+    var k = String(key);
+    livePins().forEach(function (pin) {
+      if (pinAxesKey(pin) !== k || pin.dataset.kind === 'slice') return;
+      if (hidden) pin.classList.add('plotpress-slice-hidden');
+      else pin.classList.remove('plotpress-slice-hidden');
+    });
+  }
   function sliceStripPick(p) {
     var best = null;
     Object.keys(SLICE_STATE).forEach(function (key) {
@@ -2517,6 +2536,7 @@ _JS_SOURCE = r"""
 
     if (!SLICE_VIEW_ON) {
       dataEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+      setDataPinsHidden(key, false);
       if (origTicks) origTicks.style.display = '';
       if (st.sliceEl) {
         st.sliceEl.remove(); st.sliceEl = null;
@@ -2552,6 +2572,7 @@ _JS_SOURCE = r"""
       // as the companion strip does (drawCompanion's own `if (pl)`), keeping
       // the heatmap hidden since this view is still standing in for it.
       dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+      setDataPinsHidden(key, true);
       if (origTicks) origTicks.style.display = 'none';
       if (st.sliceEl) st.sliceEl.setAttribute('d', '');
       if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
@@ -2559,6 +2580,7 @@ _JS_SOURCE = r"""
     }
     var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
     dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+    setDataPinsHidden(key, true);
 
     var d = '', started = false;
     for (var i = 0; i < slice.xs.length; i++) {
@@ -2855,6 +2877,7 @@ _JS_SOURCE = r"""
     var meshEls = svg.querySelectorAll(
       '#zoom' + key + ' .plotpress-mesh, #zoom' + key + ' .plotpress-series');
     meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+    setDataPinsHidden(key, false);
     var origTicks = document.getElementById('ticks' + key);
     if (origTicks) origTicks.style.display = '';
     if (st.cursorEl) st.cursorEl.remove();

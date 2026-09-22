@@ -2382,3 +2382,191 @@ def test_a_legend_hidden_series_stays_hidden_across_the_replace_view(page, tmp_p
     assert errs == [], errs
     assert st["lines"] == 0, "Slice resurrected a line the legend had hidden"
     assert st["markers"] == 1, "the markers should be unaffected"
+
+
+# ---- data-space pins under the replace view ---------------------------------
+#
+# A pin anchored in the axes' own data space has nothing to point at while the
+# replace view stands in for that data: the series it sits on is hidden and the
+# vertical axis now reads in the slice's value. It is hidden with the series
+# and restored with them. Pins on the profile itself ('slice') stay put.
+
+_PINS = r"""() => {
+  const vis = (e) => { for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return false; }
+    return true; };
+  return Array.from(document.querySelectorAll('.plotpress-pin'))
+    .map(p => ({kind: p.dataset.kind || null,
+                note: p.classList.contains('plotpress-note'),
+                text: p.textContent.trim(), visible: vis(p)})); }"""
+
+
+_CLICK_AT = r"""(o) => {
+  const svg = document.getElementById('plotpress-svg');
+  const c = svg.getScreenCTM();
+  const r = document.querySelector('#clip' + o.clip + ' rect');
+  const x = +r.getAttribute('x'), y = +r.getAttribute('y');
+  const w = +r.getAttribute('width'), h = +r.getAttribute('height');
+  const ev = {bubbles: true, clientX: (x + w * o.fx) * c.a + c.e,
+                             clientY: (y + h * o.fy) * c.d + c.f};
+  svg.dispatchEvent(new MouseEvent('mousedown', ev));
+  svg.dispatchEvent(new MouseEvent('mouseup', ev));
+  svg.dispatchEvent(new MouseEvent('click', ev));
+  const pins = document.querySelectorAll('.plotpress-pin');
+  return pins.length ? pins[pins.length - 1].textContent.trim() : null; }"""
+
+
+def _visible_pins(page):
+    return [p for p in page.evaluate(_PINS) if p["visible"]]
+
+
+def _toolbar_button(page, text):
+    page.evaluate("""(t) => { const b = Array.from(
+        document.querySelectorAll('button')).find(
+        b => b.textContent.trim() === t);
+        if (!b) throw new Error('no button ' + t); b.click(); }""", text)
+    page.wait_for_timeout(250)
+
+
+def _mesh_and_line_fig(ncols=1):
+    fig, axs = plotpress.subplots(1, ncols, figsize=(4.6 * ncols, 3.4),
+                                  squeeze=False)
+    x = np.linspace(0, 1, 13)
+    yy, xx = np.meshgrid(np.arange(12), np.arange(12), indexing="ij")
+    for i, ax in enumerate(np.ravel(axs)):
+        ax.pcolormesh(x, x, np.sin(xx * (0.3 + 0.1 * yy) + i) * (1 + 0.3 * yy))
+        ax.plot(x, np.full_like(x, 0.5), color="k", linewidth=2)
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+def test_data_space_pins_are_hidden_by_the_replace_view(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    on_line = page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    on_mesh = page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    assert "y=" in on_line and "z=" in on_mesh, (on_line, on_mesh)
+    before = _visible_pins(page)
+    _slice_radio(page, "Profile replaces heatmap")
+    during = _visible_pins(page)
+    _slice_radio(page, "Companion panel")
+    after = _visible_pins(page)
+    assert errs == [], errs
+    assert len(before) == 2
+    assert during == [], f"pins left floating over the profile: {during}"
+    assert {p["text"] for p in after} == {p["text"] for p in before}
+
+
+@pytest.mark.browser
+def test_a_pin_on_the_profile_itself_stays_visible(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    vis = _visible_pins(page)
+    assert errs == [], errs
+    assert len(vis) == 1 and vis[0]["kind"] == "slice", vis
+
+
+@pytest.mark.browser
+def test_slice_off_from_the_replace_view_restores_the_pins(page, tmp_path):
+    """Hidden, never deleted -- with Slice off there is no control left on
+    screen that would bring a pin back."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _slice_radio(page, "Profile replaces heatmap")
+    assert _visible_pins(page) == []
+    _slice_radio(page, "Enable Slice")
+    assert errs == [], errs
+    assert len(_visible_pins(page)) == 1
+
+
+@pytest.mark.browser
+def test_an_annotation_is_hidden_and_restored_like_a_pin(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("dialog", lambda d: d.accept("note"))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Annotate Point")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    page.wait_for_timeout(400)
+    assert len([p for p in _visible_pins(page) if p["note"]]) == 1
+    _slice_radio(page, "Profile replaces heatmap")
+    assert [p for p in _visible_pins(page) if p["note"]] == []
+    _slice_radio(page, "Companion panel")
+    assert errs == [], errs
+    assert len([p for p in _visible_pins(page) if p["note"]]) == 1
+
+
+@pytest.mark.browser
+def test_hide_points_and_the_replace_view_compose(page, tmp_path):
+    """Three channels can hide a pin now -- Hide Points' body class, the
+    view's own class, and applySliceVisibility()'s inline display for 'slice'
+    pins. Leaving the view must not resurrect what Hide Points hid."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _toolbar_button(page, "Hide Points")
+    assert _visible_pins(page) == [], "Hide Points hid nothing"
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    assert errs == [], errs
+    assert _visible_pins(page) == [], "the view resurrected a hidden pin"
+
+
+@pytest.mark.browser
+def test_cycling_views_leaves_no_pin_class_behind(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    for _ in range(3):
+        _slice_radio(page, "Profile replaces heatmap")
+        _slice_radio(page, "Heatmap with cursor")
+        _slice_radio(page, "Companion panel")
+    leaked = page.evaluate(
+        "() => document.querySelectorAll("
+        "'.plotpress-pin.plotpress-slice-hidden').length")
+    assert errs == [], errs
+    assert len(_visible_pins(page)) == 2
+    assert leaked == 0
+
+
+@pytest.mark.browser
+def test_extract_still_carries_pins_the_view_hides(page, tmp_path):
+    """Hidden is not deleted: the readings are still the reader's data."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.6, "fy": 0.7})
+    _slice_radio(page, "Profile replaces heatmap")
+    _toolbar_button(page, "Extract")
+    page.wait_for_timeout(600)
+    text = page.evaluate(
+        """() => { const p = document.querySelector('.plotpress-extract');
+             return p ? p.innerText : null; }""")
+    assert errs == [], errs
+    assert text, "Extract opened no panel"
+    assert "NaN" not in text and "undefined" not in text
+    assert "2" in text.splitlines()[0], text.splitlines()[0]

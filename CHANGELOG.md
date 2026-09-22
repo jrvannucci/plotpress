@@ -9,6 +9,23 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
+## [Unreleased]
+
+### Fixed
+
+- **Slice: Point Picking pins no longer float over the "profile replaces
+  heatmap" view.** A pin anchored in an axes' own data space kept its old
+  pixel while that view stood in for the data, so a reading of
+  `x=0.292, y=0.125, z=1.212` sat at the `y=0.125` pixel of an axis that had
+  started reading in the slice's value, pointing at a mesh (or, since 0.42.3,
+  a line) that is not on screen. Annotations anchored the same way did the
+  same. They are now hidden with the series they belong to and restored with
+  them -- on a view change, or on switching Slice off. Pins placed on the
+  profile itself stay, since the thing they point at is what is showing.
+  Hidden, never deleted: `Extract` still carries them, and they come back
+  untouched. This predates 0.42.3, which only widened it from mesh pins to
+  line and scatter pins as well.
+
 ## [0.42.3] - 2026-09-21
 
 ### Fixed
