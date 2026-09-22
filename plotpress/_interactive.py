@@ -2319,8 +2319,18 @@ _JS_SOURCE = r"""
     var k = String(key);
     livePins().forEach(function (pin) {
       if (pinAxesKey(pin) !== k || pin.dataset.kind === 'slice') return;
-      if (hidden) pin.classList.add('plotpress-slice-hidden');
-      else pin.classList.remove('plotpress-slice-hidden');
+      if (hidden) {
+        pin.classList.add('plotpress-slice-hidden');
+        // A hidden pin can still be selectedPin -- nothing else clears that
+        // on this path -- so an arrow key would silently keep stepping it
+        // with no on-screen feedback at all. selectPin(null) deselects it
+        // properly (clears .selected, the enlarged dot, the leader line)
+        // rather than leaving it selected-but-invisible; the reader gets it
+        // back by clicking again once it's showing.
+        if (selectedPin === pin) selectPin(null);
+      } else {
+        pin.classList.remove('plotpress-slice-hidden');
+      }
     });
   }
   function sliceStripPick(p) {

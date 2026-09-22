@@ -2397,9 +2397,10 @@ _PINS = r"""() => {
       if (s.display === 'none' || s.visibility === 'hidden') return false; }
     return true; };
   return Array.from(document.querySelectorAll('.plotpress-pin'))
-    .map(p => ({kind: p.dataset.kind || null,
+    .map(p => ({kind: p.dataset.kind || null, index: p.dataset.index,
                 note: p.classList.contains('plotpress-note'),
-                text: p.textContent.trim(), visible: vis(p)})); }"""
+                text: p.textContent.trim(), visible: vis(p),
+                selected: p.classList.contains('selected')})); }"""
 
 
 _CLICK_AT = r"""(o) => {
@@ -2570,3 +2571,65 @@ def test_extract_still_carries_pins_the_view_hides(page, tmp_path):
     assert text, "Extract opened no panel"
     assert "NaN" not in text and "undefined" not in text
     assert "2" in text.splitlines()[0], text.splitlines()[0]
+
+
+# ---- deselecting a pin the replace view hides --------------------------------
+#
+# setDataPinsHidden() only adds/removes a display class; nothing else clears
+# selectedPin when its element goes display:none. Left alone, an arrow key
+# would keep silently stepping a pin the reader cannot see.
+
+@pytest.mark.browser
+def test_a_selected_pin_is_deselected_when_the_view_hides_it(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    before = page.evaluate(_PINS)[-1]
+    assert before["selected"] and before["visible"]
+    _slice_radio(page, "Profile replaces heatmap")
+    during = page.evaluate(_PINS)[-1]
+    assert errs == [], errs
+    assert during["visible"] is False
+    assert during["selected"] is False, "still marked selected while hidden"
+
+
+@pytest.mark.browser
+def test_arrow_key_no_longer_steps_a_pin_hidden_by_the_view(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    before_idx = page.evaluate(_PINS)[-1]["index"]
+    _slice_radio(page, "Profile replaces heatmap")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(200)
+    _slice_radio(page, "Companion panel")
+    after_idx = page.evaluate(_PINS)[-1]["index"]
+    assert errs == [], errs
+    assert after_idx == before_idx, (
+        "the arrow key still stepped a pin the reader could not see")
+
+
+@pytest.mark.browser
+def test_the_deselected_pin_can_be_reselected_and_stepped(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    before_idx = page.evaluate(_PINS)[-1]["index"]
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})   # reselect
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(200)
+    after_idx = page.evaluate(_PINS)[-1]["index"]
+    assert errs == [], errs
+    assert after_idx != before_idx, "reselecting did not restore stepping"

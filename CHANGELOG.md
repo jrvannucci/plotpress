@@ -24,7 +24,9 @@ anywhere in the source.
   profile itself stay, since the thing they point at is what is showing.
   Hidden, never deleted: `Extract` still carries them, and they come back
   untouched. This predates 0.42.3, which only widened it from mesh pins to
-  line and scatter pins as well.
+  line and scatter pins as well. A pin selected with an arrow key active
+  is also deselected when it's hidden this way, rather than staying the
+  live target of arrow-key stepping while invisible.
 
 ## [0.42.3] - 2026-09-21
 
