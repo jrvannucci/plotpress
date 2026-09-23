@@ -195,7 +195,7 @@ def test_pow10_is_the_correctly_rounded_decade():
     are not the 1e23/1e126 literals, and a CI runner's V8 returned a different
     double for 10**-5 than the development machine, which moved
     ceil(vmin / step) to the next integer and dropped an axis' first tick."""
-    from plotpress.ticker import pow10
+    from plotpress.style.ticker import pow10
 
     for exp in range(-300, 301):
         assert pow10(exp) == float(f"1e{exp}"), exp
