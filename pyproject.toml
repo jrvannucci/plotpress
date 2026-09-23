@@ -148,4 +148,4 @@ include = ["plotpress*"]
 # plotpress ships type information (the inline annotations plus the
 # TYPE_CHECKING re-exports in __init__.py), so `import plotpress` resolves
 # instead of falling back to Any.
-plotpress = ["fonts/*.py", "py.typed"]
+plotpress = ["fonts/*.py", "_js/*.js", "py.typed"]

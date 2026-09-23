@@ -26,7 +26,6 @@ Needs node on PATH; skipped otherwise.
 """
 import io
 import json
-import pathlib
 import re
 import shutil
 import subprocess
@@ -34,15 +33,11 @@ import subprocess
 import numpy as np
 import pytest
 
+from plotpress._interactive import _JS_SOURCE as _JS
 from plotpress.ticker import resolve_axis_tick_labels, resolve_axis_ticks
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None,
                                 reason="needs node on PATH")
-
-_SRC = (pathlib.Path(__file__).parent.parent / "plotpress" / "_interactive.py").read_text(
-    encoding="utf-8")
-_JS = _SRC[_SRC.index('_JS_SOURCE = r"""') + len('_JS_SOURCE = r"""'):
-           _SRC.index("def _strip(source: str)")]
 
 #: Module-level constants the lifted functions close over.
 CONSTS = ["MS_PER_DAY", "DATE_TIERS", "DATE_UNIT_DAYS", "SI_PREFIXES"]

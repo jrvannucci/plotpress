@@ -42,22 +42,23 @@ need rather than the whole file.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `plotpress/figure.py` | 4518 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, grouping (`Group`/`GroupLayout`/`subplots_from_groups`), the template round-trip (`load_data`/`Figure.to_template`/`save_template`/`load_template` all producing the same shape, `figure_from_template` the one function that rebuilds a figure from it, whether recovered from an HTML export or built standalone), and the `Report` multi-figure aggregator |
-| `plotpress/axes.py` | 3914 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
-| `plotpress/_interactive.py` | 3426 | The vanilla-JS payload injected into interactive HTML (pan/zoom, pick, toolbar) |
-| `plotpress/svg.py` | 3126 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
-| `plotpress/raster.py` | 1516 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `plotpress/figure.py` | 5035 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, grouping (`Group`/`GroupLayout`/`subplots_from_groups`), the template round-trip (`load_data`/`Figure.to_template`/`save_template`/`load_template` all producing the same shape, `figure_from_template` the one function that rebuilds a figure from it, whether recovered from an HTML export or built standalone), and the `Report` multi-figure aggregator |
+| `plotpress/axes.py` | 4055 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
+| `plotpress/svg.py` | 3342 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `plotpress/raster.py` | 1586 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `plotpress/vega.py` | 1445 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
 | `plotpress/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
-| `plotpress/vega.py` | 1412 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
-| `plotpress/vega_lite.py` | 1284 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
-| `plotpress/colors.py` | 782 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
+| `plotpress/vega_lite.py` | 1320 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
+| `plotpress/colors.py` | 789 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `plotpress/fonts/` | ~590 | Bundled advance-width tables, family resolution, opt-in installed-font measurement |
-| `plotpress/primitives.py` | 493 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
-| `plotpress/qt.py` | 436 | Embed interactive figures in PyQt/PySide (`qt` extra) |
-| `plotpress/ticker.py` | 419 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
+| `plotpress/primitives.py` | 530 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
+| `plotpress/_js/` | ~5300 | The vanilla-JS toolbar (pan/zoom, pick, Slice, …), split by tool/feature into one `.js` file per concern — see `plotpress/_interactive.py`'s own module docstring for the file list. Not Python; not counted in any total below |
+| `plotpress/qt.py` | 440 | Embed interactive figures in PyQt/PySide (`qt` extra) |
+| `plotpress/ticker.py` | 432 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
 | `plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
+| `plotpress/_interactive.py` | 239 | Assembles `plotpress/_js/`'s fragments into the one script string `figure.py` inlines into every interactive export — the file itself is just that assembly plus the module docstring describing the toolbar's UX; the JS is what actually got big |
 | `plotpress/dates.py` | 172 | Datetime axis support: date ⟷ float-days-since-epoch conversion, calendar-aware tick locating/formatting |
-| `plotpress/style.py` | 154 | Per-figure `Style` — the replacement for `rcParams` |
+| `plotpress/style.py` | 155 | Per-figure `Style` — the replacement for `rcParams` |
 | `plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
 | `plotpress/png.py` | 120 | Minimal stdlib-only PNG encoder (`zlib`) |
 | `plotpress/transform.py` | 85 | Vectorized data-space → pixel-space transforms |

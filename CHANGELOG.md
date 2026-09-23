@@ -11,6 +11,17 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Changed
+
+- **The interactive toolbar's JS moved out of `_interactive.py` into
+  `plotpress/_js/*.js`.** The Python file had grown to ~5650 lines, nearly
+  all of it one JS string literal that had roughly doubled this session
+  from the Slice tool alone. The JS is now split into ten real `.js` files
+  by tool/feature (toolbar/pan-zoom, mode buttons, Slice, ticks/pins,
+  Extract, Save, sliders, ...), assembled into the same script at import
+  time -- verified byte-for-byte identical to the pre-split output. No
+  public API changed.
+
 ### Fixed
 
 - **`set_aspect`/`set_box_aspect` reject a non-positive value.** `aspect=0`
