@@ -48,8 +48,9 @@ Module layout
 
 Lives under ``src/plotpress/`` (a "src" layout, so an accidental
 ``import plotpress`` can't resolve to the working tree instead of the
-installed package), with the output backends grouped under ``backends/`` and
-the shared scene/geometry layer under ``core/``.
+installed package), grouped into four subpackages: ``backends/`` (output
+formats), ``core/`` (the shared scene/geometry layer), ``style/`` (how a
+value becomes appearance), and ``gui/`` (optional viewers).
 
 .. list-table::
    :header-rows: 1
@@ -69,13 +70,14 @@ the shared scene/geometry layer under ``core/``.
      - pure-NumPy Welch spectral estimators
    * - ``core/artists.py``
      - data-only scene primitives
-   * - ``style.py``
-     - per-figure ``Style`` (replaces ``rcParams``)
+   * - ``style/__init__.py``
+     - per-figure ``Style`` (replaces ``rcParams``) -- lives directly in
+       ``__init__.py`` since the package takes its name from it
    * - ``core/transform.py``
      - vectorized data->pixel transforms (linear + log)
-   * - ``colors.py``
+   * - ``style/colors.py``
      - ``Normalize``, colormap LUTs
-   * - ``ticker.py``
+   * - ``style/ticker.py``
      - "nice number" + log tick locations
    * - ``core/primitives.py``
      - backend-agnostic primitives + artist converter
@@ -83,7 +85,7 @@ the shared scene/geometry layer under ``core/``.
      - SVG emitter over the shared primitives -- split by concern
        (``_render``, ``_ticks_and_frame``, ``_legend``, ``_group_layout``,
        ``_metadata``, ...)
-   * - ``png.py``
+   * - ``backends/png.py``
      - stdlib-only PNG encoder for image layers
    * - ``backends/raster.py``
      - Pillow PNG backend; svglib/reportlab PDF
@@ -96,6 +98,8 @@ the shared scene/geometry layer under ``core/``.
      - ``Figure.to_vega()``: a real Vega v5 JSON spec
    * - ``backends/vega_lite.py``
      - ``Figure.to_vega_lite()``: a Vega-Lite v5 spec
+   * - ``gui/qt.py``
+     - embed interactive figures in a PyQt/PySide app (``qt`` extra)
 
 Compiling to other renderers
 -----------------------------

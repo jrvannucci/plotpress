@@ -77,10 +77,10 @@ automatically to datetime-like ``x``/``y`` data -- documented here for
 anyone building a spec by hand, or converting a date to/from the plain
 float days-since-epoch every plotpress axis works in internally.
 
-.. automodule:: plotpress.dates
+.. automodule:: plotpress.style.dates
    :members:
 
-.. automodule:: plotpress.ticker
+.. automodule:: plotpress.style.ticker
    :members:
 
 Style & colors
@@ -89,5 +89,5 @@ Style & colors
 .. autoclass:: plotpress.style.Style
    :members:
 
-.. autoclass:: plotpress.colors.Normalize
+.. autoclass:: plotpress.style.colors.Normalize
    :members:

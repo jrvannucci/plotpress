@@ -6,7 +6,7 @@ import zlib
 import numpy as np
 import pytest
 
-from plotpress.png import _encode_rgba, encode_png, png_data_uri
+from plotpress.backends.png import _encode_rgba, encode_png, png_data_uri
 
 
 def _decode_png(data):

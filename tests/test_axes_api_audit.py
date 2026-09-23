@@ -454,7 +454,7 @@ def test_step_stairs_accept_zorder():
 
 
 def test_matshow_spy_accept_zorder_label_cmap():
-    from plotpress.colors import get_cmap
+    from plotpress.style.colors import get_cmap
 
     fig, ax = plotpress.subplots()
     im = ax.matshow([[1, 2], [3, 4]], zorder=7, label="m")

@@ -34,7 +34,7 @@ def _cbar_label_width(cax) -> float:
     mappable resolves when it is constructed, so this is safe to call before
     anything has been drawn.
     """
-    from ..colors import resolve_colorbar_ticks
+    from ..style.colors import resolve_colorbar_ticks
 
     st = cax.style
     _, _, labels = resolve_colorbar_ticks(cax._cbar_source.norm, cax._cbar_ticks,

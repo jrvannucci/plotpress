@@ -497,10 +497,12 @@ feature, not a trade-off.
 
 `src/plotpress/` layout (a "src" layout: the package lives under `src/`, not
 at the repo root, so an accidental `import plotpress` can't silently resolve
-to the working tree instead of the installed package). Two subpackages group
+to the working tree instead of the installed package). Four subpackages group
 what used to sit loose at the top level: `backends/` (every format a `Figure`
-renders itself *to*) and `core/` (the shared scene/geometry layer every
-backend reads from) -- neither re-exports, so import the submodule you need
+renders itself *to*), `core/` (the shared scene/geometry layer every backend
+reads from), `style/` (how a value becomes appearance -- `Style`, colormaps,
+tick locating/formatting), and `gui/` (optional viewers). None re-export
+except `style/__init__.py` (it *is* `Style`); import the submodule you need
 directly (`from plotpress.backends.svg import figure_to_svg`):
 
 | Module | Responsibility |
@@ -510,17 +512,17 @@ directly (`from plotpress.backends.svg import figure_to_svg`):
 | `polar.py` | `PolarAxes`: (θ, r) projection + polar frame, built from existing artists |
 | `_spectral.py` | pure-NumPy Welch spectral estimators (psd/csd/cohere/specgram/…) |
 | `core/artists.py` | data-only scene primitives (`Line2D`, `ScatterCollection`, `QuadMesh`) |
-| `style.py` | per-figure `Style` (replaces global `rcParams`) |
+| `style/__init__.py` | per-figure `Style` (replaces global `rcParams`) |
 | `core/transform.py` | vectorized data→pixel transforms (linear + log scales) |
-| `colors.py` | `Normalize`, colormap LUTs, colormap application |
-| `ticker.py` | "nice number" + log tick locations, label formatting |
+| `style/colors.py` | `Normalize`, colormap LUTs, colormap application |
+| `style/ticker.py` | "nice number" + log tick locations, label formatting |
 | `backends/svg/` | the renderer: scene → SVG string (+ per-axes metadata) -- split by concern (`_render`, `_ticks_and_frame`, `_legend`, `_group_layout`, `_metadata`, …) |
 | `core/primitives.py` | backend-agnostic pixel-space primitives + one artist→primitive converter |
-| `png.py` | stdlib-only PNG encoder for mesh/image layers |
+| `backends/png.py` | stdlib-only PNG encoder for mesh/image layers |
 | `backends/raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
 | `fonts/` | bundled width tables + the family registry (layout only; no glyph rasterization) |
 | `backends/_interactive.py` + `backends/_js/` | the toolbar's vanilla JS (pan/zoom, picking, annotate, Slice, sliders, export), split into one `.js` file per tool under `_js/` and assembled by `_interactive.py` |
-| `qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
+| `gui/qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
 
 Artists never render themselves — they just hold arrays. The geometry of each
 artist is computed once in `core/primitives.py`; `backends/svg.py` and

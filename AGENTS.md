@@ -40,13 +40,17 @@ own data-space fields (see `docs/user_guide/architecture.rst` for why).
 Line counts included because several of these are large — read the section you
 need rather than the whole file.
 
-Two subpackages group siblings that used to sit loose at the top level:
-`backends/` (every output format a `Figure` renders itself *to* -- SVG, PNG/PDF,
-the interactive JS toolbar, Vega, Vega-Lite) and `core/` (the shared
+Four subpackages group siblings that used to sit loose at the top level:
+`backends/` (every output format a `Figure` renders itself *to* -- SVG,
+PNG/PDF, the interactive JS toolbar, Vega, Vega-Lite), `core/` (the shared
 scene/geometry layer every backend reads from -- artists, primitives, the
-data-to-pixel transform). Neither has a re-export `__init__.py`; import the
-submodule you need directly, e.g. `from plotpress.backends.svg import
-figure_to_svg`.
+data-to-pixel transform), `style/` (how a value becomes appearance -- `Style`
+itself, colormaps, tick locating/formatting, its datetime extension), and
+`gui/` (optional viewers gated behind their own extras -- currently just
+`qt.py`; the pywebview-based native `Figure.show()` window lives on `Figure`
+itself, not here). None re-export except `style/__init__.py` (which *is*
+`Style`, the package's namesake); import the submodule you need directly,
+e.g. `from plotpress.backends.svg import figure_to_svg`.
 
 | File | Lines | What lives there |
 |---|---|---|
@@ -57,18 +61,18 @@ figure_to_svg`.
 | `src/plotpress/backends/vega.py` | 1445 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `core/primitives.py` |
 | `src/plotpress/core/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
 | `src/plotpress/backends/vega_lite.py` | 1320 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
-| `src/plotpress/colors.py` | 789 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
+| `src/plotpress/style/colors.py` | 789 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `src/plotpress/fonts/` | ~590 | Bundled advance-width tables, family resolution, opt-in installed-font measurement |
+| `src/plotpress/gui/qt.py` | 440 | Embed interactive figures in PyQt/PySide (`qt` extra) |
+| `src/plotpress/style/ticker.py` | 432 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
 | `src/plotpress/core/primitives.py` | 530 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
 | `src/plotpress/backends/_js/` | ~5300 | The vanilla-JS toolbar (pan/zoom, pick, Slice, …), split by tool/feature into one `.js` file per concern — see `_interactive.py`'s own module docstring for the file list. Not Python; not counted in any total below |
-| `src/plotpress/qt.py` | 440 | Embed interactive figures in PyQt/PySide (`qt` extra) |
-| `src/plotpress/ticker.py` | 432 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
+| `src/plotpress/style/__init__.py` | 164 | Per-figure `Style` — the replacement for `rcParams`. Lives directly in `__init__.py` since the package takes its name from it |
 | `src/plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
 | `src/plotpress/backends/_interactive.py` | 239 | Assembles `backends/_js/`'s fragments into the one script string `figure.py` inlines into every interactive export — the file itself is just that assembly plus the module docstring describing the toolbar's UX; the JS is what actually got big |
-| `src/plotpress/dates.py` | 172 | Datetime axis support: date ⟷ float-days-since-epoch conversion, calendar-aware tick locating/formatting |
-| `src/plotpress/style.py` | 155 | Per-figure `Style` — the replacement for `rcParams` |
+| `src/plotpress/style/dates.py` | 172 | Datetime axis support: date ⟷ float-days-since-epoch conversion, calendar-aware tick locating/formatting |
 | `src/plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
-| `src/plotpress/png.py` | 120 | Minimal stdlib-only PNG encoder (`zlib`) |
+| `src/plotpress/backends/png.py` | 120 | Minimal stdlib-only PNG encoder (`zlib`) -- only ever used by the render backends, hence living here rather than at the top level |
 | `src/plotpress/core/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
 
 This table is a size guide, not a promise -- regenerate it (`wc -l src/plotpress/**/*.py`) whenever

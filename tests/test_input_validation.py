@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.colors import to_hex
+from plotpress.style.colors import to_hex
 
 
 # ---------------------------------------------------------------------------

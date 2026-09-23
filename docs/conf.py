@@ -884,7 +884,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
 # the subject rather than a footnote, so its examples are slow by design and
 # belong off the reference page. ``live_streaming`` is a feature deep-dive --
 # every example animates an acquisition sequence a real
-# ``plotpress.qt.LiveArtist`` would show updating live, first as abstract
+# ``plotpress.gui.qt.LiveArtist`` would show updating live, first as abstract
 # patterns, then as specific lab instruments -- and gets its own gallery
 # rather than a subsection of ``examples`` because both halves would
 # otherwise crowd out the plot-type reference they'd sit alongside.

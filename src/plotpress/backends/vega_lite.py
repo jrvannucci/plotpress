@@ -78,11 +78,11 @@ from ..core.artists import (
     Pie, Polygon, QuadMesh, Rug, ScatterCollection, Span, Stem, Text,
     Annotation, VLine,
 )
-from ..png import png_data_uri
+from .png import png_data_uri
 from ..core.primitives import normalize_marker_shape, vega_symbol_shape
 from ..core.primitives import pie_center_radius, pie_label_positions
 from .svg import _effective_rect, _pixel_rect
-from ..colors import resolve_colorbar_ticks
+from ..style.colors import resolve_colorbar_ticks
 from .vega import (
     _color, _dash_array, _mesh_cell_rows, _mesh_data_reason, _mesh_scheme,
     _resolved_custom_ticks, _symbol_size,

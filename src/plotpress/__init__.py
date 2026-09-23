@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 # ``plotpress.Figure``, and the rest, with autocomplete and go-to-definition
 # intact. Keep this list and ``_LAZY_ATTRS``/``__all__`` in step.
 if TYPE_CHECKING:
-    from .colors import (
+    from .style.colors import (
         BoundaryNorm,
         LogNorm,
         Normalize,
@@ -83,18 +83,18 @@ _LAZY_ATTRS = {
     "figure_from_template": (".figure", "figure_from_template"),
     "select_panel": (".figure", "select_panel"),
     "Style": (".style", "Style"),
-    "Normalize": (".colors", "Normalize"),
-    "LogNorm": (".colors", "LogNorm"),
-    "PowerNorm": (".colors", "PowerNorm"),
-    "SymLogNorm": (".colors", "SymLogNorm"),
-    "TwoSlopeNorm": (".colors", "TwoSlopeNorm"),
-    "BoundaryNorm": (".colors", "BoundaryNorm"),
-    "get_cmap": (".colors", "get_cmap"),
-    "available_colormaps": (".colors", "available_colormaps"),
-    "make_cmap": (".colors", "make_cmap"),
-    "make_listed_cmap": (".colors", "make_listed_cmap"),
-    "register_cmap": (".colors", "register_cmap"),
-    "to_hex": (".colors", "to_hex"),
+    "Normalize": (".style.colors", "Normalize"),
+    "LogNorm": (".style.colors", "LogNorm"),
+    "PowerNorm": (".style.colors", "PowerNorm"),
+    "SymLogNorm": (".style.colors", "SymLogNorm"),
+    "TwoSlopeNorm": (".style.colors", "TwoSlopeNorm"),
+    "BoundaryNorm": (".style.colors", "BoundaryNorm"),
+    "get_cmap": (".style.colors", "get_cmap"),
+    "available_colormaps": (".style.colors", "available_colormaps"),
+    "make_cmap": (".style.colors", "make_cmap"),
+    "make_listed_cmap": (".style.colors", "make_listed_cmap"),
+    "register_cmap": (".style.colors", "register_cmap"),
+    "to_hex": (".style.colors", "to_hex"),
     "named_cycle": (".style", "named_cycle"),
 }
 

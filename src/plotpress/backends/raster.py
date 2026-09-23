@@ -17,7 +17,7 @@ from ..core.artists import (
     FrameLine2D, FrameQuadMesh, Pie, Polygon, Quiver, ScatterCollection, Span,
     Stem, Table, Text, Violin,
 )
-from ..colors import resolve_colorbar_ticks, to_hex
+from ..style.colors import resolve_colorbar_ticks, to_hex
 # Which files can draw a given font stack is declared once, in fonts/families,
 # next to which width table measures it -- see that module for why the two must
 # be decided together. Imported under the old private names so anything
@@ -387,7 +387,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
         if ax._grid_which in ("major", "both"):
             _draw_grid_lines(xticks, yticks, grid_alpha)
         if ax._grid_which in ("minor", "both"):
-            from ..ticker import minor_ticks
+            from ..style.ticker import minor_ticks
 
             xminor_g = (ax._xticks_minor if ax._xticks_minor is not None
                        else minor_ticks(xticks, xmin, xmax, ax._xscale))
@@ -418,7 +418,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
             _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
                          xside=ax._xtick_side, yside=ax._ytick_side)
             if ax._minor_ticks_on:
-                from ..ticker import minor_ticks
+                from ..style.ticker import minor_ticks
                 mxst = (xst.copy(**ax._minor_tick_overrides["x"])
                        if ax._minor_tick_overrides["x"] else xst)
                 myst = (yst.copy(**ax._minor_tick_overrides["y"])

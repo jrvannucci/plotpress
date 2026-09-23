@@ -18,10 +18,10 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.dates import (
+from plotpress.style.dates import (
     date_ticks, days_to_datetime64, format_date_ticks, is_datetime_like, to_days,
 )
-from plotpress.ticker import (
+from plotpress.style.ticker import (
     apply_locator, apply_tick_format, multiple_ticks, resolve_axis_tick_labels,
     resolve_axis_ticks, resolve_tick_format, resolve_tick_locations,
 )

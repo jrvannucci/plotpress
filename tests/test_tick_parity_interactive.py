@@ -28,7 +28,7 @@ import pytest
 
 import plotpress
 from plotpress.backends.svg import axes_metadata
-from plotpress.ticker import resolve_axis_tick_labels, resolve_axis_ticks
+from plotpress.style.ticker import resolve_axis_tick_labels, resolve_axis_ticks
 
 pytestmark = pytest.mark.browser
 

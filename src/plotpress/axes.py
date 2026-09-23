@@ -19,8 +19,8 @@ from .core.artists import (
     Pie, PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
     Stem, Table, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
-from .ticker import resolve_axis_ticks, resolve_axis_tick_labels
+from .style.colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
+from .style.ticker import resolve_axis_ticks, resolve_axis_tick_labels
 from . import _spectral
 
 #: Sentinel for ``text(transform=ax.transAxes)`` -- identity, not value, is
@@ -443,7 +443,7 @@ class Axes:
         this, ``ax.plot(dates, y); ax.axvline("2024-03-01")`` would silently
         mint a one-off category instead of marking March 2024.
         """
-        from .dates import is_datetime_like, to_days
+        from .style.dates import is_datetime_like, to_days
 
         if is_datetime_like(value):
             if axis == "x":
@@ -3694,7 +3694,7 @@ def _norm_axis_limits(ax, axis, lower, upper):
     bound through this axis' own date/category mapping first -- see
     :meth:`Axes.set_xlim`'s own docstring for what that means for each kind.
     """
-    from .dates import is_datetime_like, to_days
+    from .style.dates import is_datetime_like, to_days
 
     is_date = ax._xdate if axis == "x" else ax._ydate
     categorical = ax._xcategorical if axis == "x" else ax._ycategorical

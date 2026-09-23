@@ -17,8 +17,8 @@ from ...core.artists import (
     PolyCollection, QuadMesh, Quiver, ScatterCollection, Span, Stem, Table, Text,
     Violin, _edges_from,
 )
-from ...colors import apply_colormap, resolve_colorbar_ticks, to_hex
-from ...png import png_data_uri
+from ...style.colors import apply_colormap, resolve_colorbar_ticks, to_hex
+from ..png import png_data_uri
 from ...core.primitives import artist_to_prims
 from ...core.primitives import pie_center_radius, pie_label_positions, tick_axis_edge
 from ...core.primitives import (
@@ -31,7 +31,7 @@ from ...core.primitives import Path as PPath
 from ...core.primitives import PolygonBatch as PPolyBatch
 from ...core.primitives import Rect as PRect
 from ...core.primitives import Segments as PSegments
-from ...ticker import minor_ticks
+from ...style.ticker import minor_ticks
 from ...core.transform import LinearTransform
 
 _DASH = {"-": None, "--": "6,4", ":": "1,3", "-.": "6,3,1,3"}

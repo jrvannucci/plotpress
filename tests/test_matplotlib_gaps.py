@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.colors import (
+from plotpress.style.colors import (
     BoundaryNorm, LogNorm, PowerNorm, SymLogNorm, TwoSlopeNorm,
     apply_colormap, get_cmap, make_cmap, make_listed_cmap, register_cmap,
     resolve_colorbar_ticks, to_hex,
@@ -224,7 +224,7 @@ def test_single_axes_colorbar_still_works():
 
 
 def test_colorbar_honors_nonlinear_norm():
-    from plotpress.colors import LogNorm, colorbar_ticks
+    from plotpress.style.colors import LogNorm, colorbar_ticks
 
     ln = LogNorm(vmin=1, vmax=1000)
     vals, fracs, labels = colorbar_ticks(ln)
@@ -2693,7 +2693,7 @@ def test_two_slope_norm_centers_on_vcenter_with_asymmetric_bounds():
     np.testing.assert_allclose(tsn(np.array([-1.0, 0.0, 9.0])), [0.0, 0.5, 1.0])
     # A plain Normalize over the same asymmetric range would NOT put 0 at
     # the midpoint -- confirming this actually differs from the plain case.
-    from plotpress.colors import Normalize
+    from plotpress.style.colors import Normalize
     plain = Normalize(-1.0, 9.0)
     assert plain(np.array([0.0]))[0] != 0.5
 
@@ -3257,7 +3257,7 @@ def test_saved_png_carries_dpi_metadata(tmp_path):
 
 
 def test_png_encoder_prefers_up_filter_for_a_smooth_gradient():
-    from plotpress.png import _filter_scanlines
+    from plotpress.backends.png import _filter_scanlines
 
     w = 64
     row = np.linspace(0, 255, w).astype(np.uint8)

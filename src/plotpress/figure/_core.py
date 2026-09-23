@@ -2699,7 +2699,7 @@ class Figure:
         your own Qt layout instead of a standalone window, use
         ``plotpress.qt.PlotPressWidget`` directly.
         """
-        from ..qt import view
+        from ..gui.qt import view
         return view(self, title=title, block=block, interactive=interactive,
                     pick_precision=pick_precision)
 

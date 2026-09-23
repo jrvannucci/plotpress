@@ -1,4 +1,4 @@
-"""Tests for the optional PyQt/PySide viewer (``plotpress.qt``).
+"""Tests for the optional PyQt/PySide viewer (``plotpress.gui.qt``).
 
 The Qt code path needs a binding + WebEngine, which CI does not install, so the
 GUI test skips there. The contract tests below run everywhere: they guard the
@@ -54,7 +54,7 @@ def test_qt_widget_targets_a_real_marker_hook():
     from plotpress.backends._interactive import INTERACTIVE_JS
 
     assert "window.plotpressGetMarkers" in INTERACTIVE_JS
-    src = (pathlib.Path(plotpress.__file__).parent / "qt.py").read_text(encoding="utf-8")
+    src = (pathlib.Path(plotpress.__file__).parent / "gui" / "qt.py").read_text(encoding="utf-8")
     assert "plotpressGetMarkers" in src
 
 
@@ -62,7 +62,7 @@ def test_qt_import_error_is_friendly_when_no_binding():
     if _has_qt_binding():
         pytest.skip("a Qt binding is installed; the no-binding path can't be exercised")
     with pytest.raises(ImportError, match=r"plotpress\[qt\]"):
-        importlib.import_module("plotpress.qt")
+        importlib.import_module("plotpress.gui.qt")
 
 
 def test_show_qt_is_lazy():
@@ -81,7 +81,7 @@ def test_temp_files_registry_entries_are_independent(tmp_path):
     single-shared-view constraint the other Qt tests are."""
     if not _has_qt_binding():
         pytest.skip("no Qt binding with WebEngine installed")
-    import plotpress.qt as spqt
+    import plotpress.gui.qt as spqt
 
     a = str(tmp_path / "a.html")
     b = str(tmp_path / "b.html")
@@ -106,7 +106,7 @@ def test_live_artist_targets_the_pick_update_hook():
     from plotpress.backends._interactive import INTERACTIVE_JS
 
     assert "window.plotpressUpdatePick" in INTERACTIVE_JS
-    src = (pathlib.Path(plotpress.__file__).parent / "qt.py").read_text(encoding="utf-8")
+    src = (pathlib.Path(plotpress.__file__).parent / "gui" / "qt.py").read_text(encoding="utf-8")
     assert "plotpressUpdatePick" in src
 
 
@@ -122,7 +122,7 @@ def shared_qt_widget():
     if not _has_qt_binding():
         pytest.skip("no Qt binding with WebEngine installed")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    import plotpress.qt as spqt
+    import plotpress.gui.qt as spqt
 
     app = spqt._QT.QApplication.instance() or spqt._QT.QApplication(sys.argv)
     fig, ax = plotpress.subplots()

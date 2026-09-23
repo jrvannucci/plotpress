@@ -34,7 +34,7 @@ import numpy as np
 import pytest
 
 from plotpress.backends._interactive import _JS_SOURCE as _JS
-from plotpress.ticker import resolve_axis_tick_labels, resolve_axis_ticks
+from plotpress.style.ticker import resolve_axis_tick_labels, resolve_axis_ticks
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None,
                                 reason="needs node on PATH")

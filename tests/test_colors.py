@@ -11,8 +11,8 @@ already cover end to end.
 import numpy as np
 import pytest
 
-from plotpress.colors import LogNorm, Normalize, PowerNorm, SymLogNorm, to_hex
-from plotpress.ticker import log_floor, log_ticks
+from plotpress.style.colors import LogNorm, Normalize, PowerNorm, SymLogNorm, to_hex
+from plotpress.style.ticker import log_floor, log_ticks
 
 
 @pytest.mark.parametrize("norm_cls, kwargs", [

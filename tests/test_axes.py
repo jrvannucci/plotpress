@@ -182,7 +182,7 @@ def test_reversed_limits_render_like_matplotlib_inversion(setlim, scale):
 
 
 def test_reversed_ticks_are_order_independent():
-    from plotpress.ticker import log_ticks, nice_ticks
+    from plotpress.style.ticker import log_ticks, nice_ticks
     np.testing.assert_array_equal(nice_ticks(3, 0), nice_ticks(0, 3))
     np.testing.assert_array_equal(log_ticks(100, 1), log_ticks(1, 100))
     assert len(log_ticks(100, 1)) > 0     # not silently empty
@@ -424,7 +424,7 @@ def test_non_uniform_cells_get_proportional_width():
     place. Resampling assigns each pixel the cell its center falls in.
     """
     from plotpress.core.artists import QuadMesh
-    from plotpress.colors import apply_colormap
+    from plotpress.style.colors import apply_colormap
 
     edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])      # widths 1,1,2,4,8
     field = np.arange(5.0)[None, :]

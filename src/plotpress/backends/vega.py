@@ -67,8 +67,8 @@ from ..core.artists import (
     Bars, ErrorBar, Line2D, Pie, QuadMesh, ScatterCollection, Stem, Text,
     Annotation, _VECTOR_CELL_LIMIT,
 )
-from ..colors import Normalize, resolve_colorbar_ticks, to_hex
-from ..png import png_data_uri
+from ..style.colors import Normalize, resolve_colorbar_ticks, to_hex
+from .png import png_data_uri
 from ..core.primitives import artist_to_prims
 from ..core.primitives import normalize_marker_shape, vega_symbol_shape
 from ..core.primitives import pie_center_radius, pie_label_positions

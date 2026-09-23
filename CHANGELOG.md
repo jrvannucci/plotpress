@@ -13,6 +13,20 @@ anywhere in the source.
 
 ### Changed
 
+- **Grouped `style.py`, `colors.py`, `ticker.py`, and `dates.py` into
+  `plotpress/style/`** -- the "how a value becomes appearance" cluster
+  (`Style`, colormaps, tick locating/formatting, its datetime extension).
+  `style.py` becomes `style/__init__.py` (it names the package); `colors.py`,
+  `ticker.py`, `dates.py` become plain siblings with no re-export. The
+  genuinely public API this exposes (`plotpress.Normalize`, `plotpress.
+  register_cmap`, etc.) is unaffected -- it's re-exported through
+  `plotpress/__init__.py`'s existing lazy-attribute layer, which only needed
+  its internal path strings updated. Code importing `plotpress.colors`/
+  `.ticker`/`.dates` directly needs the `style.`-prefixed path.
+- **Moved `qt.py` into `plotpress/gui/`** and **`png.py` into
+  `plotpress/backends/`** -- `png.py` is only ever used by the render
+  backends (SVG/Vega/Vega-Lite embedding PNG data URIs), never by `axes.py`
+  or anything outside `backends/`.
 - **Grouped the remaining top-level modules into `backends/` and `core/`.**
   `svg/`, `raster.py`, `vega.py`, `vega_lite.py`, and `_interactive.py`
   (+ `_js/`) moved into `plotpress/backends/` -- every format a `Figure`
