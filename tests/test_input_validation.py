@@ -176,6 +176,51 @@ def test_log_scale_with_some_positive_data_does_not_warn(recwarn):
 
 
 # ---------------------------------------------------------------------------
+# An explicit, both-ends-set non-positive limit on a log axis is a caller
+# mistake (unlike autoscaled data that merely happens to be non-positive,
+# covered above) -- it used to reach ticker.log_ticks() as a domain-error
+# crash, or transform.py as a silently NaN-blanked axis, depending on which
+# end was bad. Both close via the same _resolved_limits() validation.
+# ---------------------------------------------------------------------------
+def test_set_ylim_both_nonpositive_on_log_axis_raises():
+    fig, ax = plotpress.subplots()
+    ax.set_yscale("log")
+    ax.set_ylim(-5, -1)
+    with pytest.raises(ValueError, match="log"):
+        fig.to_svg()
+
+
+def test_set_xlim_negative_lower_bound_on_log_axis_raises():
+    fig, ax = plotpress.subplots()
+    ax.set_xscale("log")
+    ax.set_xlim(-1, 100)
+    with pytest.raises(ValueError, match="log"):
+        fig.to_svg()
+
+
+def test_log_axis_limit_validation_is_order_independent():
+    # set_ylim() before set_yscale() must still be caught -- the check lives
+    # in _resolved_limits(), the one place both settings are read together
+    # regardless of which was called first.
+    fig, ax = plotpress.subplots()
+    ax.set_ylim(-5, -1)
+    ax.set_yscale("log")
+    with pytest.raises(ValueError, match="log"):
+        fig.to_svg()
+
+
+def test_one_sided_limit_on_log_axis_still_autoscales_the_open_end(recwarn):
+    # Only one end explicit (not "both set") -- the open end still
+    # autoscales normally and this must not raise or warn.
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 10, 100], [1, 2, 3])
+    ax.set_yscale("log")
+    ax.set_xlim(1, None)
+    fig.to_svg()
+    assert not any("log" in str(w.message) for w in recwarn.list)
+
+
+# ---------------------------------------------------------------------------
 # Figure(figsize=...) must reject a non-positive size.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("figsize", [(0, 0), (-5, 4), (5, -4), (0, 8)])

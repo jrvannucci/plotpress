@@ -38,16 +38,27 @@ _TRANS_AXES = object()
 _UNSET = object()
 
 
-def _finite_datasets(data, positions):
+def _finite_datasets(data, positions, who=""):
     """Drop non-finite values, then any dataset left with no observations.
 
     Each surviving dataset keeps its own position, so one empty column shifts
     nothing. Without this, ``boxplot``/``violinplot`` reach ``np.percentile``
     or ``d.min()`` on an empty array and fail well away from the caller.
+
+    A dataset dropped entirely warns (naming its position), matching how the
+    rest of the codebase treats silent data loss -- ``_warn_downsampled`` for
+    block-averaged mesh cells, ``_warn_dropped_cells`` for raster cells, the
+    ``BoundaryNorm(ncolors=...)`` warning in colors.py -- rather than leaving
+    the reader to notice a box or violin is simply missing from the figure.
     """
     positions = np.atleast_1d(np.asarray(positions, dtype=float))
     kept = [(d[np.isfinite(d)], p) for d, p in zip(data, positions)]
+    dropped = [float(p) for d, p in kept if not d.size]
     kept = [(d, p) for d, p in kept if d.size]
+    if dropped:
+        warnings.warn(
+            f"{who}(): dataset(s) at position(s) {dropped} had no finite "
+            "values and were dropped entirely.", UserWarning, stacklevel=3)
     if not kept:
         return [], np.empty(0, dtype=float)
     return [d for d, _ in kept], np.array([p for _, p in kept], dtype=float)
@@ -95,7 +106,13 @@ def _binned_gaussian_kde(data, grid, bw, n):
     """
     lo, hi = grid[0], grid[-1]
     m = grid.size
-    dx = (hi - lo) / (m - 1)
+    # A constant-valued sample collapses the grid to hi == lo (cut=0 pads by
+    # a multiple of the bandwidth, which is itself 0-width here), so dx would
+    # be 0 and (data - lo) / dx a NaN position -- `or 1.0` matches
+    # _kde_bandwidth's own fallback for the same degenerate case. Every
+    # point is then equal to lo/hi, so position 0.0 for all of them is the
+    # correct answer regardless of what dx is: a single spike at that value.
+    dx = (hi - lo) / (m - 1) or 1.0
 
     pos = np.clip((data - lo) / dx, 0.0, m - 1)   # data lies within the grid span
     left = np.minimum(np.floor(pos).astype(np.intp), m - 2)
@@ -965,6 +982,21 @@ class Axes:
         else:
             wlist = [None] * len(datasets)
 
+        # Unlike kdeplot()/ecdfplot()/rugplot() (each filter np.isfinite
+        # first) and boxplot()/violinplot() (via the shared _finite_datasets
+        # helper), hist() had no NaN handling at all: histogram_bin_edges()
+        # raises a bare "autodetected range of [nan, nan] is not finite"
+        # with no context. Filtered per dataset (not via _finite_datasets,
+        # which also drops a whole empty dataset and reindexes positions --
+        # not a concept hist() has) so weights stay aligned to the values
+        # that survive.
+        finite_datasets, finite_wlist = [], []
+        for d, w in zip(datasets, wlist):
+            mask = np.isfinite(d)
+            finite_datasets.append(d[mask])
+            finite_wlist.append(None if w is None else w[mask])
+        datasets, wlist = finite_datasets, finite_wlist
+
         # histogram_bin_edges() ignores range when bins is already a sequence
         # of edges, so this covers both "bins is a count" and "bins is
         # explicit edges" without branching on which one it is.
@@ -1404,7 +1436,7 @@ class Axes:
         data = [np.asarray(d, float) for d in x]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
-        data, positions = _finite_datasets(data, positions)
+        data, positions = _finite_datasets(data, positions, who="boxplot")
         stats = []
         for d in data:
             q1, med, q3 = np.percentile(d, [25, 50, 75])
@@ -1463,7 +1495,7 @@ class Axes:
         data = [np.asarray(d, float) for d in data]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
-        data, positions = _finite_datasets(data, positions)
+        data, positions = _finite_datasets(data, positions, who="violinplot")
         grids, halfwidths = [], []
         for d in data:
             pad = cut * _kde_bandwidth(d)
@@ -2072,7 +2104,10 @@ class Axes:
         elif aspect == "auto":
             self._aspect = None
         else:
-            self._aspect = float(aspect)
+            aspect = float(aspect)
+            if not aspect > 0:
+                raise ValueError(f"set_aspect(): aspect must be > 0, got {aspect!r}")
+            self._aspect = aspect
 
     def get_aspect(self):
         """The current aspect: ``'auto'``, or the y/x unit ratio (``1.0`` for
@@ -2088,7 +2123,13 @@ class Axes:
         space to hit the ratio, the same "box-adjust" strategy
         :meth:`set_aspect` uses.
         """
-        self._box_aspect = None if aspect is None else float(aspect)
+        if aspect is None:
+            self._box_aspect = None
+        else:
+            aspect = float(aspect)
+            if not aspect > 0:
+                raise ValueError(f"set_box_aspect(): aspect must be > 0, got {aspect!r}")
+            self._box_aspect = aspect
 
     def get_box_aspect(self):
         return self._box_aspect
@@ -3473,6 +3514,20 @@ class Axes:
         ygroup = self._sharey_group or [self]
         xlim = _group_limits(self, xgroup, "_xlim")
         ylim = _group_limits(self, ygroup, "_ylim")
+        # An explicit, both-ends-set limit on a log axis skips the autoscale
+        # path below entirely, so its own non-positive-data warning/clamp
+        # (a few lines down) never runs for it -- a typed-in bad bound was a
+        # caller mistake, not data to clamp, so this is a hard error instead:
+        # left unchecked, a non-positive log bound reaches ticker.log_ticks()
+        # as a domain-error crash (only vmin is floored there) or reaches
+        # transform.py as NaN (log10 of a non-positive value), silently
+        # blanking the axis with no explanation either way.
+        if self._xscale == "log" and _both_set(xlim) and min(xlim) <= 0:
+            raise ValueError(
+                f"set_xlim(): {min(xlim)!r} is not > 0, and the x-axis is log-scaled")
+        if self._yscale == "log" and _both_set(ylim) and min(ylim) <= 0:
+            raise ValueError(
+                f"set_ylim(): {min(ylim)!r} is not > 0, and the y-axis is log-scaled")
         if _both_set(xlim) and _both_set(ylim):
             return xlim, ylim
 

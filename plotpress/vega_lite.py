@@ -79,6 +79,7 @@ from .artists import (
     Annotation, VLine,
 )
 from .png import png_data_uri
+from .primitives import normalize_marker_shape, vega_symbol_shape
 from .primitives import pie_center_radius, pie_label_positions
 from .svg import _effective_rect, _pixel_rect
 from .colors import resolve_colorbar_ticks
@@ -628,6 +629,15 @@ def _line_layer(art, ax, size_scale):
         mark = {"type": "point", "filled": True,
                 "color": _color(art.markerfacecolor or art.color),
                 "size": _symbol_size(diam), "opacity": float(art.alpha)}
+        canonical = normalize_marker_shape(art.marker)
+        shape = vega_symbol_shape(canonical)
+        if shape:
+            mark["shape"] = shape
+        elif canonical and canonical != "o":
+            caveats.append(
+                f"figure_to_vega_lite(): axes {_axes_index(ax)} marker "
+                f"{art.marker!r} has no Vega-Lite point shape equivalent -- "
+                "rendered as a circle instead.")
         layer = {"data": {"values": values}, "mark": mark,
                  "encoding": {"x": dict(x_enc, field="x"), "y": dict(y_enc, field="y")}}
         return [layer], caveats
@@ -644,7 +654,17 @@ def _line_layer(art, ax, size_scale):
     if dash:
         mark["strokeDash"] = dash
     if art.marker is not None:
-        mark["point"] = True
+        canonical = normalize_marker_shape(art.marker)
+        shape = vega_symbol_shape(canonical)
+        if shape:
+            mark["point"] = {"shape": shape}
+        else:
+            mark["point"] = True
+            if canonical and canonical != "o":
+                caveats.append(
+                    f"figure_to_vega_lite(): axes {_axes_index(ax)} marker "
+                    f"{art.marker!r} has no Vega-Lite point shape equivalent "
+                    "-- rendered as a circle instead.")
     layer = {"data": {"values": values}, "mark": mark,
              "encoding": {
                  "x": dict(x_enc, field="x"), "y": dict(y_enc, field="y"),
@@ -675,9 +695,19 @@ def _scatter_layer(art, ax, size_scale):
         if fv
     ]
     x_enc, y_enc, caveats = _xy_axis(ax)
+    mark = {"type": "point", "filled": True, "opacity": float(art.alpha)}
+    canonical = normalize_marker_shape(art.marker)
+    shape = vega_symbol_shape(canonical)
+    if shape:
+        mark["shape"] = shape
+    elif canonical and canonical != "o":
+        caveats.append(
+            f"figure_to_vega_lite(): axes {_axes_index(ax)} marker "
+            f"{art.marker!r} has no Vega-Lite point shape equivalent -- "
+            "rendered as a circle instead.")
     layer = {
         "data": {"values": values},
-        "mark": {"type": "point", "filled": True, "opacity": float(art.alpha)},
+        "mark": mark,
         "encoding": {
             "x": dict(x_enc, field="x"), "y": dict(y_enc, field="y"),
             "size": {"field": "size", "type": "quantitative", "legend": None},
@@ -742,10 +772,15 @@ def _errorbar_layers(art, ax, size_scale):
               "rule": {"strokeWidth": float(art.elinewidth)}}
     if art.capsize:
         eb_mark["ticks"] = {"strokeWidth": float(art.capthick)}
+    # Index over the *full* (pre-finite-filter) sequence, matching svg.py's
+    # own `if i % every: continue` -- errorevery thins by position in the
+    # original data, not by position among the finite points alone.
+    every = art.errorevery
     if art.yerr is not None:
         yerr = np.asarray(art.yerr, float)
         vals = [{"x": float(xv), "y": float(yv), "yerr": float(e)}
-               for xv, yv, e, fv in zip(x, y, yerr, finite) if fv]
+               for i, (xv, yv, e, fv) in enumerate(zip(x, y, yerr, finite))
+               if fv and i % every == 0]
         layers.append({
             "data": {"values": vals}, "mark": dict(eb_mark),
             "encoding": {"x": dict(x_enc, field="x"), "y": dict(y_enc, field="y"),
@@ -754,7 +789,8 @@ def _errorbar_layers(art, ax, size_scale):
     if art.xerr is not None:
         xerr = np.asarray(art.xerr, float)
         vals = [{"x": float(xv), "y": float(yv), "xerr": float(e)}
-               for xv, yv, e, fv in zip(x, y, xerr, finite) if fv]
+               for i, (xv, yv, e, fv) in enumerate(zip(x, y, xerr, finite))
+               if fv and i % every == 0]
         layers.append({
             "data": {"values": vals}, "mark": dict(eb_mark),
             "encoding": {"x": dict(x_enc, field="x"), "y": dict(y_enc, field="y"),

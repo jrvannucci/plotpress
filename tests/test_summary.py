@@ -6,6 +6,8 @@ the printed text via ``capsys``, the same pattern ``test_performance.py``
 already uses for a print-based method, rather than trying to parse a
 return value that deliberately doesn't exist.
 """
+from unittest.mock import patch
+
 import plotpress
 
 
@@ -40,6 +42,18 @@ def test_print_layout_summary_names_twin_and_legend_gap(capsys):
     assert "has a legend" in out
     # The twin itself has nothing unsupported on it.
     assert "Axes 1:\n  position:  twinx() overlay of axes 0" in out
+
+
+def test_print_layout_summary_surfaces_a_to_vega_crash_instead_of_saying_ok(capsys):
+    """Regression: a genuine exception from to_vega()/to_vega_lite() was
+    silently swallowed by _vega_compat_report -- the summary claimed a clean
+    "OK" for an exporter that actually crashed."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    with patch("plotpress.figure.Figure.to_vega", side_effect=RuntimeError("boom")):
+        fig.print_layout_summary()
+    out = capsys.readouterr().out
+    assert "to_vega() raised RuntimeError: boom" in out
 
 
 def test_print_layout_summary_names_unsupported_artist_per_exporter(capsys):

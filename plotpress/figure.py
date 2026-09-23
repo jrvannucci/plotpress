@@ -3266,8 +3266,12 @@ def _vega_compat_report(fig):
         warnings.simplefilter("always")
         try:
             fig.to_vega()
-        except Exception:
-            pass
+        except Exception as exc:
+            # A real crash is a gap too -- swallowing it here would have this
+            # function (and print_layout_summary()/print_summary(), which
+            # only ever see its output) claim "OK" for an exporter that
+            # actually blew up, while a direct fig.to_vega() call raises.
+            add(f"to_vega() raised {type(exc).__name__}: {exc}", "vega")
     for w in caught:
         add(str(w.message), "vega")
 
@@ -3275,8 +3279,9 @@ def _vega_compat_report(fig):
         warnings.simplefilter("always")
         try:
             _, caveats = fig.to_vega_lite()
-        except Exception:
+        except Exception as exc:
             caveats = []
+            add(f"to_vega_lite() raised {type(exc).__name__}: {exc}", "vega_lite")
     # `caveats` already carries every structural gap once, deduplicated;
     # the aggregate warning built from `" ".join(caveats)` would otherwise
     # duplicate every one of them as a second, harder-to-parse blob (the

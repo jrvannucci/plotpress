@@ -11,6 +11,46 @@ anywhere in the source.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`set_aspect`/`set_box_aspect` reject a non-positive value.** `aspect=0`
+  used to crash the whole render with a `ZeroDivisionError`; a negative
+  aspect silently corrupted that axes' geometry instead. Both now raise
+  `ValueError` at the call site.
+- **An explicit, non-positive limit on a log axis now raises, instead of
+  crashing or silently blanking the axis.** `set_ylim(-5, -1)` on a
+  log-scaled axis used to crash tick generation with `ValueError: math
+  domain error`; `set_xlim(-1, 100)` used to silently NaN-blank the whole
+  axis with no error. Both close at the same shared validation point,
+  regardless of the order `set_xscale`/`set_xlim`/`set_ylim` were called in.
+  A one-sided limit (the open end left to autoscale) is unaffected.
+- **`violinplot()`/`kdeplot()` no longer crash on a constant-valued sample**
+  once it's large enough (>= 4000 points) to use the binned KDE estimator --
+  the degenerate grid produced NaN positions that crashed `np.bincount`.
+- **`get_cmap()`/`register_cmap()` no longer hand out the shared colormap
+  array by reference.** Mutating a returned or registered LUT used to
+  silently corrupt that colormap for every other figure/artist in the
+  process; both now always return/store a copy.
+- **Huge-line decimation no longer lets a `NaN` mask a real peak.** A pixel
+  column containing both a genuine extreme value and a `NaN` (a common
+  shape for a real time series with missing samples) used to pick the NaN
+  as that column's rendered maximum, silently dropping the true peak.
+- **`Figure.to_vega()`/`to_vega_lite()` now honor `errorbar(..., errorevery=)`**
+  and export a mapped marker shape (`square`/`diamond`/the four
+  `triangle_*`) instead of always rendering a circle. A marker shape with no
+  native Vega/Vega-Lite equivalent (`+`/`x`/`|`/`_`) still falls back to a
+  circle, now with a caveat naming the axes instead of silently.
+- **`hist()` now ignores non-finite values**, matching every sibling
+  distribution method (`kdeplot`/`ecdfplot`/`rugplot`/`boxplot`/
+  `violinplot`) -- it used to raise a bare, context-free NumPy error on a
+  NaN in the data.
+- **`boxplot()`/`violinplot()` warn when a dataset is dropped entirely**
+  (all its values were non-finite) instead of silently rendering one fewer
+  box/violin with no indication anything was missing.
+- **`Figure.print_layout_summary()`/`Axes.print_summary()` no longer report
+  a false "OK"** when `to_vega()`/`to_vega_lite()` actually raised -- the
+  crash now shows up as a gap in the summary instead of being swallowed.
+
 ## [0.41.0] - 2026-09-20
 
 ### Added

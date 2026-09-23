@@ -62,6 +62,21 @@ def test_kdeplot_handles_a_million_points():
     assert np.trapezoid(line.y, line.x) == pytest.approx(1.0, abs=1e-3)
 
 
+def test_violinplot_constant_data_above_binning_threshold_does_not_crash():
+    """A constant-valued sample at/above the binned-KDE threshold (violinplot's
+    default cut=0.0 pads by zero) collapsed the grid (hi == lo), making
+    dx == 0.0 and every position a NaN -- np.bincount then raised on the
+    resulting negative index. dx now falls back to 1.0 (matching
+    _kde_bandwidth's own fallback for the same degenerate case), landing
+    every point on the same node: a single spike, the correct answer for
+    constant data."""
+    _, ax = plotpress.subplots()
+    violin = ax.violinplot([np.full(5000, 3.0)])
+    assert violin.data_bounds() is not None
+    assert np.isfinite(violin.halfwidths[0]).all()
+    assert violin.halfwidths[0].max() > 0
+
+
 def test_kdeplot_cut_extends_past_the_data():
     d = _sample()
     _, ax = plotpress.subplots()
@@ -230,8 +245,20 @@ def test_1d_distributions_draw_nothing_rather_than_raising(method, data):
 @pytest.mark.parametrize("method", ["boxplot", "violinplot"])
 def test_grouped_distributions_drop_empty_datasets(method, data):
     fig, ax = plotpress.subplots()
-    art = getattr(ax, method)([data])
+    with pytest.warns(UserWarning, match="dropped entirely"):
+        art = getattr(ax, method)([data])
     assert art.data_bounds() is None
+
+
+@pytest.mark.parametrize("method", ["boxplot", "violinplot"])
+def test_grouped_distributions_warn_which_position_was_dropped(method):
+    # A dataset with no finite values used to vanish from the figure with no
+    # indication anything was dropped -- the warning names its position so a
+    # missing box/violin doesn't look like a rendering bug.
+    fig, ax = plotpress.subplots()
+    good = np.array([1.0, 2.0, 3.0])
+    with pytest.warns(UserWarning, match=r"position\(s\) \[2\.0\]"):
+        getattr(ax, method)([good, ALL_NAN, good], positions=[1, 2, 3])
     assert fig.to_svg().startswith("<svg")
 
 
@@ -239,7 +266,8 @@ def test_grouped_distributions_drop_empty_datasets(method, data):
 def test_empty_dataset_does_not_shift_its_neighbours(method):
     a, c = _sample(seed=1), _sample(seed=2)
     _, ax = plotpress.subplots()
-    art = getattr(ax, method)([a, EMPTY, c], positions=[10.0, 20.0, 30.0])
+    with pytest.warns(UserWarning, match="dropped entirely"):
+        art = getattr(ax, method)([a, EMPTY, c], positions=[10.0, 20.0, 30.0])
     # The empty column drops out; the survivors keep their own positions.
     assert list(art.positions) == [10.0, 30.0]
 

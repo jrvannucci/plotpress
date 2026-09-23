@@ -412,6 +412,49 @@ def test_errorbar_capsize_zero_suppresses_ticks():
     assert "ticks" not in eb["mark"]
 
 
+def test_errorbar_errorevery_thins_the_exported_whiskers():
+    """Regression: errorevery thinned the whiskers/caps svg.py and raster.py
+    draw, but _errorbar_layers built one whisker row per point
+    unconditionally -- a sparse SVG/PNG errorbar exported as a solid,
+    overlapping band in the Vega-Lite spec."""
+    fig, ax = plotpress.subplots()
+    n = 20
+    ax.errorbar(range(n), range(n), yerr=1.0, errorevery=5)
+    result, _ = fig.to_vega_lite()
+    eb = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "errorbar")
+    assert len(eb["data"]["values"]) == len(range(0, n, 5))
+
+
+def test_scatter_marker_shape_maps_to_a_vega_lite_point_shape():
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, 1], [0, 1], marker="D")
+    result, caveats = fig.to_vega_lite()
+    point = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "point")
+    assert point["mark"]["shape"] == "diamond"
+    assert caveats == []
+
+
+def test_unsupported_marker_shape_surfaces_as_a_caveat():
+    """Regression: plus/x/vline/hline markers have no native Vega-Lite point
+    shape -- they already fell back to a circle, but silently, with no
+    indication the shape wasn't actually exported."""
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, 1], [0, 1], marker="x")
+    result, caveats = fig.to_vega_lite()
+    assert any("no Vega-Lite point shape equivalent" in c for c in caveats)
+    point = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "point")
+    assert "shape" not in point["mark"]
+
+
+def test_marker_only_line_marker_shape_maps_too():
+    fig, ax = plotpress.subplots()
+    ax.plot([0, 1, 2], [0, 1, 2], marker="^", linestyle="none")
+    result, caveats = fig.to_vega_lite()
+    point = next(l for l in result["grid"]["layer"] if l["mark"]["type"] == "point")
+    assert point["mark"]["shape"] == "triangle-up"
+    assert caveats == []
+
+
 def test_text_rotation_and_va_are_applied():
     fig, ax = plotpress.subplots()
     ax.text(1, 1, "hi", rotation=90, va="top")

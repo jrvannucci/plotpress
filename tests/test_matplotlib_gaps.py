@@ -393,6 +393,38 @@ def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
     assert dx[0] == x[0] and dx[-1] == x[-1]   # endpoints preserved
 
 
+def test_decimation_keeps_the_real_peak_even_when_a_nan_shares_its_column():
+    # np.lexsort's ascending order puts NaN last, so the per-column "max"
+    # pick used to grab the NaN instead of a real value sharing that same
+    # pixel column -- silently dropping the true peak from the line.
+    from plotpress.primitives import _decimate_minmax
+
+    n, ncols = 50000, 700
+    x = np.linspace(0, 10, n)
+    y = np.sin(x)
+    col = np.clip(((x - x[0]) / (x[-1] - x[0]) * ncols).astype(int), 0, ncols - 1)
+    target = np.flatnonzero(col == 350)
+    y[target[0]] = 99.0     # the true peak in this column
+    y[target[1]] = np.nan   # a NaN sharing the same column
+    dx, dy = _decimate_minmax(x, y, ncols=ncols)
+    assert np.nanmax(dy) == 99.0
+
+
+def test_decimation_all_nan_column_still_yields_one_representative_row():
+    # An entirely-NaN column has nothing to pick a real min/max from -- must
+    # still keep some row (preserving the gap it represents), not crash or
+    # vanish, and this must be unaffected by the NaN-aware lo/hi fix above.
+    from plotpress.primitives import _decimate_minmax
+
+    n, ncols = 50000, 700
+    x = np.linspace(0, 10, n)
+    y = np.sin(x)
+    col = np.clip(((x - x[0]) / (x[-1] - x[0]) * ncols).astype(int), 0, ncols - 1)
+    y[col == 350] = np.nan
+    dx, dy = _decimate_minmax(x, y, ncols=ncols)
+    assert np.isnan(dy).any()
+
+
 def test_small_and_nonmonotonic_lines_are_not_decimated():
     from plotpress.primitives import _decimate_minmax, _is_monotonic
 
@@ -1616,6 +1648,29 @@ def test_hist_backward_compatible_single_dataset_default():
     assert isinstance(counts, np.ndarray)
 
 
+def test_hist_ignores_nan_and_inf_values():
+    """Regression: hist() had no finiteness filtering at all, unlike its
+    siblings (kdeplot/ecdfplot/rugplot filter np.isfinite; boxplot/
+    violinplot share _finite_datasets) -- a NaN in the data raised a bare
+    'autodetected range of [nan, nan] is not finite' straight out of numpy
+    instead of just being ignored like everywhere else."""
+    fig, ax = plotpress.subplots()
+    counts, edges, bars = ax.hist([1, 2, float("nan"), 3, float("inf")], bins=3)
+    assert counts.sum() == 3
+    assert np.isfinite(edges).all()
+
+
+def test_hist_weights_stay_aligned_after_dropping_a_nan():
+    fig, ax = plotpress.subplots()
+    d1 = np.array([1.0, 2.0, np.nan, 3.0])
+    d2 = np.array([1.0, 2.0, 3.0])
+    w1 = np.array([10.0, 20.0, 30.0, 40.0])   # the 30.0 belongs to the NaN
+    w2 = np.array([1.0, 1.0, 1.0])
+    counts, edges, bars = ax.hist([d1, d2], weights=[w1, w2], bins=3)
+    assert counts[0].sum() == 70.0   # 10 + 20 + 40, not 100
+    assert counts[1].sum() == 3.0
+
+
 def test_boxplot_whis_widens_the_whiskers():
     data = np.array([0.0, 1, 1, 1, 2, 100.0])
     fig, ax = plotpress.subplots()
@@ -2683,8 +2738,34 @@ def test_register_cmap_accepts_a_ready_made_lut():
     lut = np.zeros((256, 3), dtype=np.uint8)
     lut[:, 0] = 200
     out = register_cmap("plotpress-test-raw-lut", lut)
-    assert out is lut
+    # A copy, not the caller's own array by reference -- see
+    # test_register_cmap_copies_its_input below for why.
+    assert out is not lut
+    assert np.array_equal(out, lut)
     assert np.array_equal(get_cmap("plotpress-test-raw-lut"), lut)
+
+
+def test_register_cmap_copies_its_input():
+    # Registering an already-uint8 array used to store the caller's own
+    # array by reference (astype(..., copy=False) is a no-op on a matching
+    # dtype) -- mutating it afterward silently changed an already-registered
+    # colormap everywhere it was used.
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    register_cmap("plotpress-test-mutate-after", lut)
+    lut[:] = 255
+    registered = get_cmap("plotpress-test-mutate-after")
+    assert not np.array_equal(registered, lut)
+    assert (registered == 0).all()
+
+
+def test_get_cmap_returns_a_copy_not_the_shared_lut():
+    # get_cmap() used to hand out the registry's own live array; mutating it
+    # in place silently corrupted the colormap for every other figure/artist
+    # in the process.
+    lut = get_cmap("viridis")
+    original = lut.copy()
+    lut[0] = [0, 0, 0]
+    assert np.array_equal(get_cmap("viridis"), original)
 
 
 def test_tab10_tab20_set1_dark2_are_qualitative_not_interpolated():

@@ -260,7 +260,10 @@ def get_cmap(name) -> np.ndarray:
         raise ValueError(
             f"Unknown colormap {name!r}. Available: {available_colormaps()}"
         )
-    return lut[::-1].copy() if reverse else lut
+    # Always a copy, not the registry's own live array -- otherwise a caller
+    # mutating their "own" LUT in place (e.g. lut[0] = [0, 0, 0]) silently
+    # corrupts this colormap for every other figure/artist in the process.
+    return lut[::-1].copy() if reverse else lut.copy()
 
 
 def available_colormaps():
@@ -438,7 +441,11 @@ def register_cmap(name: str, colors_or_lut, *, listed: bool = False,
     Returns the LUT that was registered.
     """
     if isinstance(colors_or_lut, np.ndarray):
-        lut = colors_or_lut.astype(np.uint8, copy=False)
+        # copy=True even when the array is already uint8 -- otherwise the
+        # registry stores the caller's own array by reference, and the
+        # caller mutating it later (for something else, unaware it's now
+        # shared) silently changes what this colormap renders everywhere.
+        lut = colors_or_lut.astype(np.uint8, copy=True)
     elif listed:
         lut = make_listed_cmap(colors_or_lut, n)
     else:

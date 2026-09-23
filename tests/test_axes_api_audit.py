@@ -84,6 +84,22 @@ def test_set_box_aspect_none_restores_full_allocated_box():
     assert ax.get_box_aspect() is None
 
 
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_set_aspect_non_positive_raises(bad):
+    # A zero/negative aspect used to reach _effective_rect() unvalidated,
+    # dividing by zero (0) or producing corrupted negative geometry (< 0).
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must be > 0"):
+        ax.set_aspect(bad)
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_set_box_aspect_non_positive_raises(bad):
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must be > 0"):
+        ax.set_box_aspect(bad)
+
+
 # -- minor ticks ----------------------------------------------------------
 def test_set_xticks_minor_places_explicit_minor_tick_marks():
     fig, ax = plotpress.subplots()

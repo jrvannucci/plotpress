@@ -48,12 +48,24 @@ def _decimate_minmax(x, y, ncols):
     runstart = np.empty(n, bool); runstart[0] = True; runstart[1:] = col[1:] != col[:-1]
     runend = np.empty(n, bool); runend[-1] = True; runend[:-1] = col[1:] != col[:-1]
     keep |= runstart | runend
-    order = np.lexsort((y, col))
-    sc = col[order]
-    lo = np.empty(n, bool); lo[0] = True; lo[1:] = sc[1:] != sc[:-1]
-    hi = np.empty(n, bool); hi[-1] = True; hi[:-1] = sc[1:] != sc[:-1]
-    keep[order[lo]] = True
-    keep[order[hi]] = True
+    # Two separate sort keys, not one: np.lexsort's ascending order puts NaN
+    # last, which leaves the *first*-per-column pick (lo, the min) alone but
+    # hands the *last*-per-column pick (hi, the max) a NaN whenever one sits
+    # in a column next to a real value -- silently dropping the true peak.
+    # Mapping NaN to -inf just for the hi key puts a real value last again
+    # (lo's own key is unchanged, since NaN already sorting last doesn't
+    # affect it). A column that's all-NaN still ties every row at the same
+    # sentinel for both keys, so lexsort's stability picks the same
+    # representative row it always did -- the NaN-gap case is unaffected.
+    order_lo = np.lexsort((y, col))
+    y_hi = np.where(np.isfinite(y), y, -np.inf)
+    order_hi = np.lexsort((y_hi, col))
+    sc_lo = col[order_lo]
+    sc_hi = col[order_hi]
+    lo = np.empty(n, bool); lo[0] = True; lo[1:] = sc_lo[1:] != sc_lo[:-1]
+    hi = np.empty(n, bool); hi[-1] = True; hi[:-1] = sc_hi[1:] != sc_hi[:-1]
+    keep[order_lo[lo]] = True
+    keep[order_hi[hi]] = True
     idx = np.flatnonzero(keep)
     return x[idx], y[idx]
 
@@ -199,6 +211,31 @@ def normalize_marker_shape(marker) -> Optional[str]:
 #: one closed, fillable path; plus/x/vline/hline have no interior to fill,
 #: only strokes.
 _STROKE_SHAPES = frozenset({"plus", "x", "vline", "hline"})
+
+
+# Canonical shape -> the symbol/point-shape string Vega and Vega-Lite both
+# accept (they share the same built-in vocabulary here, so one table serves
+# both exporters). "o" needs no entry -- it's already each dialect's default.
+# plus/x/vline/hline have no built-in equivalent in either dialect (neither
+# offers a cross/plus/line glyph), so vega_symbol_shape() returns None for
+# them and the caller falls back to a circle, the same way axes.py's own
+# _warn_marker_shape already does for a marker this library can't draw at
+# all -- but see that this is warned about at the call site, not silent.
+_VEGA_SYMBOL_SHAPES = {
+    "square": "square",
+    "diamond": "diamond",
+    "triangle_up": "triangle-up",
+    "triangle_down": "triangle-down",
+    "triangle_left": "triangle-left",
+    "triangle_right": "triangle-right",
+}
+
+
+def vega_symbol_shape(canonical: Optional[str]) -> Optional[str]:
+    """The Vega/Vega-Lite symbol string for a canonical shape (see
+    :func:`normalize_marker_shape`), or ``None`` if that shape has no native
+    equivalent in either dialect (including plain "o", which needs none)."""
+    return _VEGA_SYMBOL_SHAPES.get(canonical)
 
 
 def marker_shape_kind(shape: str) -> str:

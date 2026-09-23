@@ -70,6 +70,7 @@ from .artists import (
 from .colors import Normalize, resolve_colorbar_ticks, to_hex
 from .png import png_data_uri
 from .primitives import artist_to_prims
+from .primitives import normalize_marker_shape, vega_symbol_shape
 from .primitives import pie_center_radius, pie_label_positions
 from .primitives import ImagePrim as PImage
 from .primitives import Line as PLine
@@ -414,7 +415,7 @@ def _artist_to_vega_marks(art, tr, ai, k, x_name, y_name, size_scale, st,
     # own per-vertex markers falls through to artist_to_prims() instead --
     # its marker-drawing already lives there, not worth reimplementing.
     if isinstance(art, ScatterCollection):
-        return _scatter_marks(art, x_name, y_name, size_scale)
+        return _scatter_marks(art, x_name, y_name, size_scale, ai)
     if isinstance(art, Line2D) and art.marker is None:
         return _line_marks(art, x_name, y_name)
     if isinstance(art, Bars):
@@ -689,7 +690,7 @@ def _line_marks(art, x_name, y_name):
     return [{"__data__": (data_name, values)}, mark]
 
 
-def _scatter_marks(art, x_name, y_name, size_scale):
+def _scatter_marks(art, x_name, y_name, size_scale, ai):
     x, y = np.asarray(art.x, float), np.asarray(art.y, float)
     finite = np.isfinite(x) & np.isfinite(y)
     if not finite.any():
@@ -719,6 +720,20 @@ def _scatter_marks(art, x_name, y_name, size_scale):
     if art.linewidths:
         enter["stroke"] = {"value": _color(art.edgecolor)}
         enter["strokeWidth"] = {"value": float(art.linewidths) * size_scale}
+    canonical = normalize_marker_shape(art.marker)
+    shape = vega_symbol_shape(canonical)
+    if shape:
+        enter["shape"] = {"value": shape}
+    elif canonical and canonical != "o":
+        # A recognized plotpress shape (plus/x/vline/hline) with no native
+        # Vega symbol equivalent -- falls back to a circle, same as every
+        # other backend's own last resort, but silently was the actual bug:
+        # surfaced here so _vega_compat_report's own "axes (\d+)" scan picks
+        # it up as a caveat instead of nothing.
+        warnings.warn(
+            f"figure_to_vega(): axes {ai} marker {art.marker!r} has no Vega "
+            "symbol equivalent -- rendered as a circle instead.",
+            UserWarning, stacklevel=4)
     mark = {
         "type": "symbol",
         "from": {"data": data_name},
@@ -773,10 +788,15 @@ def _errorbar_marks(art, x_name, y_name, size_scale):
     # the goal is fidelity to what to_svg() actually draws, not a separate
     # opinion about what capsize should mean.
     cap = float(art.capsize)
+    # Index over the *full* (pre-finite-filter) sequence, matching svg.py's
+    # own `if i % every: continue` -- errorevery thins by position in the
+    # original data, not by position among the finite points alone.
+    every = art.errorevery
     if art.yerr is not None:
         yerr = np.asarray(art.yerr, float)
         whiskers = [{"x": float(xv), "y0": float(yv - e), "y1": float(yv + e)}
-                   for xv, yv, e, fv in zip(x, y, yerr, finite) if fv]
+                   for i, (xv, yv, e, fv) in enumerate(zip(x, y, yerr, finite))
+                   if fv and i % every == 0]
         wdata = f"{data_name}_yerr"
         marks.append({"__data__": (wdata, whiskers)})
         marks.append({
@@ -807,7 +827,8 @@ def _errorbar_marks(art, x_name, y_name, size_scale):
     if art.xerr is not None:
         xerr = np.asarray(art.xerr, float)
         whiskers = [{"y": float(yv), "x0": float(xv - e), "x1": float(xv + e)}
-                   for xv, yv, e, fv in zip(x, y, xerr, finite) if fv]
+                   for i, (xv, yv, e, fv) in enumerate(zip(x, y, xerr, finite))
+                   if fv and i % every == 0]
         wdata = f"{data_name}_xerr"
         marks.append({"__data__": (wdata, whiskers)})
         marks.append({
@@ -1138,6 +1159,18 @@ def _prim_to_vega(p):
         if p.edgewidth:
             enter["stroke"] = {"value": _color(p.edgecolor)}
             enter["strokeWidth"] = {"value": float(p.edgewidth)}
+        shape = vega_symbol_shape(p.shape)
+        if shape:
+            enter["shape"] = {"value": shape}
+        elif p.shape and p.shape != "o":
+            # series_id is "s{ai}_{k}" (see artist_to_prims callers above) --
+            # parsed back out only to name the axes in the warning, the same
+            # information _scatter_marks's own equivalent warning carries.
+            ai = (p.series_id or "").split("_", 1)[0].lstrip("s") or "?"
+            warnings.warn(
+                f"figure_to_vega(): axes {ai} marker shape {p.shape!r} has no "
+                "Vega symbol equivalent -- rendered as a circle instead.",
+                UserWarning, stacklevel=5)
         return [{"__data__": (data_name, values)}, {
             "type": "symbol", "from": {"data": data_name},
             "encode": {"enter": enter},
