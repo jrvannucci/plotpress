@@ -37,7 +37,7 @@ def test_plotpress_faster_than_matplotlib(name):
     # For figures with many axes, avoiding matplotlib's per-Artist Python
     # overhead makes plotpress faster end-to-end. The single huge polyline is
     # also a win thanks to min/max path decimation (see
-    # plotpress.primitives._decimate_minmax) -- all in pure Python.
+    # plotpress.core.primitives._decimate_minmax) -- all in pure Python.
     et = scenarios.timeit(scenarios.SCENARIOS[name]["plotpress"], repeat=3)
     mt = scenarios.timeit(scenarios.SCENARIOS[name]["mpl"], repeat=3)
     assert et < mt, f"{name}: plotpress {et:.3f}s not faster than matplotlib {mt:.3f}s"

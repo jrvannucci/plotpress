@@ -282,7 +282,7 @@ def test_to_vega_group_marks_handle_empty_hidden_and_twin_cases():
     # geometry (see svg._ghost_group_rects), not literally the raw pixel
     # rect frozen the moment it emptied, which tight_layout() here goes on
     # to move.
-    from plotpress.svg import _group_bbox
+    from plotpress.backends.svg import _group_bbox
 
     fig, axes = plotpress.subplots(1, 2)
     for ax in axes:

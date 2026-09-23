@@ -19,11 +19,11 @@ from numbers import Integral
 
 import numpy as np
 
-from ..artists import normalize_bbox, normalize_linestyle
+from ..core.artists import normalize_bbox, normalize_linestyle
 from ..axes import Axes
 from ..polar import PolarAxes
 from ..style import Style
-from ..svg import figure_to_svg
+from ..backends.svg import figure_to_svg
 
 def _decode_binary_arrays(obj):
     """Reverse :func:`_encode_binary_arrays`: a ``{"__f32__": b64}``/

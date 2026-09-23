@@ -9,7 +9,7 @@ import pytest
 
 import plotpress
 from plotpress.polar import PolarAxes
-from plotpress.artists import Line2D, Text
+from plotpress.core.artists import Line2D, Text
 
 
 def _polar():
@@ -115,7 +115,7 @@ def test_plot_and_scatter_carry_theta_r_for_picking():
 
     fig, ax2 = plotpress.subplots(projection="polar")
     ax2.plot(theta, r)
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
     series = pick_data(fig)[0]["series"]
     with_theta = [s for s in series if "theta" in s["vals"]]
     assert len(with_theta) == 1
@@ -126,7 +126,7 @@ def test_plot_and_scatter_carry_theta_r_for_picking():
 
 def test_polar_renders_in_both_backends():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots(projection="polar")
     theta = np.linspace(0, 2 * np.pi, 200)

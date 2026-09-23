@@ -5,7 +5,7 @@ import pytest
 
 from plotpress import colors
 from plotpress.ticker import format_tick, format_ticks, log_ticks, nice_ticks
-from plotpress.transform import LinearTransform
+from plotpress.core.transform import LinearTransform
 
 
 # -- transform -------------------------------------------------------------

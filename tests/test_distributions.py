@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.artists import FillBetween, Rug, ScatterCollection, Violin
-from plotpress.primitives import Segments, artist_to_prims
-from plotpress.transform import LinearTransform
+from plotpress.core.artists import FillBetween, Rug, ScatterCollection, Violin
+from plotpress.core.primitives import Segments, artist_to_prims
+from plotpress.core.transform import LinearTransform
 
 
 def _sample(n=400, loc=0.0, scale=1.0, seed=0):

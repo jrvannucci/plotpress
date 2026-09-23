@@ -484,7 +484,7 @@ def test_interactive_metadata_serializes_datetime_categorical_and_locator_flags(
     ax3.plot([0, 1], [0, 1])
     ax3.set_xlocator({"kind": "multiple", "base": 0.25})
 
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     meta = axes_metadata(fig)
     assert meta[0]["xdate"] is True

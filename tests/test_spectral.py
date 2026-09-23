@@ -100,7 +100,7 @@ def test_xcorr_symmetry_of_lag_axis():
 
 def test_spectral_methods_render_in_both_backends():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     x = _tone(80.0, 1000.0, 4096)
     fig, axes = plotpress.subplots(2, 2)

@@ -19,11 +19,11 @@ from numbers import Integral
 
 import numpy as np
 
-from ..artists import normalize_bbox, normalize_linestyle
+from ..core.artists import normalize_bbox, normalize_linestyle
 from ..axes import Axes
 from ..polar import PolarAxes
 from ..style import Style
-from ..svg import figure_to_svg
+from ..backends.svg import figure_to_svg
 
 from ._layout import _auto_scale_overlapping_labels, _axes_summary_lines, _collapse_empty_grid_rows_and_cols, _layout_colorbar, _layout_figure_legend, _layout_inset, _place_spec_rects, _require_one_grid_shape, _vega_compat_report, _warn_about_text_overflow
 
@@ -1878,7 +1878,7 @@ class Figure:
         Re-applied automatically after :meth:`tight_layout`/
         :meth:`subplots_adjust` reflow the grid.
         """
-        from ..svg import _effective_rect, _pixel_rect
+        from ..backends.svg import _effective_rect, _pixel_rect
 
         self._align_x_axes = axes
         axlist = [a for a in (axes if axes is not None else self.axes)
@@ -1915,7 +1915,7 @@ class Figure:
         different columns sit under different boxes and are not pulled
         together.
         """
-        from ..svg import _effective_rect, _max_ytick_width, _pixel_rect
+        from ..backends.svg import _effective_rect, _max_ytick_width, _pixel_rect
 
         self._align_y_axes = axes
         axlist = [a for a in (axes if axes is not None else self.axes)
@@ -2113,7 +2113,7 @@ class Figure:
         already uses). A mesh that doesn't qualify still gets the image
         mark, with a ``UserWarning`` naming why.
         """
-        from ..vega import figure_to_vega
+        from ..backends.vega import figure_to_vega
         return figure_to_vega(self, mesh_data=mesh_data)
 
     def to_vega_lite(self, mesh_data: bool = False) -> tuple:
@@ -2152,7 +2152,7 @@ class Figure:
         at most ~2000 cells), and same warn-and-fall-back-to-image
         behavior otherwise, as :meth:`to_vega`'s own ``mesh_data``.
         """
-        from ..vega_lite import figure_to_vega_lite
+        from ..backends.vega_lite import figure_to_vega_lite
         return figure_to_vega_lite(self, mesh_data=mesh_data)
 
     def to_template(self) -> dict:
@@ -2177,7 +2177,7 @@ class Figure:
         (a colorbar's actual color mapping, and a non-JSON-safe colorbar
         ``ticks``/``format``).
         """
-        from ..svg import template_metadata
+        from ..backends.svg import template_metadata
 
         return template_metadata(self)
 
@@ -2361,7 +2361,7 @@ class Figure:
         svg = svg.replace("<svg ", '<svg id="plotpress-svg" ', 1)
         script = ""
         if interactive:
-            from ..svg import (
+            from ..backends.svg import (
                 axes_metadata, frame_data, pick_data, style_payload, template_metadata,
             )
 
@@ -2420,7 +2420,7 @@ class Figure:
                        f"{json.dumps(opt_config)};</script>")
             script = config + payloads
             if include_default_js:
-                from .._interactive import INTERACTIVE_JS
+                from ..backends._interactive import INTERACTIVE_JS
                 script += f"<script>{INTERACTIVE_JS}</script>"
         if extra_js:
             script += f"<script>{extra_js}</script>"
@@ -2588,22 +2588,22 @@ class Figure:
         elif ext == "svg":
             content = self.to_svg()
         elif ext == "png":
-            from ..raster import save_png
+            from ..backends.raster import save_png
             return save_png(self, path, scale=scale, dpi=dpi, transparent=transparent)
         elif ext in ("jpg", "jpeg"):
-            from ..raster import save_jpeg
+            from ..backends.raster import save_jpeg
             return save_jpeg(self, path, scale=scale, dpi=dpi)
         elif ext == "webp":
-            from ..raster import save_webp
+            from ..backends.raster import save_webp
             return save_webp(self, path, scale=scale)
         elif ext == "pdf":
-            from ..raster import save_pdf
+            from ..backends.raster import save_pdf
             return save_pdf(self, path)
         elif ext == "eps":
-            from ..raster import save_eps
+            from ..backends.raster import save_eps
             return save_eps(self, path)
         elif ext == "gif":
-            from ..raster import save_gif
+            from ..backends.raster import save_gif
             return save_gif(self, path, fps=fps, scale=scale,
                            slider_unit=slider_unit, label_frames=label_frames)
         else:

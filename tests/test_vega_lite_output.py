@@ -365,7 +365,7 @@ def test_colorbar_axes_exports_as_a_standalone_gradient_panel():
     its own for the generic per-axes builder to find (fig.colorbar() draws
     it via a separate _cbar_source-reading path, not ax.artists). It now
     gets a real gradient image + tick rule/text spec, matching what
-    plotpress.vega.figure_to_vega renders for the same axes; Vega-Lite's
+    plotpress.backends.vega.figure_to_vega renders for the same axes; Vega-Lite's
     grid composition still has no slot to place it in relative to its
     parent, so it's still a caveat-carrying standalone entry, not a grid
     member."""
@@ -676,7 +676,7 @@ def test_set_aspect_shrinks_the_view_the_same_as_to_vega():
     ax.plot([0, 1], [0, 1])
     ax.set_aspect("equal")
     result, _ = fig.to_vega_lite()
-    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
     W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
     alloc = _pixel_rect(ax, W, H)
     xlim, ylim = ax._resolved_limits()

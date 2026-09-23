@@ -335,7 +335,7 @@ class LiveArtist:
             self.on_complete(True)
         else:
             from .figure import _sanitize_nan
-            from .svg import pick_data
+            from .backends.svg import pick_data
             svg = self.fig.to_svg()
             axes_index = self.fig.axes.index(self.ax)
             entry = pick_data(self.fig).get(

@@ -13,6 +13,22 @@ anywhere in the source.
 
 ### Changed
 
+- **Grouped the remaining top-level modules into `backends/` and `core/`.**
+  `svg/`, `raster.py`, `vega.py`, `vega_lite.py`, and `_interactive.py`
+  (+ `_js/`) moved into `plotpress/backends/` -- every format a `Figure`
+  renders itself *to*, matching AGENTS.md's own render-pipeline diagram.
+  `artists.py`, `primitives.py`, and `transform.py` moved into
+  `plotpress/core/` -- the shared scene/geometry layer every backend reads
+  from. Neither new package re-exports (unlike `figure/`/`svg/`'s own
+  `__init__.py`s, which preserve their *pre-split* single-file import path on
+  purpose): these were already independent top-level modules, so there is no
+  single prior path to preserve, and the new one is `plotpress.backends.svg`/
+  `plotpress.core.artists`/etc. This does change any code importing
+  `plotpress.svg`/`plotpress.raster`/`plotpress.vega`/`plotpress.vega_lite`/
+  `plotpress._interactive`/`plotpress.artists`/`plotpress.primitives`/
+  `plotpress.transform` directly (all internal-facing, underscore-prefixed
+  members throughout) -- update those imports to the `backends.`/`core.`
+  prefixed path.
 - **Moved the package to a `src/` layout.** `plotpress/` now lives at
   `src/plotpress/` rather than the repo root, so an accidental `import
   plotpress` while developing can't silently resolve to the working tree

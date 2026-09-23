@@ -131,7 +131,7 @@ def _wheel_zoom_frames(fig, cursor_frac, n_steps=16, zoom_factor=0.85,
     standing in for a real SVG viewer's resolution-independent zoom.
     """
     from PIL import Image
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     base = figure_to_image(fig, scale=supersample)
     W, H = base.size
@@ -202,7 +202,7 @@ _SLICE_ON_ROOTS = (
 
 
 def _has_mesh(fig):
-    from plotpress.artists import FrameQuadMesh, Image, QuadMesh
+    from plotpress.core.artists import FrameQuadMesh, Image, QuadMesh
 
     return any(isinstance(a, (QuadMesh, FrameQuadMesh, Image))
                for ax in fig.axes for a in ax.artists)
@@ -383,7 +383,7 @@ def _vega_embed(fig, image_path, src_file):
     :data:`_interactive_embed`'s narrower, applications-only scope has
     gotten away without needing.
     """
-    from plotpress.vega import _vega_has_content
+    from plotpress.backends.vega import _vega_has_content
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -519,8 +519,8 @@ def _vega_lite_embed(fig, image_path, src_file):
     composition couldn't place) rather than one. Each gets its own
     labeled ``<div>``/JSON panel on the page instead of assuming exactly one.
     """
-    from plotpress.vega_lite import _STRUCTURAL_WARNING_PREFIX
-    from plotpress.vega_lite import _vega_lite_has_content as _has_content
+    from plotpress.backends.vega_lite import _STRUCTURAL_WARNING_PREFIX
+    from plotpress.backends.vega_lite import _vega_lite_has_content as _has_content
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -830,7 +830,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
                 # the extension so _find_image_ext (and save_thumbnail's
                 # copyfile-for-gif branch) pick up the animation instead.
                 path = os.path.splitext(path)[0] + ".gif"
-                from plotpress.raster import save_gif
+                from plotpress.backends.raster import save_gif
                 save_gif(value, path, fps=10, scale=2)
             else:
                 value.save(path, scale=2)      # PNG via plotpress.raster
@@ -855,7 +855,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
     # changes frame to frame -- plot_frames()/pcolormesh_frames()'s shared,
     # fixed Normalize can't express that, so there's no single animated
     # plotpress.Figure to scan globals for above. Those scripts render their
-    # own frames (plotpress.raster.figure_to_image) into this list instead;
+    # own frames (plotpress.backends.raster.figure_to_image) into this list instead;
     # stitch it into a GIF through the same path iterator so it lands in the
     # gallery -- and gets thumbnailed -- exactly like any other animation.
     # (An example can also set ``_gallery_interactive_options`` -- the ``options=``

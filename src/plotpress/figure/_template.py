@@ -18,11 +18,11 @@ from numbers import Integral
 
 import numpy as np
 
-from ..artists import normalize_bbox, normalize_linestyle
+from ..core.artists import normalize_bbox, normalize_linestyle
 from ..axes import Axes
 from ..polar import PolarAxes
 from ..style import Style
-from ..svg import figure_to_svg
+from ..backends.svg import figure_to_svg
 
 from ._core import Figure, GroupLayout, SubplotSpec, _apply_axes_decorations, _fit_cells, _squeeze_grid, _subplot_rect
 

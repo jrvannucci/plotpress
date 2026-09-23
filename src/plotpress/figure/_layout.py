@@ -19,11 +19,11 @@ from numbers import Integral
 
 import numpy as np
 
-from ..artists import normalize_bbox, normalize_linestyle
+from ..core.artists import normalize_bbox, normalize_linestyle
 from ..axes import Axes
 from ..polar import PolarAxes
 from ..style import Style
-from ..svg import figure_to_svg
+from ..backends.svg import figure_to_svg
 
 def _cbar_label_width(cax) -> float:
     """Figure-fraction width the colorbar's tick labels need to its right.
@@ -357,7 +357,7 @@ def _layout_figure_legend(fig):
     tight_layout can re-run it after reflowing. Placements with no unambiguous
     edge overlay instead and reserve nothing.
     """
-    from ..svg import FIGURE_LEGEND_EDGE, figure_legend_layout
+    from ..backends.svg import FIGURE_LEGEND_EDGE, figure_legend_layout
 
     spec = fig._figure_legend
     if spec is None:
@@ -473,7 +473,7 @@ def _vega_compat_report(fig):
     """
     import re
 
-    from ..vega_lite import _STRUCTURAL_WARNING_PREFIX
+    from ..backends.vega_lite import _STRUCTURAL_WARNING_PREFIX
 
     report = {}
 

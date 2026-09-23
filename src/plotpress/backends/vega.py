@@ -63,27 +63,27 @@ import warnings
 
 import numpy as np
 
-from .artists import (
+from ..core.artists import (
     Bars, ErrorBar, Line2D, Pie, QuadMesh, ScatterCollection, Stem, Text,
     Annotation, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, resolve_colorbar_ticks, to_hex
-from .png import png_data_uri
-from .primitives import artist_to_prims
-from .primitives import normalize_marker_shape, vega_symbol_shape
-from .primitives import pie_center_radius, pie_label_positions
-from .primitives import ImagePrim as PImage
-from .primitives import Line as PLine
-from .primitives import Markers as PMarkers
-from .primitives import Path as PPath
-from .primitives import PolygonBatch as PPolyBatch
-from .primitives import Rect as PRect
-from .primitives import Segments as PSegments
+from ..colors import Normalize, resolve_colorbar_ticks, to_hex
+from ..png import png_data_uri
+from ..core.primitives import artist_to_prims
+from ..core.primitives import normalize_marker_shape, vega_symbol_shape
+from ..core.primitives import pie_center_radius, pie_label_positions
+from ..core.primitives import ImagePrim as PImage
+from ..core.primitives import Line as PLine
+from ..core.primitives import Markers as PMarkers
+from ..core.primitives import Path as PPath
+from ..core.primitives import PolygonBatch as PPolyBatch
+from ..core.primitives import Rect as PRect
+from ..core.primitives import Segments as PSegments
 from .svg import (
     _axes_fraction_xy, _bbox_pad, _DASH, _effective_rect, _pixel_rect,
     leader_anchor, text_box,
 )
-from .transform import LinearTransform
+from ..core.transform import LinearTransform
 
 _SCHEMA = "https://vega.github.io/schema/vega/v5.json"
 

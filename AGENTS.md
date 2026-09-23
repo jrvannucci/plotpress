@@ -40,30 +40,38 @@ own data-space fields (see `docs/user_guide/architecture.rst` for why).
 Line counts included because several of these are large — read the section you
 need rather than the whole file.
 
+Two subpackages group siblings that used to sit loose at the top level:
+`backends/` (every output format a `Figure` renders itself *to* -- SVG, PNG/PDF,
+the interactive JS toolbar, Vega, Vega-Lite) and `core/` (the shared
+scene/geometry layer every backend reads from -- artists, primitives, the
+data-to-pixel transform). Neither has a re-export `__init__.py`; import the
+submodule you need directly, e.g. `from plotpress.backends.svg import
+figure_to_svg`.
+
 | File | Lines | What lives there |
 |---|---|---|
 | `src/plotpress/axes.py` | 4055 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
 | `src/plotpress/figure/` | ~5182 | The root object, split by concern: `_core` (`Figure` itself, plus `Group`/`GroupLayout`/`subplots()`/`subplots_from_groups()` -- genuinely mutually coupled with `Figure`, so they stay one file rather than a forced acyclic split), `_layout` and `_html_options` (the two leaf modules `_core` depends on -- render-time layout/summary helpers, and startup-option validation + HTML-export JSON encoding), `_template` (`figure_from_template`, built from `_core`), `_report` (the `Report` multi-figure aggregator), `_io` (`load_data`/`load_data_xarray`/`load_template`/`select_panel` -- the round-trip's load side, which recovers plain data/dicts rather than a rebuilt `Figure`). `__init__.py` re-exports everything |
-| `src/plotpress/svg/` | ~3681 | SVG serialization, split by concern: `_format` (leaf string/geometry helpers), `_ticks_and_frame`, `_text_and_annotations`, `_legend` (+ colorbar), `_render` (one `_render_*` per artist kind — the bulk), `_group_layout` (`Figure.group()`'s boxes), `_core` (`figure_to_svg`, the public entry point), `_metadata` (the interactive-HTML JSON payloads). `__init__.py` re-exports everything, including the private helpers `raster.py` imports (legend/tick/text-box geometry) |
-| `src/plotpress/raster.py` | 1586 | PNG backend via Pillow; PDF via svglib/reportlab |
-| `src/plotpress/vega.py` | 1445 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
-| `src/plotpress/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
-| `src/plotpress/vega_lite.py` | 1320 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
+| `src/plotpress/backends/svg/` | ~3681 | SVG serialization, split by concern: `_format` (leaf string/geometry helpers), `_ticks_and_frame`, `_text_and_annotations`, `_legend` (+ colorbar), `_render` (one `_render_*` per artist kind — the bulk), `_group_layout` (`Figure.group()`'s boxes), `_core` (`figure_to_svg`, the public entry point), `_metadata` (the interactive-HTML JSON payloads). `__init__.py` re-exports everything, including the private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `src/plotpress/backends/raster.py` | 1586 | PNG backend via Pillow; PDF via svglib/reportlab |
+| `src/plotpress/backends/vega.py` | 1445 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `core/primitives.py` |
+| `src/plotpress/core/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
+| `src/plotpress/backends/vega_lite.py` | 1320 | `Figure.to_vega_lite()`: a Vega-Lite v5 spec, three fidelity tiers |
 | `src/plotpress/colors.py` | 789 | Colormaps and `Normalize` / `LogNorm` / `PowerNorm` / `SymLogNorm` |
 | `src/plotpress/fonts/` | ~590 | Bundled advance-width tables, family resolution, opt-in installed-font measurement |
-| `src/plotpress/primitives.py` | 530 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
-| `src/plotpress/_js/` | ~5300 | The vanilla-JS toolbar (pan/zoom, pick, Slice, …), split by tool/feature into one `.js` file per concern — see `src/plotpress/_interactive.py`'s own module docstring for the file list. Not Python; not counted in any total below |
+| `src/plotpress/core/primitives.py` | 530 | Pixel-space prims (`Path`, `Markers`, …) + `artist_to_prims`; line decimation |
+| `src/plotpress/backends/_js/` | ~5300 | The vanilla-JS toolbar (pan/zoom, pick, Slice, …), split by tool/feature into one `.js` file per concern — see `_interactive.py`'s own module docstring for the file list. Not Python; not counted in any total below |
 | `src/plotpress/qt.py` | 440 | Embed interactive figures in PyQt/PySide (`qt` extra) |
 | `src/plotpress/ticker.py` | 432 | Tick locations and label formatting (1-2-5 "nice numbers"), plus the declarative locator/formatter specs `set_x/ylocator`/`set_x/yformat` accept |
 | `src/plotpress/polar.py` | 240 | Polar `(theta, r)` axes on top of the Cartesian core |
-| `src/plotpress/_interactive.py` | 239 | Assembles `src/plotpress/_js/`'s fragments into the one script string `figure.py` inlines into every interactive export — the file itself is just that assembly plus the module docstring describing the toolbar's UX; the JS is what actually got big |
+| `src/plotpress/backends/_interactive.py` | 239 | Assembles `backends/_js/`'s fragments into the one script string `figure.py` inlines into every interactive export — the file itself is just that assembly plus the module docstring describing the toolbar's UX; the JS is what actually got big |
 | `src/plotpress/dates.py` | 172 | Datetime axis support: date ⟷ float-days-since-epoch conversion, calendar-aware tick locating/formatting |
 | `src/plotpress/style.py` | 155 | Per-figure `Style` — the replacement for `rcParams` |
 | `src/plotpress/_spectral.py` | 154 | Spectral estimators behind the signal-processing methods |
 | `src/plotpress/png.py` | 120 | Minimal stdlib-only PNG encoder (`zlib`) |
-| `src/plotpress/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
+| `src/plotpress/core/transform.py` | 85 | Vectorized data-space → pixel-space transforms |
 
-This table is a size guide, not a promise -- regenerate it (`wc -l src/plotpress/*.py`) whenever
+This table is a size guide, not a promise -- regenerate it (`wc -l src/plotpress/**/*.py`) whenever
 it visibly drifts rather than trusting a stale number.
 
 ## Commands

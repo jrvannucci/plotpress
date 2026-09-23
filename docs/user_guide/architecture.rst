@@ -48,29 +48,54 @@ Module layout
 
 Lives under ``src/plotpress/`` (a "src" layout, so an accidental
 ``import plotpress`` can't resolve to the working tree instead of the
-installed package).
+installed package), with the output backends grouped under ``backends/`` and
+the shared scene/geometry layer under ``core/``.
 
-============================  ==================================================
-Module                        Responsibility
-============================  ==================================================
-``figure/``                   ``Figure``, ``subplots()``, layout, save/show -- split by concern (``_core``, ``_layout``, ``_html_options``, ``_template``, ``_report``, ``_io``)
-``axes.py``                   ``Axes``: plotting methods, limits, autoscale
-``polar.py``                  ``PolarAxes``: (theta, r) projection + polar frame
-``_spectral.py``              pure-NumPy Welch spectral estimators
-``artists.py``                data-only scene primitives
-``style.py``                  per-figure ``Style`` (replaces ``rcParams``)
-``transform.py``              vectorized data->pixel transforms (linear + log)
-``colors.py``                 ``Normalize``, colormap LUTs
-``ticker.py``                 "nice number" + log tick locations
-``primitives.py``             backend-agnostic primitives + artist converter
-``svg/``                      SVG emitter over the shared primitives -- split by concern (``_render``, ``_ticks_and_frame``, ``_legend``, ``_group_layout``, ``_metadata``, ...)
-``png.py``                    stdlib-only PNG encoder for image layers
-``raster.py``                 Pillow PNG backend; svglib/reportlab PDF
-``fonts/``                    bundled width tables + the family registry (layout only)
-``_interactive.py`` + ``_js/``  the toolbar's vanilla JS -- one ``.js`` file per tool under ``_js/``, assembled by ``_interactive.py``
-``vega.py``                   ``Figure.to_vega()``: a real Vega v5 JSON spec
-``vega_lite.py``              ``Figure.to_vega_lite()``: a Vega-Lite v5 spec
-============================  ==================================================
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Module
+     - Responsibility
+   * - ``figure/``
+     - ``Figure``, ``subplots()``, layout, save/show -- split by concern
+       (``_core``, ``_layout``, ``_html_options``, ``_template``, ``_report``,
+       ``_io``)
+   * - ``axes.py``
+     - ``Axes``: plotting methods, limits, autoscale
+   * - ``polar.py``
+     - ``PolarAxes``: (theta, r) projection + polar frame
+   * - ``_spectral.py``
+     - pure-NumPy Welch spectral estimators
+   * - ``core/artists.py``
+     - data-only scene primitives
+   * - ``style.py``
+     - per-figure ``Style`` (replaces ``rcParams``)
+   * - ``core/transform.py``
+     - vectorized data->pixel transforms (linear + log)
+   * - ``colors.py``
+     - ``Normalize``, colormap LUTs
+   * - ``ticker.py``
+     - "nice number" + log tick locations
+   * - ``core/primitives.py``
+     - backend-agnostic primitives + artist converter
+   * - ``backends/svg/``
+     - SVG emitter over the shared primitives -- split by concern
+       (``_render``, ``_ticks_and_frame``, ``_legend``, ``_group_layout``,
+       ``_metadata``, ...)
+   * - ``png.py``
+     - stdlib-only PNG encoder for image layers
+   * - ``backends/raster.py``
+     - Pillow PNG backend; svglib/reportlab PDF
+   * - ``fonts/``
+     - bundled width tables + the family registry (layout only)
+   * - ``backends/_interactive.py`` + ``backends/_js/``
+     - the toolbar's vanilla JS -- one ``.js`` file per tool under ``_js/``,
+       assembled by ``_interactive.py``
+   * - ``backends/vega.py``
+     - ``Figure.to_vega()``: a real Vega v5 JSON spec
+   * - ``backends/vega_lite.py``
+     - ``Figure.to_vega_lite()``: a Vega-Lite v5 spec
 
 Compiling to other renderers
 -----------------------------

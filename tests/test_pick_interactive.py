@@ -360,7 +360,7 @@ def test_downsampled_mesh_pick_reads_correct_value(page, tmp_path):
     import numpy as np
     import plotpress
     from pick_cases import px
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     ny, nx = 40, 50
     rows, cols = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
@@ -420,7 +420,7 @@ def test_downsampled_curvilinear_mesh_pick_reads_correct_value(page, tmp_path):
     import numpy as np
     import plotpress
     from pick_cases import px
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     n = 40   # (n-1)*(n-1) = 1521 cells, comfortably over a small cap
     r = np.linspace(0.3, 1, n)
@@ -1121,8 +1121,8 @@ def _px_at_limits(fig, i, dx, dy, xlim, ylim):
     lands on screen *after* a box-zoom has narrowed the browser's view to a
     range the Python ``Axes`` object itself never actually changed to.
     """
-    from plotpress.svg import _effective_rect, _pixel_rect
-    from plotpress.transform import LinearTransform
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
+    from plotpress.core.transform import LinearTransform
 
     ax = fig.axes[i]
     dpi = fig.style.dpi

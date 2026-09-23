@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from .artists import (
+from .core.artists import (
     Annotation, AxLine, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot,
     FillBetween, FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection,
     Pie, PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
@@ -2486,7 +2486,7 @@ class Axes:
             del self.figure._id_index[self._id]
         for g in self.figure._groups:
             if self in g["axes"] and g["frozen_rect"] is None:
-                from .svg import (
+                from .backends.svg import (
                     _group_axes_extra, _group_bbox, _group_colorbar_extra, _group_members,
                 )
                 fig = self.figure
@@ -3831,7 +3831,7 @@ def _warn_marker_shape(marker, who):
     figure that quietly collapses that distinction is wrong in a way nothing
     on the page reveals.
     """
-    from .primitives import normalize_marker_shape
+    from .core.primitives import normalize_marker_shape
 
     if normalize_marker_shape(marker) is None:
         warnings.warn(

@@ -15,11 +15,11 @@ from numbers import Integral
 
 import numpy as np
 
-from ..artists import normalize_bbox, normalize_linestyle
+from ..core.artists import normalize_bbox, normalize_linestyle
 from ..axes import Axes
 from ..polar import PolarAxes
 from ..style import Style
-from ..svg import figure_to_svg
+from ..backends.svg import figure_to_svg
 
 from ._core import Figure
 from ._html_options import _toolbar_clearance

@@ -153,4 +153,7 @@ include = ["plotpress*"]
 # plotpress ships type information (the inline annotations plus the
 # TYPE_CHECKING re-exports in __init__.py), so `import plotpress` resolves
 # instead of falling back to Any.
-plotpress = ["fonts/*.py", "_js/*.js", "py.typed"]
+plotpress = ["fonts/*.py", "py.typed"]
+# The toolbar's JS lives under backends/_js/ now (see plotpress/backends/
+# __init__.py) -- package-data keys are per-package, so it needs its own entry.
+"plotpress.backends" = ["_js/*.js"]

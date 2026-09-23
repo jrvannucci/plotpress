@@ -26,7 +26,7 @@ def test_css4_color_name_outside_the_old_small_table_resolves():
     fig, ax = plotpress.subplots()
     ax.plot([1, 2, 3], [1, 2, 3], color="cornflowerblue")
     fig.to_svg()  # must not raise
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     figure_to_image(fig)  # must not raise -- this is what used to crash
 
 
@@ -570,8 +570,8 @@ def test_style_svg_raster_dpi_checks_are_still_reachable_directly(tmp_path):
     as defense in depth for a Style built by bypassing __setattr__ (e.g.
     object.__setattr__) -- exercise them directly rather than deleting the
     coverage."""
-    from plotpress.raster import figure_to_image
-    from plotpress.svg import figure_to_svg
+    from plotpress.backends.raster import figure_to_image
+    from plotpress.backends.svg import figure_to_svg
 
     fig, ax = plotpress.subplots()
     ax.plot([1, 2], [1, 2])
@@ -594,7 +594,7 @@ def test_non_positive_scale_raises_on_png(scale):
     silently clamping any non-positive scale to a plain scale=1 render
     instead of raising -- right next to the dpi check above, which does
     raise for the analogous mistake in the same function."""
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.plot([1, 2], [1, 2])
