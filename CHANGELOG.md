@@ -13,6 +13,13 @@ anywhere in the source.
 
 ### Changed
 
+- **Moved the package to a `src/` layout.** `plotpress/` now lives at
+  `src/plotpress/` rather than the repo root, so an accidental `import
+  plotpress` while developing can't silently resolve to the working tree
+  instead of the actually-installed package. No public API or import path
+  changed (`import plotpress` is identical); this only moves where the
+  source lives on disk. If you have a local editable install, re-run `pip
+  install -e .` after pulling this.
 - **`figure.py` split into `plotpress/figure/`.** The root object had grown to
   5000+ lines; it's now six submodules -- `_core` (`Figure` itself, plus the
   grid/group machinery it's genuinely mutually coupled to), the two leaf

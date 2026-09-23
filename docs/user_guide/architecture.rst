@@ -46,10 +46,14 @@ them a constant size under interactive zoom.
 Module layout
 -------------
 
+Lives under ``src/plotpress/`` (a "src" layout, so an accidental
+``import plotpress`` can't resolve to the working tree instead of the
+installed package).
+
 ============================  ==================================================
 Module                        Responsibility
 ============================  ==================================================
-``figure.py``                 ``Figure``, ``subplots()``, layout, save/show
+``figure/``                   ``Figure``, ``subplots()``, layout, save/show -- split by concern (``_core``, ``_layout``, ``_html_options``, ``_template``, ``_report``, ``_io``)
 ``axes.py``                   ``Axes``: plotting methods, limits, autoscale
 ``polar.py``                  ``PolarAxes``: (theta, r) projection + polar frame
 ``_spectral.py``              pure-NumPy Welch spectral estimators
@@ -59,11 +63,11 @@ Module                        Responsibility
 ``colors.py``                 ``Normalize``, colormap LUTs
 ``ticker.py``                 "nice number" + log tick locations
 ``primitives.py``             backend-agnostic primitives + artist converter
-``svg.py``                    SVG emitter over the shared primitives
+``svg/``                      SVG emitter over the shared primitives -- split by concern (``_render``, ``_ticks_and_frame``, ``_legend``, ``_group_layout``, ``_metadata``, ...)
 ``png.py``                    stdlib-only PNG encoder for image layers
 ``raster.py``                 Pillow PNG backend; svglib/reportlab PDF
 ``fonts/``                    bundled width tables + the family registry (layout only)
-``_interactive.py``           inlined vanilla JS: toolbar, zoom, pick, sliders
+``_interactive.py`` + ``_js/``  the toolbar's vanilla JS -- one ``.js`` file per tool under ``_js/``, assembled by ``_interactive.py``
 ``vega.py``                   ``Figure.to_vega()``: a real Vega v5 JSON spec
 ``vega_lite.py``              ``Figure.to_vega_lite()``: a Vega-Lite v5 spec
 ============================  ==================================================

@@ -5,7 +5,7 @@ import os
 import sys
 import warnings
 
-sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, os.path.abspath("../src"))
 
 import plotpress  # noqa: E402
 # Shared with Figure.to_html/Report.save so a gallery/usage embed's iframe is

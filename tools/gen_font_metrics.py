@@ -1,9 +1,9 @@
-"""Regenerate ``plotpress/fonts/metrics.py`` from authoritative metric sources.
+"""Regenerate ``src/plotpress/fonts/metrics.py`` from authoritative metric sources.
 
 Run this only when adding a family; the generated table is committed, so a
 normal install and test run needs none of the sources below.
 
-    python tools/gen_font_metrics.py > plotpress/fonts/metrics.py
+    python tools/gen_font_metrics.py > src/plotpress/fonts/metrics.py
 
 Sources (both come from matplotlib, which is already the ``[bench]`` extra):
 

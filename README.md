@@ -495,11 +495,13 @@ feature, not a trade-off.
 
 ## Architecture notes
 
-`plotpress/` layout:
+`src/plotpress/` layout (a "src" layout: the package lives under `src/`, not
+at the repo root, so an accidental `import plotpress` can't silently resolve
+to the working tree instead of the installed package):
 
 | Module | Responsibility |
 |--------|----------------|
-| `figure.py` | `Figure`, `subplots()`, layout, save/show/`_repr_*` |
+| `figure/` | `Figure`, `subplots()`, layout, save/show/`_repr_*` -- split by concern (`_core`, `_layout`, `_html_options`, `_template`, `_report`, `_io`) |
 | `axes.py` | `Axes`: plotting methods, limits, autoscale |
 | `polar.py` | `PolarAxes`: (θ, r) projection + polar frame, built from existing artists |
 | `_spectral.py` | pure-NumPy Welch spectral estimators (psd/csd/cohere/specgram/…) |
@@ -508,12 +510,12 @@ feature, not a trade-off.
 | `transform.py` | vectorized data→pixel transforms (linear + log scales) |
 | `colors.py` | `Normalize`, colormap LUTs, colormap application |
 | `ticker.py` | "nice number" + log tick locations, label formatting |
-| `svg.py` | the renderer: scene → SVG string (+ per-axes metadata) |
+| `svg/` | the renderer: scene → SVG string (+ per-axes metadata) -- split by concern (`_render`, `_ticks_and_frame`, `_legend`, `_group_layout`, `_metadata`, …) |
 | `primitives.py` | backend-agnostic pixel-space primitives + one artist→primitive converter |
 | `png.py` | stdlib-only PNG encoder for mesh/image layers |
 | `raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
 | `fonts/` | bundled width tables + the family registry (layout only; no glyph rasterization) |
-| `_interactive.py` | inlined vanilla JS: toolbar, per-axes zoom, picking, annotate, sliders, export |
+| `_interactive.py` + `_js/` | the toolbar's vanilla JS (pan/zoom, picking, annotate, Slice, sliders, export), split into one `.js` file per tool under `_js/` and assembled by `_interactive.py` |
 | `qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
 
 Artists never render themselves — they just hold arrays. The geometry of each

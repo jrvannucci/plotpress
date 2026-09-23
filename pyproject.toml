@@ -138,9 +138,14 @@ distance-dirty = "{base_version}.post{distance}+{rev}.dirty"
 # without importing setuptools or shelling out to git. Git-ignored: it is a
 # build artifact, not source.
 [tool.versioningit.write]
-file = "plotpress/_version.py"
+file = "src/plotpress/_version.py"
 
+# src layout: the package lives under src/, not at the repo root -- keeps an
+# accidental `import plotpress` from resolving to the working tree instead of
+# the installed package (the usual reason a test passes locally against
+# uncommitted changes but fails once actually installed).
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["plotpress*"]
 
 [tool.setuptools.package-data]
