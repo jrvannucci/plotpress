@@ -13,6 +13,14 @@ anywhere in the source.
 
 ### Changed
 
+- **`svg.py` split into `plotpress/svg/`.** The SVG backend had grown to
+  3300+ lines across 90 top-level functions with no classes to group
+  them; it's now eight submodules by concern (formatting, ticks/frame,
+  text/annotations, legend, per-artist rendering, `Figure.group()` boxes,
+  the entry point, and the interactive-HTML metadata payloads), all
+  re-exported from `plotpress/svg/__init__.py` so every existing
+  `from plotpress.svg import X` keeps resolving unchanged. No public API
+  changed.
 - **The interactive toolbar's JS moved out of `_interactive.py` into
   `plotpress/_js/*.js`.** The Python file had grown to ~5650 lines, nearly
   all of it one JS string literal that had roughly doubled this session

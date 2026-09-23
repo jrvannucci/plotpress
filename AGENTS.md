@@ -44,7 +44,7 @@ need rather than the whole file.
 |---|---|---|
 | `plotpress/figure.py` | 5035 | The root object: layout, `to_svg`/`to_html`/`save`/`show`, figure-level text and legend, grouping (`Group`/`GroupLayout`/`subplots_from_groups`), the template round-trip (`load_data`/`Figure.to_template`/`save_template`/`load_template` all producing the same shape, `figure_from_template` the one function that rebuilds a figure from it, whether recovered from an HTML export or built standalone), and the `Report` multi-figure aggregator |
 | `plotpress/axes.py` | 4055 | The `Axes` object: every public plotting method, limits, scales, ticks, legend setup |
-| `plotpress/svg.py` | 3342 | SVG serialization — one `_render_*` per artist kind, plus axis decoration; also the source of several private helpers `raster.py` imports (legend/tick/text-box geometry) |
+| `plotpress/svg/` | ~3681 | SVG serialization, split by concern: `_format` (leaf string/geometry helpers), `_ticks_and_frame`, `_text_and_annotations`, `_legend` (+ colorbar), `_render` (one `_render_*` per artist kind — the bulk), `_group_layout` (`Figure.group()`'s boxes), `_core` (`figure_to_svg`, the public entry point), `_metadata` (the interactive-HTML JSON payloads). `__init__.py` re-exports everything, including the private helpers `raster.py` imports (legend/tick/text-box geometry) |
 | `plotpress/raster.py` | 1586 | PNG backend via Pillow; PDF via svglib/reportlab |
 | `plotpress/vega.py` | 1445 | `Figure.to_vega()`: a real Vega v5 JSON spec, reusing `primitives.py` |
 | `plotpress/artists.py` | 1420 | Scene objects (`Line2D`, `Bars`, `Contour`, …) — data, not geometry |
