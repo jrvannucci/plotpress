@@ -2003,3 +2003,633 @@ def test_the_replace_view_still_hides_the_mesh_it_stands_in_for(page, tmp_path):
     assert shown() == "none"
     _pick_view(page, "cursor")
     assert shown() != "none"
+
+
+# ---- the menu has to stay inside a short embed ------------------------------
+
+def _open_menu(page, label):
+    page.evaluate("""(l) => Array.from(document.querySelectorAll(
+        '.plotpress-menu-label')).find(
+        b => b.textContent.trim().startsWith(l)).click()""", label)
+
+
+def _open_dropdown_fit(page):
+    return page.evaluate("""() => {
+      const d = document.querySelector(
+        '.plotpress-menu.open .plotpress-menu-dropdown');
+      if (!d) return null;
+      const r = d.getBoundingClientRect();
+      const items = d.querySelectorAll('label, button, input');
+      d.scrollTop = d.scrollHeight;                 // scroll to the end
+      const last = items[items.length - 1].getBoundingClientRect();
+      return {overflowBottom: Math.round(r.bottom - document.documentElement.clientHeight),
+              overflowRight: Math.round(r.right - document.documentElement.clientWidth),
+              scrolls: d.scrollHeight > d.clientHeight + 1,
+              lastReachable: last.bottom <= r.bottom + 1 && last.top >= r.top - 1}; }""")
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("height", [560, 420, 320])
+def test_the_slice_menu_stays_inside_a_short_embedded_figure(page, tmp_path, height):
+    # A figure embedded in a page (a Report panel, a docs gallery iframe) gets
+    # whatever height the host gave it. The Slice menu is the tallest one, and
+    # with nothing bounding it the bottom of the list fell outside the document
+    # -- clipped away rather than scrolled off, since an iframe has no viewport
+    # of its own to scroll, so those options could not be reached at all.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1064, "height": height})
+        _load(page, tmp_path, _grid_fig(), options={"slice": {}})
+        _open_menu(page, "Slice")
+        fit = _open_dropdown_fit(page)
+        assert fit is not None, "the Slice menu did not open"
+        assert fit["overflowBottom"] <= 0, fit
+        assert fit["overflowRight"] <= 0, fit
+        assert fit["lastReachable"], fit
+    finally:
+        page.set_viewport_size(original)
+
+
+@pytest.mark.browser
+def test_a_tall_viewport_leaves_the_menu_unclamped(page, tmp_path):
+    # The clamp is only for the cramped case; with room to spare the menu must
+    # still render at its natural height, with no internal scrollbar.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1280, "height": 1000})
+        _load(page, tmp_path, _grid_fig(), options={"slice": {}})
+        _open_menu(page, "Slice")
+        fit = _open_dropdown_fit(page)
+        assert fit["scrolls"] is False, fit
+        assert fit["overflowBottom"] <= 0, fit
+    finally:
+        page.set_viewport_size(original)
+
+
+# ---- the global slider bar at scale ----------------------------------------
+
+def _mixed_shape_fig(nrows, ncols, shapes):
+    """A grid whose meshes come in `shapes` distinct grid shapes, so Slice's
+    link grouping produces that many compatible groups."""
+    fig, arr = plotpress.subplots(nrows, ncols, subplot_size=(0.9, 0.7),
+                                  squeeze=False)
+    rng = np.random.default_rng(0)
+    for i, ax in enumerate(ax for row in arr for ax in row):
+        n = 6 + (i % shapes)
+        ax.pcolormesh(np.linspace(0, 1, 13), np.linspace(0, 1, n + 1),
+                      rng.normal(size=(n, 12)))
+        ax.tick_params(labelsize=4)
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("shapes, height", [(16, 504), (24, 900)])
+def test_the_global_slider_bar_stays_reachable_at_scale(page, tmp_path,
+                                                        shapes, height):
+    # "Link all matching axes" makes one global slider per compatible group, so
+    # a figure whose meshes come in many grid shapes stacks many of them in the
+    # bar fixed to the bottom of the window. With nothing bounding that column
+    # it grew off the *top* of the window -- 24 groups made a 1319px bar in a
+    # 900px viewport -- and a position:fixed element does not scroll with the
+    # page, so those sliders could not be reached at all.
+    original = dict(page.viewport_size)
+    try:
+        page.set_viewport_size({"width": 1000, "height": height})
+        _load(page, tmp_path, _mixed_shape_fig(6, 8, shapes),
+              options={"slice": {"enabled": True, "link_all": True}})
+        state = page.evaluate(r"""() => {
+          const bar = document.querySelector('.plotpress-sliders');
+          const sliders = Array.from(
+            document.querySelectorAll('.plotpress-slider'));
+          const vh = document.documentElement.clientHeight;
+          const br = bar.getBoundingClientRect();
+          let unreachable = 0;
+          for (const s of sliders) {           // scroll each into the bar
+            bar.scrollTop = s.offsetTop;
+            const r = s.getBoundingClientRect();
+            if (r.top < br.top - 1 || r.bottom > br.bottom + 1) unreachable++;
+          }
+          bar.scrollTop = 0;
+          return {sliders: sliders.length, unreachable,
+                  barOffscreen: br.top < -1 || br.bottom > vh + 1}; }""")
+        assert state["sliders"] == shapes, state
+        assert not state["barOffscreen"], state
+        assert state["unreachable"] == 0, state
+    finally:
+        page.set_viewport_size(original)
+
+
+# ---- what a rebuild does and does not do to profile pins -------------------
+
+def _slice_pin_count(page):
+    return page.evaluate(
+        "() => document.querySelectorAll('.plotpress-pin[data-kind=\"slice\"]').length")
+
+
+def _toggle_slice_label(page, text):
+    page.evaluate("""(t) => Array.from(document.querySelectorAll(
+        '.plotpress-menu-dropdown label')).find(
+        l => l.textContent.includes(t)).querySelector('input').click()""", text)
+
+
+@pytest.mark.browser
+def test_link_all_and_scope_keep_profile_pins(page, tmp_path):
+    # buildSliceSliders() tears the sliders down and rebuilds them on every
+    # change, and that teardown used to delete every pin placed on a strip --
+    # so toggling "Link all matching axes", which changes nothing about what a
+    # pin points at, silently threw them away.
+    fig, _ = _pick_fig(), None
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    label = _pin_labels(page)[0]
+    assert _slice_pin_count(page) == 1
+
+    _toggle_slice_label(page, "Link all matching axes")
+    assert _slice_pin_count(page) == 1, "link-all wiped the pin"
+    assert _pin_labels(page)[0] == label
+
+    _toggle_slice_label(page, "Link all matching axes")      # and back
+    assert _slice_pin_count(page) == 1
+    assert _pin_labels(page)[0] == label
+
+
+@pytest.mark.browser
+def test_changing_orientation_drops_profile_pins(page, tmp_path):
+    # The other direction: a pin's index is a sample along the profile, and
+    # after switching orientation the profile runs along the other axis, so the
+    # same index would quietly point at a different datum.
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _slice_pin_count(page) == 1
+    page.evaluate("""() => Array.from(document.querySelectorAll(
+        'input[name="plotpress-slice-orient"]')).find(
+        r => r.parentNode.textContent.includes('Slice Y')).click()""")
+    assert _slice_pin_count(page) == 0
+
+
+@pytest.mark.browser
+def test_disabling_slice_drops_profile_pins(page, tmp_path):
+    _load(page, tmp_path, _pick_fig()[0],
+          options={"slice": {"enabled": True, "index": 3}})
+    _enter_pick_mode(page)
+    _click_strip(page, 0.5)
+    assert _slice_pin_count(page) == 1
+    _toggle_slice_label(page, "Enable Slice")
+    assert _slice_pin_count(page) == 0
+    assert page.evaluate(
+        "() => document.querySelectorAll('.plotpress-slice-companion').length") == 0
+
+
+# ---- a null in a hand-edited config must not read as a number --------------
+
+def _strip_size(page):
+    r = page.evaluate("""() => { const r = document.querySelector('#sliceclip0 rect');
+        return r ? [+r.getAttribute('width'), +r.getAttribute('height')] : null; }""")
+    return tuple(r) if r else None
+
+
+def _load_with_config(page, tmp_path, name, extra):
+    """Write the page, then splice ``extra`` into the embedded option config --
+    the way a reader poking at a saved file could, and the only way to get a
+    value past to_html()'s own validation."""
+    fig, _ = _pick_fig()
+    html = fig.to_html(interactive=True, options={"slice": {"enabled": True}})
+    marker = 'window.PLOTPRESS_OPTION_CONFIG={"slice": {'
+    assert marker in html, "the embedded config is not where this test expects"
+    edited = html.replace(marker, marker + extra)
+    path = tmp_path / name
+    path.write_text(edited, encoding="utf-8")
+    page.goto(path.as_uri())
+    page.wait_for_timeout(300)
+    return path
+
+
+@pytest.mark.browser
+def test_a_null_panel_size_falls_back_to_the_default(page, tmp_path):
+    """``isFinite(null)`` is true in JavaScript and ``+null`` is 0, so a null
+    read as a real number: panel_size became 0 and the strip fell back on its
+    own 28px floor instead of the 0.3 default. The floor hides how wrong the
+    value is, so this compares against the size the default actually gives."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _pick_fig()[0], options={"slice": {"enabled": True}})
+    default = _strip_size(page)
+
+    _load_with_config(page, tmp_path, "null_panel.html", '"panel_size": null, ')
+    nulled = _strip_size(page)
+    assert errs == [], errs
+    assert nulled == default, (
+        f"panel_size: null gave a {nulled} strip, not the default {default}")
+
+
+@pytest.mark.browser
+def test_a_null_custom_range_does_not_become_a_zero_range(page, tmp_path):
+    """range_min/range_max null used to read as 0/0, which is a degenerate
+    range the profile would then be drawn against."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load_with_config(page, tmp_path, "null_range.html",
+                      '"range": "custom", "range_min": null, "range_max": null, ')
+    d = page.evaluate("""() => { const p = document.querySelector(
+        '.plotpress-slice-companion path'); return p ? p.getAttribute('d') : null; }""")
+    assert errs == [], errs
+    assert d and "NaN" not in d and "Infinity" not in d, d
+
+
+@pytest.mark.browser
+def test_a_null_index_does_not_force_row_zero(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load_with_config(page, tmp_path, "null_index.html", '"index": null, ')
+    value = page.evaluate(
+        "() => +document.querySelector('.plotpress-slider input[type=range]').value")
+    assert errs == [], errs
+    assert value == 0        # the natural start, reached by defaulting not by +null
+
+
+# ---- overlaid series in the replace view -------------------------------------
+#
+# The replace view re-labels the vertical axis in the slice's *value*. Anything
+# the axes drew in its own data space -- a plot() line, a scatter() -- would
+# otherwise keep its old pixel position while the ticks beside it changed
+# meaning underneath it, showing a value it never had. It is hidden with the
+# mesh, and comes back with it.
+
+def _overlay_fig(legend=False):
+    fig, axs = plotpress.subplots(1, 1, figsize=(4.4, 3.4), squeeze=False)
+    x = np.linspace(0, 1, 13)
+    yy, xx = np.meshgrid(np.arange(12), np.arange(12), indexing="ij")
+    ax = axs[0][0]
+    ax.pcolormesh(x, x, np.sin(xx * (0.3 + 0.1 * yy)) * (1 + 0.3 * yy))
+    ax.plot(x, np.full_like(x, 0.5), color="k", linewidth=2, label="line")
+    ax.scatter(np.linspace(0.1, 0.9, 5), np.full(5, 0.25), s=30,
+               color="w", edgecolors="k", label="pts")
+    if legend:
+        ax.legend(fontsize=6)
+    fig.tight_layout()
+    return fig
+
+
+_VISIBLE_SERIES = r"""() => {
+  const vis = (e) => {
+    if (e.classList.contains('plotpress-slice-hidden')) return false;
+    for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (st.display === 'none' || st.visibility === 'hidden') return false;
+    }
+    return true; };
+  const g0 = document.querySelector('g[clip-path*="clip0"]');
+  const all = Array.from((g0 || document).querySelectorAll(
+    '.plotpress-series, .plotpress-mesh'));
+  return {lines: all.filter(e => e.tagName === 'path' && vis(e)).length,
+          markers: all.filter(
+            e => (e.getAttribute('class') || '').includes('marker') && vis(e)).length,
+          meshes: all.filter(
+            e => (e.getAttribute('class') || '').includes('mesh') && vis(e)).length,
+          profile: document.querySelectorAll(
+            '.plotpress-slice-line[d]:not([d=""])').length}; }"""
+
+
+def _slice_radio(page, label):
+    page.evaluate("""(t) => { const l = Array.from(
+        document.querySelectorAll('label')).find(
+        l => l.textContent.trim().startsWith(t));
+        if (!l) throw new Error('no label ' + t);
+        l.querySelector('input').click(); }""", label)
+    page.wait_for_timeout(700)
+
+
+@pytest.mark.browser
+def test_replace_view_hides_overlaid_series_with_the_mesh(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(), options={"slice": {"enabled": True}})
+    before = page.evaluate(_VISIBLE_SERIES)
+    _slice_radio(page, "Profile replaces heatmap")
+    after = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (before["lines"], before["markers"], before["meshes"]) == (1, 1, 1)
+    assert after["meshes"] == 0
+    assert after["lines"] == 0, "the overlaid line kept its y position"
+    assert after["markers"] == 0, "the overlaid markers kept their y position"
+    assert after["profile"] == 1, "the profile itself did not draw"
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("back_to", ["Companion panel", "Heatmap with cursor"])
+def test_leaving_the_replace_view_brings_the_overlay_back(page, tmp_path, back_to):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0
+    _slice_radio(page, back_to)
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_slice_off_from_the_replace_view_restores_the_overlay(page, tmp_path):
+    """teardownAxesVisuals() has to un-hide everything the view hid -- with
+    Slice off there is no control left on screen to bring a series back."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0
+    _slice_radio(page, "Enable Slice")
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_the_cursor_view_leaves_overlaid_series_alone(page, tmp_path):
+    """The cursor view keeps the heatmap and the axis still reads in y, so an
+    overlay is still meaningful there."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(),
+          options={"slice": {"enabled": True, "view": "cursor"}})
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert (st["lines"], st["markers"], st["meshes"]) == (1, 1, 1), st
+
+
+@pytest.mark.browser
+def test_a_legend_hidden_series_stays_hidden_across_the_replace_view(page, tmp_path):
+    """Slice hides with a class, the legend with an inline style, so the two
+    compose: un-hiding on the way out must not resurrect what the legend hid."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _overlay_fig(legend=True),
+          options={"slice": {"enabled": True}})
+    page.evaluate("""() => { const t = Array.from(document.querySelectorAll(
+        'text')).find(t => t.textContent === 'line');
+        if (!t) throw new Error('no legend entry');
+        t.dispatchEvent(new MouseEvent('click', {bubbles: true})); }""")
+    page.wait_for_timeout(400)
+    assert page.evaluate(_VISIBLE_SERIES)["lines"] == 0, "the legend hid nothing"
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    st = page.evaluate(_VISIBLE_SERIES)
+    assert errs == [], errs
+    assert st["lines"] == 0, "Slice resurrected a line the legend had hidden"
+    assert st["markers"] == 1, "the markers should be unaffected"
+
+
+# ---- data-space pins under the replace view ---------------------------------
+#
+# A pin anchored in the axes' own data space has nothing to point at while the
+# replace view stands in for that data: the series it sits on is hidden and the
+# vertical axis now reads in the slice's value. It is hidden with the series
+# and restored with them. Pins on the profile itself ('slice') stay put.
+
+_PINS = r"""() => {
+  const vis = (e) => { for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return false; }
+    return true; };
+  return Array.from(document.querySelectorAll('.plotpress-pin'))
+    .map(p => ({kind: p.dataset.kind || null, index: p.dataset.index,
+                note: p.classList.contains('plotpress-note'),
+                text: p.textContent.trim(), visible: vis(p),
+                selected: p.classList.contains('selected')})); }"""
+
+
+_CLICK_AT = r"""(o) => {
+  const svg = document.getElementById('plotpress-svg');
+  const c = svg.getScreenCTM();
+  const r = document.querySelector('#clip' + o.clip + ' rect');
+  const x = +r.getAttribute('x'), y = +r.getAttribute('y');
+  const w = +r.getAttribute('width'), h = +r.getAttribute('height');
+  const ev = {bubbles: true, clientX: (x + w * o.fx) * c.a + c.e,
+                             clientY: (y + h * o.fy) * c.d + c.f};
+  svg.dispatchEvent(new MouseEvent('mousedown', ev));
+  svg.dispatchEvent(new MouseEvent('mouseup', ev));
+  svg.dispatchEvent(new MouseEvent('click', ev));
+  const pins = document.querySelectorAll('.plotpress-pin');
+  return pins.length ? pins[pins.length - 1].textContent.trim() : null; }"""
+
+
+def _visible_pins(page):
+    return [p for p in page.evaluate(_PINS) if p["visible"]]
+
+
+def _toolbar_button(page, text):
+    page.evaluate("""(t) => { const b = Array.from(
+        document.querySelectorAll('button')).find(
+        b => b.textContent.trim() === t);
+        if (!b) throw new Error('no button ' + t); b.click(); }""", text)
+    page.wait_for_timeout(250)
+
+
+def _mesh_and_line_fig(ncols=1):
+    fig, axs = plotpress.subplots(1, ncols, figsize=(4.6 * ncols, 3.4),
+                                  squeeze=False)
+    x = np.linspace(0, 1, 13)
+    yy, xx = np.meshgrid(np.arange(12), np.arange(12), indexing="ij")
+    for i, ax in enumerate(np.ravel(axs)):
+        ax.pcolormesh(x, x, np.sin(xx * (0.3 + 0.1 * yy) + i) * (1 + 0.3 * yy))
+        ax.plot(x, np.full_like(x, 0.5), color="k", linewidth=2)
+    fig.tight_layout()
+    return fig
+
+
+@pytest.mark.browser
+def test_data_space_pins_are_hidden_by_the_replace_view(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    on_line = page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    on_mesh = page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    assert "y=" in on_line and "z=" in on_mesh, (on_line, on_mesh)
+    before = _visible_pins(page)
+    _slice_radio(page, "Profile replaces heatmap")
+    during = _visible_pins(page)
+    _slice_radio(page, "Companion panel")
+    after = _visible_pins(page)
+    assert errs == [], errs
+    assert len(before) == 2
+    assert during == [], f"pins left floating over the profile: {during}"
+    assert {p["text"] for p in after} == {p["text"] for p in before}
+
+
+@pytest.mark.browser
+def test_a_pin_on_the_profile_itself_stays_visible(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True, "view": "replace"}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    vis = _visible_pins(page)
+    assert errs == [], errs
+    assert len(vis) == 1 and vis[0]["kind"] == "slice", vis
+
+
+@pytest.mark.browser
+def test_slice_off_from_the_replace_view_restores_the_pins(page, tmp_path):
+    """Hidden, never deleted -- with Slice off there is no control left on
+    screen that would bring a pin back."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _slice_radio(page, "Profile replaces heatmap")
+    assert _visible_pins(page) == []
+    _slice_radio(page, "Enable Slice")
+    assert errs == [], errs
+    assert len(_visible_pins(page)) == 1
+
+
+@pytest.mark.browser
+def test_an_annotation_is_hidden_and_restored_like_a_pin(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("dialog", lambda d: d.accept("note"))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Annotate Point")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    page.wait_for_timeout(400)
+    assert len([p for p in _visible_pins(page) if p["note"]]) == 1
+    _slice_radio(page, "Profile replaces heatmap")
+    assert [p for p in _visible_pins(page) if p["note"]] == []
+    _slice_radio(page, "Companion panel")
+    assert errs == [], errs
+    assert len([p for p in _visible_pins(page) if p["note"]]) == 1
+
+
+@pytest.mark.browser
+def test_hide_points_and_the_replace_view_compose(page, tmp_path):
+    """Three channels can hide a pin now -- Hide Points' body class, the
+    view's own class, and applySliceVisibility()'s inline display for 'slice'
+    pins. Leaving the view must not resurrect what Hide Points hid."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _toolbar_button(page, "Hide Points")
+    assert _visible_pins(page) == [], "Hide Points hid nothing"
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    assert errs == [], errs
+    assert _visible_pins(page) == [], "the view resurrected a hidden pin"
+
+
+@pytest.mark.browser
+def test_cycling_views_leaves_no_pin_class_behind(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.5, "fy": 0.5})
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    for _ in range(3):
+        _slice_radio(page, "Profile replaces heatmap")
+        _slice_radio(page, "Heatmap with cursor")
+        _slice_radio(page, "Companion panel")
+    leaked = page.evaluate(
+        "() => document.querySelectorAll("
+        "'.plotpress-pin.plotpress-slice-hidden').length")
+    assert errs == [], errs
+    assert len(_visible_pins(page)) == 2
+    assert leaked == 0
+
+
+@pytest.mark.browser
+def test_extract_still_carries_pins_the_view_hides(page, tmp_path):
+    """Hidden is not deleted: the readings are still the reader's data."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.6, "fy": 0.7})
+    _slice_radio(page, "Profile replaces heatmap")
+    _toolbar_button(page, "Extract")
+    page.wait_for_timeout(600)
+    text = page.evaluate(
+        """() => { const p = document.querySelector('.plotpress-extract');
+             return p ? p.innerText : null; }""")
+    assert errs == [], errs
+    assert text, "Extract opened no panel"
+    assert "NaN" not in text and "undefined" not in text
+    assert "2" in text.splitlines()[0], text.splitlines()[0]
+
+
+# ---- deselecting a pin the replace view hides --------------------------------
+#
+# setDataPinsHidden() only adds/removes a display class; nothing else clears
+# selectedPin when its element goes display:none. Left alone, an arrow key
+# would keep silently stepping a pin the reader cannot see.
+
+@pytest.mark.browser
+def test_a_selected_pin_is_deselected_when_the_view_hides_it(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    before = page.evaluate(_PINS)[-1]
+    assert before["selected"] and before["visible"]
+    _slice_radio(page, "Profile replaces heatmap")
+    during = page.evaluate(_PINS)[-1]
+    assert errs == [], errs
+    assert during["visible"] is False
+    assert during["selected"] is False, "still marked selected while hidden"
+
+
+@pytest.mark.browser
+def test_arrow_key_no_longer_steps_a_pin_hidden_by_the_view(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    before_idx = page.evaluate(_PINS)[-1]["index"]
+    _slice_radio(page, "Profile replaces heatmap")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(200)
+    _slice_radio(page, "Companion panel")
+    after_idx = page.evaluate(_PINS)[-1]["index"]
+    assert errs == [], errs
+    assert after_idx == before_idx, (
+        "the arrow key still stepped a pin the reader could not see")
+
+
+@pytest.mark.browser
+def test_the_deselected_pin_can_be_reselected_and_stepped(page, tmp_path):
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    _load(page, tmp_path, _mesh_and_line_fig(),
+          options={"slice": {"enabled": True}})
+    _toolbar_button(page, "Point Picking")
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})
+    _slice_radio(page, "Profile replaces heatmap")
+    _slice_radio(page, "Companion panel")
+    before_idx = page.evaluate(_PINS)[-1]["index"]
+    page.evaluate(_CLICK_AT, {"clip": 0, "fx": 0.3, "fy": 0.85})   # reselect
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(200)
+    after_idx = page.evaluate(_PINS)[-1]["index"]
+    assert errs == [], errs
+    assert after_idx != before_idx, "reselecting did not restore stepping"

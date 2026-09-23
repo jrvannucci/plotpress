@@ -279,7 +279,7 @@
   if (sliceMenuNeeded) drawSliceSelection();
   if (sliceMenuNeeded && SLICE_ENABLED) {
     buildSliceSliders();
-    if (isFinite(SLICE_CFG.index)) restoreSliceIndex(+SLICE_CFG.index);
+    if (isFiniteNum(SLICE_CFG.index)) restoreSliceIndex(SLICE_CFG.index);
   }
   var savedStateEl = document.getElementById('plotpress-saved-state');
   if (savedStateEl) applySavedState(JSON.parse(savedStateEl.textContent));

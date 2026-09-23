@@ -9,7 +9,180 @@ Versions come from git tags: a release *is* a tag (e.g. `0.1.0`), and the
 package version is derived from it at build time rather than written down
 anywhere in the source.
 
-## [Unreleased]
+## [0.42.4] - 2026-09-21
+
+### Fixed
+
+- **Slice: Point Picking pins no longer float over the "profile replaces
+  heatmap" view.** A pin anchored in an axes' own data space kept its old
+  pixel while that view stood in for the data, so a reading of
+  `x=0.292, y=0.125, z=1.212` sat at the `y=0.125` pixel of an axis that had
+  started reading in the slice's value, pointing at a mesh (or, since 0.42.3,
+  a line) that is not on screen. Annotations anchored the same way did the
+  same. They are now hidden with the series they belong to and restored with
+  them -- on a view change, or on switching Slice off. Pins placed on the
+  profile itself stay, since the thing they point at is what is showing.
+  Hidden, never deleted: `Extract` still carries them, and they come back
+  untouched. This predates 0.42.3, which only widened it from mesh pins to
+  line and scatter pins as well. A pin selected with an arrow key active
+  is also deselected when it's hidden this way, rather than staying the
+  live target of arrow-key stepping while invisible.
+
+## [0.42.3] - 2026-09-21
+
+### Fixed
+
+- **Slice: the "profile replaces heatmap" view no longer leaves overlaid
+  series stranded on an axis that has changed meaning.** That view re-labels
+  the vertical axis in the slice's *value*, and hid the mesh but nothing else
+  drawn on the same axes -- so a `plot()` line at `y=0.5`, or a `scatter()` at
+  `y=0.25`, kept its old pixel position while the ticks beside it started
+  reading in z, showing a value it never had (a line marking `y=0.5` sat at
+  `0.41` on the new axis). The same rect was also claimed whole by the
+  profile's own hit-test, so those series could not be picked while the view
+  was on, and a click on one reported the mesh underneath at a shifted x.
+  Everything the axes draws in its own data space is now hidden with the mesh
+  and restored with it -- switching views, or switching Slice off entirely.
+  The companion and cursor views are untouched: they keep the heatmap and the
+  axis still reads in y, so an overlay is still meaningful there and still
+  picks. Note this is deliberately all-or-nothing: for an X slice the
+  horizontal axis does survive, so a strictly vertical reference line would
+  still have been readable, but singling those out would hide one series and
+  keep another for reasons invisible to the reader.
+
+## [0.42.2] - 2026-09-21
+
+### Fixed
+
+- **`subplot_size=` now works without an explicit `tight_layout()` call.** Only
+  `tight_layout()` measures the decorations the solve works around, and the
+  render-time re-fit skipped any figure that had never had it called by hand --
+  so `subplot_size=` quietly did nothing for a caller who just built the figure
+  and saved it, which is exactly what its own documentation said would work.
+  Asking for a subplot size now arms that re-fit. `subplots_adjust()` still
+  overrides it, since that sets the margins directly and leaves nothing to
+  solve, and so does `set_size_inches()`: an explicit figure size is the caller
+  taking control back, and the pending solve would otherwise resize the figure
+  away from it on the next render.
+- **A wrong-typed `group=` now says so.** `remove_group()` and
+  `set_group_visible()` accepted anything non-`None` in their `group=` slot and
+  only failed later, somewhere else: `set_group_visible(grp, False)` -- a
+  natural order to guess, since `remove_group()` really does take the group
+  first -- bound `group=False` and died on `'bool' object has no attribute
+  '_raw'`, and `remove_group("G0")` bound the title positionally and died on
+  `'str' object has no attribute 'flat_axes'`. Both now raise a `TypeError`
+  naming what was passed, and the string case suggests `title=` instead.
+
+## [0.42.1] - 2026-09-20
+
+### Fixed
+
+- **Slice: rebuilding the sliders no longer throws away the profile pins.**
+  `buildSliceSliders()` tears the sliders down and rebuilds them on every
+  change, and that teardown deleted every pin placed on a companion strip -- so
+  toggling "Link all matching axes" or changing which axes are sliced silently
+  lost them, although neither changes what a pin points at. The two cases that
+  do are handled where they happen: switching Slice off (no profile left to
+  point at) and changing orientation (a pin's index means a sample along the
+  other axis afterwards). An axes leaving the scope still drops its own.
+- **Slice: a `null` in the embedded option config no longer reads as a number.**
+  `isFinite(null)` is true in JavaScript and `+null` is 0, so `panel_size`,
+  `range_min`/`range_max` and `index` each took a null as a real value --
+  `panel_size: null` collapsed the companion strip onto its minimum size
+  instead of the 0.3 default. `Figure.to_html()` rejects a null before it can
+  get there, so this only reached a saved page edited by hand, but the config
+  is read the same way either way.
+
+## [0.42.0] - 2026-09-20
+
+### Added
+
+- **`subplot_size=` on `subplots()`/`subplots_from_groups()`** -- give the size
+  of one subplot in inches and have `figsize` solved for it, instead of sizing
+  the whole figure and discovering what that left each panel::
+
+      fig, axes = plotpress.subplots(20, 25, subplot_size=(1.2, 0.9))
+
+  A readable panel is a fixed size, so on a large grid what a caller knows is
+  how big one panel should be -- not what 500 of them plus their tick labels,
+  titles, colorbars, group boxes and `supxlabel` add up to.
+  `figsize=(ncols * 1.2, nrows * 0.9)` is the usual guess and is always wrong,
+  because none of that surrounding furniture scales with the grid the way the
+  panels do. The room it needs is measured and added on top, so the panels come
+  out the size asked for. `tight_layout()` does the solving, so the answer
+  reflects the labels actually set rather than a guess made before they
+  existed. A colorbar, a group box or a suptitle grows the figure rather than
+  eating into the panels -- `subplot_size` is the size of the *plotting box*,
+  not of the grid cell the colorbar is carved out of.
+
+### Fixed
+
+- **The global slider bar could grow off the top of the window.** "Link all
+  matching axes" makes one global slider per compatible group, so a figure
+  whose meshes come in many different grid shapes stacks many of them in the
+  bar fixed to the bottom of the window. Nothing bounded that column: 24 groups
+  made a 1319px bar in a 900px viewport, and since a `position: fixed` element
+  does not scroll with the page, the eight sliders above the top edge could not
+  be reached at all. The bar is now capped to the room it actually has and
+  scrolls inside itself, and re-caps when the window resizes.
+
+### Documentation
+
+- **A worked example for `subplot_size=`**, which opens by multiplying out a
+  `figsize` the obvious way and printing what the panels actually came to
+  (1.00 x 0.45in where 1.40 x 1.10 was intended), then states the same
+  requirement with `subplot_size=` and holds it across three grid sizes and a
+  per-axes colorbar. The 500-panel grouped demo and the 500-panel scale example
+  now use it too -- both were hand-multiplying `figsize=(NCOLS * 1.6,
+  NROWS * 1.6)`, the pattern this replaces, and neither was getting the panel
+  size it named.
+
+## [0.41.1] - 2026-09-20
+
+### Documentation
+
+- **README and docs homepage corrected and tidied.** Both still described the
+  toolbar as it stood before the Slice tool and `options=` existed; both are now
+  documented. Several claims had drifted and are fixed: 24 built-in colormaps
+  (the list beside it already named 27), "a hundred-odd" real-application
+  figures (there are over 160), "one font-metric family" (four are bundled), and
+  a homepage claim that 3-D axes project onto the 2-D core -- there is no 3-D at
+  all; polar is the thing that projects. `barbs` was listed as upcoming though it
+  ships, and the plot-types table was missing it along with `ecdfplot`,
+  `kdeplot` and `pcolormesh_frames`. "Supported plot types" is rewritten from a
+  single run-on paragraph into one table per grouping, the Roadmap section is
+  gone, and a new GIF shows the Slice companion panel driven by one coupled
+  slider across two panels.
+
+### Changed
+
+- **Gallery figures no longer open with Slice switched on.** Every tool is still
+  offered in the toolbar; none starts active. Slice reshapes the axes it runs on
+  (carving out a companion strip, docking a slider), so starting it enabled meant
+  a reader met a modified figure before choosing to modify it. The five examples
+  that specifically demonstrate Slice still turn it on themselves.
+
+### Fixed
+
+- **A toolbar menu could open past the edge of an embedded figure.** A figure
+  embedded in a page -- a `Report` panel, a docs gallery iframe -- gets whatever
+  height the host gave it, and the Slice menu is the tallest of them. With
+  nothing bounding it, the bottom of the list fell outside the document: clipped
+  away rather than scrolled off, since an iframe has no viewport of its own to
+  scroll, leaving those options unreachable. An open menu is now measured and
+  kept inside the viewport -- scrolling internally, or flipping above its button
+  when that side has more room -- and the same clamp keeps a menu near the right
+  edge on screen.
+
+- **Tick decades are computed from the decimal literal, not `pow`.** Neither
+  Python's `**` nor JavaScript's `Math.pow` is required to return the correctly
+  rounded power of ten, and both miss: `10.0**23` and `10.0**126` differ from
+  their literals, and some JavaScript engines return a different double for
+  `10**-5` than others. On an engine that rounds it the other way, an axis over
+  `[1, 1.0001]` lost its first tick entirely once zoomed -- `ceil(vmin / step)`
+  landed on the next integer -- so the interactive view disagreed with the ticks
+  the static render had already drawn. Both sides now build a decade by parsing
+  the decimal literal, which is correctly rounded by spec in both languages.
 
 ### Changed
 

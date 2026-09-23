@@ -19,11 +19,13 @@ pipelines and offline environments.
    x = np.linspace(0, 4 * np.pi, 400)
    ax.plot(x, np.sin(x), label="sin")
    ax.plot(x, np.cos(x), "--", label="cos")
-   ax.set_xlabel("x"); ax.set_ylabel("amplitude"); ax.legend()
+   ax.set_xlabel("x")
+   ax.set_ylabel("amplitude")
+   ax.legend()
 
-   fig.save("figure.svg")                    # static vector SVG
-   fig.save("figure.png")                    # raster PNG
-   fig.save("figure.html", interactive=True) # self-contained interactive toolbar
+   fig.save("figure.svg")                     # static vector SVG
+   fig.save("figure.png")                     # raster PNG
+   fig.save("figure.html", interactive=True)  # self-contained interactive toolbar
 
 One figure. Many destinations.
 -------------------------------
@@ -153,9 +155,17 @@ document with a toolbar for:
 - Pan and zoom, over every axes at once or one at a time
 - Point picking, with extraction to CSV/JSON
 - Annotations, with a draggable label independent of the point it's pinned to
-- Frame and data sliders for 3-D/animated data (:meth:`~plotpress.axes.Axes.plot_frames`)
+- Frame and data sliders over a stack of 2-D frames (:meth:`~plotpress.axes.Axes.plot_frames`)
 - Interactive meshes -- picking works cell-by-cell on a ``pcolormesh``, not just a line's ``x``/``y``
 - Custom JavaScript tools, added to the same toolbar via ``extra_js``
+
+Tools beyond that core set are opt-in through ``options=``, so nothing newer
+changes an existing figure unless you ask for it. ``options=["slice"]`` adds
+**Slice**: for a ``pcolormesh`` or ``imshow``, scrub any row or column as a
+1-D profile with a play/step slider, shown in a strip beside the heatmap, in
+its place, or behind just a cursor line -- and drive every mesh sharing a grid
+from one slider, which is what makes it work on a figure with hundreds of
+panels.
 
 There is no server to run and no external application required -- the HTML
 travels with its data and opens directly in a browser. Send someone a file,
@@ -216,8 +226,8 @@ itself -- sizing, margins, spans, and grouping panels --
 :ref:`large-scale figures <scale_gallery>` for build-time and file-size
 comparisons against matplotlib, :ref:`live streaming <live_streaming_gallery>`
 for watching data update in a Qt window as it's collected, and
-:ref:`real applications <applications>` for a hundred-odd figures built from
-the data real measurements produce, grouped by field.
+:ref:`real applications <applications>` for over 160 figures built from the
+data real measurements produce, grouped by field.
 
 Designed for constrained environments
 -----------------------------------------
@@ -232,14 +242,14 @@ server.
 
 plotpress is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or
-triangulated grids, a handful of font-metric families, and its polar / 3-D
-axes are projected onto the 2-D core rather than a dedicated pipeline --
+triangulated grids, no 3-D, a handful of bundled font-metric families, and
+its polar axes project onto the 2-D core rather than a dedicated pipeline --
 see :ref:`limitations`). It aims at a narrower, underserved spot: plotting
 where matplotlib's install footprint or global state gets in the way.
 
 Reach for **matplotlib** (or seaborn, Plotly) when you need publication-grade
-typography across arbitrary fonts, the full plot-type gallery, polar/3-D, or
-the deep ecosystem that pandas, seaborn and scikit-learn plot into. The
+typography across arbitrary fonts, the full plot-type gallery, 3-D, or the
+deep ecosystem that pandas, seaborn and scikit-learn plot into. The
 :ref:`matplotlib-shaped API <matplotlib-shaped-api>` means moving between
 them is mostly mechanical.
 

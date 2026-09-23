@@ -65,7 +65,13 @@ for col in range(NCOLS):
         layout.add_group(row_pair, col, 2, 1, title=f"Group {group_idx}",
                         color=color, linewidth=1.0, fontsize=5)
 
-fig, axes = plotpress.subplots_from_groups(layout, figsize=(NCOLS * 1.6, NROWS * 1.6))
+# subplot_size= rather than a hand-multiplied figsize: at this size what is
+# actually known is how big one panel has to be to stay readable, and
+# figsize=(NCOLS * 1.6, NROWS * 1.6) does not deliver 1.6in panels -- the
+# ticks, titles, 500 colorbars, 250 group boxes and the sup-labels all come
+# out of that total. Stating the panel size gets the panels; the room for
+# everything else is measured and added.
+fig, axes = plotpress.subplots_from_groups(layout, subplot_size=(1.35, 1.35))
 
 x_edges = np.linspace(0, 1, MESH_N + 1)
 # A smooth Gaussian-plus-ripple field per panel (the same shape as the

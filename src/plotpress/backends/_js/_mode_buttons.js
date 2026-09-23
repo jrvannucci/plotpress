@@ -129,7 +129,11 @@
       SLICE_ENABLED = on;
       setSliceControlsEnabled(on);
       if (on) buildSliceSliders();
-      else { teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins(); }
+      else {
+        // Switched off: no profile left for a strip pin to sit on.
+        removeSlicePins();
+        teardownSliceSliders(); teardownSliceVisuals(); syncSnappedPins();
+      }
     });
 
     // Redraws every slice at its slider's current index, then puts the pins
@@ -210,6 +214,10 @@
       [['x', 'Slice X (horizontal cursor)'], ['y', 'Slice Y (vertical cursor)']],
       SLICE_ORIENTATION, function (axKey) {
         SLICE_ORIENTATION = axKey;
+        // A strip pin's index is a sample along the profile, and the profile
+        // now runs along the other axis -- the same number would silently
+        // point at a different datum, so the pins go rather than move.
+        removeSlicePins();
         if (SLICE_ENABLED) buildSliceSliders();
       });
 

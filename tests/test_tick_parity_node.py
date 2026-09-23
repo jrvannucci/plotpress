@@ -44,7 +44,7 @@ CONSTS = ["MS_PER_DAY", "DATE_TIERS", "DATE_UNIT_DAYS", "SI_PREFIXES"]
 
 #: Every pure function on the tick-resolution path, in dependency order.
 FUNCS = [
-    "jsNiceTicks", "pyFixed", "expFmt", "fmtTick", "fmtNum", "jsLogTicks",
+    "pow10", "jsNiceTicks", "pyFixed", "expFmt", "fmtTick", "fmtNum", "jsLogTicks",
     "allDistinct", "sciShared", "fmtTickSet", "axisTicks", "pickDateTier",
     "truncateDateUTC", "addDateUnitsUTC", "jsDateTicks", "pad2", "fmtDateTick",
     "jsFormatDateTicks", "jsMultipleTicks", "jsApplyLocator", "jsEngTick",

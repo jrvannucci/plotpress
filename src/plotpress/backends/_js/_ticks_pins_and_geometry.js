@@ -115,7 +115,7 @@
   function jsEngTick(v, decimals) {
     if (v === 0) return '0';
     var exp3 = Math.max(-8, Math.min(8, Math.floor(Math.log10(Math.abs(v)) / 3)));
-    var mant = pyFixed(v / Math.pow(10, exp3 * 3), decimals);
+    var mant = pyFixed(v / pow10(exp3 * 3), decimals);
     if (mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
     return mant + SI_PREFIXES[String(exp3)];
   }
@@ -334,13 +334,13 @@
       var e0 = Math.floor(Math.log10(lo)), e1 = Math.ceil(Math.log10(hi)), out = [];
       for (var e = e0; e <= e1; e++)
         for (var d = 2; d <= 9; d++) {
-          var v = d * Math.pow(10, e);
+          var v = d * pow10(e);
           if (v >= lo && v <= hi) out.push(v);
         }
       return out;
     }
     if (majorTicks.length < 2 || !step) return [];
-    var mag = Math.pow(10, Math.floor(Math.log10(Math.abs(step))));
+    var mag = pow10(Math.floor(Math.log10(Math.abs(step))));
     var lead = Math.round(Math.abs(step) / mag);
     var n = lead === 2 ? 4 : 5;   // 1->5, 2->4, 5->5 (and any other lead->5)
     var substep = step / n;

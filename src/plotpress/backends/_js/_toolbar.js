@@ -47,9 +47,13 @@
     '.plotpress-menu.open .plotpress-menu-label{background:#e8eeff;' +
     'color:#2b5bd7}' +
     '.plotpress-chev{font-size:9px;opacity:.6}' +
+    // box-sizing so fitDropdown's max-height bounds the whole box: with the
+    // default content-box it bounded the item list alone, and the 5px padding
+    // plus 1px border still pushed the menu past the viewport edge.
     '.plotpress-menu-dropdown{position:absolute;top:calc(100% + 5px);' +
     'left:0;min-width:170px;background:#fff;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.16);padding:5px;' +
+    'box-sizing:border-box;' +
     'display:none;flex-direction:column;gap:1px;z-index:1000}' +
     '.plotpress-menu.open .plotpress-menu-dropdown{display:flex}' +
     // .plotpress-toolbar now names a dropdown's own item list -- kept as
@@ -101,9 +105,17 @@
     'white-space:nowrap}' +
     '.plotpress-mode-dot{width:6px;height:6px;border-radius:50%;' +
     'background:#2b6cff;flex:none}' +
+    // overflow-y on the bar itself, with the height bound set by
+    // reflowGlobalBars: "Link all matching axes" makes one global
+    // slider per compatible group, so a figure whose meshes come in
+    // many different grid shapes gets many of them stacked here. Fixed
+    // to the bottom with nothing bounding the column, the stack simply
+    // grew off the top of the window -- 24 groups made a 1319px bar in
+    // a 900px viewport and put eight sliders somewhere no one could
+    // reach, since a fixed element does not scroll with the page.
     '.plotpress-sliders{position:fixed;bottom:12px;left:50%;' +
     'transform:translateX(-50%);display:flex;flex-direction:column;' +
-    'gap:6px;z-index:1000}' +
+    'gap:6px;z-index:1000;overflow-y:auto;overscroll-behavior:contain}' +
     '.plotpress-slider{display:flex;align-items:center;gap:12px;' +
     'background:#fff;padding:8px 16px;border:1px solid #b8b8b8;' +
     'border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.2);' +
@@ -197,6 +209,49 @@
   function closeAllMenus() {
     menuNodes.forEach(function (m) { m.classList.remove('open'); });
   }
+  // Keep an open dropdown inside the viewport. A figure embedded in a page
+  // (a Report panel, a docs gallery iframe) gets whatever height the host
+  // gave it, which can be barely taller than the figure itself -- and the
+  // Slice menu is the tallest of them. Absolutely positioned at
+  // top:100% with nothing bounding it, the bottom of the list simply fell
+  // outside the document: not scrolled off, *clipped away*, since an iframe
+  // has no viewport of its own to scroll and the items were unreachable.
+  // So it is measured on open and given a real max-height, scrolling
+  // internally when that is all the room there is -- and flipped above the
+  // button instead when that side has meaningfully more space. The same
+  // clamp keeps a menu near the right edge from running off the side.
+  function fitDropdown(btn, dropdown) {
+    dropdown.style.maxHeight = '';
+    dropdown.style.overflowY = '';
+    dropdown.style.top = '';
+    dropdown.style.bottom = '';
+    dropdown.style.left = '';
+    var GAP = 5, MARGIN = 4;
+    var b = btn.getBoundingClientRect();
+    var vh = document.documentElement.clientHeight;
+    var vw = document.documentElement.clientWidth;
+    var below = vh - b.bottom - GAP - MARGIN, above = b.top - GAP - MARGIN;
+    var needed = dropdown.scrollHeight;
+    // Flip up only when below genuinely cannot hold it and above is roomier;
+    // otherwise stay put, so a menu doesn't jump sides for a few pixels.
+    if (needed > below && above > below) {
+      dropdown.style.top = 'auto';
+      dropdown.style.bottom = 'calc(100% + ' + GAP + 'px)';
+      if (needed > above) {
+        dropdown.style.maxHeight = Math.max(80, above) + 'px';
+        dropdown.style.overflowY = 'auto';
+      }
+    } else if (needed > below) {
+      dropdown.style.maxHeight = Math.max(80, below) + 'px';
+      dropdown.style.overflowY = 'auto';
+    }
+    // Horizontal: nudge left so the right edge stays on screen.
+    var d = dropdown.getBoundingClientRect();
+    var overflowRight = d.right - (vw - MARGIN);
+    if (overflowRight > 0) {
+      dropdown.style.left = Math.round(-Math.min(overflowRight, b.left - MARGIN)) + 'px';
+    }
+  }
   function buildMenu(label) {
     var menu = document.createElement('div');
     menu.className = 'plotpress-menu';
@@ -211,7 +266,7 @@
       e.stopPropagation();
       var willOpen = !menu.classList.contains('open');
       closeAllMenus();
-      if (willOpen) menu.classList.add('open');
+      if (willOpen) { menu.classList.add('open'); fitDropdown(labelBtn, dropdown); }
     });
     var dropdown = document.createElement('div');
     dropdown.className = 'plotpress-toolbar plotpress-menu-dropdown';
@@ -433,7 +488,11 @@
   if (Array.isArray(SLICE_CFG.axes)) {
     SLICE_CFG.axes.forEach(function (k) { SLICE_SELECTED[String(k)] = true; });
   }
-  var SLICE_COMPANION_FRAC = isFinite(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
+  // isFiniteNum, not the bare isFinite: isFinite(null) is true and +null is 0,
+  // so a null in the config read as a real number and gave, for instance, a
+  // zero-height companion strip. Figure.to_html()'s own validation rejects one
+  // before it can get here, but a saved page edited by hand has no such gate.
+  var SLICE_COMPANION_FRAC = isFiniteNum(SLICE_CFG.panel_size) ? +SLICE_CFG.panel_size : 0.3;
   // Off (default): every axes gets its own docked slider; a compatible
   // group of 2+ additionally gets a link checkbox+badge on each member,
   // opt-in and manual. On: skips the per-axes checkbox dance entirely --
@@ -452,8 +511,8 @@
   // or a domain-specific reference band).
   var SLICE_RANGE_MODE = (SLICE_CFG.range === 'colorbar' || SLICE_CFG.range === 'custom')
                          ? SLICE_CFG.range : 'auto';
-  var SLICE_CUSTOM_MIN = isFinite(SLICE_CFG.range_min) ? +SLICE_CFG.range_min : null;
-  var SLICE_CUSTOM_MAX = isFinite(SLICE_CFG.range_max) ? +SLICE_CFG.range_max : null;
+  var SLICE_CUSTOM_MIN = isFiniteNum(SLICE_CFG.range_min) ? +SLICE_CFG.range_min : null;
+  var SLICE_CUSTOM_MAX = isFiniteNum(SLICE_CFG.range_max) ? +SLICE_CFG.range_max : null;
   var SLICE_STATE = {};    // axesKey -> {orientation, index, fixedCoord, cursorEl, sliceEl, tickGroup}
   var SLICE_SLIDERS = {};  // axesKey -> {box, api} -- the docked play/step control
   var SLICE_LINKS = {};    // link index -> [slider api], mirrors frame sliders' LINKS

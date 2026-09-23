@@ -10,9 +10,9 @@ A **fast, dependency-light** plotting library for scientific computing, with
 a **matplotlib-shaped** API and **no compiled extension** — install it
 anywhere Python does, from notebooks to CI pipelines to offline environments.
 It renders one figure to **SVG, PNG, PDF, Vega/Vega-Lite, and self-contained
-interactive HTML** — the HTML carrying a full pan/zoom, point-picking, and
-annotation toolbar. **No global state**, either — a `Figure` owns its own
-axes and its own `Style`.
+interactive HTML** — the HTML carrying a toolbar for pan/zoom, point-picking,
+annotation, and slicing a heatmap. **No global state**, either — a `Figure`
+owns its own axes and its own `Style`.
 
 📖 **[Documentation](https://jrvannucci.github.io/plotpress/)** &nbsp;·&nbsp;
 [User guide](https://jrvannucci.github.io/plotpress/user_guide/plotting.html) &nbsp;·&nbsp;
@@ -28,12 +28,15 @@ fig, ax = plotpress.subplots()
 x = np.linspace(0, 4 * np.pi, 400)
 ax.plot(x, np.sin(x), label="sin")
 ax.plot(x, np.cos(x), label="cos", linestyle="--")
-ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend()
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.legend()
 
-fig.save("out.svg")                       # static vector SVG
-fig.save("out.png"); fig.save("out.pdf")  # raster + vector export
-fig.save("out.html", interactive=True)    # interactive toolbar: zoom / pick / annotate
-fig.show()                                # native pop-up window
+fig.save("out.svg")                     # static vector SVG
+fig.save("out.png")                     # raster export
+fig.save("out.pdf")                     # vector export
+fig.save("out.html", interactive=True)  # interactive: zoom / pick / annotate / slice
+fig.show()                              # native pop-up window
 ```
 
 `out.html` above is a real, self-contained page — no server, no external JS —
@@ -43,10 +46,13 @@ inlined into that one file, so anyone can open and interact with it with
 nothing installed on their end — no Python, no plotpress, no internet
 connection, just a browser. Email it, drop it in a chat, put it on a USB
 stick — it still works. Send someone a file, not a service they have to
-install. PyPI/GitHub READMEs can't run the page's own script, so the four
-GIFs below stand in for it; open one yourself (or click through to the
+install.
+
+A README on PyPI or GitHub can't run that page's script, so the GIFs below
+are recordings of it rather than the real thing. For the live version,
+open a saved file yourself or visit the
 [real-applications gallery](https://jrvannucci.github.io/plotpress/auto_applications/index.html),
-embedded exactly this way) and it's fully live.
+where every figure is embedded exactly this way.
 
 **Pan / zoom**, working the same over every axes, not just the one under the cursor:
 
@@ -62,14 +68,25 @@ point it's pinned to:
 
 ![Dropping an annotation on a bar chart and dragging its label away from the point it's pinned to](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_annotation.gif)
 
+**Slicing a heatmap**, reading a row of a `pcolormesh` as a profile in a strip
+carved out of the same axes — the companion view of the opt-in Slice tool. One
+slider drives every mesh sharing the grid, so both sections stay on the same
+row as it sweeps down; the profile's value axis is pinned to the colorbar's
+range, so the line moves through the field instead of rescaling each step:
+
+![Turning on the Slice tool, then dragging one coupled slider to sweep a row down through two heatmaps at once while the profile above each follows its cursor line](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_slice.gif)
+
 **At scale**, every gesture above still works the same way on a figure with
-hundreds of axes — zoom from the full grid into a handful of panels, pan,
-pick a value, remove it, pick again and drag its label, pan to a distant
-group, annotate, then back Home (the figure is
+hundreds of axes — zoom from the full grid down into a handful of panels, pan,
+pick a value off a mesh cell, walk it to another with the arrow keys, drag its
+label clear of the dot it stays pinned to, then hand that one panel to Slice by
+clicking it on the figure, read the profile through it, and project the pin
+onto that profile so the same point is marked on both. The other 499 panels are
+left alone throughout (the figure is
 [`docs/figure_layout/grouping/plot_13_full_scale_demo.py`](https://jrvannucci.github.io/plotpress/auto_figure_layout/grouping/plot_13_full_scale_demo.html) —
 500 `pcolormesh` panels, 250 groups, each with its own colorbar):
 
-![Zooming from a 500-panel figure into a handful of panels, panning, picking a value, removing and re-picking it, dragging its label, panning to a distant group, annotating, then Home](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
+![Zooming from a 500-panel figure into a handful of panels, panning, picking a value that reports x, y and z, stepping it cell by cell with the arrow keys, dragging its label away from the marker with a leader line following, then choosing one panel on the figure, reading its slice in a companion strip, and projecting the pin onto the profile so both carry the same point in a matching colour](https://raw.githubusercontent.com/jrvannucci/plotpress/main/assets/readme_scale_demo.gif)
 
 ## One figure. Many destinations.
 
@@ -163,20 +180,28 @@ round-trip itself uses. See the
 
 ## What makes it different
 
-1. **No `pyplot`, no globals.** There is no "current figure/axes" and no global
-   `rcParams`. A `Figure` owns its axes and its own `Style`; two figures never
-   share mutable state. `plotpress.subplots()` returns `(fig, axes)` just like
-   `plt.subplots()` — but touches no global state.
-2. **matplotlib-*shaped* API** so moving code either direction is mostly
-   mechanical: `Figure`/`Axes`, `plot`, `scatter`, `pcolormesh`,
-   `set_xlabel/ylabel/title`, `set_xlim/ylim`, `grid`, `legend`, `colorbar`. It
-   is shaped, not drop-in — there's no `pyplot` state machine and not every
-   matplotlib keyword is present; treat the gallery as the compatibility surface.
-3. **SVG-first + built for speed.** Output is vector SVG; only mesh/image layers
-   are rasterized (as a single embedded `<image>`, not thousands of rects). Each
-   series is one `<path>`. It's **pure Python + NumPy** — vectorized coordinate
-   formatting, min/max-decimated huge lines — with **no compiled extension**, so
-   it installs everywhere pip does.
+A plotpress figure can leave behind a recoverable artifact rather than an
+image: it stores its plotted data, layout, and styling together in the same
+file.
+
+1. **Return to the analysis, not just the image.** A saved interactive figure
+   carries its plotted series alongside its structure and styling. Long after
+   the original Python session, notebook, or source dataset is gone, the file
+   can be read back to recover the data, inspect what was plotted, rebuild the
+   figure, continue the analysis, or create a new visualization. The output is
+   a durable analytical record rather than a screenshot at the end of a
+   workflow.
+2. **Share the artifact without sharing the environment.** Everything is
+   contained in one HTML file. A recipient can open it directly in a browser,
+   explore every axes, pick values, and add annotations without Python,
+   plotpress, a server, an account, or any code of their own. The file works
+   offline and can travel through email, chat, removable storage, a paper's
+   supplementary material, or a long-term archive.
+3. **Keep exploration, publication, and recovery connected.** The recoverable
+   interactive artifact comes from the same figure that exports to SVG, PNG,
+   PDF, Vega, or Vega-Lite. Collaborators can explore it now, a paper can use
+   its static rendering, and a future researcher can recover and analyze its
+   underlying data later — without maintaining separate plotting workflows.
 
 ## Scientific visualization, end to end
 
@@ -232,11 +257,11 @@ list; the categories:
 
 plotpress is **not a matplotlib replacement**, and it does not try to match
 matplotlib's twenty years of breadth (no geographic projections or triangulated
-grids, one font-metric family, no 3-D, and its polar axes project onto the 2-D
-core rather than a dedicated pipeline — see [Supported plot types](#supported-plot-types)
-below). It aims at a narrower, underserved spot: plotting where matplotlib's
-install footprint or global state gets in the way — scientific software
-doesn't always run on a developer laptop.
+grids, a handful of bundled font-metric families, no 3-D, and its polar axes
+project onto the 2-D core rather than a dedicated pipeline — see
+[Supported plot types](#supported-plot-types) below). It aims at a narrower,
+underserved spot: plotting where matplotlib's install footprint or global state
+gets in the way. Scientific software doesn't always run on a developer laptop.
 
 **Reach for plotpress when you want to:**
 
@@ -257,7 +282,7 @@ Two galleries in the docs, on separate pages: a
 [plot-type reference](https://jrvannucci.github.io/plotpress/auto_examples/index.html)
 with one figure per method, and
 [real applications](https://jrvannucci.github.io/plotpress/auto_applications/index.html)
-— a hundred-odd worked figures built from the data real measurements produce,
+— over 160 worked figures built from the data real measurements produce,
 grouped by field, each explaining the axis, scale and colour choices the data
 forces. Every application figure is embedded live, with the interactive toolbar.
 
@@ -265,19 +290,20 @@ forces. Every application figure is embedded live, with the interactive toolbar.
 
 ```bash
 pip install plotpress            # SVG + interactive HTML + PNG/PDF export
-pip install plotpress[full]      # + every real end-user feature: viewers (gui, qt, jupyter) + xarray
+pip install plotpress[full]      # + the viewers (gui, qt, jupyter) and xarray
 pip install plotpress[contrib]   # + everything a contributor needs (dev, browser, bench, docs)
 ```
 
-The standard install covers **all file output** -- SVG, interactive HTML, PNG and
-vector PDF -- with pure-wheel dependencies that install everywhere (servers, CI,
-notebooks). `[full]` is likely what you want if you're reaching for more than
-that at all; each of its pieces (`[gui]`, `[qt]`, `[jupyter]`, `[xarray]`, or all
-three viewers via `[viewers]`) also installs on its own, or combined in one
-command (`pip install plotpress[gui,xarray]`), for anyone who wants less than
-the full bundle -- `[gui]`, for instance, pulls a desktop webview stack for the
-native `fig.show()` window that a `[qt]`-only or `[jupyter]`-only install has
-no reason to carry. See [Installation](https://jrvannucci.github.io/plotpress/installation.html)
+The standard install covers **all file output** — SVG, interactive HTML, PNG
+and vector PDF — with pure-wheel dependencies that install everywhere (servers,
+CI, notebooks). Reach for `[full]` as soon as you want anything beyond that.
+
+Its pieces also install individually, or in combination
+(`pip install plotpress[gui,xarray]`): `[gui]`, `[qt]`, `[jupyter]`,
+`[xarray]`, or all three viewers at once via `[viewers]`. That matters because
+each pulls its own stack — `[gui]` brings a desktop webview for the native
+`fig.show()` window, which a `[qt]`-only or `[jupyter]`-only install has no
+reason to carry. See [Installation](https://jrvannucci.github.io/plotpress/installation.html)
 for the full extras reference.
 
 ## Output surfaces (one scene, many targets)
@@ -300,12 +326,13 @@ Interactive HTML and pop-up output carry a self-contained vanilla-JS toolbar (no
 external requests, so it works under strict CSPs like Jupyter and sandboxed
 webviews). Nothing is active until you pick a tool:
 
-Pan/Zoom and Home sit standalone on the toolbar's left; everything else is
-grouped into Axes, Point Picking, Annotate, and File menus:
+Pan/Zoom, Home and Fit Width sit standalone on the toolbar's left; everything
+else is grouped into Axes, Point Picking, Annotate, and File menus:
 
 - **Pan/Zoom** — plain-wheel whole-figure zoom/pan, for wherever
   holding Ctrl (Axis Zoom's whole-figure gesture, below) is awkward.
-  **Home** restores its magnification back to natural size.
+  **Home** restores its magnification back to natural size, and **Fit Width**
+  snaps it to exactly the window's width.
 - **Axis Span** — drag to pan a single plot's data window (log-aware).
 - **Axis Zoom** — rubber-band box to zoom *one* axes in **data space** (ticks
   recompute, markers keep a constant size); Ctrl+wheel (or a trackpad pinch)
@@ -321,14 +348,34 @@ grouped into Axes, Point Picking, Annotate, and File menus:
   Points** toggles every pin's visibility without deleting them, and
   **Extract** copies/downloads them all as CSV/JSON, or hands them back to
   the kernel (`fig.show(wait_for_extract=True)`).
-- **Annotation** — drop a user-written note anywhere on the figure, not
-  locked to any datum; **Clear Annotations** removes only these, leaving
-  Point Picking pins untouched (Escape clears both kinds at once, and
-  deselects the active tool). Its box drags the same way, while Annotation
-  is active. **Hide Annotations** toggles every note's visibility (plus any
-  boxed callout the figure itself drew) without deleting them.
+- **Annotate** — three ways to drop a user-written note: a plain caption
+  pinned to a figure position, an **Annotate Arrow** note that points at where
+  it was dropped, and an **Annotate Point** note locked to the nearest datum
+  the way a pick is. **Clear Annotations** removes only these, leaving Point
+  Picking pins untouched (Escape clears both kinds at once, and deselects the
+  active tool). Each note's box drags the same way, while the tool that would
+  have created it is active. **Hide Annotations** toggles every note's
+  visibility (plus any boxed callout the figure itself drew) without deleting
+  them.
 - **Save**/**Save As** — persist pan/zoom, every pin/annotation, and every
   toggle above to a new (or the same) self-contained HTML file.
+
+That toolbar is what every interactive figure gets. Anything beyond it is
+opt-in through `options=`, so nothing new changes an existing figure unless
+you ask for it:
+
+```python
+fig.save("out.html", interactive=True, options=["slice"])
+```
+
+- **Slice** — for a `pcolormesh` or `imshow`, scrub any row or column as a
+  1-D profile with a play/step slider. The profile can sit in a strip beside
+  the heatmap, replace it, or stay hidden behind just a cursor line; its value
+  axis can follow each slice, the colorbar's range, or bounds you set. Point
+  Picking works on the profile itself, and every mesh sharing a grid can be
+  driven from one slider — which is what makes it usable on a figure with
+  hundreds of panels. Pass settings instead of a bare name to open in a chosen
+  state: `options={"slice": {"enabled": True, "view": "companion"}}`.
 
 `fig.to_html()`/`fig.save(..., interactive=True)` also accept `extra_js` — a
 raw JS string inlined as its own `<script>`, for adding a custom tool to the
@@ -346,12 +393,17 @@ name when the axes has no title) plus `xlabel`/`ylabel` and `zlabel` (the
 title of any colorbar attached to that axes, shared or not), so a value
 pulled out of context still says what it means.
 
-3-D data via `ax.plot_frames(...)` adds a **slider** (play/pause/step) over the
-extra dimension; multiple sliders can be linked by a shared index.
+A stack of 2-D frames via `ax.plot_frames(...)`/`ax.pcolormesh_frames(...)`
+adds a **slider** (play/pause/step) over the extra dimension. Multiple sliders
+can be linked by a shared index.
 
 ## Supported plot types
 
-plotpress covers the core of matplotlib's "Plot types" reference grid:
+plotpress covers the core of matplotlib's "Plot types" reference grid, plus the
+axis, layout and color machinery a real figure needs. Each table below is one
+grouping.
+
+### Plots
 
 | | | |
 |---|---|---|
@@ -363,45 +415,107 @@ plotpress covers the core of matplotlib's "Plot types" reference grid:
 | `quiver` | `contour` (marching squares) | `hist2d` |
 | `stackplot` | `contourf` (filled) | `hexbin` |
 | `matshow` | `spy` | `broken_barh` |
-| `stairs` | `axline` | |
+| `stairs` | `axline` | `barbs` |
+| `ecdfplot` | `kdeplot` | `pcolormesh_frames` (slider) |
 
-**Signal processing** (pure-NumPy Welch estimators): `psd`, `csd`, `cohere`,
-`magnitude_spectrum`, `angle_spectrum`, `phase_spectrum`, `specgram`, `xcorr`,
-`acorr`.
+### Signal processing
 
-**Polar** (`projection="polar"`): `plot`, `scatter`, `fill`, with
-`set_rmax`/`set_rlim`/`set_rticks`/`set_thetagrids` and orientation control,
-projected onto the 2-D core — see the
+Pure-NumPy Welch estimators — no SciPy required.
+
+| | | |
+|---|---|---|
+| `psd` | `csd` | `cohere` |
+| `magnitude_spectrum` | `angle_spectrum` | `phase_spectrum` |
+| `specgram` | `xcorr` | `acorr` |
+
+### Polar
+
+Created with `projection="polar"`, projected onto the 2-D core rather than a
+dedicated pipeline — see the
 [limitations docs](https://jrvannucci.github.io/plotpress/user_guide/limitations.html)
-for the caveats. No 3-D (see below).
+for the caveats.
 
-Plus reference marks & fills — `axhline`/`axvline`, `axhspan`/`axvspan`,
-`fill`/`fill_between`/`fill_betweenx`, `hlines`/`vlines` — and axis control:
-**log scales** (`set_xscale`/`set_yscale`/`loglog`/`semilogx`),
-**`set_aspect("equal")`**, `set_xlim/ylim`, `set_xticks/yticks`,
-`set_xticklabels/yticklabels`, `invert_xaxis/yaxis`, `margins`, `grid`,
-`set_axis_off`, **`subplots(sharex=…, sharey=…)`** (plus post-hoc
-`sharex()`/`sharey()`), and **`twinx`/`twiny`** (overlaid axes with a second
-y/x axis), `tick_params` (per-axes, per-x/y-axis tick styling), and
-matplotlib `"C0"`..`"CN"` cycle colors. Plus **`fig.tight_layout()`**
-(auto-margins so labels never overflow) and **`fig.subplots_adjust(...)`** /
-**`GridSpec`** row/column spans for direct margin control, `ax.spines`
-(per-side visible/color/linewidth), `secondary_xaxis`/`secondary_yaxis`
-(a mirrored, unit-converted second axis) and `inset_axes` (a nested axes),
-`align_xlabels`/`align_ylabels`, text (`ax.text`, `ax.annotate` with
-arrows), figure-level `suptitle`/`supxlabel`/`supylabel`,
-`fig.colorbar(...)` (single **or shared across a list of axes**),
-`legend(loc=…, ncol=…, title=…)`, named colors (`"red"`, `"k"`, …), and
-**24 built-in colormaps** (perceptually-uniform `viridis`/`plasma`/`inferno`/
-`magma`/`cividis`; diverging `coolwarm`/`RdBu`/`Spectral`/`PiYG`/`BrBG`/
-`seismic`; sequential `Blues`/`Greens`/`Oranges`/`Reds`/`Purples`/`YlOrRd`/
-`gray`/`hot`/`cool`; cyclic `twilight`; rainbow `jet`/`turbo`; plus
-qualitative/categorical `tab10`/`tab20`/`Set1`/`Dark2` for class labels with
-no natural ordering) + any `_r` reversed variant, with `Normalize`,
-`LogNorm`, `PowerNorm`, `SymLogNorm`, `TwoSlopeNorm` (a diverging colormap's
-midpoint pinned to a real center value), or `BoundaryNorm` (discrete bins)
-scaling, and `plotpress.make_cmap()`/`register_cmap()` for a custom one from
-any list of colors.
+| | | |
+|---|---|---|
+| `plot` | `scatter` | `fill` |
+| `set_rmax` / `set_rlim` | `set_rticks` | `set_thetagrids` |
+
+### Reference marks and fills
+
+| | | |
+|---|---|---|
+| `axhline` / `axvline` | `axhspan` / `axvspan` | `hlines` / `vlines` |
+| `fill` | `fill_between` | `fill_betweenx` |
+
+### Axis control
+
+| Call | What it does |
+|------|--------------|
+| `set_xscale` / `set_yscale` / `loglog` / `semilogx` / `semilogy` | log scales |
+| `set_aspect("equal")` | equal data aspect |
+| `set_xlim` / `set_ylim` | limits |
+| `set_xticks` / `set_yticks` | fixed tick locations |
+| `set_xticklabels` / `set_yticklabels` | fixed tick labels |
+| `invert_xaxis` / `invert_yaxis` | reversed direction |
+| `margins` / `grid` / `set_axis_off` | padding, gridlines, hiding the frame |
+| `tick_params` | per-axes, per-axis tick styling |
+
+### More than one axes
+
+| Call | What it does |
+|------|--------------|
+| `subplots(sharex=…, sharey=…)` | shared limits across a grid |
+| `ax.sharex(other)` / `ax.sharey(other)` | the same, applied after the fact |
+| `twinx` / `twiny` | an overlaid axes with a second y/x axis |
+| `secondary_xaxis` / `secondary_yaxis` | a mirrored, unit-converted second axis |
+| `inset_axes` | a nested axes inside another |
+
+### Figure layout
+
+| Call | What it does |
+|------|--------------|
+| `fig.tight_layout()` | auto-margins, so labels never overflow |
+| `fig.subplots_adjust(...)` | direct margin control |
+| `GridSpec` (`plotpress.figure`) | row/column spans |
+| `ax.spines` | per-side visible / color / linewidth |
+| `align_xlabels` / `align_ylabels` | line labels up across panels |
+
+### Text, legends and colorbars
+
+| Call | What it does |
+|------|--------------|
+| `ax.text` / `ax.annotate` | text, with optional arrows |
+| `suptitle` / `supxlabel` / `supylabel` | figure-level titles and labels |
+| `legend(loc=…, ncol=…, title=…)` | per-axes legend |
+| `fig.colorbar(...)` | one colorbar, or one shared across a list of axes |
+
+### Colormaps
+
+27 built-in, plus any `_r` reversed variant, named colors (`"red"`, `"k"`, …)
+and the matplotlib `"C0"`..`"CN"` cycle. `plotpress.make_cmap()` /
+`register_cmap()` build a custom one from any list of colors.
+
+| Family | Colormaps |
+|--------|-----------|
+| Perceptually uniform | `viridis`, `plasma`, `inferno`, `magma`, `cividis` |
+| Diverging | `coolwarm`, `RdBu`, `Spectral`, `PiYG`, `BrBG`, `seismic` |
+| Sequential | `Blues`, `Greens`, `Oranges`, `Reds`, `Purples`, `YlOrRd`, `gray`, `hot`, `cool` |
+| Cyclic | `twilight` |
+| Rainbow | `jet`, `turbo` |
+| Qualitative | `tab10`, `tab20`, `Set1`, `Dark2` — for class labels with no natural ordering |
+
+### Normalization
+
+| Class | Scaling |
+|-------|---------|
+| `Normalize` | linear |
+| `LogNorm` | logarithmic |
+| `PowerNorm` | gamma |
+| `SymLogNorm` | log, through zero |
+| `TwoSlopeNorm` | diverging, midpoint pinned to a real center value |
+| `BoundaryNorm` | discrete bins |
+
+### Runnable examples
 
 ```bash
 python examples/plot_types.py    # plot / scatter / bar / hist / pie / imshow / ...
@@ -409,21 +523,27 @@ python examples/plot_types_2.py  # boxplot / violin / quiver / contour / hist2d 
 python examples/gallery.py       # line/scatter/pcolormesh/subplots
 ```
 
-**Not yet implemented** (would need new primitives): `streamplot`,
-triangulation (`tri*`), and geographic / map projections. These are the main
-remaining plot-type gaps vs matplotlib's full gallery.
+### Not yet implemented
+
+`streamplot`, triangulation (`tri*`), and geographic / map projections — each
+would need new primitives. These are the main remaining plot-type gaps against
+matplotlib's full gallery.
 
 ## Testing
 
 ```bash
-pip install plotpress[dev]         # pytest
-python -m pytest -m "not perf"  # fast unit + output tests (~2s)
-python -m pytest -m perf -s     # timing tests + speedup report (needs matplotlib)
+pip install plotpress[dev]                      # pytest
+python -m pytest                                # fast unit + output tests (~1 min)
+python -m pytest -m perf -s                     # timing tests + speedup report (needs matplotlib)
 ```
+
+A plain `pytest` run deselects the browser tests below (they need a Chromium
+download); `-m perf` selects the timing ones, which a plain run also skips.
 
 The suite covers the no-global-state invariants, plotting/autoscale logic,
 transforms/tickers/colors, a lossless PNG round-trip, SVG/HTML well-formedness
-and structure, and performance (regression guards + a comparative claim vs
+and structure, the interactive JS's tick labels against the Python ones that
+drew them, and performance (regression guards + a comparative claim vs
 matplotlib).
 
 ### Point-picking tests (opt-in)
@@ -460,38 +580,22 @@ both using the object-oriented API):
 | scatter, 5k points | ~15 ms | ~220 ms | **~14×** |
 | single line, 100k points | ~9 ms | ~48 ms | **~5.6×** |
 
-**Honest caveat:** plotpress's win comes from avoiding matplotlib's per-`Artist`
-Python overhead (many axes) and from rasterizing meshes to one `<image>` instead
-of tens of thousands of vector cells (pcolormesh). The *single huge polyline*
+**Where the win comes from:** avoiding matplotlib's per-`Artist` Python
+overhead (many axes), and rasterizing meshes to one `<image>` instead of tens
+of thousands of vector cells (pcolormesh). The *single huge polyline*
 case used to be a loss (pure-Python float→string serialization of 100k points);
 it's now a win via **min/max path decimation** — a monotonic-x line is reduced
 to first/last/min/max per pixel column before serializing, which is visually
 lossless (spikes preserved), keeps the output **vector**, and needs no compiled
 backend. Coordinate formatting itself is already vectorized with `numpy.char`.
 
-## Roadmap
-
-**Done:** pure-Python core with a self-contained object model; static SVG,
-interactive HTML, and native-window output; PNG + vector-PDF export; the full
-"Plot types" grid above; log scales and equal aspect; `tight_layout`; text /
-annotations and figure-level titles; per-axes **data** zoom / pan / box-zoom with
-live ticks, point-picking + extraction, in-browser annotation, and sliders for
-3-D data.
-
-**Pure Python, and staying that way.** plotpress is deliberately pure Python +
-NumPy with no compiled extension — it installs everywhere pip does, no build
-toolchain, no per-platform wheels. Speed comes from NumPy, not native code:
-coordinate formatting is vectorized, huge lines are min/max-decimated (the
-100k-point line runs ~5.6× vs matplotlib), and curvilinear / Gouraud meshes
-scan-convert in NumPy. The "installs everywhere" promise is a first-class
-feature, not a trade-off.
-
-**Next:**
-- Finish unifying the SVG and raster renderers behind the shared primitive
-  layer (pure Python) so features aren't implemented twice.
-- More plot types: `streamplot`/`barbs` and triangulation (`tri*`).
-- Deeper polar (polar bars, cross-collection depth sorting).
-- Hover tooltips; decimation for huge scatter collections.
+**Pure Python, and staying that way.** Every number above comes from NumPy, not
+from native code — plotpress has no compiled extension and is not going to grow
+one. Curvilinear and Gouraud meshes scan-convert in NumPy for the same reason:
+where a faster path would need a C extension, the NumPy one is what gets
+written. Installing everywhere pip does, with no build toolchain and no
+per-platform wheels, is a first-class feature here rather than a trade-off made
+to get it.
 
 ## Architecture notes
 
@@ -516,16 +620,18 @@ directly (`from plotpress.backends.svg import figure_to_svg`):
 | `core/transform.py` | vectorized data→pixel transforms (linear + log scales) |
 | `style/colors.py` | `Normalize`, colormap LUTs, colormap application |
 | `style/ticker.py` | "nice number" + log tick locations, label formatting |
+| `style/dates.py` | datetime axis tick locations + label formatting |
 | `backends/svg/` | the renderer: scene → SVG string (+ per-axes metadata) -- split by concern (`_render`, `_ticks_and_frame`, `_legend`, `_group_layout`, `_metadata`, …) |
 | `core/primitives.py` | backend-agnostic pixel-space primitives + one artist→primitive converter |
 | `backends/png.py` | stdlib-only PNG encoder for mesh/image layers |
 | `backends/raster.py` | Pillow raster backend for PNG export; svglib/reportlab for PDF |
+| `backends/vega.py` / `backends/vega_lite.py` | `Figure` → Vega / Vega-Lite v5 JSON specifications |
 | `fonts/` | bundled width tables + the family registry (layout only; no glyph rasterization) |
 | `backends/_interactive.py` + `backends/_js/` | the toolbar's vanilla JS (pan/zoom, picking, annotate, Slice, sliders, export), split into one `.js` file per tool under `_js/` and assembled by `_interactive.py` |
 | `gui/qt.py` | optional PyQt/PySide WebEngine widget + window (`fig.show_qt()`, `[qt]` extra) |
 
 Artists never render themselves — they just hold arrays. The geometry of each
-artist is computed once in `core/primitives.py`; `backends/svg.py` and
+artist is computed once in `core/primitives.py`; `backends/svg/` and
 `backends/raster.py` are thin emitters over that shared primitive vocabulary,
 so an artist is defined in one place, not per backend.
 

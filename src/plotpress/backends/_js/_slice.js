@@ -699,6 +699,35 @@
       text.appendChild(red);
     }
   }
+  // Pins anchored in an axes' own data space -- every kind but 'slice', plus
+  // the un-kinded geometric readout pins -- have nothing left to point at
+  // while the replace view stands in for that data: the series they sit on is
+  // hidden (see renderMeshOrSlice's dataEls) and the vertical axis now reads
+  // in the slice's value, so a label saying "y=0.125, z=1.212" would sit at
+  // the y=0.125 pixel of an axis that no longer means y. They are hidden with
+  // the same class the series use, which keeps this on its own channel:
+  // Hide Points' body class and the inline display applySliceVisibility()
+  // writes for 'slice' pins both still compose, and a pin stays hidden while
+  // any of the three wants it hidden. Hidden, never removed -- the reader
+  // gets their pins back on the way out of the view.
+  function setDataPinsHidden(key, hidden) {
+    var k = String(key);
+    livePins().forEach(function (pin) {
+      if (pinAxesKey(pin) !== k || pin.dataset.kind === 'slice') return;
+      if (hidden) {
+        pin.classList.add('plotpress-slice-hidden');
+        // A hidden pin can still be selectedPin -- nothing else clears that
+        // on this path -- so an arrow key would silently keep stepping it
+        // with no on-screen feedback at all. selectPin(null) deselects it
+        // properly (clears .selected, the enlarged dot, the leader line)
+        // rather than leaving it selected-but-invisible; the reader gets it
+        // back by clicking again once it's showing.
+        if (selectedPin === pin) selectPin(null);
+      } else {
+        pin.classList.remove('plotpress-slice-hidden');
+      }
+    });
+  }
   function sliceStripPick(p) {
     var best = null;
     Object.keys(SLICE_STATE).forEach(function (key) {
@@ -890,18 +919,29 @@
     if (!m) return;
     var st = SLICE_STATE[key] || (SLICE_STATE[key] = {});
     st.orientation = SLICE_ORIENTATION; st.index = index;
-    // .plotpress-mesh (not image.plotpress-series) -- a QuadMesh/Image
-    // artist reaches the page as either a raster <image> (large/uniform
-    // grids) or a vectorized <g> of <rect>s (a small non-uniform one, see
-    // artists._resolve_mesh_render); both carry this class precisely so
-    // Slice can hide whichever one this mesh actually used without caring
-    // which. image.plotpress-series alone missed the vectorized case
-    // entirely, leaving its rects visible underneath the slice line.
-    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    // Everything the axes draws in its own data space: the mesh, and anything
+    // overlaid on it (a plot() line, a scatter()). The replace view hides all
+    // of it, not just the mesh -- it re-labels the vertical axis in the
+    // slice's value, so a line drawn at y=0.5 would otherwise keep the y=0.5
+    // *pixel* while the ticks beside it started reading in z, claiming a
+    // value it never had. All-or-nothing on purpose: for an X slice the
+    // horizontal axis does survive, so a strictly vertical line would still
+    // have been readable, but singling those out would hide one series and
+    // keep another for reasons the reader cannot see.
+    // Both selectors are needed. A QuadMesh/Image artist reaches the page as
+    // either a raster <image> (large/uniform grids) or a vectorized <g> of
+    // <rect>s (a small non-uniform one, see artists._resolve_mesh_render);
+    // .plotpress-mesh is carried by both precisely so Slice can hide
+    // whichever one this mesh used, and the vectorized <g> is not itself a
+    // .plotpress-series -- matching on that alone missed it entirely, leaving
+    // its rects visible underneath the slice line.
+    var dataEls = svg.querySelectorAll(
+      '#zoom' + key + ' .plotpress-mesh, #zoom' + key + ' .plotpress-series');
     var origTicks = document.getElementById('ticks' + key);
 
     if (!SLICE_VIEW_ON) {
-      meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+      dataEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+      setDataPinsHidden(key, false);
       if (origTicks) origTicks.style.display = '';
       if (st.sliceEl) {
         st.sliceEl.remove(); st.sliceEl = null;
@@ -936,14 +976,16 @@
       // that said row 4 and plotted row 3. Blank the view instead, the same
       // as the companion strip does (drawCompanion's own `if (pl)`), keeping
       // the heatmap hidden since this view is still standing in for it.
-      meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+      dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+      setDataPinsHidden(key, true);
       if (origTicks) origTicks.style.display = 'none';
       if (st.sliceEl) st.sliceEl.setAttribute('d', '');
       if (st.tickGroup) { st.tickGroup.remove(); st.tickGroup = null; }
       return;
     }
     var range = sliceValueRange(key, finiteYs), vmin = range.vmin, vmax = range.vmax;
-    meshEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+    dataEls.forEach(function (im) { im.classList.add('plotpress-slice-hidden'); });
+    setDataPinsHidden(key, true);
 
     var d = '', started = false;
     for (var i = 0; i < slice.xs.length; i++) {
@@ -1161,12 +1203,23 @@
   // slider's own global bar (if any) is always built once at load.
   function reflowGlobalBars() {
     var bars = document.querySelectorAll('.plotpress-sliders');
-    var offset = 12;
+    var offset = 12, vh = document.documentElement.clientHeight;
     bars.forEach(function (b) {
       b.style.bottom = offset + 'px';
+      // Never taller than the room left above this bar's own bottom edge:
+      // past that the column grows off the top of the window, where a
+      // position:fixed element cannot be scrolled to. Capped, it scrolls
+      // inside itself instead (see the CSS above). MARGIN keeps the top
+      // slider clear of the toolbar.
+      var MARGIN = 46;
+      b.style.maxHeight = Math.max(72, vh - offset - MARGIN) + 'px';
       offset += b.getBoundingClientRect().height + 6;
     });
   }
+  // A bar sized to the window has to be re-capped when the window changes --
+  // positionDocked() is already wired to resize for the docked sliders, so
+  // this rides along with it rather than adding a second listener.
+  function reflowOnResize() { reflowGlobalBars(); positionDocked(); }
 
   // (Re)builds every mesh axes' own slice slider from scratch -- torn down
   // and rebuilt rather than adjusted in place, since a changed orientation
@@ -1191,7 +1244,15 @@
   // buildSliceSliders() (about to replace them) and the "Enable Slice"
   // checkbox's own off handler (which tears down and stops there).
   function teardownSliceSliders() {
-    removeSlicePins();
+    // Deliberately does *not* drop the profile pins. buildSliceSliders() calls
+    // this on every rebuild, so doing it here meant changing the scope or
+    // toggling "Link all matching axes" deleted every pin a reader had placed
+    // on a strip -- neither of which changes what a pin points at. The two
+    // cases that do are handled at their own call sites: the "Enable Slice"
+    // off handler (nothing left to point at) and the orientation radio (a
+    // pin's index means a sample along the *other* axis afterwards). An axes
+    // merely leaving the scope still drops its own, via teardownAxesVisuals ->
+    // removeCompanion.
     Object.keys(SLICE_SLIDERS).forEach(function (k) {
       var s = SLICE_SLIDERS[k];
       if (s.box.parentNode) s.box.parentNode.removeChild(s.box);
@@ -1214,10 +1275,14 @@
     removeCompanion(key);
     var st = SLICE_STATE[key];
     if (!st) return;
-    // .plotpress-mesh, not image.plotpress-series -- see renderMeshOrSlice's
-    // own comment on this same selector.
-    var meshEls = svg.querySelectorAll('#zoom' + key + ' .plotpress-mesh');
+    // Both selectors -- see renderMeshOrSlice's own comment on them. This has
+    // to un-hide everything that view could have hidden, overlaid series
+    // included, or switching Slice off in the replace view would leave a
+    // line/scatter invisible with nothing left on screen to bring it back.
+    var meshEls = svg.querySelectorAll(
+      '#zoom' + key + ' .plotpress-mesh, #zoom' + key + ' .plotpress-series');
     meshEls.forEach(function (im) { im.classList.remove('plotpress-slice-hidden'); });
+    setDataPinsHidden(key, false);
     var origTicks = document.getElementById('ticks' + key);
     if (origTicks) origTicks.style.display = '';
     if (st.cursorEl) st.cursorEl.remove();
@@ -1330,7 +1395,7 @@
   // checkbox handler would mean re-registering (and so double-firing after
   // a second toggle) instead of once.
   if (sliceMenuNeeded) {
-    window.addEventListener('resize', positionDocked);
+    window.addEventListener('resize', reflowOnResize);
   }
 
   // Double-click a plot (while panning/zooming) resets just that plot's view.

@@ -45,7 +45,10 @@ vmax = max(Z.max() for Z in fields)
 
 # Pass 2: one axes per field, each fully labelled, all on the shared norm.
 t0 = time.perf_counter()
-fig, axes = plotpress.subplots(NROWS, NCOLS, figsize=(24, 20))
+# subplot_size= states what matters here -- a panel big enough to read -- and
+# lets figsize follow, instead of guessing a total and finding out afterwards
+# what 500 sets of ticks and titles left each panel.
+fig, axes = plotpress.subplots(NROWS, NCOLS, subplot_size=(0.82, 0.82))
 flat = axes.ravel()
 mesh = None
 for ax, Z, (cx, cy) in zip(flat, fields, centers):
