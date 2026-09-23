@@ -744,4 +744,4 @@ def test_unmapped_artist_warning_blames_the_caller_for_a_uniform_grid():
 
     matches = [r for r in caught if "BoxPlot" in str(r.message)]
     assert len(matches) == 1
-    assert matches[0].filename.endswith("figure.py")
+    assert matches[0].filename.endswith("_core.py")

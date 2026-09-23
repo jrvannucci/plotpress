@@ -1044,7 +1044,7 @@ def test_figure_from_template_recreates_polar_projection(tmp_path):
     fig2, axes2 = plotpress.figure_from_template(template)
     from plotpress.polar import PolarAxes
     assert isinstance(axes2[0], PolarAxes)
-    assert type(axes2[1]) is plotpress.figure.Axes
+    assert type(axes2[1]) is plotpress.axes.Axes
 
 
 def test_3d_projection_is_unsupported():

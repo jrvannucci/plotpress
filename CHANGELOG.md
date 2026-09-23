@@ -13,6 +13,13 @@ anywhere in the source.
 
 ### Changed
 
+- **`figure.py` split into `plotpress/figure/`.** The root object had grown to
+  5000+ lines; it's now six submodules -- `_core` (`Figure` itself, plus the
+  grid/group machinery it's genuinely mutually coupled to), the two leaf
+  modules it depends on (`_layout`, `_html_options`), and three things built
+  *from* a `Figure` rather than needed *by* it (`_template`, `_report`,
+  `_io`) -- all re-exported from `plotpress/figure/__init__.py`. No public
+  API changed.
 - **`svg.py` split into `plotpress/svg/`.** The SVG backend had grown to
   3300+ lines across 90 top-level functions with no classes to group
   them; it's now eight submodules by concern (formatting, ticks/frame,
