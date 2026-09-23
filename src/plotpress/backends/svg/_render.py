@@ -354,7 +354,7 @@ def _emit_shaped_markers(p, shape: str) -> str:
     (shape, color) group in the common case (one color, one size), the same
     discipline :func:`_emit_round_markers` uses for the round case.
 
-    Each polygon/stroke is built from :func:`~plotpress.primitives.
+    Each polygon/stroke is built from :func:`~plotpress.core.primitives.
     marker_polygon`/``marker_strokes``, offset from the marker's own pixel
     center -- unlike the round case's zero-length-stroke trick, this needs a
     real per-point coordinate list, but it's the same vertex count either

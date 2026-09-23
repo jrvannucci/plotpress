@@ -311,7 +311,7 @@ For a static (non-interactive) panel instead, skip the web view entirely:
 .. code-block:: python
 
    import io
-   from plotpress.raster import figure_to_image
+   from plotpress.backends.raster import figure_to_image
 
    buf = io.BytesIO()
    figure_to_image(fig).save(buf, format="PNG")
@@ -330,7 +330,7 @@ default is a **static image** via the standard library's own ``PhotoImage``
 
    import io
    import tkinter as tk
-   from plotpress.raster import figure_to_image
+   from plotpress.backends.raster import figure_to_image
 
    buf = io.BytesIO()
    figure_to_image(fig).save(buf, format="PNG")

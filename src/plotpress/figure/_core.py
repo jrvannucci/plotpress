@@ -2092,7 +2092,7 @@ class Figure:
         that axes' own resolved pixel rect. Line/scatter/bar charts use
         genuine ``field``/``scale``-encoded marks; everything else reuses
         the same pixel-space primitives ``to_svg()`` itself draws from
-        (:mod:`plotpress.primitives`), so it is visually exact but frozen at
+        (:mod:`plotpress.core.primitives`), so it is visually exact but frozen at
         this export's own size/limits -- not reactive to a Vega zoom/pan
         signal or a runtime domain change the way the line/scatter/bar
         marks are. See :mod:`plotpress.vega`'s own module docstring for the
@@ -2172,7 +2172,7 @@ class Figure:
         method; :meth:`save_template` writes it as plain, human-editable
         JSON, with no plotted data anywhere in it) and when recovering a
         saved figure's structure alongside its data. See
-        :func:`plotpress.svg.template_metadata` for the full field-by-field
+        :func:`plotpress.backends.svg.template_metadata` for the full field-by-field
         breakdown of what's captured and the real, still-irreducible gaps
         (a colorbar's actual color mapping, and a non-JSON-safe colorbar
         ``ticks``/``format``).
@@ -2547,7 +2547,7 @@ class Figure:
         file; ``slider_unit`` picks which slider drives the animation for
         figures with more than one, and ``label_frames`` stamps each frame
         with its slider value since a GIF has no slider to show it on (see
-        :func:`plotpress.raster.save_gif`).
+        :func:`plotpress.backends.raster.save_gif`).
 
         ``.jpg``/``.jpeg``/``.webp`` are raster, like ``.png`` (and share its
         ``scale``), but lossy -- JPEG and WebP compress dense mesh/image
@@ -2894,7 +2894,7 @@ def _apply_axes_decorations(ax, spec):
     if spec.get("grid"):
         ax.grid(True, axis=spec.get("grid_axis", "both"),
                which=spec.get("grid_which", "major"), alpha=spec.get("grid_alpha"))
-    # Template-only fields (see plotpress.svg._template_axes_extra) -- never
+    # Template-only fields (see plotpress.backends.svg._template_axes_extra) -- never
     # present on a plain data-roundtrip layout, so every one of these is a
     # no-op there.
     if spec.get("id") is not None:

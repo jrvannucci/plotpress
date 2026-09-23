@@ -132,7 +132,7 @@ def figure_from_template(template, figsize=None, style: Style = None, facecolor=
     overrides, ids, twin/secondary/inset overlays, colorbar styling, and
     :class:`~plotpress.style.Style` -- everything
     :meth:`~plotpress.figure.Figure.to_template`/
-    :func:`plotpress.svg.template_metadata` capture. This is the one
+    :func:`plotpress.backends.svg.template_metadata` capture. This is the one
     reconstruction function for two different starting points that produce
     the identical dict shape:
 

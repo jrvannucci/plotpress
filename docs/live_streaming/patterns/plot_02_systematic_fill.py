@@ -31,7 +31,7 @@ import plotpress
 # pushing one to a live window. None of this -- including this whole
 # ignored block -- is part of what a real script using the actual
 # LiveArtist would need.
-from plotpress.raster import figure_to_image
+from plotpress.backends.raster import figure_to_image
 
 
 class LiveArtist:

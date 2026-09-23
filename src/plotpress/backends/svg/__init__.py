@@ -17,8 +17,10 @@ string/geometry helpers), ``_ticks_and_frame``, ``_text_and_annotations``,
 it sits above everything else here rather than the reverse), and ``_metadata``
 (the interactive-HTML JSON payloads, called by figure.py, calling back into
 nothing else here). This module re-exports every one of them -- public and
-private -- so ``from plotpress.svg import X`` keeps resolving exactly as it
-did when this was one file; see ``plotpress/fonts/__init__.py`` for the same
+private -- so every name that was importable from the original single-file
+``svg.py`` (public and private) resolves unchanged from here, just under
+``plotpress.backends.svg`` now that the whole package lives under
+``backends/``; see ``plotpress/fonts/__init__.py`` for the same re-export
 pattern applied to a smaller subpackage.
 """
 

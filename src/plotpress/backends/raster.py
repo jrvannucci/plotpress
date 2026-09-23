@@ -3,7 +3,7 @@
 A second renderer that draws a Figure's primitives directly onto a Pillow canvas
 (supersampled, then downscaled for antialiasing). Pillow ships as a pure wheel
 on every platform, so PNG export needs no cairo/native SVG rasterizer. The
-geometry mirrors :mod:`plotpress.svg` -- both consume the same transforms.
+geometry mirrors :mod:`plotpress.backends.svg` -- both consume the same transforms.
 """
 
 from __future__ import annotations

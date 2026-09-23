@@ -56,6 +56,21 @@ def test_print_layout_summary_surfaces_a_to_vega_crash_instead_of_saying_ok(caps
     assert "to_vega() raised RuntimeError: boom" in out
 
 
+def test_axes_print_summary_notes_a_figure_level_crash_it_cannot_attribute(capsys):
+    """Regression: _vega_compat_report() files a raised exception under the
+    None key when its message doesn't mention "axes N" (true of a plain
+    RuntimeError). Axes.print_summary() only ever read report.get(idx), so
+    it silently reported this axes as OK for an exporter that had actually
+    crashed figure-wide -- reintroducing the same false-OK bug the crash fix
+    closed, one level deeper."""
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    with patch("plotpress.figure.Figure.to_vega", side_effect=RuntimeError("boom")):
+        ax.print_summary()
+    out = capsys.readouterr().out
+    assert "figure-level export gap" in out
+
+
 def test_print_layout_summary_names_unsupported_artist_per_exporter(capsys):
     fig, ax = plotpress.subplots()
     ax.boxplot([[1, 2, 3, 4, 5]])

@@ -833,7 +833,7 @@ def _plotpress_scraper(block, block_vars, gallery_conf):
                 from plotpress.backends.raster import save_gif
                 save_gif(value, path, fps=10, scale=2)
             else:
-                value.save(path, scale=2)      # PNG via plotpress.raster
+                value.save(path, scale=2)      # PNG via plotpress.backends.raster
             paths.append(path)
             # Every figure gets a live interactive copy -- embedded if it's
             # small enough for a fixed-size iframe to still be worth

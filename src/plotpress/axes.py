@@ -705,7 +705,7 @@ class Axes:
         * ``None`` (default) -- automatic. A uniform grid rasterizes (its fast
           path is already a lossless, byte-identical copy, so there is nothing
           to gain from vectors). A non-uniform grid under
-          :data:`~plotpress.artists._VECTOR_CELL_LIMIT` (~2000) cells draws as
+          :data:`~plotpress.core.artists._VECTOR_CELL_LIMIT` (~2000) cells draws as
           exact vector ``<rect>`` elements instead -- no resampling, so no
           cell can ever be too thin to draw. Past that cell count it falls
           back to the raster path, to keep the file size from scaling with
@@ -726,7 +726,7 @@ class Axes:
         same cell if you also export it as PNG; pass ``rasterized=True`` once
         to see what that export would actually lose.
 
-        The returned :class:`~plotpress.artists.QuadMesh` exposes the
+        The returned :class:`~plotpress.core.artists.QuadMesh` exposes the
         resolved decision for introspection: ``.rasterized`` (what you passed),
         ``.vectorized`` (what actually happened), ``.n_cells``, and
         ``.dropped_x``/``.dropped_y`` (the cell indices, if any, the raster
@@ -890,7 +890,7 @@ class Axes:
 
     def bar_label(self, bars, labels=None, fmt="{:g}", padding=0.0, color=None,
                   fontsize=None, zorder=6):
-        """Label each bar in the :class:`~plotpress.artists.Bars` ``bars``
+        """Label each bar in the :class:`~plotpress.core.artists.Bars` ``bars``
         (:meth:`bar`/:meth:`barh`'s own return value) with its height/width,
         just outside the bar's tip -- above for a positive vertical bar,
         below for a negative one; right/left the same way for a horizontal
@@ -903,7 +903,7 @@ class Axes:
         unit here, so this is the closest equivalent, not a literal
         drop-in value.
 
-        Returns the list of :class:`~plotpress.artists.Text` labels added,
+        Returns the list of :class:`~plotpress.core.artists.Text` labels added,
         one per bar, in the same order as ``bars.pos``.
         """
         if labels is not None and len(labels) != len(bars.pos):
@@ -990,12 +990,22 @@ class Axes:
         # which also drops a whole empty dataset and reindexes positions --
         # not a concept hist() has) so weights stay aligned to the values
         # that survive.
-        finite_datasets, finite_wlist = [], []
-        for d, w in zip(datasets, wlist):
+        finite_datasets, finite_wlist, emptied = [], [], []
+        for i, (d, w) in enumerate(zip(datasets, wlist)):
             mask = np.isfinite(d)
+            if d.size and not mask.any():
+                emptied.append(i)
             finite_datasets.append(d[mask])
             finite_wlist.append(None if w is None else w[mask])
         datasets, wlist = finite_datasets, finite_wlist
+        if emptied:
+            # Same silent-data-loss convention as _finite_datasets(): a
+            # dataset that had values but none finite renders as an
+            # invisible zero-height series with no counts, easy to mistake
+            # for "no data was passed" rather than "every value was dropped".
+            warnings.warn(
+                f"hist(): dataset(s) at index(es) {emptied} had no finite "
+                "values and were dropped entirely.", UserWarning, stacklevel=3)
 
         # histogram_bin_edges() ignores range when bins is already a sequence
         # of edges, so this covers both "bins is a count" and "bins is
@@ -1848,7 +1858,7 @@ class Axes:
 
     def clabel(self, CS, levels=None, fmt="%1.3g", fontsize=None, colors=None,
               inline=True, zorder=6):
-        """Label ``CS`` (the :class:`~plotpress.artists.Contour`
+        """Label ``CS`` (the :class:`~plotpress.core.artists.Contour`
         :meth:`contour` returned) with each level's own value, placed along
         its line.
 
@@ -1864,7 +1874,7 @@ class Axes:
         callable taking the level value. ``colors`` overrides the label
         color (default: matches each level's own line color).
 
-        Returns the list of :class:`~plotpress.artists.Text` labels added.
+        Returns the list of :class:`~plotpress.core.artists.Text` labels added.
         """
         want = set(levels) if levels is not None else None
         texts = []
@@ -3377,7 +3387,7 @@ class Axes:
         """``(handles, labels)`` for whatever :meth:`legend` would currently
         draw -- ``_legend_handles`` (from ``legend(handles=...)``) if set,
         else every artist on this axes carrying a ``label``, in call order.
-        Mirrors :func:`plotpress.svg._legend_layout`'s own source-selection
+        Mirrors :func:`plotpress.backends.svg._legend_layout`'s own source-selection
         exactly, so this always answers "what would the legend show right
         now", not a separate approximation of it.
         """
@@ -3469,10 +3479,21 @@ class Axes:
         from .figure import _axes_summary_lines, _vega_compat_report
 
         idx = self.figure.axes.index(self)
-        gaps = _vega_compat_report(self.figure).get(idx, {"vega": [], "vega_lite": []})
+        report = _vega_compat_report(self.figure)
+        gaps = report.get(idx, {"vega": [], "vega_lite": []})
         print(f"Axes {idx}:")
         for line in _axes_summary_lines(self, gaps):
             print(line)
+        # A gap _vega_compat_report couldn't attribute to a specific axes
+        # (e.g. an exporter crash whose message never mentions "axes N") is
+        # filed under the None key -- surface that it exists here too, or a
+        # per-axes summary would report "OK" for an export that actually
+        # failed figure-wide. See Figure.print_layout_summary() for the
+        # full text.
+        fig_level = report.get(None)
+        if fig_level and (fig_level["vega"] or fig_level["vega_lite"]):
+            print("  (there is also a figure-level export gap not specific "
+                  "to this axes -- see Figure.print_layout_summary())")
 
     @staticmethod
     def _group_bounds(axes_list, ix):
@@ -3514,20 +3535,23 @@ class Axes:
         ygroup = self._sharey_group or [self]
         xlim = _group_limits(self, xgroup, "_xlim")
         ylim = _group_limits(self, ygroup, "_ylim")
-        # An explicit, both-ends-set limit on a log axis skips the autoscale
-        # path below entirely, so its own non-positive-data warning/clamp
-        # (a few lines down) never runs for it -- a typed-in bad bound was a
-        # caller mistake, not data to clamp, so this is a hard error instead:
-        # left unchecked, a non-positive log bound reaches ticker.log_ticks()
-        # as a domain-error crash (only vmin is floored there) or reaches
-        # transform.py as NaN (log10 of a non-positive value), silently
-        # blanking the axis with no explanation either way.
-        if self._xscale == "log" and _both_set(xlim) and min(xlim) <= 0:
+        # Any explicitly-set end of a log-axis limit that is non-positive is a
+        # caller mistake, not data to clamp -- checked per-end (not just when
+        # both ends are set) because a one-sided call like
+        # set_ylim(bottom=-5) leaves the autoscaled top in place and still
+        # reaches this same failure: left unchecked, a non-positive log bound
+        # reaches ticker.log_ticks() as a domain-error crash (only vmin is
+        # floored there) or reaches transform.py as NaN (log10 of a
+        # non-positive value), silently blanking the axis with no
+        # explanation either way.
+        if self._xscale == "log" and _explicit_nonpositive(xlim):
+            bad = _first_nonpositive(xlim)
             raise ValueError(
-                f"set_xlim(): {min(xlim)!r} is not > 0, and the x-axis is log-scaled")
-        if self._yscale == "log" and _both_set(ylim) and min(ylim) <= 0:
+                f"set_xlim(): {bad!r} is not > 0, and the x-axis is log-scaled")
+        if self._yscale == "log" and _explicit_nonpositive(ylim):
+            bad = _first_nonpositive(ylim)
             raise ValueError(
-                f"set_ylim(): {min(ylim)!r} is not > 0, and the y-axis is log-scaled")
+                f"set_ylim(): {bad!r} is not > 0, and the y-axis is log-scaled")
         if _both_set(xlim) and _both_set(ylim):
             return xlim, ylim
 
@@ -3781,7 +3805,7 @@ def _parse_fmt(fmt):
     not a byte-for-byte port of matplotlib's own parser. Raises
     ``ValueError`` naming whatever is left over if ``fmt`` contains anything
     else, the same "don't guess wrong" choice
-    :func:`plotpress.artists.normalize_linestyle` makes for an unrecognized
+    :func:`plotpress.core.artists.normalize_linestyle` makes for an unrecognized
     ``linestyle=`` -- silently ignoring part of a format string is exactly
     the bug this function exists to close.
     """
@@ -4000,6 +4024,15 @@ def _warn_dropped_cells(mesh, who, xe, ye, suggest_vector):
 def _both_set(lim):
     """True when ``lim`` pins both ends (so no autoscaling is needed)."""
     return lim is not None and lim[0] is not None and lim[1] is not None
+
+
+def _explicit_nonpositive(lim):
+    """True when ``lim`` has an explicitly-set end that is <= 0."""
+    return lim is not None and any(v is not None and v <= 0 for v in lim)
+
+
+def _first_nonpositive(lim):
+    return next(v for v in lim if v is not None and v <= 0)
 
 
 def _group_limits(ax, group, attr):

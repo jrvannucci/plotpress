@@ -28,7 +28,7 @@ import plotpress
 # Doc-build-only harness: figure_to_image() renders a frame for this page's
 # animation, since there's no Qt window to push one to at doc-build time.
 # Not part of what a real script would need.
-from plotpress.raster import figure_to_image
+from plotpress.backends.raster import figure_to_image
 
 _gallery_gif_frames = []
 # sphinx_gallery_end_ignore

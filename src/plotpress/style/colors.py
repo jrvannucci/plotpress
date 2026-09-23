@@ -451,7 +451,10 @@ def register_cmap(name: str, colors_or_lut, *, listed: bool = False,
     else:
         lut = make_cmap(colors_or_lut, n)
     _COLORMAPS[name] = lut
-    return lut
+    # Same aliasing hazard as get_cmap(): return a copy, not the registry's
+    # own live array, so a caller mutating the returned LUT in place can't
+    # silently corrupt what this colormap renders everywhere else too.
+    return lut.copy()
 
 
 def _nonzero_span(lo, hi):

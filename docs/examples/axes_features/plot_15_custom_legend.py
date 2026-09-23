@@ -9,7 +9,7 @@ own to draw a swatch from. ``labels`` overrides the text shown, positionally;
 """
 import numpy as np
 import plotpress
-from plotpress.artists import Line2D
+from plotpress.core.artists import Line2D
 
 x = np.linspace(0, 10, 200)
 fig, ax = plotpress.subplots()

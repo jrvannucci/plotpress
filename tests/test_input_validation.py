@@ -220,6 +220,29 @@ def test_one_sided_limit_on_log_axis_still_autoscales_the_open_end(recwarn):
     assert not any("log" in str(w.message) for w in recwarn.list)
 
 
+def test_one_sided_nonpositive_limit_on_log_axis_still_raises():
+    # A one-sided bad bound used to slip past the "both ends set" gate
+    # entirely: the open end autoscales, _fill_limits() splices the
+    # explicit -5 in unchanged, and the axes silently rendered with zero
+    # <path> elements (transform.py's log10 of a non-positive value is
+    # NaN). The check must apply per-end, not just when both ends are set.
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 2, 3], [1, 10, 100])
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=-5)
+    with pytest.raises(ValueError, match="log"):
+        fig.to_svg()
+
+
+def test_one_sided_nonpositive_upper_limit_on_log_axis_also_raises():
+    fig, ax = plotpress.subplots()
+    ax.plot([1, 10, 100], [1, 2, 3])
+    ax.set_xscale("log")
+    ax.set_xlim(right=-1)
+    with pytest.raises(ValueError, match="log"):
+        fig.to_svg()
+
+
 # ---------------------------------------------------------------------------
 # Figure(figsize=...) must reject a non-positive size.
 # ---------------------------------------------------------------------------

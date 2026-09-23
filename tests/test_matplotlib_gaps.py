@@ -1671,6 +1671,20 @@ def test_hist_weights_stay_aligned_after_dropping_a_nan():
     assert counts[1].sum() == 3.0
 
 
+def test_hist_warns_when_a_dataset_is_entirely_nan():
+    """Unlike _finite_datasets() (boxplot/violinplot), hist()'s own inline
+    finiteness filter silently dropped an all-NaN dataset with no warning --
+    inconsistent with how the rest of the codebase treats data loss a
+    reader could otherwise mistake for "no data was passed"."""
+    fig, ax = plotpress.subplots()
+    good = [1.0, 2.0, 3.0]
+    all_nan = [float("nan"), float("nan")]
+    with pytest.warns(UserWarning, match="hist"):
+        counts, edges, bars = ax.hist([good, all_nan], bins=3)
+    assert counts[0].sum() == 3
+    assert counts[1].sum() == 0
+
+
 def test_boxplot_whis_widens_the_whiskers():
     data = np.array([0.0, 1, 1, 1, 2, 100.0])
     fig, ax = plotpress.subplots()
@@ -2756,6 +2770,17 @@ def test_register_cmap_copies_its_input():
     registered = get_cmap("plotpress-test-mutate-after")
     assert not np.array_equal(registered, lut)
     assert (registered == 0).all()
+
+
+def test_register_cmap_return_value_is_not_the_shared_lut():
+    # register_cmap() copied its *input* before storing it, but returned
+    # that same stored object -- mutating the return value silently
+    # corrupted the colormap it had just registered. Same aliasing hazard
+    # as get_cmap(), on the other end of the call.
+    out = register_cmap("plotpress-test-return-alias", ["black", "white"])
+    original = out.copy()
+    out[0] = [1, 2, 3]
+    assert np.array_equal(get_cmap("plotpress-test-return-alias"), original)
 
 
 def test_get_cmap_returns_a_copy_not_the_shared_lut():

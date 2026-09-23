@@ -1334,7 +1334,7 @@ def _figtexts_to_vega_marks(fig, W, H):
 
 def _groups_to_vega_marks(fig, W, H):
     """``Figure.group()``'s labeled boxes as top-level Vega ``rect``+``text``
-    marks -- reuses ``svg.py``'s own :func:`~plotpress.svg._group_bbox` for
+    marks -- reuses ``svg.py``'s own :func:`~plotpress.backends.svg._group_bbox` for
     the box geometry itself (same clearance/pad math, same twin/secondary/
     colorbar auto-inclusion, same frozen-box-when-empty handling, same
     supxlabel/supylabel inset -- one shared implementation instead of a

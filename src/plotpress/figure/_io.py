@@ -174,7 +174,7 @@ def _dedupe_keyed(pairs, noun, stacklevel):
     explicit title is realistic authoring, not exotic input worth crashing
     or staying silent about -- a grid of identically-labeled panels, a
     report re-using a section name -- the same "accept it, don't crash,
-    but don't stay silent" choice :func:`plotpress.artists.normalize_linestyle`
+    but don't stay silent" choice :func:`plotpress.core.artists.normalize_linestyle`
     already makes for an unrecognized linestyle. Warns once, naming every
     collision resolved, rather than the caller discovering a shorter dict
     than they expected with no signal why.
@@ -274,7 +274,7 @@ def load_data(path: str, by_index: bool = False):
     sup-title/label -- needed to rebuild an equivalent, already-styled
     figure, independent of the per-axes data above. This is the exact same
     dict :meth:`Figure.to_template` produces (see
-    :func:`plotpress.svg.template_metadata` for the full field-by-field
+    :func:`plotpress.backends.svg.template_metadata` for the full field-by-field
     breakdown) -- pass it straight to :func:`plotpress.figure_from_template`
     to recreate the source figure's grid, every axes' own decorations and
     styling, its groups, and its overlays, before replotting recovered
