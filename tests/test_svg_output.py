@@ -250,7 +250,7 @@ def test_frame_quad_mesh_carries_the_same_render_attributes_as_quad_mesh():
 def test_pcolormesh_vector_cells_keep_the_same_pick_geometry_as_raster():
     """Pick geometry comes from the mesh's own edges, not the rendering choice."""
     edges, y_edges, field = _nonuniform_extreme()
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig_v, ax_v = plotpress.subplots()
     ax_v.pcolormesh(edges, y_edges, field, cmap="viridis")                 # auto -> vector
@@ -1044,7 +1044,7 @@ def test_figure_from_template_recreates_polar_projection(tmp_path):
     fig2, axes2 = plotpress.figure_from_template(template)
     from plotpress.polar import PolarAxes
     assert isinstance(axes2[0], PolarAxes)
-    assert type(axes2[1]) is plotpress.figure.Axes
+    assert type(axes2[1]) is plotpress.axes.Axes
 
 
 def test_3d_projection_is_unsupported():
@@ -1527,7 +1527,7 @@ def test_axis_off_hides_spines_and_ticks():
 
 
 def test_set_aspect_equal_shrinks_box_to_square(monkeypatch):
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, ax = plotpress.subplots(figsize=(8, 4))   # wide figure
     ax.plot([0, 10], [0, 10])                  # equal data spans
@@ -1540,7 +1540,7 @@ def test_log_scale_emits_decade_ticks_and_metadata():
     fig, ax = plotpress.subplots()
     ax.plot([1, 10, 100, 1000], [1, 2, 3, 4])
     ax.set_xscale("log")
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
     assert axes_metadata(fig)[0]["xscale"] == "log"
     texts = [t.text for t in _parse(fig.to_svg()).findall(".//" + NS + "text")]
     # Decade labels present on the log x-axis.
@@ -1680,7 +1680,7 @@ def test_linestyle_alias_renders_in_both_backends():
     svg.py and raster.py read the already-canonical .linestyle off the same
     artist, so this only needs to confirm the raster path doesn't error on
     it, not re-derive the dash pattern a second time."""
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1, 2], [0, 1, 0], linestyle="dashed")
@@ -1785,7 +1785,7 @@ def test_group_linestyle_none_draws_no_box_border():
                  if r.get("fill") == "none" and "stroke-width" not in r.attrib]
     assert group_rect and group_rect[0].get("stroke") == "none"
 
-    from plotpress import raster
+    from plotpress.backends import raster
     assert raster.figure_to_image(fig, scale=1) is not None   # must not error
 
     # Sanity: the default (dashed) case must still draw a real border.
@@ -1834,7 +1834,7 @@ def test_figure_from_template_warns_when_a_group_loses_a_member(tmp_path):
 
 
 def test_axes_metadata_for_picking():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 10], [0, 5])
@@ -1849,7 +1849,7 @@ def test_axes_metadata_for_picking():
 
 
 def test_axes_metadata_carries_title_for_extract():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -1861,7 +1861,7 @@ def test_axes_metadata_carries_title_for_extract():
 
 
 def test_axes_metadata_carries_pickable_flag():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -1875,7 +1875,7 @@ def test_axes_metadata_carries_pickable_flag():
 
 
 def test_axes_metadata_carries_pick_context():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -1889,7 +1889,7 @@ def test_axes_metadata_carries_pick_context():
 
 
 def test_axes_metadata_carries_xlabel_ylabel():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -1904,7 +1904,7 @@ def test_axes_metadata_carries_xlabel_ylabel():
 
 
 def test_axes_metadata_carries_group_title():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 3)
     for ax in axes:
@@ -1917,7 +1917,7 @@ def test_axes_metadata_carries_group_title():
 
 
 def test_axes_metadata_joins_multiple_group_memberships():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     for ax in axes:
@@ -1930,7 +1930,7 @@ def test_axes_metadata_joins_multiple_group_memberships():
 
 
 def test_axes_metadata_carries_zlabel_from_colorbar():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, ax = plotpress.subplots()
     mesh = ax.pcolormesh(np.zeros((4, 4)))
@@ -1943,7 +1943,7 @@ def test_axes_metadata_zlabel_from_shared_colorbar_reaches_every_parent():
     for *every* axes it covers, not just the one it happened to steal space
     from -- fig.colorbar(mesh, ax=[ax0, ax1, ax2]) is the documented way to
     build a shared bar over a grid of meshes."""
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 3, figsize=(9, 3))
     meshes = [ax.pcolormesh(np.full((4, 4), i), vmin=0, vmax=2)
@@ -1966,7 +1966,7 @@ def test_axes_metadata_zlabel_from_shared_colorbar_reaches_every_parent():
 
 
 def test_axes_metadata_carries_tick_style_overrides():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -1995,7 +1995,7 @@ def test_axes_metadata_carries_tick_style_overrides():
 
 
 def test_axes_metadata_carries_minor_ticks_flag():
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot([0, 1], [0, 1])
@@ -2036,8 +2036,8 @@ def test_pick_metadata_matches_renderer_transform(invert_x, invert_y, scale):
     point. Inverted axes regressed exactly this way: the renderer swaps the
     limits it feeds LinearTransform, and the metadata has to say so.
     """
-    from plotpress.svg import _effective_rect, _pixel_rect, axes_metadata
-    from plotpress.transform import LinearTransform
+    from plotpress.backends.svg import _effective_rect, _pixel_rect, axes_metadata
+    from plotpress.core.transform import LinearTransform
 
     data = [1.0, 10.0, 100.0, 1000.0] if scale == "log" else [0.0, 1.0, 2.0, 3.0]
     fig, ax = plotpress.subplots()
@@ -2160,7 +2160,7 @@ def test_binary_pick_data_is_default_and_shrinks_mesh_payload():
     decode speed, benchmarked against gzip-compressing the JSON instead (also
     smaller, but 5-7x slower to decode: DecompressionStream's overhead
     dominates at these payload sizes, so it isn't what this defaults to)."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig = _big_mesh_fig()
     binary_html = fig.to_html(interactive=True)                       # default
@@ -2179,7 +2179,7 @@ def test_binary_pick_data_false_matches_plain_json_structure():
     """Opting out reproduces exactly pick_data()'s own plain-list shape, with
     no __f32__ markers anywhere -- for hand inspection or diffing against an
     older plotpress version."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig = _big_mesh_fig()
     html = fig.to_html(interactive=True, binary_pick_data=False)
@@ -2240,7 +2240,7 @@ def test_extra_js_is_inlined_after_plotpress_own_script():
     """extra_js must land in its own <script> block, after INTERACTIVE_JS --
     so window.plotpressAddTool/plotpressGetMarkers already exist by the
     time it runs (see the docstring's ordering promise)."""
-    from plotpress._interactive import INTERACTIVE_JS
+    from plotpress.backends._interactive import INTERACTIVE_JS
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -2264,7 +2264,7 @@ def test_include_default_js_false_keeps_payloads_but_drops_plotpress_js():
     """The 'override' case: payloads (meta/pick/style) still ride along for
     a from-scratch script to read, but none of plotpress's own toolbar/pan/
     zoom/pick behavior does."""
-    from plotpress._interactive import INTERACTIVE_JS
+    from plotpress.backends._interactive import INTERACTIVE_JS
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -2288,7 +2288,7 @@ def test_include_default_js_false_with_extra_js_is_the_only_script():
 def test_include_default_js_defaults_to_true():
     """Existing behavior (no include_default_js given at all) must be
     unaffected -- plotpress's own JS still ships by default."""
-    from plotpress._interactive import INTERACTIVE_JS
+    from plotpress.backends._interactive import INTERACTIVE_JS
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -2330,7 +2330,7 @@ def test_binary_pick_data_uses_float16_at_low_precision_for_bounded_data():
     assert set(z6) == {"__f32__"}   # too fine for float16 -- see the module docstring
     assert len(html2) < len(html6)
 
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
     expected = np.asarray(pick_data(fig, precision=2)[0]["meshes"][0]["z"])
     got = np.frombuffer(base64.b64decode(z2["__f16__"]), dtype=np.float16).astype(np.float64)
     assert np.allclose(got, expected, atol=0.005)
@@ -2400,7 +2400,7 @@ def test_columnar_meta_round_trips_exactly_including_excluded_axes():
     is excluded from meta wherever it sits in fig.axes, which
     _columnarize_meta's own "index rides along as its own array" handling
     exists for."""
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, axes = plotpress.subplots(3, 4)
     for i, ax in enumerate(axes.ravel()):
@@ -2423,7 +2423,7 @@ def test_columnar_meta_round_trips_exactly_including_excluded_axes():
 
 
 def test_pick_data_includes_z_c_and_extra_dims():
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig, axes = plotpress.subplots(1, 3)
     axes[0].pcolormesh(np.arange(12, dtype=float).reshape(3, 4))
@@ -2450,7 +2450,7 @@ def test_pick_data_includes_z_c_and_extra_dims():
 
 
 def test_downsample_grid_preserves_small_grids_and_shrinks_large_ones():
-    from plotpress.svg import _downsample_grid
+    from plotpress.backends.svg import _downsample_grid
 
     small = np.arange(12.0).reshape(3, 4)
     assert _downsample_grid(small, max_cells=60000) is small  # untouched
@@ -2470,7 +2470,7 @@ def test_downsample_grid_with_masked_region_does_not_warn():
     every large masked figure."""
     import warnings as _warnings
 
-    from plotpress.svg import _downsample_grid
+    from plotpress.backends.svg import _downsample_grid
 
     large = np.full((300, 300), 1.0)
     large[:150, :150] = np.nan     # one whole quadrant masked out
@@ -2487,7 +2487,7 @@ def test_contour_over_mesh_cap_still_reports_a_value():
     dropped from the pick payload entirely, so a click on a large field
     reported bare x/y with no data value -- exactly the case a "third
     dimension" plot type exists for."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     g = np.linspace(-3, 3, 300)
     X, Y = np.meshgrid(g, g)
@@ -2513,7 +2513,7 @@ def test_curvilinear_pick_data_handles_xy_shaped_like_c():
     cell centers, indexing X/Y one column past their real width and raising
     a numpy shape-mismatch error building every such figure's interactive
     HTML."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     az = np.radians(np.linspace(0.0, 315.0, 8))
     rr = np.linspace(1.0, 6.0, 6)
@@ -2548,7 +2548,7 @@ def test_to_html_exposes_pick_caps_for_mesh_heavy_figures():
         capped = fig.to_html(interactive=True, pick_max_mesh_cells=1000)
     assert len(capped) < len(full)
 
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
     with pytest.warns(UserWarning, match="coarser than what's drawn"):
         mesh = pick_data(fig, max_mesh_cells=1000)[0]["meshes"][0]
     ny, nx = mesh["shape"]
@@ -2560,7 +2560,7 @@ def test_round_list_matches_python_rounding():
     # It agrees with it to within one quantum -- the two can differ only on exact
     # half-way ties at the last digit (numpy multiplies-then-rounds; Python rounds
     # the decimal). That last-digit difference is irrelevant for a pick readout.
-    from plotpress.svg import _rl
+    from plotpress.backends.svg import _rl
 
     rng = np.random.default_rng(0)
     a = rng.standard_normal(2000) * 50.0
@@ -2572,7 +2572,7 @@ def test_round_list_matches_python_rounding():
 
 
 def test_pick_precision_rounds_and_shrinks_payload():
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig, ax = plotpress.subplots()
     ax.pcolormesh(np.linspace(0, 1, 400).reshape(20, 20))
@@ -2586,7 +2586,7 @@ def test_pick_precision_rounds_and_shrinks_payload():
 
 
 def test_plot_frames_registers_slider_and_embeds_frames():
-    from plotpress.svg import frame_data
+    from plotpress.backends.svg import frame_data
 
     fig, axes = plotpress.subplots(1, 2)
     Y = np.sin(np.linspace(0, 6, 5)[:, None] + np.linspace(0, 1, 10)[None, :])
@@ -2615,7 +2615,7 @@ def test_plot_frames_registers_slider_and_embeds_frames():
 
 
 def test_pcolormesh_frames_registers_slider_and_embeds_hrefs():
-    from plotpress.svg import frame_data
+    from plotpress.backends.svg import frame_data
 
     fig, ax = plotpress.subplots()
     x = np.linspace(0, 1, 6)
@@ -2703,7 +2703,7 @@ def test_save_gif_animates_pcolormesh_frames(tmp_path):
 
 
 def test_shared_false_gives_each_axes_its_own_docked_unit():
-    from plotpress.svg import frame_data
+    from plotpress.backends.svg import frame_data
 
     fig, axes = plotpress.subplots(1, 3)
     Y = np.zeros((4, 6))
@@ -2996,7 +2996,7 @@ def test_pick_data_omits_oversized_series_but_downsamples_oversized_meshes():
     client falls back to nearest-vertex geometry), so they're omitted
     outright. A mesh over the cap still needs to answer a click with a real
     value, so it's block-averaged down to fit instead of being dropped."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].plot(np.arange(30000.0), np.arange(30000.0))  # over max_points
@@ -3016,7 +3016,7 @@ def test_mesh_downsample_warning_names_every_oversized_axes():
     """One consolidated warning per pick_data() call, not one per mesh --
     naming each affected axes' own index/title and its shape change, so a
     figure with several oversized meshes gets a single, complete summary."""
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
 
     fig, axes = plotpress.subplots(1, 2)
     axes[0].pcolormesh(np.arange(300 * 300, dtype=float).reshape(300, 300))
@@ -3035,7 +3035,7 @@ def test_mesh_downsample_warning_names_every_oversized_axes():
 
 
 def test_no_downsample_warning_under_the_cap():
-    from plotpress.svg import pick_data
+    from plotpress.backends.svg import pick_data
     import warnings as _warnings
 
     fig, ax = plotpress.subplots()
@@ -3050,7 +3050,7 @@ def test_animated_mesh_downsample_warns_once_not_per_frame():
     own z needs downsampling), but the geometry -- and so whether
     downsampling happened at all -- is identical frame to frame; the
     warning must fire once per animated mesh, not once per frame."""
-    from plotpress.svg import frame_data
+    from plotpress.backends.svg import frame_data
 
     ny = nx = 300
     C = np.stack([np.arange(ny * nx, dtype=float).reshape(ny, nx) + f for f in range(5)])
@@ -3127,7 +3127,7 @@ def _grid_with_labels(nrows=2, ncols=2):
 def test_figure_legend_deduplicates_labels_across_axes():
     """Panels plotting the same series should contribute one entry, not one
     each -- otherwise a shared legend just repeats itself per panel."""
-    from plotpress.svg import figure_legend_layout
+    from plotpress.backends.svg import figure_legend_layout
 
     fig, _ = _grid_with_labels()
     fig.legend()
@@ -3162,7 +3162,7 @@ def test_figure_legend_overlay_placements_reserve_nothing():
 
 
 def test_figure_legend_renders_in_both_backends():
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, _ = _grid_with_labels()
     fig.legend(loc="lower center", ncol=2, title="Series")
@@ -3188,7 +3188,7 @@ def test_axes_legend_box_size_matches_svgs_shared_layout():
     one shared _legend_layout(ax, st) call, so this checks that call
     against what the SVG backend actually drew, not just that PNG export
     doesn't crash."""
-    from plotpress.svg import _legend_layout
+    from plotpress.backends.svg import _legend_layout
 
     fig, ax = plotpress.subplots(figsize=(6, 4))
     ax.plot([1, 2, 3], [1, 4, 9], label="quadratic series")
@@ -3278,7 +3278,7 @@ def test_set_group_visible_toggles_an_existing_group():
 
 
 def test_group_box_bounds_the_union_of_its_axes_with_padding():
-    from plotpress.svg import _group_axes_extra, _pixel_rect
+    from plotpress.backends.svg import _group_axes_extra, _pixel_rect
 
     fig, axes = _grid_2x2()
     fig.group("Top row", [axes[0, 0], axes[0, 1]], pad=5.0)
@@ -3337,7 +3337,7 @@ def test_group_box_freezes_at_original_bounds_once_any_axes_leaves():
     first axes to leave freezes the box at its still-intact bounds (see
     svg._group_bbox), and every removal after that -- down to and including
     the last -- leaves it exactly where it was."""
-    from plotpress.svg import _group_axes_extra, _pixel_rect
+    from plotpress.backends.svg import _group_axes_extra, _pixel_rect
 
     fig, axes = _grid_2x2()
     fig.group("Top row", [axes[0, 0], axes[0, 1]])
@@ -3414,7 +3414,7 @@ def test_group_box_includes_axis_labels_and_tick_labels_not_just_the_plot_rect()
     axes' own xlabel/ylabel and tick numbers -- all drawn *outside* that
     rect -- ended up sitting outside the group's box entirely, or with the
     box edge cutting straight through them."""
-    from plotpress.svg import _pixel_rect
+    from plotpress.backends.svg import _pixel_rect
 
     fig, axes = _grid_2x2()
     ax = axes[0, 0]
@@ -3961,7 +3961,7 @@ def test_group_titles_do_not_collide_with_suptitle_or_a_reserving_legend():
 
 
 def test_group_renders_in_both_backends():
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, axes = _grid_2x2()
     fig.group("A", [axes[0, 0], axes[0, 1]])
@@ -4103,7 +4103,7 @@ def test_colorbar_title_renders_in_both_backends():
     library's own convention for labeling a colorbar's scale -- never
     actually appeared in either backend's output."""
     import numpy as np
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, ax = plotpress.subplots()
     mesh = ax.pcolormesh(np.arange(4).reshape(2, 2).astype(float))
@@ -4169,7 +4169,7 @@ def _row_brightness(yvec, invert):
 
     from PIL import Image as PILImage
 
-    from plotpress import raster
+    from plotpress.backends import raster
 
     x = np.linspace(0.0, 1.0, 16)
     Z = np.repeat(np.asarray(yvec, float)[:, None], x.size, axis=1)
@@ -4250,7 +4250,7 @@ def test_axis_furniture_has_no_halo():
 ])
 def test_leader_attaches_to_the_nearest_edge_centre(target, expect):
     """A leader from the text anchor sets off across its own label."""
-    from plotpress.svg import leader_anchor
+    from plotpress.backends.svg import leader_anchor
 
     box = (100.0, 200.0, 220.0, 230.0)
     x, y = leader_anchor(box, target)

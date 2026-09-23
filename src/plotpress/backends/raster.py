@@ -3,7 +3,7 @@
 A second renderer that draws a Figure's primitives directly onto a Pillow canvas
 (supersampled, then downscaled for antialiasing). Pillow ships as a pure wheel
 on every platform, so PNG export needs no cairo/native SVG rasterizer. The
-geometry mirrors :mod:`plotpress.svg` -- both consume the same transforms.
+geometry mirrors :mod:`plotpress.backends.svg` -- both consume the same transforms.
 """
 
 from __future__ import annotations
@@ -12,36 +12,36 @@ import math
 
 import numpy as np
 
-from .artists import (
+from ..core.artists import (
     Annotation, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot, FillBetween,
     FrameLine2D, FrameQuadMesh, Pie, Polygon, Quiver, ScatterCollection, Span,
     Stem, Table, Text, Violin,
 )
-from .colors import resolve_colorbar_ticks, to_hex
+from ..style.colors import resolve_colorbar_ticks, to_hex
 # Which files can draw a given font stack is declared once, in fonts/families,
 # next to which width table measures it -- see that module for why the two must
 # be decided together. Imported under the old private names so anything
 # monkeypatching this module keeps working.
-from .fonts.families import HELVETICA_FILES as _HELVETICA_METRIC_FILES
-from .fonts.families import HELVETICA_FILES_BOLD as _HELVETICA_METRIC_FILES_BOLD
-from .fonts.families import font_files as _font_files
-from .primitives import artist_to_prims
-from .primitives import tick_axis_edge
-from .primitives import (
+from ..fonts.families import HELVETICA_FILES as _HELVETICA_METRIC_FILES
+from ..fonts.families import HELVETICA_FILES_BOLD as _HELVETICA_METRIC_FILES_BOLD
+from ..fonts.families import font_files as _font_files
+from ..core.primitives import artist_to_prims
+from ..core.primitives import tick_axis_edge
+from ..core.primitives import (
     marker_polygon, marker_shape_kind, marker_strokes, normalize_marker_shape,
 )
-from .primitives import ImagePrim as PImage
-from .primitives import Line as PLine
-from .primitives import Markers as PMarkers
-from .primitives import Path as PPath
-from .primitives import PolygonBatch as PPolyBatch
-from .primitives import Rect as PRect
-from .primitives import Segments as PSegments
+from ..core.primitives import ImagePrim as PImage
+from ..core.primitives import Line as PLine
+from ..core.primitives import Markers as PMarkers
+from ..core.primitives import Path as PPath
+from ..core.primitives import PolygonBatch as PPolyBatch
+from ..core.primitives import Rect as PRect
+from ..core.primitives import Segments as PSegments
 from .svg import (
     _effective_rect, _group_bbox,
     _LEGEND_ANCHORS, _max_ytick_width, _pixel_rect, _xtick_label_extent,
 )
-from .transform import LinearTransform
+from ..core.transform import LinearTransform
 
 _DASH = {"-": None, "--": (6, 4), ":": (1, 3), "-.": (6, 3, 1, 3)}
 _font_cache = {}
@@ -387,7 +387,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
         if ax._grid_which in ("major", "both"):
             _draw_grid_lines(xticks, yticks, grid_alpha)
         if ax._grid_which in ("minor", "both"):
-            from .ticker import minor_ticks
+            from ..style.ticker import minor_ticks
 
             xminor_g = (ax._xticks_minor if ax._xticks_minor is not None
                        else minor_ticks(xticks, xmin, xmax, ax._xscale))
@@ -418,7 +418,7 @@ def _raster_axes(ax, fig, W, H, S, draw, canvas, frame=0, animate_unit="main"):
             _raster_ticks(ax, xst, yst, tr, xticks, yticks, L, T, Wp, Hp, S, draw,
                          xside=ax._xtick_side, yside=ax._ytick_side)
             if ax._minor_ticks_on:
-                from .ticker import minor_ticks
+                from ..style.ticker import minor_ticks
                 mxst = (xst.copy(**ax._minor_tick_overrides["x"])
                        if ax._minor_tick_overrides["x"] else xst)
                 myst = (yst.copy(**ax._minor_tick_overrides["y"])

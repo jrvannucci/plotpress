@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.colors import (
+from plotpress.style.colors import (
     BoundaryNorm, LogNorm, PowerNorm, SymLogNorm, TwoSlopeNorm,
     apply_colormap, get_cmap, make_cmap, make_listed_cmap, register_cmap,
     resolve_colorbar_ticks, to_hex,
@@ -53,7 +53,7 @@ def test_named_colors_resolve():
 # -- reference lines & spans ------------------------------------------------
 def test_axhline_axspans_render_in_both_backends():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 10], [0, 1])
@@ -99,8 +99,8 @@ def test_custom_tick_labels():
 
 
 def test_invert_yaxis_flips_transform():
-    from plotpress.svg import _effective_rect, _pixel_rect
-    from plotpress.transform import LinearTransform
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
+    from plotpress.core.transform import LinearTransform
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1, 2], [0, 1, 2])
@@ -224,7 +224,7 @@ def test_single_axes_colorbar_still_works():
 
 
 def test_colorbar_honors_nonlinear_norm():
-    from plotpress.colors import LogNorm, colorbar_ticks
+    from plotpress.style.colors import LogNorm, colorbar_ticks
 
     ln = LogNorm(vmin=1, vmax=1000)
     vals, fracs, labels = colorbar_ticks(ln)
@@ -382,7 +382,7 @@ def test_broken_barh_and_stairs():
 
 # -- huge-line decimation ---------------------------------------------------
 def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
-    from plotpress.primitives import _decimate_minmax
+    from plotpress.core.primitives import _decimate_minmax
 
     x = np.linspace(0, 10, 50000)
     y = np.sin(x)
@@ -393,8 +393,40 @@ def test_decimation_shrinks_huge_monotonic_line_but_keeps_envelope():
     assert dx[0] == x[0] and dx[-1] == x[-1]   # endpoints preserved
 
 
+def test_decimation_keeps_the_real_peak_even_when_a_nan_shares_its_column():
+    # np.lexsort's ascending order puts NaN last, so the per-column "max"
+    # pick used to grab the NaN instead of a real value sharing that same
+    # pixel column -- silently dropping the true peak from the line.
+    from plotpress.core.primitives import _decimate_minmax
+
+    n, ncols = 50000, 700
+    x = np.linspace(0, 10, n)
+    y = np.sin(x)
+    col = np.clip(((x - x[0]) / (x[-1] - x[0]) * ncols).astype(int), 0, ncols - 1)
+    target = np.flatnonzero(col == 350)
+    y[target[0]] = 99.0     # the true peak in this column
+    y[target[1]] = np.nan   # a NaN sharing the same column
+    dx, dy = _decimate_minmax(x, y, ncols=ncols)
+    assert np.nanmax(dy) == 99.0
+
+
+def test_decimation_all_nan_column_still_yields_one_representative_row():
+    # An entirely-NaN column has nothing to pick a real min/max from -- must
+    # still keep some row (preserving the gap it represents), not crash or
+    # vanish, and this must be unaffected by the NaN-aware lo/hi fix above.
+    from plotpress.core.primitives import _decimate_minmax
+
+    n, ncols = 50000, 700
+    x = np.linspace(0, 10, n)
+    y = np.sin(x)
+    col = np.clip(((x - x[0]) / (x[-1] - x[0]) * ncols).astype(int), 0, ncols - 1)
+    y[col == 350] = np.nan
+    dx, dy = _decimate_minmax(x, y, ncols=ncols)
+    assert np.isnan(dy).any()
+
+
 def test_small_and_nonmonotonic_lines_are_not_decimated():
-    from plotpress.primitives import _decimate_minmax, _is_monotonic
+    from plotpress.core.primitives import _decimate_minmax, _is_monotonic
 
     # a parametric loop (non-monotonic x) must not be per-column collapsed
     t = np.linspace(0, 2 * np.pi, 10000)
@@ -471,7 +503,7 @@ def test_gouraud_shading_smoothly_interpolates():
 def test_geometric_artists_share_one_render_path():
     # The geometric family is converted to backend-agnostic primitives once;
     # both svg and raster consume the same converter (no per-backend renderer).
-    from plotpress.primitives import artist_to_prims
+    from plotpress.core.primitives import artist_to_prims
 
     fig, ax = plotpress.subplots()
     line = ax.plot([0, 1, 2], [0, 1, 4])
@@ -497,7 +529,7 @@ def test_geometric_artists_share_one_render_path():
 # -- backend parity regressions (found in the code audit) -------------------
 def _nonbg_pixels(fig, scale=2):
     """Count pixels that differ from the figure background, for raster checks."""
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     arr = np.asarray(figure_to_image(fig, scale=scale))
     return int((arr < 250).any(axis=2).sum())
 
@@ -647,7 +679,7 @@ def test_set_visible_hides_content_but_keeps_grid_cell():
     axes[1].set_visible(False)
     assert axes[1].get_visible() is False
     # A hidden axes draws nothing and is excluded from point-picking metadata...
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
     meta = axes_metadata(fig)
     assert 1 not in meta and 0 in meta
     # ...but still occupies its grid cell (unchanged rect).
@@ -1055,7 +1087,7 @@ def test_figure_text_positions_by_fraction():
 
 def test_figure_text_renders_in_raster():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -1119,7 +1151,7 @@ def test_tick_top_moves_xlabel_too():
     ns = "{http://www.w3.org/2000/svg}"
     label = next(e for e in root.iter(f"{ns}text") if e.text == "moved")
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
-    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
     px_left, px_top, px_w, px_h = _effective_rect(
         ax, *_pixel_rect(ax, 640, 480), (xmin, xmax), (ymin, ymax))
     assert float(label.get("y")) < px_top    # above the box, not below it
@@ -1171,7 +1203,7 @@ def test_plot_marker_draws_a_dot_per_vertex():
     ScatterCollection already does) drew only the *first* vertex's marker,
     with no error to reveal the other N-1 were silently dropped."""
     import numpy as np
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     x = np.linspace(0, 10, 12)
     fig, ax = plotpress.subplots()
@@ -1323,7 +1355,7 @@ def _near_black_pixels(fig, scale=2, thresh=80):
     thickness where the fill itself already makes the whole shape count as
     "non-background" -- _nonbg_pixels can't see a thicker edge drawn entirely
     inside an already-non-background fill."""
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     arr = np.asarray(figure_to_image(fig, scale=scale)).astype(int)
     return int((arr[:, :, :3].max(axis=2) < thresh).sum())
 
@@ -1415,7 +1447,7 @@ def test_imshow_alpha_actually_renders():
     assert fig1.to_svg() != fig2.to_svg()
 
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     arr1 = np.asarray(figure_to_image(fig1))
     arr2 = np.asarray(figure_to_image(fig2))
     assert not np.array_equal(arr1, arr2)   # low alpha must blend toward the background
@@ -1426,7 +1458,7 @@ def test_imshow_alpha_still_respects_nan_transparency():
     overwriting it -- a NaN cell (already transparent) must stay transparent
     regardless of the uniform alpha=, not partially "reappear"."""
     import numpy as np
-    from plotpress.artists import Image
+    from plotpress.core.artists import Image
 
     A = np.array([[0.0, np.nan], [1.0, 0.5]])
     im = Image(A, alpha=0.5)
@@ -1463,7 +1495,7 @@ def test_zorder_overrides_call_order_in_raster():
     pixels in the raster backend -- svg.py and raster.py sort independently,
     so each needs its own proof."""
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.bar([0], [1], width=2.0, color="#0000ff", zorder=0)
@@ -1500,7 +1532,7 @@ def test_pcolormesh_accepts_alpha_and_label():
 
 def test_scatter_edgecolors_and_linewidths_render_in_both_backends():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     coll = ax.scatter([0, 1, 2], [0, 1, 0], s=20, color="#ffdd00",
@@ -1527,7 +1559,7 @@ def test_scatter_edgecolors_default_linewidth_is_visible():
 def test_legend_handles_and_labels_override_the_default_entries():
     """handles= picks specific artists (even ones never added to this
     axes) in the given order; labels= overrides their own label."""
-    from plotpress.artists import Line2D
+    from plotpress.core.artists import Line2D
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1], label="real")
@@ -1546,7 +1578,7 @@ def test_legend_fontsize_changes_rendered_size_in_both_backends():
     ignored in PNG/PDF -- every entry always came from ax.artists at the
     style's own fixed size in raster, regardless of what was requested."""
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig1, ax1 = plotpress.subplots()
     ax1.plot([0, 1], [0, 1], label="s")
@@ -1561,7 +1593,7 @@ def test_legend_fontsize_changes_rendered_size_in_both_backends():
 
 
 def test_hist_histtype_step_and_stepfilled():
-    from plotpress.artists import Polygon, Bars
+    from plotpress.core.artists import Polygon, Bars
 
     x = np.array([0.0, 1, 1, 2, 2, 2, 3])
     fig, ax = plotpress.subplots()
@@ -1607,13 +1639,50 @@ def test_hist_stacked_multiple_datasets():
 def test_hist_backward_compatible_single_dataset_default():
     """A bare hist(x) call must still return (counts, edges, bars) with
     bars a single Bars, not a list -- exactly as before these gaps closed."""
-    from plotpress.artists import Bars
+    from plotpress.core.artists import Bars
 
     x = np.random.RandomState(0).normal(size=100)
     fig, ax = plotpress.subplots()
     counts, edges, bars = ax.hist(x, bins=10)
     assert isinstance(bars, Bars)
     assert isinstance(counts, np.ndarray)
+
+
+def test_hist_ignores_nan_and_inf_values():
+    """Regression: hist() had no finiteness filtering at all, unlike its
+    siblings (kdeplot/ecdfplot/rugplot filter np.isfinite; boxplot/
+    violinplot share _finite_datasets) -- a NaN in the data raised a bare
+    'autodetected range of [nan, nan] is not finite' straight out of numpy
+    instead of just being ignored like everywhere else."""
+    fig, ax = plotpress.subplots()
+    counts, edges, bars = ax.hist([1, 2, float("nan"), 3, float("inf")], bins=3)
+    assert counts.sum() == 3
+    assert np.isfinite(edges).all()
+
+
+def test_hist_weights_stay_aligned_after_dropping_a_nan():
+    fig, ax = plotpress.subplots()
+    d1 = np.array([1.0, 2.0, np.nan, 3.0])
+    d2 = np.array([1.0, 2.0, 3.0])
+    w1 = np.array([10.0, 20.0, 30.0, 40.0])   # the 30.0 belongs to the NaN
+    w2 = np.array([1.0, 1.0, 1.0])
+    counts, edges, bars = ax.hist([d1, d2], weights=[w1, w2], bins=3)
+    assert counts[0].sum() == 70.0   # 10 + 20 + 40, not 100
+    assert counts[1].sum() == 3.0
+
+
+def test_hist_warns_when_a_dataset_is_entirely_nan():
+    """Unlike _finite_datasets() (boxplot/violinplot), hist()'s own inline
+    finiteness filter silently dropped an all-NaN dataset with no warning --
+    inconsistent with how the rest of the codebase treats data loss a
+    reader could otherwise mistake for "no data was passed"."""
+    fig, ax = plotpress.subplots()
+    good = [1.0, 2.0, 3.0]
+    all_nan = [float("nan"), float("nan")]
+    with pytest.warns(UserWarning, match="hist"):
+        counts, edges, bars = ax.hist([good, all_nan], bins=3)
+    assert counts[0].sum() == 3
+    assert counts[1].sum() == 0
 
 
 def test_boxplot_whis_widens_the_whiskers():
@@ -1684,7 +1753,7 @@ def _svg_and_raster_differ(build_a, build_b):
     build_b(ax_b)
     if fig_a.to_svg() == fig_b.to_svg():
         return False
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     arr_a = np.asarray(figure_to_image(fig_a))
     arr_b = np.asarray(figure_to_image(fig_b))
     return not np.array_equal(arr_a, arr_b)
@@ -1878,7 +1947,7 @@ def test_legend_framealpha_renders_in_both_backends_and_backends_now_agree():
     assert 'fill-opacity="0.85"' in fig1.to_svg()
     assert 'fill-opacity="0.2"' in fig2.to_svg()
 
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     arr1 = np.asarray(figure_to_image(fig1))
     arr2 = np.asarray(figure_to_image(fig2))
     assert not np.array_equal(arr1, arr2)
@@ -1967,7 +2036,7 @@ def test_bbox_renders_without_error_in_raster_and_pdf():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)   # must not raise
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -2051,7 +2120,7 @@ def test_multiline_text_renders_without_error_in_raster_and_pdf():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)   # must not raise
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -2220,7 +2289,7 @@ def test_fontweight_fontstyle_render_without_error_in_raster_and_pdf():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)   # must not raise
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -2229,7 +2298,7 @@ def _effective_axes_rect(fig, ax):
     """The exact pixel rect _render_axes lays the axes out in -- mirrors
     pick_cases._transform's construction, the established test-side way to
     reproduce the renderer's own geometry without re-rendering the SVG."""
-    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
 
     dpi = fig.style.dpi
     (xmin, xmax), (ymin, ymax) = ax._resolved_limits()
@@ -2315,7 +2384,7 @@ def test_transaxes_renders_without_error_in_raster_and_pdf():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)   # must not raise
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -2334,7 +2403,7 @@ def test_fig_text_alpha_and_bbox_render_in_both_backends():
     assert svg3.index("<rect") < svg3.index("<text")
 
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     figure_to_image(fig3)   # must not raise
 
 
@@ -2415,7 +2484,7 @@ def test_bar_yerr_internal_call_still_suppresses_its_own_marker():
     the new fmt-driven default the way an *unset* marker would."""
     _, ax = plotpress.subplots()
     b = ax.bar([1, 2], [1, 2], yerr=[0.1, 0.1])
-    eb = next(a for a in ax.artists if isinstance(a, plotpress.artists.ErrorBar))
+    eb = next(a for a in ax.artists if isinstance(a, plotpress.core.artists.ErrorBar))
     assert eb.marker is None
 
 
@@ -2482,7 +2551,7 @@ def test_spine_and_axes_facecolor_resolve_to_hex():
         "errorbar", "stem", "eventplot", "quiver"])
 def test_empty_input_draws_nothing_instead_of_crashing(build):
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     build(ax)
@@ -2514,7 +2583,7 @@ def test_boxplot_showmeans_adds_a_marker_per_box():
     n_before = len(ax.artists)
     ax.boxplot([[1, 2, 3], [4, 5, 9]], showmeans=True)
     scatters = [a for a in ax.artists[n_before:]
-                if isinstance(a, plotpress.artists.ScatterCollection)]
+                if isinstance(a, plotpress.core.artists.ScatterCollection)]
     assert len(scatters) == 1 and len(scatters[0].x) == 2
 
 
@@ -2529,7 +2598,7 @@ def test_violinplot_showmeans_and_showmedians_each_add_one_line():
     n_before = len(ax.artists)
     ax.violinplot([[1, 2, 3, 4, 100]], showmeans=True, showmedians=True)
     added = ax.artists[n_before:]
-    lines = [a for a in added if isinstance(a, plotpress.artists.LineCollection)]
+    lines = [a for a in added if isinstance(a, plotpress.core.artists.LineCollection)]
     assert len(lines) == 2   # one hline for the mean, one for the median
 
 
@@ -2604,7 +2673,7 @@ def test_legend_bbox_to_anchor_places_the_box_outside_the_axes():
     assert float(rect.get("x")) >= float(axes_rect.get("x")) + float(axes_rect.get("width")) - 1
 
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
     figure_to_image(fig)   # must not raise
 
 
@@ -2638,7 +2707,7 @@ def test_two_slope_norm_centers_on_vcenter_with_asymmetric_bounds():
     np.testing.assert_allclose(tsn(np.array([-1.0, 0.0, 9.0])), [0.0, 0.5, 1.0])
     # A plain Normalize over the same asymmetric range would NOT put 0 at
     # the midpoint -- confirming this actually differs from the plain case.
-    from plotpress.colors import Normalize
+    from plotpress.style.colors import Normalize
     plain = Normalize(-1.0, 9.0)
     assert plain(np.array([0.0]))[0] != 0.5
 
@@ -2683,8 +2752,45 @@ def test_register_cmap_accepts_a_ready_made_lut():
     lut = np.zeros((256, 3), dtype=np.uint8)
     lut[:, 0] = 200
     out = register_cmap("plotpress-test-raw-lut", lut)
-    assert out is lut
+    # A copy, not the caller's own array by reference -- see
+    # test_register_cmap_copies_its_input below for why.
+    assert out is not lut
+    assert np.array_equal(out, lut)
     assert np.array_equal(get_cmap("plotpress-test-raw-lut"), lut)
+
+
+def test_register_cmap_copies_its_input():
+    # Registering an already-uint8 array used to store the caller's own
+    # array by reference (astype(..., copy=False) is a no-op on a matching
+    # dtype) -- mutating it afterward silently changed an already-registered
+    # colormap everywhere it was used.
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    register_cmap("plotpress-test-mutate-after", lut)
+    lut[:] = 255
+    registered = get_cmap("plotpress-test-mutate-after")
+    assert not np.array_equal(registered, lut)
+    assert (registered == 0).all()
+
+
+def test_register_cmap_return_value_is_not_the_shared_lut():
+    # register_cmap() copied its *input* before storing it, but returned
+    # that same stored object -- mutating the return value silently
+    # corrupted the colormap it had just registered. Same aliasing hazard
+    # as get_cmap(), on the other end of the call.
+    out = register_cmap("plotpress-test-return-alias", ["black", "white"])
+    original = out.copy()
+    out[0] = [1, 2, 3]
+    assert np.array_equal(get_cmap("plotpress-test-return-alias"), original)
+
+
+def test_get_cmap_returns_a_copy_not_the_shared_lut():
+    # get_cmap() used to hand out the registry's own live array; mutating it
+    # in place silently corrupted the colormap for every other figure/artist
+    # in the process.
+    lut = get_cmap("viridis")
+    original = lut.copy()
+    lut[0] = [0, 0, 0]
+    assert np.array_equal(get_cmap("viridis"), original)
 
 
 def test_tab10_tab20_set1_dark2_are_qualitative_not_interpolated():
@@ -2790,7 +2896,7 @@ def test_contour_linewidths_and_linestyles_accept_per_level_lists():
 
 def test_contour_raster_backend_draws_dashed_negative_levels_too():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     g = np.linspace(-2, 2, 20)
@@ -2860,7 +2966,7 @@ def test_grid_axis_which_round_trip_through_html_template():
 
 def test_grid_raster_backend_handles_axis_and_which():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -2898,7 +3004,7 @@ def test_colorbar_format_string_and_callable_both_work():
 
 def test_colorbar_ticks_and_format_render_in_svg_and_raster():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     mesh = ax.pcolormesh(np.linspace(0, 1, 25).reshape(5, 5))
@@ -2987,7 +3093,7 @@ def test_errorbar_errorevery_rejects_less_than_one():
 
 def test_errorbar_raster_backend_honors_errorevery():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     x = np.arange(10, dtype=float)
@@ -3064,7 +3170,7 @@ def test_barh_hatch_works_the_same_as_bar():
 
 def test_bar_hatch_renders_in_raster_backend():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     for h in ["/", "\\", "|", "-", "+", "x"]:
@@ -3100,7 +3206,7 @@ def test_save_dpi_override_scales_pixel_dimensions_and_metadata(tmp_path):
 def test_save_transparent_drops_the_outer_background_only():
     pytest.importorskip("PIL")
     import numpy as np
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])
@@ -3176,7 +3282,7 @@ def test_saved_png_carries_dpi_metadata(tmp_path):
 
 
 def test_png_encoder_prefers_up_filter_for_a_smooth_gradient():
-    from plotpress.png import _filter_scanlines
+    from plotpress.backends.png import _filter_scanlines
 
     w = 64
     row = np.linspace(0, 255, w).astype(np.uint8)
@@ -3239,7 +3345,7 @@ def test_svg_with_title_children_is_still_well_formed():
 
 # -- functionality audit, Tier 2: real (non-round) marker shapes --------
 def test_normalize_marker_shape_maps_matplotlib_codes():
-    from plotpress.primitives import normalize_marker_shape
+    from plotpress.core.primitives import normalize_marker_shape
 
     assert normalize_marker_shape("o") == "o"
     assert normalize_marker_shape(".") == "o"
@@ -3342,7 +3448,7 @@ def test_errorbar_unsupported_marker_still_warns_and_falls_back():
 
 def test_marker_shapes_render_in_raster_backend():
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     for i, m in enumerate(["o", "s", "^", "v", "<", ">", "D", "+", "x"]):
@@ -3388,7 +3494,7 @@ def test_figure_legend_bbox_to_anchor_moves_the_box():
     fig, ax = plotpress.subplots(figsize=(4, 3))
     ax.plot([0, 1], [0, 1], label="a")
     fig.legend(loc="upper left")
-    from plotpress.svg import figure_legend_layout, figure_legend_origin
+    from plotpress.backends.svg import figure_legend_layout, figure_legend_origin
 
     W, H = fig.figsize[0] * fig.style.dpi, fig.figsize[1] * fig.style.dpi
     lay = figure_legend_layout(fig)
@@ -3508,7 +3614,7 @@ def test_hatched_bar_past_axes_limits_does_not_hang_or_crash():
     unclipped pixel extent -- zooming into one bar (extending it far past
     the visible canvas) allocated a multi-gigapixel image."""
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.bar([2], [3], hatch="/")
@@ -3581,7 +3687,7 @@ def test_errorbar_raster_marker_shape_matches_svg():
     """Regression: raster._errorbar always drew circles regardless of
     marker=, silently diverging from svg._render_errorbar's real shapes."""
     pytest.importorskip("PIL")
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots()
     ax.errorbar([0, 1, 2], [0, 1, 2], yerr=0.2, marker="s")

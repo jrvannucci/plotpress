@@ -184,6 +184,109 @@ anywhere in the source.
   the static render had already drawn. Both sides now build a decade by parsing
   the decimal literal, which is correctly rounded by spec in both languages.
 
+### Changed
+
+- **Grouped `style.py`, `colors.py`, `ticker.py`, and `dates.py` into
+  `plotpress/style/`** -- the "how a value becomes appearance" cluster
+  (`Style`, colormaps, tick locating/formatting, its datetime extension).
+  `style.py` becomes `style/__init__.py` (it names the package); `colors.py`,
+  `ticker.py`, `dates.py` become plain siblings with no re-export. The
+  genuinely public API this exposes (`plotpress.Normalize`, `plotpress.
+  register_cmap`, etc.) is unaffected -- it's re-exported through
+  `plotpress/__init__.py`'s existing lazy-attribute layer, which only needed
+  its internal path strings updated. Code importing `plotpress.colors`/
+  `.ticker`/`.dates` directly needs the `style.`-prefixed path.
+- **Moved `qt.py` into `plotpress/gui/`** and **`png.py` into
+  `plotpress/backends/`** -- `png.py` is only ever used by the render
+  backends (SVG/Vega/Vega-Lite embedding PNG data URIs), never by `axes.py`
+  or anything outside `backends/`.
+- **Grouped the remaining top-level modules into `backends/` and `core/`.**
+  `svg/`, `raster.py`, `vega.py`, `vega_lite.py`, and `_interactive.py`
+  (+ `_js/`) moved into `plotpress/backends/` -- every format a `Figure`
+  renders itself *to*, matching AGENTS.md's own render-pipeline diagram.
+  `artists.py`, `primitives.py`, and `transform.py` moved into
+  `plotpress/core/` -- the shared scene/geometry layer every backend reads
+  from. Neither new package re-exports (unlike `figure/`/`svg/`'s own
+  `__init__.py`s, which preserve their *pre-split* single-file import path on
+  purpose): these were already independent top-level modules, so there is no
+  single prior path to preserve, and the new one is `plotpress.backends.svg`/
+  `plotpress.core.artists`/etc. This does change any code importing
+  `plotpress.svg`/`plotpress.raster`/`plotpress.vega`/`plotpress.vega_lite`/
+  `plotpress._interactive`/`plotpress.artists`/`plotpress.primitives`/
+  `plotpress.transform` directly (all internal-facing, underscore-prefixed
+  members throughout) -- update those imports to the `backends.`/`core.`
+  prefixed path.
+- **Moved the package to a `src/` layout.** `plotpress/` now lives at
+  `src/plotpress/` rather than the repo root, so an accidental `import
+  plotpress` while developing can't silently resolve to the working tree
+  instead of the actually-installed package. No public API or import path
+  changed (`import plotpress` is identical); this only moves where the
+  source lives on disk. If you have a local editable install, re-run `pip
+  install -e .` after pulling this.
+- **`figure.py` split into `plotpress/figure/`.** The root object had grown to
+  5000+ lines; it's now six submodules -- `_core` (`Figure` itself, plus the
+  grid/group machinery it's genuinely mutually coupled to), the two leaf
+  modules it depends on (`_layout`, `_html_options`), and three things built
+  *from* a `Figure` rather than needed *by* it (`_template`, `_report`,
+  `_io`) -- all re-exported from `plotpress/figure/__init__.py`. No public
+  API changed.
+- **`svg.py` split into `plotpress/svg/`.** The SVG backend had grown to
+  3300+ lines across 90 top-level functions with no classes to group
+  them; it's now eight submodules by concern (formatting, ticks/frame,
+  text/annotations, legend, per-artist rendering, `Figure.group()` boxes,
+  the entry point, and the interactive-HTML metadata payloads), all
+  re-exported from `plotpress/svg/__init__.py` so every existing
+  `from plotpress.svg import X` keeps resolving unchanged. No public API
+  changed.
+- **The interactive toolbar's JS moved out of `_interactive.py` into
+  `plotpress/_js/*.js`.** The Python file had grown to ~5650 lines, nearly
+  all of it one JS string literal that had roughly doubled this session
+  from the Slice tool alone. The JS is now split into ten real `.js` files
+  by tool/feature (toolbar/pan-zoom, mode buttons, Slice, ticks/pins,
+  Extract, Save, sliders, ...), assembled into the same script at import
+  time -- verified byte-for-byte identical to the pre-split output. No
+  public API changed.
+
+### Fixed
+
+- **`set_aspect`/`set_box_aspect` reject a non-positive value.** `aspect=0`
+  used to crash the whole render with a `ZeroDivisionError`; a negative
+  aspect silently corrupted that axes' geometry instead. Both now raise
+  `ValueError` at the call site.
+- **An explicit, non-positive limit on a log axis now raises, instead of
+  crashing or silently blanking the axis.** `set_ylim(-5, -1)` on a
+  log-scaled axis used to crash tick generation with `ValueError: math
+  domain error`; `set_xlim(-1, 100)` used to silently NaN-blank the whole
+  axis with no error. Both close at the same shared validation point,
+  regardless of the order `set_xscale`/`set_xlim`/`set_ylim` were called in.
+  A one-sided limit (the open end left to autoscale) is unaffected.
+- **`violinplot()`/`kdeplot()` no longer crash on a constant-valued sample**
+  once it's large enough (>= 4000 points) to use the binned KDE estimator --
+  the degenerate grid produced NaN positions that crashed `np.bincount`.
+- **`get_cmap()`/`register_cmap()` no longer hand out the shared colormap
+  array by reference.** Mutating a returned or registered LUT used to
+  silently corrupt that colormap for every other figure/artist in the
+  process; both now always return/store a copy.
+- **Huge-line decimation no longer lets a `NaN` mask a real peak.** A pixel
+  column containing both a genuine extreme value and a `NaN` (a common
+  shape for a real time series with missing samples) used to pick the NaN
+  as that column's rendered maximum, silently dropping the true peak.
+- **`Figure.to_vega()`/`to_vega_lite()` now honor `errorbar(..., errorevery=)`**
+  and export a mapped marker shape (`square`/`diamond`/the four
+  `triangle_*`) instead of always rendering a circle. A marker shape with no
+  native Vega/Vega-Lite equivalent (`+`/`x`/`|`/`_`) still falls back to a
+  circle, now with a caveat naming the axes instead of silently.
+- **`hist()` now ignores non-finite values**, matching every sibling
+  distribution method (`kdeplot`/`ecdfplot`/`rugplot`/`boxplot`/
+  `violinplot`) -- it used to raise a bare, context-free NumPy error on a
+  NaN in the data.
+- **`boxplot()`/`violinplot()` warn when a dataset is dropped entirely**
+  (all its values were non-finite) instead of silently rendering one fewer
+  box/violin with no indication anything was missing.
+- **`Figure.print_layout_summary()`/`Axes.print_summary()` no longer report
+  a false "OK"** when `to_vega()`/`to_vega_lite()` actually raised -- the
+  crash now shows up as a gap in the summary instead of being swallowed.
+
 ## [0.41.0] - 2026-09-20
 
 ### Added

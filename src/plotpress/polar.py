@@ -18,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 
 from .axes import Axes
-from .ticker import nice_ticks
+from .style.ticker import nice_ticks
 
 _ZERO_LOC = {"E": 0.0, "N": np.pi / 2, "W": np.pi, "S": -np.pi / 2}
 

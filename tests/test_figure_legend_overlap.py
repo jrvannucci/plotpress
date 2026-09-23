@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.svg import figure_legend_layout
+from plotpress.backends.svg import figure_legend_layout
 
 
 def _figure_with_many_labeled_lines(n, figsize=(6.0, 6.0)):

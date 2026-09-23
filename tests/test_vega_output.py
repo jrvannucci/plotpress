@@ -164,6 +164,38 @@ def test_bars_and_scatter_carry_their_edge_when_set():
     assert scatter_enc["strokeWidth"]["value"] > 0
 
 
+def test_errorbar_errorevery_thins_the_exported_whiskers():
+    """Regression: errorevery thinned the whiskers/caps svg.py and raster.py
+    draw, but _errorbar_marks built one whisker+cap pair per point
+    unconditionally -- a sparse SVG/PNG errorbar exported as a solid,
+    overlapping band in the Vega spec."""
+    fig, ax = plotpress.subplots()
+    n = 20
+    ax.errorbar(np.arange(n), np.arange(n), yerr=1.0, errorevery=5)
+    spec = fig.to_vega()
+    whiskers = _data(spec, [d["name"] for d in spec["data"] if d["name"].endswith("_yerr")][0])
+    assert len(whiskers) == len(range(0, n, 5))
+
+
+def test_scatter_marker_shape_maps_to_a_vega_symbol():
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, 1], [0, 1], marker="s")
+    symbols = _marks_of_type(fig.to_vega()["marks"][0], "symbol")
+    assert symbols[0]["encode"]["enter"]["shape"]["value"] == "square"
+
+
+def test_unsupported_marker_shape_falls_back_to_a_circle_with_a_warning():
+    """Regression: plus/x/vline/hline markers have no native Vega symbol --
+    they already fell back to a circle, but silently, with no indication
+    the shape wasn't actually exported."""
+    fig, ax = plotpress.subplots()
+    ax.scatter([0, 1], [0, 1], marker="+")
+    with pytest.warns(UserWarning, match="no Vega symbol equivalent"):
+        spec = fig.to_vega()
+    symbols = _marks_of_type(spec["marks"][0], "symbol")
+    assert "shape" not in symbols[0]["encode"]["enter"]
+
+
 def test_bars_and_scatter_have_no_stroke_when_edge_not_set():
     fig, axes = plotpress.subplots(1, 2, figsize=(6.0, 3.0))
     axes[0].bar([0, 1], [1, 2])

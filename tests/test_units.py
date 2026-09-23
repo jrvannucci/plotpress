@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from plotpress import colors
-from plotpress.ticker import format_tick, format_ticks, log_ticks, nice_ticks
-from plotpress.transform import LinearTransform
+from plotpress.style import colors
+from plotpress.style.ticker import format_tick, format_ticks, log_ticks, nice_ticks
+from plotpress.core.transform import LinearTransform
 
 
 # -- transform -------------------------------------------------------------
@@ -44,7 +44,7 @@ def test_log_transform_nonpositive_is_nan():
 
 
 def test_log_ticks_are_decades():
-    from plotpress.ticker import log_ticks
+    from plotpress.style.ticker import log_ticks
     np.testing.assert_array_equal(log_ticks(1, 1000), [1, 10, 100, 1000])
     np.testing.assert_array_equal(log_ticks(0.01, 10), [0.01, 0.1, 1, 10])
 
@@ -52,7 +52,7 @@ def test_log_ticks_are_decades():
 def test_log_ticks_nonpositive_vmin_stays_near_vmax():
     # A non-positive lower bound (e.g. user set_xlim(0, 100) on a log axis)
     # must clamp to three decades below vmax, not blow up to ~300 decades.
-    from plotpress.ticker import log_ticks
+    from plotpress.style.ticker import log_ticks
     np.testing.assert_array_equal(log_ticks(0.0, 100.0), [0.1, 1, 10, 100])
     np.testing.assert_array_equal(log_ticks(-5.0, 1000.0), [1, 10, 100, 1000])
 
@@ -181,7 +181,7 @@ def test_multiple_ticks_puts_the_zero_tick_exactly_on_zero():
     "-3.4e-13" as an axis label."""
     import math
 
-    from plotpress.ticker import multiple_ticks
+    from plotpress.style.ticker import multiple_ticks
 
     ticks = multiple_ticks(-100, 100, math.pi / 2)
     nearest = min(ticks, key=abs)
@@ -195,7 +195,7 @@ def test_pow10_is_the_correctly_rounded_decade():
     are not the 1e23/1e126 literals, and a CI runner's V8 returned a different
     double for 10**-5 than the development machine, which moved
     ceil(vmin / step) to the next integer and dropped an axis' first tick."""
-    from plotpress.ticker import pow10
+    from plotpress.style.ticker import pow10
 
     for exp in range(-300, 301):
         assert pow10(exp) == float(f"1e{exp}"), exp

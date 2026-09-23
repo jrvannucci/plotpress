@@ -2,6 +2,15 @@
 
 Every :class:`~plotpress.figure.Figure` owns its own :class:`Style` instance, so
 nothing here is global. Mutating one figure's style never affects another.
+
+Grouped as a package with ``colors.py`` (colormaps, ``Normalize`` and its
+variants), ``ticker.py`` (tick locating/formatting), and ``dates.py`` (its
+datetime extension) -- the "how a value becomes appearance" cluster, the same
+way matplotlib keeps ``rcParams``/colors/tickers conceptually together. The
+``Style`` class itself lives right here, in ``__init__.py``, since this
+package takes its name from it; ``colors``/``ticker``/``dates`` are plain
+siblings with no re-export layer -- import the one you need directly, e.g.
+``from plotpress.style.colors import Normalize``.
 """
 
 from __future__ import annotations
@@ -141,7 +150,7 @@ class Style:
         and ``measure_installed_fonts`` with it, so no caller has to remember to
         pass either.
         """
-        from .fonts import text_width
+        from ..fonts import text_width
 
         return text_width(text, size, self.font_family, bold, italic,
                           measure_installed=self.measure_installed_fonts)

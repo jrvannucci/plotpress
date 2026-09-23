@@ -4,7 +4,7 @@ Each case pairs an interactive figure with a list of targets. A target says
 "a click at this SVG pixel must produce a marker with these values".
 
 The click pixel is computed with the *renderer's* own transform -- built here
-exactly as :func:`plotpress.svg._render_axes` builds it -- so it is the pixel
+exactly as :func:`plotpress.backends.svg._render_axes` builds it -- so it is the pixel
 where the datum is actually drawn. The picking JS has to map that pixel back to
 the datum through its own independent machinery (the ``plotpress-meta``
 payload plus ``toPixel``). The two paths never share code, so agreement is
@@ -20,8 +20,8 @@ import math
 import numpy as np
 
 import plotpress
-from plotpress.svg import _effective_rect, _pixel_rect, pick_data
-from plotpress.transform import LinearTransform
+from plotpress.backends.svg import _effective_rect, _pixel_rect, pick_data
+from plotpress.core.transform import LinearTransform
 
 
 class Case:

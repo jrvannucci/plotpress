@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress import raster
+from plotpress.backends import raster
 from plotpress.fonts import text_width
 
 SAMPLES = ["1.002e5", "y axis label", "a series label", "Wwwiii", "-0.5"]
@@ -164,7 +164,7 @@ def test_unmeasurable_family_falls_back_to_helvetica():
 def test_legend_title_box_fits_its_bold_title():
     """The legend title is drawn bold but used to be measured with regular
     metrics, so a long title overhung the box it was centered in."""
-    from plotpress.svg import _legend_layout
+    from plotpress.backends.svg import _legend_layout
 
     title = "Measurement conditions"
     fig, ax = plotpress.subplots()
@@ -335,7 +335,7 @@ def test_tight_layout_measures_custom_tick_labels():
 def test_ylabel_clears_custom_tick_labels():
     """The y label is placed past the widest tick label, so it must measure the
     custom strings too."""
-    from plotpress.svg import _max_ytick_width
+    from plotpress.backends.svg import _max_ytick_width
 
     fig, ax = plotpress.subplots()
     ax.barh(np.arange(3), [1.0, 2.0, 3.0])
@@ -373,7 +373,7 @@ def test_raster_places_the_ylabel_where_svg_does(data_scale, monkeypatch):
     """
     import re
 
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, ax = plotpress.subplots(figsize=(7.0, 3.6))
     ax.bar([0, 1, 2], np.array([1.0, 2.0, 3.0]) * data_scale)

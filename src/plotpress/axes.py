@@ -13,14 +13,14 @@ import warnings
 
 import numpy as np
 
-from .artists import (
+from .core.artists import (
     Annotation, AxLine, Barbs, Bars, BoxPlot, Contour, ErrorBar, EventPlot,
     FillBetween, FrameLine2D, FrameQuadMesh, HLine, Image, Line2D, LineCollection,
     Pie, PolyCollection, Polygon, QuadMesh, Quiver, Rug, ScatterCollection, Span,
     Stem, Table, Text, Violin, VLine, _VECTOR_CELL_LIMIT,
 )
-from .colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
-from .ticker import resolve_axis_ticks, resolve_axis_tick_labels
+from .style.colors import Normalize, apply_colormap, get_cmap, resolve_norm, to_hex
+from .style.ticker import resolve_axis_ticks, resolve_axis_tick_labels
 from . import _spectral
 
 #: Sentinel for ``text(transform=ax.transAxes)`` -- identity, not value, is
@@ -38,16 +38,27 @@ _TRANS_AXES = object()
 _UNSET = object()
 
 
-def _finite_datasets(data, positions):
+def _finite_datasets(data, positions, who=""):
     """Drop non-finite values, then any dataset left with no observations.
 
     Each surviving dataset keeps its own position, so one empty column shifts
     nothing. Without this, ``boxplot``/``violinplot`` reach ``np.percentile``
     or ``d.min()`` on an empty array and fail well away from the caller.
+
+    A dataset dropped entirely warns (naming its position), matching how the
+    rest of the codebase treats silent data loss -- ``_warn_downsampled`` for
+    block-averaged mesh cells, ``_warn_dropped_cells`` for raster cells, the
+    ``BoundaryNorm(ncolors=...)`` warning in colors.py -- rather than leaving
+    the reader to notice a box or violin is simply missing from the figure.
     """
     positions = np.atleast_1d(np.asarray(positions, dtype=float))
     kept = [(d[np.isfinite(d)], p) for d, p in zip(data, positions)]
+    dropped = [float(p) for d, p in kept if not d.size]
     kept = [(d, p) for d, p in kept if d.size]
+    if dropped:
+        warnings.warn(
+            f"{who}(): dataset(s) at position(s) {dropped} had no finite "
+            "values and were dropped entirely.", UserWarning, stacklevel=3)
     if not kept:
         return [], np.empty(0, dtype=float)
     return [d for d, _ in kept], np.array([p for _, p in kept], dtype=float)
@@ -95,7 +106,13 @@ def _binned_gaussian_kde(data, grid, bw, n):
     """
     lo, hi = grid[0], grid[-1]
     m = grid.size
-    dx = (hi - lo) / (m - 1)
+    # A constant-valued sample collapses the grid to hi == lo (cut=0 pads by
+    # a multiple of the bandwidth, which is itself 0-width here), so dx would
+    # be 0 and (data - lo) / dx a NaN position -- `or 1.0` matches
+    # _kde_bandwidth's own fallback for the same degenerate case. Every
+    # point is then equal to lo/hi, so position 0.0 for all of them is the
+    # correct answer regardless of what dx is: a single spike at that value.
+    dx = (hi - lo) / (m - 1) or 1.0
 
     pos = np.clip((data - lo) / dx, 0.0, m - 1)   # data lies within the grid span
     left = np.minimum(np.floor(pos).astype(np.intp), m - 2)
@@ -426,7 +443,7 @@ class Axes:
         this, ``ax.plot(dates, y); ax.axvline("2024-03-01")`` would silently
         mint a one-off category instead of marking March 2024.
         """
-        from .dates import is_datetime_like, to_days
+        from .style.dates import is_datetime_like, to_days
 
         if is_datetime_like(value):
             if axis == "x":
@@ -688,7 +705,7 @@ class Axes:
         * ``None`` (default) -- automatic. A uniform grid rasterizes (its fast
           path is already a lossless, byte-identical copy, so there is nothing
           to gain from vectors). A non-uniform grid under
-          :data:`~plotpress.artists._VECTOR_CELL_LIMIT` (~2000) cells draws as
+          :data:`~plotpress.core.artists._VECTOR_CELL_LIMIT` (~2000) cells draws as
           exact vector ``<rect>`` elements instead -- no resampling, so no
           cell can ever be too thin to draw. Past that cell count it falls
           back to the raster path, to keep the file size from scaling with
@@ -709,7 +726,7 @@ class Axes:
         same cell if you also export it as PNG; pass ``rasterized=True`` once
         to see what that export would actually lose.
 
-        The returned :class:`~plotpress.artists.QuadMesh` exposes the
+        The returned :class:`~plotpress.core.artists.QuadMesh` exposes the
         resolved decision for introspection: ``.rasterized`` (what you passed),
         ``.vectorized`` (what actually happened), ``.n_cells``, and
         ``.dropped_x``/``.dropped_y`` (the cell indices, if any, the raster
@@ -873,7 +890,7 @@ class Axes:
 
     def bar_label(self, bars, labels=None, fmt="{:g}", padding=0.0, color=None,
                   fontsize=None, zorder=6):
-        """Label each bar in the :class:`~plotpress.artists.Bars` ``bars``
+        """Label each bar in the :class:`~plotpress.core.artists.Bars` ``bars``
         (:meth:`bar`/:meth:`barh`'s own return value) with its height/width,
         just outside the bar's tip -- above for a positive vertical bar,
         below for a negative one; right/left the same way for a horizontal
@@ -886,7 +903,7 @@ class Axes:
         unit here, so this is the closest equivalent, not a literal
         drop-in value.
 
-        Returns the list of :class:`~plotpress.artists.Text` labels added,
+        Returns the list of :class:`~plotpress.core.artists.Text` labels added,
         one per bar, in the same order as ``bars.pos``.
         """
         if labels is not None and len(labels) != len(bars.pos):
@@ -964,6 +981,31 @@ class Axes:
             wlist = [w] * len(datasets)
         else:
             wlist = [None] * len(datasets)
+
+        # Unlike kdeplot()/ecdfplot()/rugplot() (each filter np.isfinite
+        # first) and boxplot()/violinplot() (via the shared _finite_datasets
+        # helper), hist() had no NaN handling at all: histogram_bin_edges()
+        # raises a bare "autodetected range of [nan, nan] is not finite"
+        # with no context. Filtered per dataset (not via _finite_datasets,
+        # which also drops a whole empty dataset and reindexes positions --
+        # not a concept hist() has) so weights stay aligned to the values
+        # that survive.
+        finite_datasets, finite_wlist, emptied = [], [], []
+        for i, (d, w) in enumerate(zip(datasets, wlist)):
+            mask = np.isfinite(d)
+            if d.size and not mask.any():
+                emptied.append(i)
+            finite_datasets.append(d[mask])
+            finite_wlist.append(None if w is None else w[mask])
+        datasets, wlist = finite_datasets, finite_wlist
+        if emptied:
+            # Same silent-data-loss convention as _finite_datasets(): a
+            # dataset that had values but none finite renders as an
+            # invisible zero-height series with no counts, easy to mistake
+            # for "no data was passed" rather than "every value was dropped".
+            warnings.warn(
+                f"hist(): dataset(s) at index(es) {emptied} had no finite "
+                "values and were dropped entirely.", UserWarning, stacklevel=3)
 
         # histogram_bin_edges() ignores range when bins is already a sequence
         # of edges, so this covers both "bins is a count" and "bins is
@@ -1404,7 +1446,7 @@ class Axes:
         data = [np.asarray(d, float) for d in x]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
-        data, positions = _finite_datasets(data, positions)
+        data, positions = _finite_datasets(data, positions, who="boxplot")
         stats = []
         for d in data:
             q1, med, q3 = np.percentile(d, [25, 50, 75])
@@ -1463,7 +1505,7 @@ class Axes:
         data = [np.asarray(d, float) for d in data]
         if positions is None:
             positions = np.arange(1, len(data) + 1)
-        data, positions = _finite_datasets(data, positions)
+        data, positions = _finite_datasets(data, positions, who="violinplot")
         grids, halfwidths = [], []
         for d in data:
             pad = cut * _kde_bandwidth(d)
@@ -1816,7 +1858,7 @@ class Axes:
 
     def clabel(self, CS, levels=None, fmt="%1.3g", fontsize=None, colors=None,
               inline=True, zorder=6):
-        """Label ``CS`` (the :class:`~plotpress.artists.Contour`
+        """Label ``CS`` (the :class:`~plotpress.core.artists.Contour`
         :meth:`contour` returned) with each level's own value, placed along
         its line.
 
@@ -1832,7 +1874,7 @@ class Axes:
         callable taking the level value. ``colors`` overrides the label
         color (default: matches each level's own line color).
 
-        Returns the list of :class:`~plotpress.artists.Text` labels added.
+        Returns the list of :class:`~plotpress.core.artists.Text` labels added.
         """
         want = set(levels) if levels is not None else None
         texts = []
@@ -2072,7 +2114,10 @@ class Axes:
         elif aspect == "auto":
             self._aspect = None
         else:
-            self._aspect = float(aspect)
+            aspect = float(aspect)
+            if not aspect > 0:
+                raise ValueError(f"set_aspect(): aspect must be > 0, got {aspect!r}")
+            self._aspect = aspect
 
     def get_aspect(self):
         """The current aspect: ``'auto'``, or the y/x unit ratio (``1.0`` for
@@ -2088,7 +2133,13 @@ class Axes:
         space to hit the ratio, the same "box-adjust" strategy
         :meth:`set_aspect` uses.
         """
-        self._box_aspect = None if aspect is None else float(aspect)
+        if aspect is None:
+            self._box_aspect = None
+        else:
+            aspect = float(aspect)
+            if not aspect > 0:
+                raise ValueError(f"set_box_aspect(): aspect must be > 0, got {aspect!r}")
+            self._box_aspect = aspect
 
     def get_box_aspect(self):
         return self._box_aspect
@@ -2445,7 +2496,7 @@ class Axes:
             del self.figure._id_index[self._id]
         for g in self.figure._groups:
             if self in g["axes"] and g["frozen_rect"] is None:
-                from .svg import (
+                from .backends.svg import (
                     _group_axes_extra, _group_bbox, _group_colorbar_extra, _group_members,
                 )
                 fig = self.figure
@@ -3336,7 +3387,7 @@ class Axes:
         """``(handles, labels)`` for whatever :meth:`legend` would currently
         draw -- ``_legend_handles`` (from ``legend(handles=...)``) if set,
         else every artist on this axes carrying a ``label``, in call order.
-        Mirrors :func:`plotpress.svg._legend_layout`'s own source-selection
+        Mirrors :func:`plotpress.backends.svg._legend_layout`'s own source-selection
         exactly, so this always answers "what would the legend show right
         now", not a separate approximation of it.
         """
@@ -3428,10 +3479,21 @@ class Axes:
         from .figure import _axes_summary_lines, _vega_compat_report
 
         idx = self.figure.axes.index(self)
-        gaps = _vega_compat_report(self.figure).get(idx, {"vega": [], "vega_lite": []})
+        report = _vega_compat_report(self.figure)
+        gaps = report.get(idx, {"vega": [], "vega_lite": []})
         print(f"Axes {idx}:")
         for line in _axes_summary_lines(self, gaps):
             print(line)
+        # A gap _vega_compat_report couldn't attribute to a specific axes
+        # (e.g. an exporter crash whose message never mentions "axes N") is
+        # filed under the None key -- surface that it exists here too, or a
+        # per-axes summary would report "OK" for an export that actually
+        # failed figure-wide. See Figure.print_layout_summary() for the
+        # full text.
+        fig_level = report.get(None)
+        if fig_level and (fig_level["vega"] or fig_level["vega_lite"]):
+            print("  (there is also a figure-level export gap not specific "
+                  "to this axes -- see Figure.print_layout_summary())")
 
     @staticmethod
     def _group_bounds(axes_list, ix):
@@ -3473,6 +3535,23 @@ class Axes:
         ygroup = self._sharey_group or [self]
         xlim = _group_limits(self, xgroup, "_xlim")
         ylim = _group_limits(self, ygroup, "_ylim")
+        # Any explicitly-set end of a log-axis limit that is non-positive is a
+        # caller mistake, not data to clamp -- checked per-end (not just when
+        # both ends are set) because a one-sided call like
+        # set_ylim(bottom=-5) leaves the autoscaled top in place and still
+        # reaches this same failure: left unchecked, a non-positive log bound
+        # reaches ticker.log_ticks() as a domain-error crash (only vmin is
+        # floored there) or reaches transform.py as NaN (log10 of a
+        # non-positive value), silently blanking the axis with no
+        # explanation either way.
+        if self._xscale == "log" and _explicit_nonpositive(xlim):
+            bad = _first_nonpositive(xlim)
+            raise ValueError(
+                f"set_xlim(): {bad!r} is not > 0, and the x-axis is log-scaled")
+        if self._yscale == "log" and _explicit_nonpositive(ylim):
+            bad = _first_nonpositive(ylim)
+            raise ValueError(
+                f"set_ylim(): {bad!r} is not > 0, and the y-axis is log-scaled")
         if _both_set(xlim) and _both_set(ylim):
             return xlim, ylim
 
@@ -3639,7 +3718,7 @@ def _norm_axis_limits(ax, axis, lower, upper):
     bound through this axis' own date/category mapping first -- see
     :meth:`Axes.set_xlim`'s own docstring for what that means for each kind.
     """
-    from .dates import is_datetime_like, to_days
+    from .style.dates import is_datetime_like, to_days
 
     is_date = ax._xdate if axis == "x" else ax._ydate
     categorical = ax._xcategorical if axis == "x" else ax._ycategorical
@@ -3726,7 +3805,7 @@ def _parse_fmt(fmt):
     not a byte-for-byte port of matplotlib's own parser. Raises
     ``ValueError`` naming whatever is left over if ``fmt`` contains anything
     else, the same "don't guess wrong" choice
-    :func:`plotpress.artists.normalize_linestyle` makes for an unrecognized
+    :func:`plotpress.core.artists.normalize_linestyle` makes for an unrecognized
     ``linestyle=`` -- silently ignoring part of a format string is exactly
     the bug this function exists to close.
     """
@@ -3776,7 +3855,7 @@ def _warn_marker_shape(marker, who):
     figure that quietly collapses that distinction is wrong in a way nothing
     on the page reveals.
     """
-    from .primitives import normalize_marker_shape
+    from .core.primitives import normalize_marker_shape
 
     if normalize_marker_shape(marker) is None:
         warnings.warn(
@@ -3945,6 +4024,15 @@ def _warn_dropped_cells(mesh, who, xe, ye, suggest_vector):
 def _both_set(lim):
     """True when ``lim`` pins both ends (so no autoscaling is needed)."""
     return lim is not None and lim[0] is not None and lim[1] is not None
+
+
+def _explicit_nonpositive(lim):
+    """True when ``lim`` has an explicitly-set end that is <= 0."""
+    return lim is not None and any(v is not None and v <= 0 for v in lim)
+
+
+def _first_nonpositive(lim):
+    return next(v for v in lim if v is not None and v <= 0)
 
 
 def _group_limits(ax, group, attr):

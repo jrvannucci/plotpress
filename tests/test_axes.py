@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.artists import Line2D, QuadMesh, ScatterCollection
+from plotpress.core.artists import Line2D, QuadMesh, ScatterCollection
 from plotpress.axes import Axes
 
 
@@ -182,7 +182,7 @@ def test_reversed_limits_render_like_matplotlib_inversion(setlim, scale):
 
 
 def test_reversed_ticks_are_order_independent():
-    from plotpress.ticker import log_ticks, nice_ticks
+    from plotpress.style.ticker import log_ticks, nice_ticks
     np.testing.assert_array_equal(nice_ticks(3, 0), nice_ticks(0, 3))
     np.testing.assert_array_equal(log_ticks(100, 1), log_ticks(1, 100))
     assert len(log_ticks(100, 1)) > 0     # not silently empty
@@ -399,7 +399,7 @@ def test_mesh_edges_match_matplotlib_for_centers_and_edges():
     outward. plotpress used to keep only min/max of whatever it was handed and
     divide that span evenly, which is right only for a uniform grid.
     """
-    from plotpress.artists import QuadMesh
+    from plotpress.core.artists import QuadMesh
 
     C = np.arange(10.0).reshape(2, 5)
     edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])
@@ -423,8 +423,8 @@ def test_non_uniform_cells_get_proportional_width():
     equal-width pixels put every boundary of a non-uniform grid in the wrong
     place. Resampling assigns each pixel the cell its center falls in.
     """
-    from plotpress.artists import QuadMesh
-    from plotpress.colors import apply_colormap
+    from plotpress.core.artists import QuadMesh
+    from plotpress.style.colors import apply_colormap
 
     edges = np.array([0.0, 1.0, 2.0, 4.0, 8.0, 16.0])      # widths 1,1,2,4,8
     field = np.arange(5.0)[None, :]
@@ -442,7 +442,7 @@ def test_non_uniform_cells_get_proportional_width():
 
 def test_uniform_mesh_keeps_the_one_pixel_per_cell_fast_path():
     """A uniform grid is exact at one pixel per cell; don't resample it."""
-    from plotpress.artists import QuadMesh
+    from plotpress.core.artists import QuadMesh
 
     C = np.arange(12.0).reshape(3, 4)
     mesh = QuadMesh(np.linspace(0.0, 4.0, 5), np.linspace(0.0, 3.0, 4), C)
@@ -450,7 +450,7 @@ def test_uniform_mesh_keeps_the_one_pixel_per_cell_fast_path():
 
 
 def test_mesh_rejects_a_coordinate_length_that_is_neither():
-    from plotpress.artists import QuadMesh
+    from plotpress.core.artists import QuadMesh
 
     with pytest.raises(ValueError, match="neither"):
         QuadMesh(np.arange(9.0), np.arange(3.0), np.arange(12.0).reshape(3, 4))

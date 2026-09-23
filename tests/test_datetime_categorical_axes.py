@@ -18,10 +18,10 @@ import numpy as np
 import pytest
 
 import plotpress
-from plotpress.dates import (
+from plotpress.style.dates import (
     date_ticks, days_to_datetime64, format_date_ticks, is_datetime_like, to_days,
 )
-from plotpress.ticker import (
+from plotpress.style.ticker import (
     apply_locator, apply_tick_format, multiple_ticks, resolve_axis_tick_labels,
     resolve_axis_ticks, resolve_tick_format, resolve_tick_locations,
 )
@@ -484,7 +484,7 @@ def test_interactive_metadata_serializes_datetime_categorical_and_locator_flags(
     ax3.plot([0, 1], [0, 1])
     ax3.set_xlocator({"kind": "multiple", "base": 0.25})
 
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     meta = axes_metadata(fig)
     assert meta[0]["xdate"] is True

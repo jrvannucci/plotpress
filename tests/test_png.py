@@ -6,7 +6,7 @@ import zlib
 import numpy as np
 import pytest
 
-from plotpress.png import _encode_rgba, encode_png, png_data_uri
+from plotpress.backends.png import _encode_rgba, encode_png, png_data_uri
 
 
 def _decode_png(data):
@@ -82,7 +82,7 @@ def test_multiline_title_does_not_break_png_export():
     multiline text. Text stays single-line by design (see the limitations docs),
     but a stray newline must degrade, not crash."""
     import plotpress
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
@@ -93,7 +93,7 @@ def test_multiline_title_does_not_break_png_export():
 def test_multiline_labels_survive_png_export():
     """The other label slots already coped; keep them that way."""
     import plotpress
-    from plotpress import raster
+    from plotpress.backends import raster
 
     fig, ax = plotpress.subplots()
     ax.plot([0.0, 1.0], [0.0, 1.0])
@@ -113,7 +113,7 @@ def test_png_clips_artists_to_the_axes():
     pytest.importorskip("PIL")
 
     import plotpress
-    from plotpress.raster import figure_to_image
+    from plotpress.backends.raster import figure_to_image
 
     fig, ax = plotpress.subplots(figsize=(4, 3))
     x = np.linspace(0, 10, 300)

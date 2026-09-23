@@ -1431,7 +1431,7 @@ def test_a_twin_axes_shares_the_strip_layout(page, tmp_path):
 def test_a_twins_tick_side_is_in_the_metadata():
     # The client redraws a twin's ticks on pan/zoom from this; it used to say "left"
     # for a twinx (drawn on the right), so zooming moved the twin's labels across the plot.
-    from plotpress.svg import axes_metadata
+    from plotpress.backends.svg import axes_metadata
 
     fig, ax = plotpress.subplots()
     ax.plot([0, 1], [0, 1])

@@ -4,7 +4,7 @@ Artists are *data holders*, not renderers. ``ax.plot(...)`` just stashes arrays
 and style and returns immediately -- no drawing happens until the figure is
 serialized. This keeps construction cheap and keeps whole arrays intact for the
 vectorized NumPy rendering pass. All rendering logic lives in
-:mod:`plotpress.svg` and :mod:`plotpress.raster`.
+:mod:`plotpress.backends.svg` and :mod:`plotpress.backends.raster`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from .colors import apply_colormap, get_cmap, resolve_norm, to_hex
+from ..style.colors import apply_colormap, get_cmap, resolve_norm, to_hex
 
 # The four dash patterns every backend's own _DASH table (svg.py, raster.py)
 # actually knows how to draw, keyed by matplotlib's short form -- the long
@@ -1061,7 +1061,7 @@ def auto_outline(color):
     behind light. Picked from the text's own color rather than from the
     background, because the whole point of a halo is that what the label sits on
     is unknown at layout time -- a mesh cell, a filled band, another series."""
-    from .colors import to_hex
+    from ..style.colors import to_hex
 
     c = to_hex(color).lstrip("#")
     if len(c) == 3:

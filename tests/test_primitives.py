@@ -13,7 +13,7 @@ now have call sites in three-plus modules apiece.
 import numpy as np
 import pytest
 
-from plotpress.primitives import (
+from plotpress.core.primitives import (
     _decimate_minmax,
     _is_monotonic,
     artist_to_prims,
@@ -21,8 +21,8 @@ from plotpress.primitives import (
     pie_label_positions,
     tick_axis_edge,
 )
-from plotpress.artists import AxLine, Line2D, LineCollection, Rug, Span
-from plotpress.transform import LinearTransform
+from plotpress.core.artists import AxLine, Line2D, LineCollection, Rug, Span
+from plotpress.core.transform import LinearTransform
 
 
 def _tr(px_w=700.0, px_h=430.0):

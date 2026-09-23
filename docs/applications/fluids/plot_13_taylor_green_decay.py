@@ -20,7 +20,7 @@ scalar rather than reshaping it. That is a special property of this flow, not
 of viscous decay generally, and is exactly why it has a closed form at all.
 
 The colour scale is fixed to the ``t = 0`` amplitude across every frame
-(:class:`~plotpress.artists.FrameQuadMesh`'s shared-norm behaviour, the same
+(:class:`~plotpress.core.artists.FrameQuadMesh`'s shared-norm behaviour, the same
 mechanism :doc:`../acoustics/plot_07_room_mode_oscillation` relies on) so the
 decay reads as fading toward the neutral midpoint rather than as a rescaled
 colour bar quietly doing the work instead.

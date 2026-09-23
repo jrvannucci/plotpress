@@ -68,7 +68,7 @@ def test_set_box_aspect_shrinks_and_centers_the_drawn_box():
     ax.plot([0, 1], [0, 1])
     ax.set_box_aspect(1.0)   # square box in a wide figure -> must shrink width
     assert ax.get_box_aspect() == 1.0
-    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
 
     dpi = fig.style.dpi
     rect = _effective_rect(ax, *_pixel_rect(ax, fig.figsize[0] * dpi, fig.figsize[1] * dpi),
@@ -82,6 +82,22 @@ def test_set_box_aspect_none_restores_full_allocated_box():
     ax.set_box_aspect(0.3)
     ax.set_box_aspect(None)
     assert ax.get_box_aspect() is None
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_set_aspect_non_positive_raises(bad):
+    # A zero/negative aspect used to reach _effective_rect() unvalidated,
+    # dividing by zero (0) or producing corrupted negative geometry (< 0).
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must be > 0"):
+        ax.set_aspect(bad)
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_set_box_aspect_non_positive_raises(bad):
+    fig, ax = plotpress.subplots()
+    with pytest.raises(ValueError, match="must be > 0"):
+        ax.set_box_aspect(bad)
 
 
 # -- minor ticks ----------------------------------------------------------
@@ -212,7 +228,7 @@ def test_arrow_renders_without_error_in_all_backends():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -243,7 +259,7 @@ def test_quiverkey_label_stays_inside_the_axes_even_near_a_corner():
     text_el = next(el for el in _parse(fig.to_svg()).iter(f"{NS}text")
                    if "u/step" in "".join(el.itertext()))
     (xmin, xmax), (ymin, ymax) = ax.get_xlim(), ax.get_ylim()
-    from plotpress.svg import _effective_rect, _pixel_rect
+    from plotpress.backends.svg import _effective_rect, _pixel_rect
 
     dpi = fig.style.dpi
     L, T, W, H = _effective_rect(ax, *_pixel_rect(ax, fig.figsize[0] * dpi,
@@ -383,14 +399,14 @@ def test_table_renders_without_error_in_raster_and_pdf():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
 
 # -- barbs --------------------------------------------------------------
 def test_barbs_decomposes_speed_into_pennants_full_and_half_ticks():
-    from plotpress.svg import _barb_geometry
+    from plotpress.backends.svg import _barb_geometry
 
     # 65 -> nearest 5 = 65 = 1 pennant (50) + 1 full (10) + 1 half (5)
     lines, polys, calm = _barb_geometry(0.0, 0.0, 0.0, 65.0, 20.0)
@@ -400,7 +416,7 @@ def test_barbs_decomposes_speed_into_pennants_full_and_half_ticks():
 
 
 def test_barbs_calm_speed_draws_a_circle_not_a_shaft():
-    from plotpress.svg import _barb_geometry
+    from plotpress.backends.svg import _barb_geometry
 
     lines, polys, calm = _barb_geometry(0.0, 0.0, 0.0, 2.0, 20.0)   # rounds to 0
     assert calm
@@ -419,7 +435,7 @@ def test_barbs_renders_without_error_in_all_backends():
     pytest.importorskip("PIL")
     import tempfile
 
-    from plotpress.raster import figure_to_image, save_pdf
+    from plotpress.backends.raster import figure_to_image, save_pdf
     figure_to_image(fig)
     save_pdf(fig, tempfile.mktemp(suffix=".pdf"))
 
@@ -438,7 +454,7 @@ def test_step_stairs_accept_zorder():
 
 
 def test_matshow_spy_accept_zorder_label_cmap():
-    from plotpress.colors import get_cmap
+    from plotpress.style.colors import get_cmap
 
     fig, ax = plotpress.subplots()
     im = ax.matshow([[1, 2], [3, 4]], zorder=7, label="m")
